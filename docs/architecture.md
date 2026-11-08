@@ -1,7 +1,7 @@
 # Architecture
 
-**Status:** not yet designed. Every major choice here belongs to the owner and
-is recorded as an ADR first. See `open-decisions.md` for what is pending.
+**Status:** core architecture decided 2026-11-08 (ADRs 0001 to 0007).
+Interface details are still to be decided; see `open-decisions.md`.
 
 ## Fixed by the spec
 
@@ -31,11 +31,12 @@ These are requirements, not choices:
 
 How each box is built is decided in ADRs:
 
-| Component | Decided by |
+| Component | Decision |
 |---|---|
-| Orchestration | Open decision 2 |
-| Inbox store | Open decision 3 |
-| VS Code extension | Open decision 1 |
-| Agent sandboxing and permissions | Open decision 4 |
-| Git and PR integration | Open decisions 5 and 9 |
-| Concurrency | Open decision 10 |
+| Orchestration | ADR 0001: TypeScript workflow engine; one Claude Agent SDK session per agent; gates enforced in code |
+| Inbox store | ADR 0002: one file per item under `.factory/inbox/`, in Git |
+| VS Code extension | ADR 0003: engine is a separate local process; extension is the UI (tree views + detail webview) |
+| Agent isolation and permissions | ADR 0004: Git worktree per agent; per-role write/command/network policy |
+| Branching | ADR 0005: `feature/F-nnn-name` + `feature/F-nnn/<agent>`, squash merge |
+| PR integration | ADR 0006: dedicated fine-grained token; `main` protected, owner review required |
+| Concurrency | ADR 0007: unlimited, with rebase-and-retest after each merge |

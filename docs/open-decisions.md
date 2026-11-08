@@ -16,18 +16,23 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 | 6 | Test retry limits and escalation thresholds | Product | Decided (in [testing-strategy.md](testing-strategy.md)) | — |
 | 7 | Security severity definitions | Security | Decided (in [security-standards.md](security-standards.md)) | — |
 | 8 | Validation judge scoring and evidence requirements | Product | Decided (in [validation-judge](../agents/validation-judge/AGENT.md)) | — |
-| 10 | Multiple features and concurrent workflows | Architecture | Proposed, awaiting owner ([proposal](proposals/0010-concurrency.md)) | — |
+| 10 | Multiple features and concurrent workflows | Architecture | Decided | [0007](adr/0007-unlimited-feature-concurrency.md) |
 | 11 | Software maturity levels per repo and project (new requirement) | Product | Spec section 16 approved; criteria tables still draft ([maturity-levels.md](maturity-levels.md)) | — |
 
 Numbers 1 to 10 match the spec's section 14 list. Later numbers are items added since.
 
-## What is blocked until these are decided
+## Still open
 
-- **The VS Code extension** waits on 1, 2, and 3.
-- **Running agents automatically** waits on 2 and 4.
-- **Opening PRs automatically** waits on 5 and 9.
-- **The security gates' pass/fail rule** waits on 7.
-- **The validation judge's PASS rule** waits on 8.
+All ten section 14 items were decided on 2026-11-08. Still pending owner
+review:
 
-Until then, the agents can be run by hand in Claude Code against the docs in
-this repository.
+- Security criteria S1 to S7 in `security-standards.md` (draft).
+- The promotion criteria table and the requirements/test engineer rows of the
+  gate bar in `maturity-levels.md` (draft).
+
+Follow-on Interfaces decisions raised by the ADRs:
+
+- Agent result format for each role (ADR 0001).
+- Inbox item file format (ADR 0002).
+- Extension-to-engine control channel (ADR 0003).
+- Role permission policy file format (ADR 0004).

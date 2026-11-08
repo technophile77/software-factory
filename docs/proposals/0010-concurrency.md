@@ -2,7 +2,7 @@
 
 - **Category:** Architecture
 - **Blocks:** the engine's scheduler
-- **Status:** Awaiting owner
+- **Status:** Decided: option C, unlimited (ADR 0007)
 
 ## Problem
 Several features may be in flight in one repo, and several repos in one

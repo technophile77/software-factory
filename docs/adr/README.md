@@ -15,3 +15,4 @@ in order, using `template.md`.
 | [0004](0004-agent-isolation-worktrees-permissions.md) | Agent isolation: worktree per agent plus per-role permissions | Accepted |
 | [0005](0005-branching-feature-agent-branches-squash.md) | Feature branches with agent sub-branches, squash-merged | Accepted |
 | [0006](0006-pr-factory-token-protected-main.md) | PRs via a dedicated factory token, main protected | Accepted |
+| [0007](0007-unlimited-feature-concurrency.md) | Unlimited feature concurrency | Accepted |
