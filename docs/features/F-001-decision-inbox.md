@@ -1,9 +1,9 @@
 # Feature: Decision inbox in VS Code
 
 - **Id:** F-001
-- **Status:** Draft (requirements interview in progress)
+- **Status:** In review (readiness gate passed; awaiting owner approval)
 - **Requested by / date:** Alex, 2026-11-08
-- **Spec version:** 1
+- **Spec version:** 2
 
 ## 1. Objective and business purpose
 Give the owner one place in VS Code to see and act on every pending decision,
@@ -31,6 +31,7 @@ records the action in Git.
 | FR-9 | Refresh automatically when item files change on disk. |
 | FR-10 | Show malformed item files as errors in the view instead of hiding them. |
 | FR-11 | Links in an item open the file, diff, or URL. |
+| FR-12 | With several repos open, show one combined queue across all of them, each item labeled with its repo. |
 
 ## 4. Acceptance criteria
 | Id | Given / When / Then | Covers |
@@ -43,6 +44,9 @@ records the action in Git.
 | AC-6 | Given any action, then exactly one commit is created whose message starts with the item id and touches only that item file. | FR-8 |
 | AC-7 | Given an item file edited outside VS Code, then the view updates within 2 seconds. | FR-9 |
 | AC-8 | Given a file with invalid frontmatter, then the view lists it as an error with the file name. | FR-10 |
+| AC-10 | Given two open repos each with an open item, then both appear in one list, sorted together, each labeled with its repo name. | FR-12 |
+| AC-11 | Given an item link pointing outside its repo (e.g. `../../secret`), when clicked, then it is refused with a message. | SR-3 |
+| AC-12 | Given an item body containing `<script>` or an `onerror` attribute, then nothing executes and the text is shown inert. | SR-1 |
 | AC-9 | Given a card, then it shows title, category, priority, status, blocking, context, options with pros and cons, impact, recommendation, and cost of delay. | FR-4 |
 
 ## 5. Constraints
@@ -64,13 +68,16 @@ records the action in Git.
 |---|---|---|---|
 | A-1 | Only the decision inbox is in scope; testing and hygiene inboxes come later. | Owner, 2026-11-08 | Approved |
 | A-2 | Item files live on the `factory/state` branch, checked out at `.factory/`; actions commit there. | ADR 0009 | Approved |
-| A-3 | Multi-root workspaces: items from every folder are shown, labeled by repo. | | Pending |
+| A-3 | Multi-root workspaces: one combined queue across all open repos, each item labeled with its repo. | Owner, 2026-11-08 | Approved |
 
 ## 9. Security considerations
 | Id | Requirement | Source | Status |
 |---|---|---|---|
-| SR-1 | Item bodies are untrusted: render Markdown with scripts and raw HTML disabled, under a strict webview content security policy. | Analyst (S1.2, S6.1) | Proposed |
-| SR-2 | The extension never runs commands or opens links from an item without the owner clicking them. | Analyst (S6.1) | Proposed |
+| SR-1 | Item bodies are untrusted: render Markdown with raw HTML disabled, under a webview content security policy that allows no scripts except the extension's own (nonce) and no remote resources. | Analyst; Gate 1 (S1.2, S6.1) | Accepted |
+| SR-2 | The extension never runs commands or opens links from an item without the owner clicking them. | Analyst (S6.1) | Accepted |
+| SR-3 | File links resolve only inside the item's repo; URL links open only for `https:`. Anything else is refused. | Gate 1 (S1.4) | Accepted |
+| SR-4 | Git is invoked with an argument list, never through a shell; item ids must match `^[DTH]-\d{4,}$` before use in paths or commit messages. | Gate 1 (S1.3) | Accepted |
+| SR-5 | Writes are atomic (write to a temp file, then rename) and preserve unknown frontmatter fields. | Gate 1 (S5.1) | Accepted |
 
 ## 10. Interface requirements
 Uses Inbox item v1.0 unchanged.
@@ -80,10 +87,11 @@ Uses Inbox item v1.0 unchanged.
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit and approved
+- [x] Assumptions explicit and approved (A-1, A-2, A-3)
 - [x] Blocking decisions resolved (A-2, ADR 0009)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-08 | Draft | — |
+| 2 | 2026-11-08 | Assumptions resolved; Gate 1 security requirements added | — |
