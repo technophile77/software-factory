@@ -12,9 +12,9 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 | 1 | VS Code extension architecture and technology stack | Architecture | Decided | [0003](adr/0003-engine-separate-process-vscode-ui.md) |
 | 4 | Agent execution isolation and permissions | Security | Decided | [0004](adr/0004-agent-isolation-worktrees-permissions.md) |
 | 5 | Git branching and commit strategy | Architecture | Decided | [0005](adr/0005-branching-feature-agent-branches-squash.md) |
-| 9 | Pull request creation and repository integration | Architecture | Proposed, awaiting owner ([proposal](proposals/0009-pr-integration.md)) | — |
+| 9 | Pull request creation and repository integration | Architecture | Decided | [0006](adr/0006-pr-factory-token-protected-main.md) |
 | 6 | Test retry limits and escalation thresholds | Product | Open | — |
-| 7 | Security severity definitions | Security | Open | — |
+| 7 | Security severity definitions | Security | Proposed, awaiting owner ([proposal](proposals/0007-security-severity.md)) | — |
 | 8 | Validation judge scoring and evidence requirements | Product | Open | — |
 | 10 | Multiple features and concurrent workflows | Architecture | Open | — |
 | 11 | Software maturity levels per repo and project (new requirement) | Product | Spec section 16 approved; criteria tables still draft ([maturity-levels.md](maturity-levels.md)) | — |

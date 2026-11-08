@@ -2,7 +2,7 @@
 
 - **Category:** Architecture (with Security implications)
 - **Blocks:** stage 9, config hygiene PRs
-- **Status:** Awaiting owner
+- **Status:** Decided: option A (ADR 0006)
 
 ## Problem
 The orchestrator opens PRs (ADR 0005) on GitHub. The spec says only the owner
