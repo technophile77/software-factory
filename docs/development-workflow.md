@@ -40,4 +40,4 @@ check 6.
 | 8 | NEEDS HUMAN REVIEW | Decision inbox, category per the finding |
 | Any | Spec found wrong or incomplete | Analyst; the spec is re-approved |
 
-Retry limits for stage 6 are open decision 6.
+Retry limits for stage 6 are in `testing-strategy.md`.

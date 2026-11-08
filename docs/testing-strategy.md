@@ -22,11 +22,25 @@ incomplete run is not a pass.
 
 ## Failure handling
 
-The orchestrator classifies each failure: test code, product code,
-environment, dependency, infrastructure, or incomplete run. It retries only
-when a retry could change the result (flaky environment, infrastructure), and
-escalates to the Testing inbox when the limit is hit or the cause is unclear.
-The limit and thresholds are open decision 6.
+The orchestrator classifies each failure and handles it by cause. Approved by
+the owner on 2026-11-08 (open decision 6, `proposals/0006-retry-limits.md`).
+
+| Failure cause | Automatic reruns | Then |
+|---|---|---|
+| Environment, infrastructure, flaky | Up to 2 reruns | Testing inbox |
+| Product code | No rerun; developer fixes | Up to 3 fix cycles, then Testing inbox |
+| Test code | No rerun; test engineer fixes, citing the spec | Up to 3 fix cycles, then Testing inbox |
+| Dependency | No rerun | Testing inbox right away |
+| Incomplete run | 1 rerun | Testing inbox |
+| Unclear | Orchestrator investigates once | Testing inbox |
+
+- A test that fails and then passes on rerun is logged as flaky. The same
+  test flaky 3 times in one feature goes to the Testing inbox even if it passed.
+- If the developer and test engineer go back and forth on the same test
+  twice, the disagreement goes to the Decision inbox (Assumptions or Product).
+- A feature in stage 6 for more than 4 hours of agent time is escalated.
+- These numbers live in factory config and change only through the
+  configuration hygiene process.
 
 ## Test framework
 

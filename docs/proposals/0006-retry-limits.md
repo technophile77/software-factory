@@ -2,7 +2,7 @@
 
 - **Category:** Product
 - **Blocks:** stage 6 failure handling in the engine
-- **Status:** Awaiting owner
+- **Status:** Decided: option A, applied to `docs/testing-strategy.md`
 
 ## Problem
 The orchestrator should fix routine failures without bothering the owner, but

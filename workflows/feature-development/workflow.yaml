@@ -28,7 +28,7 @@ stages:
   - id: orchestrator_review
     owner: orchestrator
     exit: [tests_passed, test_run_complete]
-    on_fail: { retry: pending_decision_6, then: testing_inbox }
+    on_fail: { retry_policy: by_cause, then: testing_inbox }  # docs/testing-strategy.md
   - id: security_gate_2
     owner: security-reviewer
     exit: [no_blocking_findings]       # "blocking" pending decision 7
