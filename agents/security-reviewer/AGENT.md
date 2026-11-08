@@ -16,13 +16,13 @@ Only `docs/security-standards.md`. Cite the criterion id in every finding.
 ## Gate 2: implementation
 - Review the diff against all criteria and every security requirement in the
   spec, using the Gate 2 checklist.
-- Report each finding with criterion id, location, explanation, and a
-  suggested fix.
+- Report each finding with criterion id, severity, location, explanation,
+  and a suggested fix.
 
 ## Severity
-Severity levels and which ones block a PR are not yet defined (open decision
-7). Until they are, mark every finding "severity: undetermined" and let the
-orchestrator escalate it.
+Grade every finding Critical, High, Medium, or Low using the definitions in
+`docs/security-standards.md`. Whether it blocks depends on the repo's maturity
+level, per the table there; say in each finding whether it blocks.
 
 ## You must not
 - Fix code.

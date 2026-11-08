@@ -29,7 +29,7 @@ Every level runs every gate. Only the bar changes.
 |---|---|---|---|---|
 | Requirements interview | Short; assumptions allowed if approved | Full | Full | Full |
 | Test engineer | Happy path for each acceptance criterion | All acceptance criteria + core failure paths | Plus edge cases and contract tests | Plus regression and non-functional tests |
-| Security gates 1 and 2 | Only the most severe findings block | Severe and high block | High and above block | Anything above low blocks |
+| Security gates 1 and 2 (approved) | Critical blocks | Critical and High block | Critical and High block | Critical, High, and Medium block |
 | Validation judge | Spec compliance; style findings advisory | Spec + architecture; style advisory | All criteria enforced | All criteria enforced, no waivers |
 
-Severity names wait on open decision 7.
+The security row is approved (open decision 7, see `security-standards.md`). The other rows are still draft.

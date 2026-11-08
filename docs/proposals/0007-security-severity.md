@@ -2,7 +2,7 @@
 
 - **Category:** Security
 - **Blocks:** the pass/fail rule for both security gates; the maturity gate bar
-- **Status:** Awaiting owner
+- **Status:** Decided: option A, applied to `docs/security-standards.md`
 
 ## Options
 
