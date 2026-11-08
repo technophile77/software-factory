@@ -80,7 +80,7 @@ not a decision.
 
 1. **Does maturity change the per-feature lifecycle?** Decided 2026-11-08: **same gates, bar scales by level.** Every feature at every level still goes through all six agents and both security gates. What scales is the bar inside each gate (test depth required, which security severities block, how strict the judge is). The per-level bar goes in `docs/maturity-levels.md`.
 2. How does a project's level relate to its repos' levels? Decided 2026-11-08: **capped by its least mature repo.** The owner sets the project's level, but it can never be higher than the lowest level among its repos. It can be lower, for example while cross-repo integration is untested.
-3. Can a repo skip a level? (asked next)
-4. What triggers a demotion?
+3. Can a repo skip a level? Decided 2026-11-08: **only by meeting every level in between.** Criteria are cumulative; a jump (e.g. prototype to beta) needs evidence for every intermediate level's criteria, and the owner's approval.
+4. What triggers a demotion? (asked next)
 5. Where the level is stored (follows decision 3).
 6. The exact promotion criteria per level (edit the table above).
