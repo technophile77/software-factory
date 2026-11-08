@@ -42,6 +42,13 @@ the owner on 2026-11-08 (open decision 6, `proposals/0006-retry-limits.md`).
 - These numbers live in factory config and change only through the
   configuration hygiene process.
 
+## Continuous integration
+
+CI (GitHub Actions) re-runs the required jobs for the repo's maturity level
+on a clean machine, on every PR and every push to `main` (ADR 0008). A red
+CI run is a test failure like any other and follows the table above. CI
+results are evidence for the judge and for maturity promotions.
+
 ## Test framework
 
 Chosen per project as an Architecture decision.

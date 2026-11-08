@@ -30,6 +30,7 @@ Every level runs every gate. Only the bar changes.
 | Requirements interview | Short; assumptions allowed if approved | Full | Full | Full |
 | Test engineer | Happy path for each acceptance criterion | All acceptance criteria + core failure paths | Plus edge cases and contract tests | Plus regression and non-functional tests |
 | Security gates 1 and 2 (approved) | Critical blocks | Critical and High block | Critical and High block | Critical, High, and Medium block |
+| Required CI jobs (approved) | Build, smoke test | + unit, acceptance tests, secret scan | + contract, integration tests, dependency audit | + full regression, performance tests, coverage report |
 | Validation judge (approved) | Full checklist; any number of Major findings (logged) | Full checklist; up to 3 Major | Full checklist; up to 1 Major | Full checklist; no Major |
 
-The security row is approved (open decision 7, see `security-standards.md`). The validation judge row is approved (open decision 8). The other rows are still draft.
+The security row is approved (open decision 7, see `security-standards.md`). The validation judge row is approved (open decision 8), and the CI row (ADR 0008). The other rows are still draft.

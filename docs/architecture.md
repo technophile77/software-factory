@@ -40,3 +40,4 @@ How each box is built is decided in ADRs:
 | Branching | ADR 0005: `feature/F-nnn-name` + `feature/F-nnn/<agent>`, squash merge |
 | PR integration | ADR 0006: dedicated fine-grained token; `main` protected, owner review required |
 | Concurrency | ADR 0007: unlimited, with rebase-and-retest after each merge |
+| CI | ADR 0008: GitHub Actions, required merge gate, jobs scaled by maturity |

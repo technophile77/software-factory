@@ -18,7 +18,7 @@ owner approves a change.
 3. **Change-controlled files need explicit approval for every edit**, including
    typo fixes. See `docs/decision-management.md` § Configuration hygiene.
    Change-controlled files are: this file, everything under `agents/`,
-   `skills/`, `workflows/`, `docs/` (except files under `docs/features/` that
+   `skills/`, `workflows/`, `.github/workflows/`, `scripts/`, `docs/` (except files under `docs/features/` that
    an in-progress feature owns), and any factory configuration.
 4. **Do not assume open design items.** `docs/open-decisions.md` lists what is
    still undecided. If work depends on one, raise it; do not pick an answer.
@@ -42,6 +42,7 @@ owner approves a change.
 | `agents/<role>/AGENT.md` | Each agent's role, authority, inputs, outputs |
 | `skills/security-review/` | Shared security skill (reads the standards doc) |
 | `workflows/feature-development/` | The nine-stage lifecycle and its gates |
+| `.github/workflows/`, `scripts/` | The factory repo's own CI |
 
 ## Code comments
 

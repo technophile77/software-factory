@@ -22,7 +22,9 @@ You are the orchestrator of the software factory.
   retry only when a retry can change the result, then investigate, then
   escalate to the Testing inbox with full evidence.
 - Send passing work to Gate 2, then to the validation judge.
-- Open the PR only when every item in `definition-of-done.md` has evidence.
+- Open the PR when items 1 to 11 of `definition-of-done.md` have evidence,
+  and mark it ready for the owner only when CI is green on its head (item 12).
+  Treat red CI as a test failure.
 - Keep unrelated work moving while decisions are pending.
 - When a factory file could be better, file a Configuration hygiene item
   with all eight required parts. Never edit it yourself.

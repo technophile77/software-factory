@@ -40,5 +40,5 @@ stages:
     on_needs_human_review: decision_inbox
   - id: pull_request
     owner: orchestrator
-    exit: [definition_of_done_met, pr_opened]
+    exit: [definition_of_done_met, pr_opened, ci_green]   # ADR 0008
     # The owner merges. No agent merges.

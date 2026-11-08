@@ -16,3 +16,4 @@ in order, using `template.md`.
 | [0005](0005-branching-feature-agent-branches-squash.md) | Feature branches with agent sub-branches, squash-merged | Accepted |
 | [0006](0006-pr-factory-token-protected-main.md) | PRs via a dedicated factory token, main protected | Accepted |
 | [0007](0007-unlimited-feature-concurrency.md) | Unlimited feature concurrency | Accepted |
+| [0008](0008-ci-required-gate-by-maturity.md) | CI is a required merge gate, scaled by maturity | Accepted |

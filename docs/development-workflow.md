@@ -13,7 +13,7 @@ machine-readable version lives in `workflows/feature-development/`.
 | 6. Orchestrator review | Orchestrator | Tests pass and the run was complete |
 | 7. Final security review (Gate 2) | Security reviewer | No blocking findings |
 | 8. Validation | Validation judge | PASS |
-| 9. Pull request | Orchestrator | All of `definition-of-done.md` met; PR open |
+| 9. Pull request | Orchestrator | Items 1 to 11 of `definition-of-done.md` met; PR open; CI green before it is marked ready |
 
 The owner merges. Nobody else does.
 

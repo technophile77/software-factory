@@ -2,7 +2,7 @@
 
 - **Raised:** 2026-11-08, from the owner's question "where does CI come into play?"
 - **Category:** Architecture
-- **Status:** Awaiting owner
+- **Status:** Decided: option A (ADR 0008)
 
 ## Problem
 All testing today happens inside the factory: the test engineer runs tests in
