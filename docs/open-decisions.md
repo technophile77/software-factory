@@ -18,6 +18,7 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 | 8 | Validation judge scoring and evidence requirements | Product | Decided (in [validation-judge](../agents/validation-judge/AGENT.md)) | — |
 | 10 | Multiple features and concurrent workflows | Architecture | Decided | [0007](adr/0007-unlimited-feature-concurrency.md) |
 | 11 | Software maturity levels per repo and project (new requirement) | Product | Spec section 16 approved; criteria tables still draft ([maturity-levels.md](maturity-levels.md)) | — |
+| 12 | Continuous integration (new item) | Architecture | Proposed, awaiting owner ([proposal](proposals/0012-continuous-integration.md)) | — |
 
 Numbers 1 to 10 match the spec's section 14 list. Later numbers are items added since.
 
