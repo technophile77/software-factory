@@ -78,8 +78,8 @@ not a decision.
 
 ## Open questions (to ask one at a time)
 
-1. **Does maturity change the per-feature lifecycle?** (asked first)
-2. How does a project's level relate to its repos' levels? (e.g. the lowest of them, or set independently)
+1. **Does maturity change the per-feature lifecycle?** Decided 2026-11-08: **same gates, bar scales by level.** Every feature at every level still goes through all six agents and both security gates. What scales is the bar inside each gate (test depth required, which security severities block, how strict the judge is). The per-level bar goes in `docs/maturity-levels.md`.
+2. How does a project's level relate to its repos' levels? (asked next)
 3. Can a repo skip a level?
 4. What triggers a demotion?
 5. Where the level is stored (follows decision 3).
