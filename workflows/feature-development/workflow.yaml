@@ -1,0 +1,44 @@
+# Draft. Format pending open decision 2.
+name: feature-development
+version: 0.1
+stages:
+  - id: request
+    owner: owner
+    exit: [request_recorded, analyst_assigned]
+  - id: requirements_interview
+    owner: requirements-analyst
+    exit: [spec_drafted, assumptions_filed]
+  - id: security_gate_1
+    owner: security-reviewer
+    exit: [gate1_report_filed, approved_security_reqs_in_spec]
+  - id: readiness_gate
+    owner: orchestrator
+    exit:
+      - clear_objective
+      - expected_behavior_defined
+      - acceptance_criteria_testable
+      - constraints_documented
+      - assumptions_explicit
+      - blocking_decisions_approved   # deferred does not count
+    on_fail: requirements_interview
+  - id: build_and_test_prep
+    owner: [software-developer, test-engineer]
+    parallel: true
+    exit: [developer_complete, test_suite_ready]
+  - id: orchestrator_review
+    owner: orchestrator
+    exit: [tests_passed, test_run_complete]
+    on_fail: { retry_policy: by_cause, then: testing_inbox }  # docs/testing-strategy.md
+  - id: security_gate_2
+    owner: security-reviewer
+    exit: [no_blocking_findings]       # "blocking" pending decision 7
+    on_fail: build_and_test_prep
+  - id: validation
+    owner: validation-judge
+    exit: [verdict_pass]
+    on_fail: orchestrator_review
+    on_needs_human_review: decision_inbox
+  - id: pull_request
+    owner: orchestrator
+    exit: [definition_of_done_met, pr_opened, ci_green]   # ADR 0008
+    # The owner merges. No agent merges.
