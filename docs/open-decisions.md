@@ -9,7 +9,7 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 |---|---|---|---|---|
 | 2 | Agent communication and orchestration protocol | Architecture | Decided | [0001](adr/0001-orchestration-engine-agent-sdk.md) |
 | 3 | Persistent storage for inbox items and decisions | Architecture | Decided | [0002](adr/0002-inbox-storage-files-in-repo.md) |
-| 1 | VS Code extension architecture and technology stack | Architecture | Proposed, awaiting owner ([proposal](proposals/0001-vscode-extension.md)) | — |
+| 1 | VS Code extension architecture and technology stack | Architecture | Decided | [0003](adr/0003-engine-separate-process-vscode-ui.md) |
 | 4 | Agent execution isolation and permissions | Security | Open | — |
 | 5 | Git branching and commit strategy | Architecture | Open | — |
 | 9 | Pull request creation and repository integration | Architecture | Open | — |
@@ -17,7 +17,7 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 | 7 | Security severity definitions | Security | Open | — |
 | 8 | Validation judge scoring and evidence requirements | Product | Open | — |
 | 10 | Multiple features and concurrent workflows | Architecture | Open | — |
-| 11 | Software maturity levels per repo and project (new requirement) | Product | Proposed, awaiting owner ([proposal](proposals/0011-maturity-levels.md)) | — |
+| 11 | Software maturity levels per repo and project (new requirement) | Product | Questions 1–4 answered; spec text awaiting approval ([proposal](proposals/0011-maturity-levels.md)) | — |
 
 Numbers 1 to 10 match the spec's section 14 list. Later numbers are items added since.
 

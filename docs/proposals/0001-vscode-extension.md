@@ -3,7 +3,7 @@
 - **Category:** Architecture
 - **Blocks:** all UI work; where the engine (ADR 0001) runs
 - **Cost of delay:** the inboxes can't be built
-- **Status:** Awaiting owner
+- **Status:** Decided: option A (ADR 0003)
 
 ## Fixed by earlier decisions
 - TypeScript (ADR 0001: engine uses the Agent SDK in TypeScript).

@@ -11,3 +11,4 @@ in order, using `template.md`.
 |---|---|---|
 | [0001](0001-orchestration-engine-agent-sdk.md) | Coded workflow engine with Agent SDK sessions per agent | Accepted |
 | [0002](0002-inbox-storage-files-in-repo.md) | Inbox items stored as one file per item in the repo | Accepted |
+| [0003](0003-engine-separate-process-vscode-ui.md) | Engine as a separate local process; VS Code extension is the UI | Accepted |
