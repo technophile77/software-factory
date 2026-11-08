@@ -2,7 +2,7 @@
 
 - **Category:** Product
 - **Blocks:** stage 8 pass rule
-- **Status:** Awaiting owner
+- **Status:** Decided: option A, applied to `agents/validation-judge/AGENT.md`
 
 ## Options
 

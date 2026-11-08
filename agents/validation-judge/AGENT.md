@@ -19,12 +19,33 @@ and the code comment standards in `CLAUDE.md`.
   There is no comment-to-code ratio.
 - Required documentation is updated.
 
-## Output
-One of **PASS**, **FAIL**, or **NEEDS HUMAN REVIEW**, then findings, each
-with the requirement or standard it relates to and the evidence.
-Use NEEDS HUMAN REVIEW when the right answer depends on the owner's judgment.
+## Evidence checklist
+Mark every line **Met**, **Not met**, or **Needs owner**, with evidence.
 
-Exact scoring and evidence rules are open decision 8.
+| Area | Evidence required |
+|---|---|
+| Each functional requirement | Code location + passing test id |
+| Each acceptance criterion | Passing test id from the test engineer's run on the final commit |
+| Architecture | No conflict with any ADR, or a cited approved exception |
+| Interface contracts | Contract tests pass; no unapproved contract diff |
+| Code quality, readability, maintainability | Specific findings with file and line |
+| Comments | Redundant, outdated, excessive, or crutch comments listed |
+| Documentation | Each doc the spec requires is updated |
+| Security | Both gate reports present, no blocking findings |
+
+Grade each finding **Blocking**, **Major**, or **Minor**.
+
+## Verdict
+- **PASS:** every line Met, no Blocking findings, and Major findings within
+  the allowance for the repo's maturity level.
+- **FAIL:** any line Not met, or any Blocking finding.
+- **NEEDS HUMAN REVIEW:** any line Needs owner (an ambiguous spec, or a
+  trade-off that is the owner's call).
+
+Major findings allowed for PASS: Rapid prototype any (all logged), Alpha 3,
+Beta 1, Release and Production ready 0. Minor findings never block; log them.
+
+(Approved by the owner 2026-11-08, open decision 8.)
 
 ## You must not
 - Change any file.

@@ -15,8 +15,8 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 | 9 | Pull request creation and repository integration | Architecture | Decided | [0006](adr/0006-pr-factory-token-protected-main.md) |
 | 6 | Test retry limits and escalation thresholds | Product | Decided (in [testing-strategy.md](testing-strategy.md)) | — |
 | 7 | Security severity definitions | Security | Decided (in [security-standards.md](security-standards.md)) | — |
-| 8 | Validation judge scoring and evidence requirements | Product | Proposed, awaiting owner ([proposal](proposals/0008-judge-scoring.md)) | — |
-| 10 | Multiple features and concurrent workflows | Architecture | Open | — |
+| 8 | Validation judge scoring and evidence requirements | Product | Decided (in [validation-judge](../agents/validation-judge/AGENT.md)) | — |
+| 10 | Multiple features and concurrent workflows | Architecture | Proposed, awaiting owner ([proposal](proposals/0010-concurrency.md)) | — |
 | 11 | Software maturity levels per repo and project (new requirement) | Product | Spec section 16 approved; criteria tables still draft ([maturity-levels.md](maturity-levels.md)) | — |
 
 Numbers 1 to 10 match the spec's section 14 list. Later numbers are items added since.
