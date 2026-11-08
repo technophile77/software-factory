@@ -27,7 +27,7 @@ records the action in Git.
 | FR-5 | Provide Approve, Reject, Request changes, Ask for more research, Defer, and Restore priority. |
 | FR-6 | Approve requires choosing an option when the item has options. Request changes and Ask for more research require a note. |
 | FR-7 | Defer lowers effective priority one step, keeps `blocking`, keeps the item visible; Restore sets it back to `priority`. |
-| FR-8 | Each action appends a `history` entry and is recorded as one Git commit starting with the item id. |
+| FR-8 | Each action appends a `history` entry and is recorded as one Git commit on `factory/state` starting with the item id. |
 | FR-9 | Refresh automatically when item files change on disk. |
 | FR-10 | Show malformed item files as errors in the view instead of hiding them. |
 | FR-11 | Links in an item open the file, diff, or URL. |
@@ -63,7 +63,7 @@ records the action in Git.
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
 | A-1 | Only the decision inbox is in scope; testing and hygiene inboxes come later. | | Pending |
-| A-2 | Where item files live and which branch their commits go to (main is protected by ADR 0006). | | Asked |
+| A-2 | Item files live on the `factory/state` branch, checked out at `.factory/`; actions commit there. | ADR 0009 | Approved |
 | A-3 | Multi-root workspaces: items from every folder are shown, labeled by repo. | | Pending |
 
 ## 9. Security considerations
@@ -81,7 +81,7 @@ Uses Inbox item v1.0 unchanged.
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [ ] Assumptions explicit and approved
-- [ ] Blocking decisions resolved (A-2)
+- [x] Blocking decisions resolved (A-2, ADR 0009)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
