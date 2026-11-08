@@ -30,19 +30,29 @@ stages and the same definition of done.
 > 4. **Release** — a release candidate that has passed full regression and non-functional testing.
 > 5. **Production ready** — fit to run in production and be supported.
 >
-> Each level has defined **promotion criteria**: the tests, the level of
-> testing, and other evidence required to move to the next level. Promotion
-> criteria are recorded in `docs/maturity-levels.md` and changed only through
-> the configuration hygiene process.
+> **Same gates at every level.** Every feature, at every level, goes through
+> all nine lifecycle stages, all six agents, and both security gates. What
+> scales with maturity is the bar inside each gate: the depth of testing
+> required, which security findings block, and how strict the validation
+> judge is. The bar for each level is defined in `docs/maturity-levels.md`.
 >
-> The orchestrator checks the promotion criteria and prepares the evidence.
-> Promotion always requires the owner's approval. Demotion (for example after
-> a serious regression) is proposed by the orchestrator and also approved by
-> the owner.
+> **Promotion.** Each level has promotion criteria: the tests, level of
+> testing, and other evidence needed to reach it. Criteria are cumulative. A
+> repository may skip a level only if it meets the criteria of every level in
+> between. The orchestrator checks the criteria and prepares the evidence;
+> every promotion needs the owner's approval.
 >
-> A repository's level is tracked per repository. A project's level is tracked
-> per project. How the two relate, and how maturity affects the per-feature
-> lifecycle, are defined in `docs/maturity-levels.md`.
+> **Demotion.** When a criterion for the current level stops holding, such as
+> a regression or a serious security finding, the orchestrator proposes a
+> demotion and the owner approves it. A single flaky failure is not a trigger.
+>
+> **Repositories and projects.** Each repository has its own level. Each
+> project has its own level, set by the owner, which can never be higher than
+> the least mature repository in the project. It may be lower, for example
+> while cross-repository integration is untested.
+>
+> Promotion criteria and per-level gate bars are change-controlled and change
+> only through the configuration hygiene process.
 
 ## 5. Diff
 See `0011-maturity-levels.diff` next to this file.
@@ -60,8 +70,8 @@ See `0011-maturity-levels.diff` next to this file.
 - Project-vs-repo levels can disagree; needs a clear rule.
 
 ## 8. Recommendation
-Approve the section 16 text, then settle the open questions below one at a
-time. The draft promotion criteria are a starting point for the owner to edit,
+Approve the section 16 text, which now reflects the owner's answers to
+questions 1 to 4. The draft promotion criteria are a starting point for the owner to edit,
 not a decision.
 
 ---
@@ -76,11 +86,22 @@ not a decision.
 | Beta → Release | Full regression suite green on a clean environment; performance/load tests against stated targets; upgrade and rollback tested | Dependency audit; no open blocking bugs; release notes |
 | Release → Production ready | Tests pass in a production-like environment; backup/restore tested; failure/recovery tested | Monitoring and alerting; runbook; full security review; owner sign-off |
 
-## Open questions (to ask one at a time)
+## Draft gate bar per level (for discussion, not decided)
+
+| Gate | Prototype | Alpha | Beta | Release / Production ready |
+|---|---|---|---|---|
+| Requirements interview | Short; assumptions allowed if approved | Full | Full | Full |
+| Test engineer | Happy path for each acceptance criterion | All acceptance criteria + core failure paths | Plus edge cases and contract tests | Plus regression and non-functional tests |
+| Security gates 1 and 2 | Only the most severe findings block | Severe and high block | High and above block | Anything above low blocks |
+| Validation judge | Spec compliance; style findings advisory | Spec + architecture; style advisory | All criteria enforced | All criteria enforced, no waivers |
+
+Severity names wait on open decision 7.
+
+## Questions
 
 1. **Does maturity change the per-feature lifecycle?** Decided 2026-11-08: **same gates, bar scales by level.** Every feature at every level still goes through all six agents and both security gates. What scales is the bar inside each gate (test depth required, which security severities block, how strict the judge is). The per-level bar goes in `docs/maturity-levels.md`.
 2. How does a project's level relate to its repos' levels? Decided 2026-11-08: **capped by its least mature repo.** The owner sets the project's level, but it can never be higher than the lowest level among its repos. It can be lower, for example while cross-repo integration is untested.
 3. Can a repo skip a level? Decided 2026-11-08: **only by meeting every level in between.** Criteria are cumulative; a jump (e.g. prototype to beta) needs evidence for every intermediate level's criteria, and the owner's approval.
-4. What triggers a demotion? (asked next)
-5. Where the level is stored (follows decision 3).
+4. What triggers a demotion? Decided 2026-11-08: **the orchestrator proposes, the owner approves.** When a criterion for the current level stops holding (for example a regression or a serious security finding), the orchestrator files a demotion for approval. A single flaky failure is not a trigger.
+5. Where the level is stored: follows ADR 0002. Proposed: `.factory/maturity.yaml` in each repo, and in the project's manifest for the project level, each with the evidence links for the last promotion.
 6. The exact promotion criteria per level (edit the table above).
