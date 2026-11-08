@@ -1,0 +1,41 @@
+--- a/docs/spec/software-factory-spec-v0.1.md
++++ b/docs/spec/software-factory-spec-v0.1.md
+@@ -1,7 +1,7 @@
+ # Software Factory — Requirements, Architecture & Implementation Plan
+ 
+ - **Document status:** Working specification
+-- **Version:** 0.1
++- **Version:** 0.2 (proposed)
+ - **Development environment:** VS Code
+ - **Primary coding environment:** Claude Code
+ - **Project owner:** Human approval authority
+@@ -604,3 +604,29 @@
+ The agents are responsible for doing the work. The user is responsible for directing the important decisions.
+ 
+ No significant change to requirements, architecture, interface contracts, assumptions, security policy, or factory configuration should happen silently.
++
++---
++
++## 16. Software Maturity Levels
++
++Every repository and every project has a maturity level:
++
++1. **Rapid prototype** — exploring an idea; may be thrown away.
++2. **Alpha** — core functionality works; used by the owner and close testers.
++3. **Beta** — feature-complete for its scope; used by real testers.
++4. **Release** — a release candidate that has passed full regression and non-functional testing.
++5. **Production ready** — fit to run in production and be supported.
++
++Each level has defined **promotion criteria**: the tests, the level of
++testing, and other evidence required to move to the next level. Promotion
++criteria are recorded in `docs/maturity-levels.md` and changed only through
++the configuration hygiene process.
++
++The orchestrator checks the promotion criteria and prepares the evidence.
++Promotion always requires the owner's approval. Demotion (for example after
++a serious regression) is proposed by the orchestrator and also approved by
++the owner.
++
++A repository's level is tracked per repository. A project's level is tracked
++per project. How the two relate, and how maturity affects the per-feature
++lifecycle, are defined in `docs/maturity-levels.md`.
