@@ -62,7 +62,7 @@ records the action in Git.
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | Only the decision inbox is in scope; testing and hygiene inboxes come later. | | Pending |
+| A-1 | Only the decision inbox is in scope; testing and hygiene inboxes come later. | Owner, 2026-11-08 | Approved |
 | A-2 | Item files live on the `factory/state` branch, checked out at `.factory/`; actions commit there. | ADR 0009 | Approved |
 | A-3 | Multi-root workspaces: items from every folder are shown, labeled by repo. | | Pending |
 
