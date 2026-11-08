@@ -3,7 +3,7 @@
 - **Category:** Security
 - **Blocks:** running agents automatically
 - **Cost of delay:** the engine can't launch agents safely
-- **Status:** Awaiting owner
+- **Status:** Decided: option A (ADR 0004)
 
 ## Problem
 Agents run code, edit files, and read untrusted content. The spec needs the
