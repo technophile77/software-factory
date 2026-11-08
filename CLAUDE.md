@@ -34,6 +34,7 @@ owner approves a change.
 |---|---|
 | `docs/spec/` | The owner's original specification (baseline) |
 | `docs/open-decisions.md` | Design items not yet decided, with status |
+| `docs/maturity-levels.md` | Promotion criteria and per-level gate bar (spec section 16) |
 | `docs/adr/` | Approved architecture decisions |
 | `docs/features/` | One spec per feature, from `feature-template.md` |
 | `docs/interface-contracts.md` | Approved interfaces; changes need approval |

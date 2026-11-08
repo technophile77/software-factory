@@ -3,7 +3,7 @@
 - **Requested by:** owner, 2026-11-08
 - **Category:** Product (new requirement), with Architecture follow-ons
 - **Type:** Change to the specification (configuration hygiene item)
-- **Status:** Awaiting owner. Nothing here is applied until approved.
+- **Status:** Section 16 wording approved and applied 2026-11-08 (spec v0.2). Criteria tables moved to `docs/maturity-levels.md` as drafts.
 
 ## 1. File being changed
 `docs/spec/software-factory-spec-v0.1.md` (adds section 16; spec becomes v0.2)

@@ -1,13 +1,18 @@
 # Software Factory — Requirements, Architecture & Implementation Plan
 
 - **Document status:** Working specification
-- **Version:** 0.1
+- **Version:** 0.2
 - **Development environment:** VS Code
 - **Primary coding environment:** Claude Code
 - **Project owner:** Human approval authority
 
-> This is the owner's original specification, kept verbatim as the baseline.
-> Changes to it go through the configuration hygiene process (section 6).
+> This is the owner's specification. v0.1 is kept verbatim; later versions
+> change it only through the configuration hygiene process (section 6).
+>
+> | Version | Date | Change | Approved by |
+> |---|---|---|---|
+> | 0.1 | 2026-11-08 | Original specification | Owner |
+> | 0.2 | 2026-11-08 | Added section 16, Software Maturity Levels (proposal 0011) | Owner |
 
 ---
 
@@ -604,3 +609,39 @@ The software factory should be autonomous in execution, disciplined in engineeri
 The agents are responsible for doing the work. The user is responsible for directing the important decisions.
 
 No significant change to requirements, architecture, interface contracts, assumptions, security policy, or factory configuration should happen silently.
+
+---
+
+## 16. Software Maturity Levels
+
+Every repository and every project has a maturity level:
+
+1. **Rapid prototype** — exploring an idea; may be thrown away.
+2. **Alpha** — core functionality works; used by the owner and close testers.
+3. **Beta** — feature-complete for its scope; used by real testers.
+4. **Release** — a release candidate that has passed full regression and non-functional testing.
+5. **Production ready** — fit to run in production and be supported.
+
+**Same gates at every level.** Every feature, at every level, goes through
+all nine lifecycle stages, all six agents, and both security gates. What
+scales with maturity is the bar inside each gate: the depth of testing
+required, which security findings block, and how strict the validation
+judge is. The bar for each level is defined in `docs/maturity-levels.md`.
+
+**Promotion.** Each level has promotion criteria: the tests, level of
+testing, and other evidence needed to reach it. Criteria are cumulative. A
+repository may skip a level only if it meets the criteria of every level in
+between. The orchestrator checks the criteria and prepares the evidence;
+every promotion needs the owner's approval.
+
+**Demotion.** When a criterion for the current level stops holding, such as
+a regression or a serious security finding, the orchestrator proposes a
+demotion and the owner approves it. A single flaky failure is not a trigger.
+
+**Repositories and projects.** Each repository has its own level. Each
+project has its own level, set by the owner, which can never be higher than
+the least mature repository in the project. It may be lower, for example
+while cross-repository integration is untested.
+
+Promotion criteria and per-level gate bars are change-controlled and change
+only through the configuration hygiene process.

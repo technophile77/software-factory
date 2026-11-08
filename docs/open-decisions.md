@@ -17,7 +17,7 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 | 7 | Security severity definitions | Security | Open | — |
 | 8 | Validation judge scoring and evidence requirements | Product | Open | — |
 | 10 | Multiple features and concurrent workflows | Architecture | Open | — |
-| 11 | Software maturity levels per repo and project (new requirement) | Product | Questions 1–4 answered; spec text awaiting approval ([proposal](proposals/0011-maturity-levels.md)) | — |
+| 11 | Software maturity levels per repo and project (new requirement) | Product | Spec section 16 approved; criteria tables still draft ([maturity-levels.md](maturity-levels.md)) | — |
 
 Numbers 1 to 10 match the spec's section 14 list. Later numbers are items added since.
 
