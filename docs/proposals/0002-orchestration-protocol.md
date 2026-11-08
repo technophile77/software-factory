@@ -3,7 +3,7 @@
 - **Category:** Architecture
 - **Blocks:** running agents automatically, the VS Code extension, interface contracts for agent results
 - **Cost of delay:** agents can only be run by hand; extension work cannot start
-- **Status:** Awaiting owner
+- **Status:** Decided: option A (ADR 0001)
 
 ## Problem
 Something has to move a feature through nine stages, launch agents, collect

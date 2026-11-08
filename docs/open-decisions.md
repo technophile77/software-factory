@@ -7,8 +7,8 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 
 | # | Decision | Category | Status | ADR |
 |---|---|---|---|---|
-| 2 | Agent communication and orchestration protocol | Architecture | Proposed, awaiting owner ([proposal](proposals/0002-orchestration-protocol.md)) | — |
-| 3 | Persistent storage for inbox items and decisions | Architecture | Proposal drafted | — |
+| 2 | Agent communication and orchestration protocol | Architecture | Decided | [0001](adr/0001-orchestration-engine-agent-sdk.md) |
+| 3 | Persistent storage for inbox items and decisions | Architecture | Proposed, awaiting owner ([proposal](proposals/0003-inbox-storage.md)) | — |
 | 1 | VS Code extension architecture and technology stack | Architecture | Open | — |
 | 4 | Agent execution isolation and permissions | Security | Open | — |
 | 5 | Git branching and commit strategy | Architecture | Open | — |
