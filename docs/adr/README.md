@@ -10,3 +10,4 @@ in order, using `template.md`.
 | # | Title | Status |
 |---|---|---|
 | [0001](0001-orchestration-engine-agent-sdk.md) | Coded workflow engine with Agent SDK sessions per agent | Accepted |
+| [0002](0002-inbox-storage-files-in-repo.md) | Inbox items stored as one file per item in the repo | Accepted |

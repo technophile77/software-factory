@@ -3,7 +3,7 @@
 - **Category:** Architecture
 - **Blocks:** the three inboxes, the decision record, the extension's data layer
 - **Cost of delay:** no inbox can be built
-- **Status:** Awaiting owner
+- **Status:** Decided: option A (ADR 0002)
 
 ## Problem
 Inbox items (decisions, testing problems, hygiene proposals) need to persist,
