@@ -13,3 +13,4 @@ in order, using `template.md`.
 | [0002](0002-inbox-storage-files-in-repo.md) | Inbox items stored as one file per item in the repo | Accepted |
 | [0003](0003-engine-separate-process-vscode-ui.md) | Engine as a separate local process; VS Code extension is the UI | Accepted |
 | [0004](0004-agent-isolation-worktrees-permissions.md) | Agent isolation: worktree per agent plus per-role permissions | Accepted |
+| [0005](0005-branching-feature-agent-branches-squash.md) | Feature branches with agent sub-branches, squash-merged | Accepted |

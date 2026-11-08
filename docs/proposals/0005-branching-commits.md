@@ -2,7 +2,7 @@
 
 - **Category:** Architecture
 - **Blocks:** engine worktree setup, automatic PRs
-- **Status:** Awaiting owner
+- **Status:** Decided: option A (ADR 0005)
 
 ## Constraint from ADR 0004
 Each agent has its own worktree, and Git can't check out one branch in two

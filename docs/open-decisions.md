@@ -11,8 +11,8 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 | 3 | Persistent storage for inbox items and decisions | Architecture | Decided | [0002](adr/0002-inbox-storage-files-in-repo.md) |
 | 1 | VS Code extension architecture and technology stack | Architecture | Decided | [0003](adr/0003-engine-separate-process-vscode-ui.md) |
 | 4 | Agent execution isolation and permissions | Security | Decided | [0004](adr/0004-agent-isolation-worktrees-permissions.md) |
-| 5 | Git branching and commit strategy | Architecture | Proposed, awaiting owner ([proposal](proposals/0005-branching-commits.md)) | — |
-| 9 | Pull request creation and repository integration | Architecture | Open | — |
+| 5 | Git branching and commit strategy | Architecture | Decided | [0005](adr/0005-branching-feature-agent-branches-squash.md) |
+| 9 | Pull request creation and repository integration | Architecture | Proposed, awaiting owner ([proposal](proposals/0009-pr-integration.md)) | — |
 | 6 | Test retry limits and escalation thresholds | Product | Open | — |
 | 7 | Security severity definitions | Security | Open | — |
 | 8 | Validation judge scoring and evidence requirements | Product | Open | — |
