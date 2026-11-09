@@ -5,15 +5,15 @@ Nothing here changes without an approved decision in the **Interfaces**
 category. Each change updates this file, the implementation, the tests, and
 every dependent component together.
 
-**Status:** four contracts proposed (below), none approved yet. They are
-the follow-on Interfaces decisions from ADRs 0001 to 0004. Merging the PR that
-adds them is the owner's approval; each then becomes `Approved`.
+**Status:** five contracts approved by the owner: Inbox item, Agent report,
+Engine control channel, and Role policy (PR #2, 2026-11-08), and Project
+manifest (PR #3, 2026-11-09).
 
 ## Contract entry format
 
 ```
 ### <Name> — v<major>.<minor>
-- Status: Proposed | Approved | Deprecated
+- Status: Approved | Approved | Deprecated
 - Owner decision: <link>
 - Used by: <components>
 - Definition: <schema, signature, or format>
@@ -24,7 +24,7 @@ adds them is the owner's approval; each then becomes `Approved`.
 
 ## Inbox item — v1.0
 
-- Status: Proposed
+- Status: Approved
 - Owner decision: follows ADR 0002
 - Used by: engine, all agents that file items, VS Code extension
 - Compatibility: adding an optional field is non-breaking; renaming,
@@ -85,7 +85,7 @@ whose message starts with the item id.
 
 ## Agent report — v1.0
 
-- Status: Proposed
+- Status: Approved
 - Owner decision: follows ADR 0001
 - Used by: engine, every agent, validation judge (as evidence)
 - Compatibility: as for inbox items.
@@ -129,7 +129,7 @@ referenced by path or URL.
 
 ## Engine control channel — v1.0
 
-- Status: Proposed
+- Status: Approved
 - Owner decision: follows ADR 0003
 - Used by: VS Code extension, engine
 - Compatibility: adding a method is non-breaking; changing a method's
@@ -158,7 +158,7 @@ starts. Not reachable from the network.
 
 ## Role policy — v1.0
 
-- Status: Proposed
+- Status: Approved
 - Owner decision: follows ADR 0004
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
@@ -193,7 +193,7 @@ from the file may not run.
 
 ## Project manifest — v1.0
 
-- Status: Proposed
+- Status: Approved
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09)
 - Used by: engine (resolves effective config), owner (edits it), VS Code extension (later)
 - Compatibility: adding an optional key is non-breaking; renaming or removing one is breaking.
