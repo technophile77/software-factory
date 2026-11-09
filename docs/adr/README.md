@@ -17,3 +17,4 @@ in order, using `template.md`.
 | [0006](0006-pr-factory-token-protected-main.md) | PRs via a dedicated factory token, main protected | Accepted |
 | [0007](0007-unlimited-feature-concurrency.md) | Unlimited feature concurrency | Accepted |
 | [0008](0008-ci-required-gate-by-maturity.md) | CI is a required merge gate, scaled by maturity | Accepted |
+| [0010](0010-project-config-repo.md) | One config repo per project, layered on the master factory | Accepted |
