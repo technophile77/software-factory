@@ -2,8 +2,8 @@
 
 - **Raised:** 2026-11-09, by the owner
 - **Category:** Architecture (where projects live) + Interfaces (manifest format)
-- **Status:** Awaiting owner. Where the manifest lives is on a decision card;
-  the format below follows the owner's stated requirements.
+- **Status:** Decided (ADR 0010; protected defaults decided 2026-11-09). The
+  format is added to `interface-contracts.md` as Project manifest v1.0.
 
 ## Owner's requirements
 A per-project YAML file, editable by the owner, listing:
@@ -86,8 +86,11 @@ notes: |
 - `reason` is required for every override and exclusion.
 - `maturity` may not exceed the lowest repo's maturity.
 - Paths must stay inside the project's config location.
-- **Protected items** (see open question): which defaults may never be
-  overridden or excluded.
+- **Protected items:** `security-review` and the six core agents
+  (orchestrator, requirements-analyst, software-developer, test-engineer,
+  security-reviewer, validation-judge) may not appear in `exclude`. An
+  `override` of one must link an approved Security decision
+  (`decision: D-nnnn`) and may only add rules.
 
 ## Change control
 The manifest and every file it points to are change-controlled. The owner
@@ -96,4 +99,4 @@ hygiene inbox. Every change is a commit.
 
 ## Open questions for the owner
 1. Where the manifest lives: decided 2026-11-09, a config repo per project (ADR 0010).
-2. Which defaults are protected from override or exclusion (decision card).
+2. Protected defaults: decided 2026-11-09. The `security-review` skill and the six core agents can never be excluded. They may be overridden only to add rules, never remove them, and each such override needs an approved Security decision. All other defaults may be overridden or excluded with a reason.

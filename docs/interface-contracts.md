@@ -188,3 +188,22 @@ roles:
 
 Rules: deny wins over allow; anything not allowed is denied; a role missing
 from the file may not run.
+
+---
+
+## Project manifest — v1.0
+
+- Status: Proposed
+- Owner decision: ADR 0010; requirements from the owner (2026-11-09)
+- Used by: engine (resolves effective config), owner (edits it), VS Code extension (later)
+- Compatibility: adding an optional key is non-breaking; renaming or removing one is breaking.
+
+**Location:** `factory-project.yaml` at the root of the project's config repo.
+Full format, validation rules, and an example are in
+`proposals/0013-project-manifest.md`. Required top-level keys: `schema`
+(`factory-project/1.0`), `name`, `factory.version`, `repos`, `maturity`.
+Optional: `description`, `skills`, `agents`, `standards`, `settings`, `notes`.
+
+**Protected defaults:** `security-review` and the six core agents may never
+be excluded; overriding one requires a linked, approved Security decision
+and may only add rules.
