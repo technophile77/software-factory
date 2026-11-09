@@ -13,7 +13,13 @@ import yaml
 
 errors = []
 
-for path in glob.glob("**/*.md", recursive=True):
+
+def project_files(pattern):
+    # Third-party packages ship their own docs with links we don't control.
+    return [p for p in glob.glob(pattern, recursive=True) if "node_modules" not in p.split(os.sep)]
+
+
+for path in project_files("**/*.md"):
     with open(path, encoding="utf-8") as f:
         text = f.read()
     for target in re.findall(r"\]\(([^)#\s]+)", text):
@@ -23,7 +29,7 @@ for path in glob.glob("**/*.md", recursive=True):
         if not os.path.exists(resolved):
             errors.append(f"{path}: broken link to {target}")
 
-for path in glob.glob("**/*.y*ml", recursive=True) + glob.glob(".github/**/*.y*ml", recursive=True):
+for path in project_files("**/*.y*ml") + project_files(".github/**/*.y*ml"):
     try:
         with open(path, encoding="utf-8") as f:
             yaml.safe_load(f)
