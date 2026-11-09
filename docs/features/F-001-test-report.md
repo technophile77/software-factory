@@ -2,7 +2,7 @@
 
 - **Feature:** F-001 Decision inbox, spec v2
 - **Tests written by:** test engineer, from the spec, contract, and API only
-- **Result:** 144 run, 144 passed, 0 failed, 0 skipped (136 acceptance, 8 developer unit tests)
+- **Result on final commit `9467e21`:** 151 run, 151 passed, 0 failed, 0 skipped (136 acceptance, 15 developer unit tests). Earlier run on `c1b7b4b`: 144 of 144.
 
 ## Orchestrator review (stage 6)
 First run: 131 tests, 2 failed.
@@ -30,6 +30,9 @@ Also during review: `npm audit` found ReDoS issues in markdown-it 14.1.0 and a s
 | AC-12 | script, onerror, inline handlers, javascript: links, iframes inert |
 | SR-1, SR-3, SR-4, SR-5 | CSP, link schemes, id validation, unknown-field and body preservation |
 | SR-2 | Not automated (extension host): by code inspection |
+
+## After Gate 2 and validation
+Fixes for Gate 2 findings and the validation judge's findings added 7 developer unit tests (git lookup, time ordering, `__proto__`, misnamed and unreadable files). The independent acceptance tests were not changed and all still pass.
 
 ## Open spec ambiguities (for the owner, not blocking)
 - Link `kind` values are not listed in the Inbox item contract.
