@@ -13,15 +13,23 @@ jobs:
     defaults:
       run:
         working-directory: extension
+    # Steps after checkout are skipped until extension/ exists on the branch,
+    # so this workflow can be approved before the extension lands.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
+        if: hashFiles('extension/package-lock.json') != ''
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: extension/package-lock.json
       - run: npm ci
+        if: hashFiles('extension/package-lock.json') != ''
       - run: npm audit --omit=dev --audit-level=high
+        if: hashFiles('extension/package-lock.json') != ''
       - run: npm run typecheck
+        if: hashFiles('extension/package-lock.json') != ''
       - run: npm run build
+        if: hashFiles('extension/package-lock.json') != ''
       - run: npm test
+        if: hashFiles('extension/package-lock.json') != ''
