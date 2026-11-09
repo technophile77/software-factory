@@ -18,4 +18,5 @@ in order, using `template.md`.
 | [0007](0007-unlimited-feature-concurrency.md) | Unlimited feature concurrency | Accepted |
 | [0008](0008-ci-required-gate-by-maturity.md) | CI is a required merge gate, scaled by maturity | Accepted |
 | [0009](0009-factory-state-branch.md) | Inbox items live on a dedicated factory/state branch | Accepted |
+| [0010](0010-project-config-repo.md) | One config repo per project, layered on the master factory | Accepted |
 | [0011](0011-inbox-extension-libraries.md) | Libraries for the VS Code inbox extension | Accepted |
