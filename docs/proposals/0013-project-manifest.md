@@ -95,6 +95,5 @@ edits them directly; an agent proposes edits only through the Configuration
 hygiene inbox. Every change is a commit.
 
 ## Open questions for the owner
-1. Where the manifest lives (decision card: project config repo, a primary
-   repo, or inside the master repo).
+1. Where the manifest lives: decided 2026-11-09, a config repo per project (ADR 0010).
 2. Which defaults are protected from override or exclusion (decision card).
