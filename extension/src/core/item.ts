@@ -80,7 +80,8 @@ export function parseItem(text: string, path: string): ParseResult {
   const history = fm.history;
   if (!isListOf(history, ["at", "by", "action"])) return fail("invalid history");
 
-  const extra: Record<string, unknown> = {};
+  // Null prototype so a "__proto__" key is kept as data, not dropped (SR-5).
+  const extra: Record<string, unknown> = Object.create(null);
   for (const [k, v] of Object.entries(fm)) {
     if (!(KNOWN_FIELDS as readonly string[]).includes(k)) extra[k] = v;
   }
@@ -110,12 +111,12 @@ export function parseItem(text: string, path: string): ParseResult {
 
 export function serializeItem(item: InboxItem): string {
   const { body, extra, ...known } = item;
-  const fm: Record<string, unknown> = {};
+  const fm: Record<string, unknown> = Object.create(null);
   for (const key of KNOWN_FIELDS) {
     const value = (known as Record<string, unknown>)[key];
     if (value !== undefined) fm[key] = value;
   }
-  Object.assign(fm, extra);
+  for (const [k, v] of Object.entries(extra)) fm[k] = v;
   return `---\n${stringifyYaml(fm).trimEnd()}\n---\n${body}`;
 }
 

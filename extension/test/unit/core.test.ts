@@ -72,3 +72,30 @@ describe("links", () => {
     expect(resolveLink("/repo", { kind: "file", ref: "/etc/passwd" }).kind).toBe("refused");
   });
 });
+
+describe("security fixes from Gate 2", () => {
+  it("keeps a __proto__ frontmatter key through a round trip", () => {
+    const r = parseItem(file(`${base}\n__proto__:\n  polluted: true`), "x.md");
+    if (!r.ok) throw new Error(r.error.message);
+    const again = parseItem(serializeItem(r.item), "x.md");
+    expect(again.ok && Object.keys(again.item.extra)).toContain("__proto__");
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});
+
+describe("store hardening from Gate 2", () => {
+  it("lists a misnamed file and an unreadable entry as errors without hiding valid items", async () => {
+    const { mkdtemp, mkdir, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { loadInbox } = await import("../../src/core/store");
+    const repoDir = await mkdtemp(join(tmpdir(), "sf-"));
+    const dir = join(repoDir, ".factory", "inbox", "decision");
+    await mkdir(join(dir, "folder.md"), { recursive: true });
+    await writeFile(join(dir, "D-0001.md"), file(base));
+    await writeFile(join(dir, "wrong-name.md"), file(base.replace("D-0001", "D-0002")));
+    const { entries, errors } = await loadInbox([{ name: "r", repoDir, factoryDir: join(repoDir, ".factory") }]);
+    expect(entries.map((e) => e.item.id)).toEqual(["D-0001"]);
+    expect(errors.map((e) => e.path.split(/[\\/]/).pop()).sort()).toEqual(["folder.md", "wrong-name.md"]);
+  });
+});

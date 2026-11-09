@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { ActionError } from "./core/actions";
@@ -15,11 +16,46 @@ type Node =
   | { kind: "error"; error: ItemError }
   | { kind: "empty" };
 
-// argument list, no shell: item data never reaches a command line parser (SR-4)
-const git = (cwd: string, args: string[]) =>
-  new Promise<void>((resolve, reject) =>
-    execFile("git", args, { cwd }, (err, _out, stderr) => (err ? reject(new Error(stderr || err.message)) : resolve())),
-  );
+const MAX_NOTE = 4000;
+
+// Run git by absolute path: a bare "git" with cwd inside .factory/ would let a
+// planted .factory/git.exe run on Windows, which searches cwd first. Argument
+// list and no shell, so item data never reaches a command-line parser (SR-4).
+// Literal pathspecs stop a file name like "*.md" from staging other items.
+function makeGit(gitPath: string) {
+  return (cwd: string, args: string[]) =>
+    new Promise<void>((resolve, reject) =>
+      execFile(
+        gitPath,
+        args,
+        { cwd, env: { ...process.env, GIT_LITERAL_PATHSPECS: "1" } },
+        (err, _out, stderr) => (err ? reject(new Error(stderr || err.message)) : resolve()),
+      ),
+    );
+}
+
+async function findGit(): Promise<string | undefined> {
+  // Prefer the path VS Code's own Git extension already resolved.
+  try {
+    const ext = vscode.extensions.getExtension("vscode.git");
+    const api = (ext?.isActive ? ext.exports : await ext?.activate())?.getAPI(1);
+    if (api?.git?.path && path.isAbsolute(api.git.path)) return api.git.path;
+  } catch {
+    // fall through to PATH search
+  }
+  const workspaceDirs = (vscode.workspace.workspaceFolders ?? []).map((f) => path.resolve(f.uri.fsPath));
+  const names = process.platform === "win32" ? ["git.exe"] : ["git"];
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (!dir || !path.isAbsolute(dir)) continue;
+    const abs = path.resolve(dir);
+    if (workspaceDirs.some((w) => abs === w || abs.startsWith(w + path.sep))) continue;
+    for (const n of names) {
+      const candidate = path.join(abs, n);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return undefined;
+}
 
 function workspaceRoots(): RepoRoot[] {
   return (vscode.workspace.workspaceFolders ?? []).map((f) => ({
@@ -90,7 +126,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const panels = new Map<string, vscode.WebviewPanel>();
 
   const refresh = async () => {
-    await tree.reload();
+    try {
+      await tree.reload();
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Could not load the decision inbox: ${(e as Error).message}`);
+      return;
+    }
     const blocking = countOpenBlocking(tree.entries);
     view.badge = blocking ? { value: blocking, tooltip: `${blocking} blocking decision(s)` } : undefined;
     for (const [file, panel] of panels) {
@@ -111,16 +152,23 @@ export function activate(context: vscode.ExtensionContext): void {
     panel.webview.html = renderCard(entry, nonce());
     panel.webview.onDidReceiveMessage(async (msg) => {
       const current = tree.entries.find((e) => e.path === entry.path) ?? entry;
-      const root = workspaceRoots().find((r) => r.name === current.repo);
-      if (!root) return;
-      if (msg?.type === "action") await act(root, current, msg);
-      else if (msg?.type === "link") await follow(resolveLink(root.repoDir, current.item.links?.[msg.index] ?? { kind: "", ref: "" }));
-      else if (msg?.type === "href" && typeof msg.href === "string") await follow(resolveLink(root.repoDir, { kind: "link", ref: msg.href }));
+      // Find the repo by path, not folder name: two open folders can share a name.
+      const root = workspaceRoots().find((r) => isInside(r.factoryDir, current.path));
+      if (!root || typeof msg !== "object" || msg === null) return;
+      if (msg.type === "action") await act(root, current, msg);
+      else if (msg.type === "link") {
+        const links = current.item.links ?? [];
+        if (Number.isInteger(msg.index) && msg.index >= 0 && msg.index < links.length) {
+          await follow(resolveLink(root.repoDir, links[msg.index]));
+        }
+      } else if (msg.type === "href" && typeof msg.href === "string" && msg.href.length <= 2048) {
+        await follow(resolveLink(root.repoDir, { kind: "link", ref: msg.href }));
+      }
     });
   };
 
   const act = async (root: RepoRoot, entry: QueueEntry, msg: { action?: string; option?: string; note?: string }) => {
-    const note = typeof msg.note === "string" && msg.note.trim() ? msg.note.trim() : undefined;
+    const note = typeof msg.note === "string" && msg.note.trim() ? msg.note.trim().slice(0, MAX_NOTE) : undefined;
     const option = typeof msg.option === "string" ? msg.option : undefined;
     let action: OwnerAction;
     switch (msg.action) {
@@ -132,8 +180,13 @@ export function activate(context: vscode.ExtensionContext): void {
       case "restore": action = { type: "restore" }; break;
       default: return;
     }
+    const gitPath = await findGit();
+    if (!gitPath) {
+      void vscode.window.showErrorMessage("Git was not found, so the action was not recorded.");
+      return;
+    }
     try {
-      await performAction(root, entry, action, git);
+      await performAction(root, entry, action, makeGit(gitPath));
       await refresh();
     } catch (e) {
       const text = e instanceof ActionError ? e.message : `Could not record the action: ${(e as Error).message}`;
@@ -169,6 +222,11 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {}
+
+function isInside(dir: string, file: string): boolean {
+  const rel = path.relative(dir, file);
+  return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
 
 function nonce(): string {
   return randomBytes(16).toString("base64");

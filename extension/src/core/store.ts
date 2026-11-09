@@ -21,9 +21,22 @@ export async function loadInbox(roots: RepoRoot[]): Promise<{ entries: QueueEntr
     }
     for (const name of names.filter((n) => n.endsWith(".md")).sort()) {
       const file = path.join(dir, name);
-      const result = parseItem(await fs.readFile(file, "utf8"), file);
-      if (result.ok) entries.push({ repo: root.name, path: file, item: result.item });
-      else errors.push(result.error);
+      let text: string;
+      try {
+        const stat = await fs.lstat(file);
+        // Symlinks could show a file from outside the repo as an item.
+        if (!stat.isFile()) throw new Error("not a regular file");
+        text = await fs.readFile(file, "utf8");
+      } catch (e) {
+        // One unreadable entry must not hide the rest of the inbox.
+        errors.push({ path: file, message: `cannot read: ${(e as Error).message}` });
+        continue;
+      }
+      const result = parseItem(text, file);
+      if (!result.ok) errors.push(result.error);
+      else if (name !== `${result.item.id}.md`) {
+        errors.push({ path: file, message: `file name must be ${result.item.id}.md` });
+      } else entries.push({ repo: root.name, path: file, item: result.item });
     }
   }
   return { entries, errors };
@@ -42,6 +55,9 @@ export async function performAction(
   if (!result.ok) throw new Error(result.error.message);
   const current = result.item;
   if (!isValidItemId(current.id)) throw new Error(`invalid id: ${current.id}`);
+  if (path.basename(entry.path) !== `${current.id}.md`) {
+    throw new Error(`file name must be ${current.id}.md`);
+  }
 
   const updated = applyAction(current, action, now());
 
