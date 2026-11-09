@@ -49,6 +49,8 @@ records the action in Git.
 | AC-12 | Given an item body containing `<script>` or an `onerror` attribute, then nothing executes and the text is shown inert. | SR-1 |
 | AC-9 | Given a card, then it shows title, category, priority, status, blocking, context, options with pros and cons, impact, recommendation, and cost of delay. | FR-4 |
 
+**Evidence for AC-7 (owner decision, 2026-11-09).** At Rapid prototype, AC-7 is accepted by code inspection: a file watcher on the decision inbox with a 200 ms debounced reload. Before F-001 can count toward promotion to Alpha, a VS Code integration test (`@vscode/test-electron`) must cover AC-7, FR-9, SR-2 and the AC-2 tree marker.
+
 ## 5. Constraints
 - TypeScript VS Code extension (ADR 0003): tree view + one webview.
 - Must follow Inbox item v1.0 exactly.
@@ -95,3 +97,4 @@ Uses Inbox item v1.0 unchanged.
 |---|---|---|---|
 | 1 | 2026-11-08 | Draft | — |
 | 2 | 2026-11-08 | Assumptions resolved; Gate 1 security requirements added | Owner, 2026-11-09 |
+| 2.1 | 2026-11-09 | Evidence rule for AC-7 recorded (inspection now, integration test before Alpha); no requirement changed | Owner, 2026-11-09 |
