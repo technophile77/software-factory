@@ -32,8 +32,8 @@ review:
 - The promotion criteria table and the requirements/test engineer rows of the
   gate bar in `maturity-levels.md` (draft).
 
-Follow-on Interfaces decisions raised by the ADRs, proposed in
-`interface-contracts.md` and awaiting owner approval:
+Follow-on Interfaces decisions raised by the ADRs, approved 2026-11-08
+(PR #2) and recorded in `interface-contracts.md`:
 
 - Agent report format for each role (ADR 0001).
 - Inbox item file format (ADR 0002).
