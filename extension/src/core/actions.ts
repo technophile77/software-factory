@@ -9,7 +9,8 @@ export function applyAction(item: InboxItem, action: OwnerAction, at: string): I
   }
 
   const next: InboxItem = { ...item, history: [...item.history] };
-  const entry: HistoryEntry = { at, by: "owner", action: "approved" };
+  // The action is set in each case below.
+  const entry: HistoryEntry = { at, by: "owner", action: "filed" };
 
   switch (action.type) {
     case "approve": {

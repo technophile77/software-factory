@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { ActionError } from "./core/actions";
+import { findGitOnPath, isWithin } from "./core/git";
 import { resolveLink } from "./core/links";
 import { countOpenBlocking, groupByStatus } from "./core/queue";
 import { renderCard } from "./core/render";
@@ -43,18 +44,8 @@ async function findGit(): Promise<string | undefined> {
   } catch {
     // fall through to PATH search
   }
-  const workspaceDirs = (vscode.workspace.workspaceFolders ?? []).map((f) => path.resolve(f.uri.fsPath));
-  const names = process.platform === "win32" ? ["git.exe"] : ["git"];
-  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-    if (!dir || !path.isAbsolute(dir)) continue;
-    const abs = path.resolve(dir);
-    if (workspaceDirs.some((w) => abs === w || abs.startsWith(w + path.sep))) continue;
-    for (const n of names) {
-      const candidate = path.join(abs, n);
-      if (fs.existsSync(candidate)) return candidate;
-    }
-  }
-  return undefined;
+  const workspaceDirs = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+  return findGitOnPath(process.env.PATH ?? "", workspaceDirs, process.platform, fs.existsSync);
 }
 
 function workspaceRoots(): RepoRoot[] {
@@ -153,7 +144,7 @@ export function activate(context: vscode.ExtensionContext): void {
     panel.webview.onDidReceiveMessage(async (msg) => {
       const current = tree.entries.find((e) => e.path === entry.path) ?? entry;
       // Find the repo by path, not folder name: two open folders can share a name.
-      const root = workspaceRoots().find((r) => isInside(r.factoryDir, current.path));
+      const root = workspaceRoots().find((r) => isWithin(r.factoryDir, current.path));
       if (!root || typeof msg !== "object" || msg === null) return;
       if (msg.type === "action") await act(root, current, msg);
       else if (msg.type === "link") {
@@ -222,11 +213,6 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {}
-
-function isInside(dir: string, file: string): boolean {
-  const rel = path.relative(dir, file);
-  return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
-}
 
 function nonce(): string {
   return randomBytes(16).toString("base64");

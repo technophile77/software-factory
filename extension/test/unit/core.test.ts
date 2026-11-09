@@ -99,3 +99,40 @@ describe("store hardening from Gate 2", () => {
     expect(errors.map((e) => e.path.split(/[\\/]/).pop()).sort()).toEqual(["folder.md", "wrong-name.md"]);
   });
 });
+
+describe("git lookup (Gate 2 finding 1)", async () => {
+  const { findGitOnPath, isWithin } = await import("../../src/core/git");
+  it("skips PATH entries inside a workspace folder, case-insensitively on Windows", () => {
+    const found = findGitOnPath(
+      "C:\\Work\\Repo\\.factory;C:\\Program Files\\Git\\cmd",
+      ["c:\\work\\repo"],
+      "win32",
+      (f) => f.toLowerCase().endsWith("git.exe"),
+    );
+    expect(found).toBe("C:\\Program Files\\Git\\cmd\\git.exe");
+  });
+  it("skips relative PATH entries", () => {
+    expect(findGitOnPath(".:/usr/bin", [], "linux", () => true)).toBe("/usr/bin/git");
+  });
+  it("returns undefined when git is missing", () => {
+    expect(findGitOnPath("/usr/bin", [], "linux", () => false)).toBeUndefined();
+  });
+  it("treats names starting with .. as inside", () => {
+    expect(isWithin("/repo", "/repo/..notes.md")).toBe(true);
+    expect(isWithin("/repo", "/other")).toBe(false);
+  });
+});
+
+describe("queue ordering", async () => {
+  const { sortQueue } = await import("../../src/core/queue");
+  it("compares creation times as instants across offsets", () => {
+    const mk = (id: string, at: string) => {
+      const r = parseItem(file(base.replace("D-0001", id).replace("2026-11-08T21:00:00Z", at)), "x.md");
+      if (!r.ok) throw new Error(r.error.message);
+      return { repo: "r", path: id, item: r.item };
+    };
+    const later = mk("D-0002", "2026-11-08T22:00:00+02:00"); // 20:00Z
+    const earlier = mk("D-0003", "2026-11-08T20:30:00Z");
+    expect(sortQueue([earlier, later]).map((e) => e.item.id)).toEqual(["D-0002", "D-0003"]);
+  });
+});

@@ -6,7 +6,7 @@ export function sortQueue(entries: QueueEntry[]): QueueEntry[] {
   return [...entries].sort(
     (a, b) =>
       PRIORITY_ORDER.indexOf(a.item.effective_priority) - PRIORITY_ORDER.indexOf(b.item.effective_priority) ||
-      compare(a.item.created_at, b.item.created_at) ||
+      byTime(a.item.created_at, b.item.created_at) ||
       compare(a.repo, b.repo) ||
       compare(a.item.id, b.item.id),
   );
@@ -37,4 +37,12 @@ export function countOpenBlocking(entries: QueueEntry[]): number {
 // Plain code-unit comparison, so ordering is identical on every OS locale.
 function compare(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// Timestamps may carry different offsets, so compare instants, not text.
+function byTime(a: string, b: string): number {
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return compare(a, b);
+  return ta - tb;
 }

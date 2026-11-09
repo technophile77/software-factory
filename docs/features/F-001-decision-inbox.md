@@ -1,7 +1,7 @@
 # Feature: Decision inbox in VS Code
 
 - **Id:** F-001
-- **Status:** In review (readiness gate passed; awaiting owner approval)
+- **Status:** Approved (owner, 2026-11-09)
 - **Requested by / date:** Alex, 2026-11-08
 - **Spec version:** 2
 
@@ -94,4 +94,4 @@ Uses Inbox item v1.0 unchanged.
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-08 | Draft | — |
-| 2 | 2026-11-08 | Assumptions resolved; Gate 1 security requirements added | — |
+| 2 | 2026-11-08 | Assumptions resolved; Gate 1 security requirements added | Owner, 2026-11-09 |

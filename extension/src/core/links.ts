@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isWithin } from "./git";
 import type { ItemLink, ResolvedLink } from "./types";
 
 export function resolveLink(repoDir: string, link: ItemLink): ResolvedLink {
@@ -23,20 +24,15 @@ export function resolveLink(repoDir: string, link: ItemLink): ResolvedLink {
   }
 
   const lexical = path.resolve(repoDir, ref);
-  if (!inside(path.resolve(repoDir), lexical)) {
+  if (!isWithin(path.resolve(repoDir), lexical)) {
     return { kind: "refused", reason: "Link points outside the repository." };
   }
   // Also compare real paths, so a symlink inside the repo can't lead out of it.
   const real = realpath(lexical);
-  if (real && !inside(realpath(repoDir) ?? path.resolve(repoDir), real)) {
+  if (real && !isWithin(realpath(repoDir) ?? path.resolve(repoDir), real)) {
     return { kind: "refused", reason: "Link points outside the repository." };
   }
   return { kind: "file", absPath: real ?? lexical };
-}
-
-function inside(root: string, target: string): boolean {
-  const rel = path.relative(root, target);
-  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
 function realpath(p: string): string | undefined {
