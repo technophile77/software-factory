@@ -13,7 +13,7 @@ manifest (PR #3, 2026-11-09).
 
 ```
 ### <Name> — v<major>.<minor>
-- Status: Approved | Approved | Deprecated
+- Status: Proposed | Approved | Deprecated
 - Owner decision: <link>
 - Used by: <components>
 - Definition: <schema, signature, or format>
