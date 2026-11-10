@@ -263,8 +263,18 @@ must deny reading secret files and, from v2.2, the engine's channel file:
 `**/.env`, `**/.env.*`, `**/.envrc`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`, `**/*.jks`, `**/*.keystore`, `**/id_rsa*`, `**/id_dsa*`, `**/id_ecdsa*`, `**/id_ed25519*`, `**/.npmrc`, `**/.pypirc`, `**/.netrc`, `**/.git-credentials`, `**/*.tfvars`, `**/credentials*.json`, `**/*.tfstate`, `**/*.tfstate.*`, `**/.aws/credentials`, `**/.docker/config.json`, `**/*.ppk`, `**/kubeconfig`, `**/.kube/config`, `.factory/engine.json`, `**/.factory/engine.json`.
 Every core role must be present, and every role that may write outside
 `.factory/` must deny the change-controlled paths: `CLAUDE.md`, `**/CLAUDE.md`, `CLAUDE.local.md`, `**/CLAUDE.local.md`, `.claude/**`, `.mcp.json`, `.github/**`, `.gitignore`, `.gitattributes`, `.husky/**`, `.pre-commit-config.yaml`, `lefthook.yml`, `osv-scanner.toml`, `agents/**`, `skills/**`, `plugins/**`, `.claude-plugin/**`, `workflows/**`, `**/.claude/**`, `.envrc`, `**/.envrc`, `.git`, `.git/**`, `.gitmodules`, `.vscode/**`, `.devcontainer/**`. Globs are relative to the worktree: no absolute paths, `\`, or segments
-that can match `..`; brace expansion, negated classes (`[!`, `[^`) and
-extglobs are refused because glob dialects read them differently.
+that can match `..`. **Glob dialect and matching (H-0046, draft awaiting
+owner approval):** a glob is literal segments separated by `/`, where `*`
+matches any characters within one segment (dot files included) and `**`
+matches zero or more whole segments. `?`, bracket classes, braces and
+extglobs are refused, because glob libraries read them differently. Before
+matching a path, the engine resolves it to its real path, following every
+symbolic link (a path that doesn't exist yet resolves through its nearest
+existing parent), refuses it if the result is outside the worktree, and
+matches the result relative to the worktree with `/` separators, after
+Unicode NFC normalization. Deny globs match case-insensitively on every
+filesystem; allow globs match case-sensitively. A path counts as allowed
+only if an allow glob matches and no deny glob does.
 `commands` may not name a shell, interpreter or command wrapper. That is a
 guard rail, not the boundary: build and test tools run repo code by design,
 so arguments are not restricted. A repo override may not add tools.
