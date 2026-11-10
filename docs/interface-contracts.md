@@ -151,14 +151,15 @@ proposing role, and lists the new ids in its own report's `items_filed`.
 
 ---
 
-## Engine control channel — v1.1
+## Engine control channel — v1.2
 
 - Status: Approved
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
   H-0025 (sessions by token, framing, `engine.json` format, error codes)
   approved by the owner, 2026-11-10 (decision card); amendment H-0026
   (`busy` data, listener pid, file modes) approved by the owner, 2026-11-10
-  (decision card)
+  (decision card); v1.2 (H-0051, owner approval of interview sessions through
+  GitHub, ADR 0014) approved by the owner, 2026-11-10 (decision card)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -188,8 +189,9 @@ the client's SID. Clients check the server is the owner too: `SO_PEERCRED` or
 `getpeereid` on Unix, the server SID on Windows, opening the pipe with
 `SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION` and refusing any path that
 is not a local `\\.\pipe\` one. The engine refuses connections from agent
-processes it started. Agents running as the owner's user can still connect at
-Rapid prototype; that risk is accepted by the owner until Alpha (F-005 SR-5).
+processes it started. Agents running as the owner's user can still connect;
+from v1.2 an interview session accepts replies only after the owner approves
+it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 
 | Method | Params | Result |
 |---|---|---|
@@ -199,7 +201,8 @@ Rapid prototype; that risk is accepted by the owner until Alpha (F-005 SR-5).
 | `engine.shutdown` | none | `{ ok: true }` after agents reach a safe stop |
 | `feature.start` | `{ request: string }` | `{ feature: id }` (assigns the requirements analyst) |
 | `interview.list` | none | `{ features: [{ id, title, open, deferred, pending_assumptions }] }` (v1.1) |
-| `interview.open` | `{ feature, takeover?: bool }` | `{ session, started_at }`, takes the feature's session lock (v1.1) |
+| `interview.open` | `{ feature, takeover?: bool }` | `{ session, started_at, approval: { user_code, verification_uri, expires_at } }`, takes the feature's session lock; the session is pending until approved (v1.1; `approval` from v1.2) |
+| `interview.awaitApproval` | `{ session, wait_s?: int }` | `{ approved: true }` once GitHub confirms the owner; waits up to `wait_s` (at most 900) (v1.2) |
 | `interview.next` | `{ session, wait_s?: int }` | `{ item: Item \| null }`, deferred items first; waits up to `wait_s` (at most 600) for research to finish (v1.1) |
 | `interview.reply` | `{ session, item, revision, reply_id, kind, text }` | `{ status, next?: Item }` (v1.1) |
 | `interview.state` | `{ feature, item }` | `{ status, revision, recorded_at? }` (v1.1) |
@@ -220,8 +223,21 @@ Interview rules (v1.1):
   `busy` with `started_at`; with `takeover: true` it ends the old session
   instead, and the skill asks the owner before sending that. The lock is
   released on `interview.close` or after 30 minutes without a call. The token
-  coordinates clients; it is not a credential, since any process that can
-  connect could open a session (F-005 SR-5).
+  is a bearer token for an approved session: a process that obtains it can
+  reply in that session, which is the residual risk in F-005 SR-5. Clients
+  keep it out of logs and files.
+- Owner approval (v1.2, ADR 0014). `interview.open` starts GitHub's device
+  sign-in for the factory's OAuth app (no scopes, no client secret on the
+  machine). The client shows `user_code` and `verification_uri` to the owner
+  only if `user_code` matches `^[A-Z0-9]{4}-[A-Z0-9]{4}$` and
+  `verification_uri` is exactly `https://github.com/login/device`; otherwise
+  it stops. The engine accepts the session only when the resulting token's
+  `GET /user` id equals the recorded owner id, then discards the token. Until
+  then `interview.next` and `interview.reply` on the session get error
+  `approval_pending`. A denied, expired or wrong-account approval, or GitHub
+  being unreachable, ends the session with `approval_failed`. A takeover
+  opens a new session and needs a new approval. An approved session also
+  ends 2 hours after approval.
 - Within a session each deferred item is returned once, before new items;
   the engine tracks what it has shown per session.
 - A reply naming a revision other than the item's current one gets error
@@ -234,7 +250,8 @@ Interview rules (v1.1):
   `busy` carries `data.started_at` (ISO 8601, UTC), which clients may show
   after checking its format. Codes:
   -32001 `busy`, -32002 `stale`, -32003 unknown feature or item, -32004
-  unknown or expired session, -32005 reply kind not allowed for the item.
+  unknown or expired session, -32005 reply kind not allowed for the item,
+  -32006 `approval_pending`, -32007 `approval_failed` (v1.2).
 
 **Notifications** (engine to client): `feature.stageChanged`,
 `inbox.itemFiled`, `agent.started`, `agent.finished`, and from v1.1

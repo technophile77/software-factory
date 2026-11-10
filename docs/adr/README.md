@@ -22,4 +22,5 @@ in order, using `template.md`.
 | [0011](0011-inbox-extension-libraries.md) | Libraries for the VS Code inbox extension | Accepted |
 | [0012](0012-project-control-resumable-runs-budgets.md) | Project control, resumable runs, and token budgets | Accepted |
 | [0013](0013-merge-conflict-resolution.md) | Merge conflict resolution | Accepted |
+| [0014](0014-owner-approval-github-device-flow.md) | Owner approval of interview sessions through GitHub on the owner's phone | Accepted |
 | [0016](0016-python-coverage-tool.md) | coverage.py measures coverage for the factory's Python code | Accepted |
