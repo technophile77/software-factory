@@ -291,35 +291,39 @@ matches the result relative to the worktree with `/` separators, after
 Unicode NFC normalization. Deny globs match case-insensitively on every
 filesystem; allow globs match case-sensitively. A path counts as allowed
 only if an allow glob matches and no deny glob does.
-**Sandbox (H-0045, owner, 2026-11-10):** the engine runs every session of
-a role with `Bash` in Claude Code's OS sandbox, whose filesystem rules are
-the role's `read` and `write` lists (deny wins) and whose network rule is
-its `network` list. It sets `failIfUnavailable: true` and
-`allowUnsandboxedCommands: false`, lists no `excludedCommands`, and loads
-only the settings it generates, never a repo's `.claude/` settings, hooks
-or MCP servers. If the sandbox can't start, the session doesn't start. On
-Windows, agent sessions run inside WSL2, never natively. **Reads are
-denied by default (H-0052, draft awaiting owner approval).** Agents run as
-the owner's OS user (ADR 0014), so the sandbox works like a jail: a session
-can read only its worktree, the system's program and library folders, its
-temp folder and the project's `policy.tool_dirs`, and can write only its
-worktree, its temp folder and those tool folders. Everything else in the
-owner's home, including keys, Git and GitHub logins and Claude Code data, is
-not visible. `policy.tool_dirs` (optional) lists literal folders under `~/`
-that build tools need, such as `~/.npm`; none may be, contain or sit inside
-a folder holding the owner's keys or logins (`~/.ssh`, `~/.gnupg`,
-`~/.config/gh`, `~/.config/git`, `~/.git-credentials`, `~/.claude`, `~/.aws`,
-`~/.docker`, `~/.kube`, `~/.azure`, `~/.config/gcloud`, `~/.npmrc`,
-`~/.pypirc`, `~/.netrc`, `~/.local/share/keyrings`). The sandbox allows no
-Unix socket (so neither the engine socket nor an SSH agent is reachable) and
-no macOS Mach lookup beyond its defaults, and the session gets no
-`SSH_AUTH_SOCK`, `GH_TOKEN`, `GITHUB_TOKEN` or `GIT_ASKPASS`. On Windows,
-agents run in a WSL2 distribution of their own that holds no keys or
-logins, with the Windows drive mount and Windows interop turned off, so
-`/mnt/c` and Windows programs don't exist there; the engine checks this at
-startup and starts no agent if it fails. File tools can't reach any of this
-either, since every path outside the worktree is refused. `commands` may not name a shell,
-interpreter or command wrapper. That is a guard rail; the sandbox is the
+**Container per agent session (H-0045 and H-0052, owner, 2026-11-10;
+wording draft awaiting owner approval).** The engine runs every agent
+session, the agent process included, in its own container, so the agent's
+tools, hooks and everything they start stay inside it. Agents would
+otherwise run as the owner's OS user (ADR 0014), so the container is what
+keeps the owner's machine out of reach:
+- **Mounts:** only the session's worktree (read-only for a role with no
+  `write` allow outside `.factory/`) and per-project cache volumes for
+  build tools. Never the owner's home folder, the engine's socket or
+  `.factory/engine.json`, the container runtime's socket, or any other
+  host path.
+- **No owner credentials:** none are copied, mounted or passed in. The
+  only secret inside is the session's model token; a role that needs
+  GitHub gets the factory's machine-account token, never the owner's.
+- **Image:** built per project from a base image pinned by digest plus the
+  project's approved toolchain (S4.1); the agent runs as a non-root user,
+  with a read-only root filesystem apart from the worktree, the cache
+  volumes and a temp folder, all capabilities dropped, no new privileges,
+  and CPU, memory and process limits.
+- **Network:** the container reaches only the model API and the role's
+  `network` hosts, through an egress proxy the engine runs; nothing else.
+- **Write rules:** inside the worktree the container can't tell one path
+  from another, so when a session ends the engine compares its branch with
+  where it started. A changed path that the role's `write` rules don't
+  allow (deny wins) rejects the whole session's changes and files a
+  Security alert. A fresh worktree holds only tracked files, so untracked
+  secret files never reach a container; committed ones are reported by
+  the onboarding assessment.
+- **Fail closed:** if the container runtime is missing or a container
+  can't start with these settings, no agent session starts. On Windows
+  this needs Docker Desktop with the WSL2 back end.
+`commands` may not name a shell,
+interpreter or command wrapper. That is a guard rail; the container is the
 boundary. Build and test tools run repo code by design, so arguments are
 not restricted. A repo override may not add tools.
 `network.allow` lists host names. From v2.2 the single entry `"*"` means any
