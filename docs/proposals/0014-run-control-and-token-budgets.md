@@ -1,0 +1,75 @@
+# Proposal 0014: Project pause, resumable runs, and token budgets
+
+**Status:** proposed, for the owner's decision. Raised by the owner on
+2026-11-10. Not a decision until the owner chooses; the outcome becomes an
+ADR and a feature spec.
+
+## Problem
+
+1. The factory can't be paused for one project. The engine control channel
+   has `engine.pause` and `engine.resume` for one feature or all of them.
+   That state isn't persisted, and the VS Code extension has no control for
+   it.
+2. Nothing says what happens when the model token budget runs out mid-run.
+   Today an interrupted agent run would simply fail.
+3. Nothing stops the engine from launching a session that the remaining
+   budget can't finish.
+
+## What already limits the factory
+
+- It works only on repos listed in a project's `factory-project.yaml`
+  (ADR 0010).
+- Its GitHub token reaches only repos the owner granted (ADR 0006, S8.2).
+  This is the hard boundary: a repo removed from the token can't be touched
+  whatever the config says.
+
+## Decisions needed
+
+### Q1. Where per-project pause lives (Architecture, Interfaces)
+
+| Option | How | Pros | Cons |
+|---|---|---|---|
+| **A. Engine state + control methods (recommended)** | New methods `project.pause { project, mode: "safe" \| "now" }`, `project.resume`, `project.list`. State saved in the engine's local state file, so it survives restarts. Extension shows a Factory view with Pause / Resume per project and a status-bar count | Instant; no commit needed; adding methods is non-breaking for the contract | State is local to the machine running the engine |
+| B. A `paused: true` key in `factory-project.yaml` | Owner edits the manifest | Visible in Git, shared | Pausing needs a commit to the config repo; slow in an emergency |
+
+Pause semantics, both options: no new agent session starts; running
+sessions stop at their next safe point (`safe`), or are interrupted at once
+and checkpointed (`now`). The inbox stays usable. Resuming continues from
+the checkpoints (Q2).
+
+### Q2. What happens when a run is interrupted (Architecture)
+
+| Option | How | Pros | Cons |
+|---|---|---|---|
+| **A. Checkpoint and resume (recommended)** | Each agent commits to its own branch after each step (ADR 0004/0005 worktrees). The engine records the session id and progress in `.factory/runs/`. An interruption for budget or pause is status `interrupted`, not a failure, and doesn't use a retry. On resume, the engine resumes the same session; if it can't, it restarts only that step from the last commit | No lost work; no feature restarts | More engine state to keep correct |
+| B. Restart the interrupted step | Discard the session; rerun the step from its last commit | Simpler | Repeats work and tokens |
+
+### Q3. Token look-ahead (Architecture)
+
+| Option | How | Pros | Cons |
+|---|---|---|---|
+| **A. Estimate, admit, reserve (recommended)** | Before launching a run, the engine estimates its cost: the 90th percentile of past runs for the same agent, stage, and maturity level, from the per-run token records F-002 adds. It launches only if the remaining budget covers that estimate plus a reserve. Otherwise the run waits, and the extension shows "Waiting for budget, resets at …". Budget goes first to features already in progress, and a reserve is held for the security gates and the judge, so features don't stall at the last step. A run that exceeds its estimate by 50% pauses at its next safe point and files a Testing inbox item | Predictable; no half-finished sessions | Early estimates are rough until there's history (use a fixed default per agent until 5 runs exist) |
+| B. Hard stop only | Track usage; stop at the limit; rely on Q2 to resume | Simple | Starts sessions that can't finish |
+
+### Q4. Who sets the budget (Product)
+
+**Recommended:** the owner sets daily and weekly token or dollar limits for
+the whole factory in master config, and optionally per project under
+`settings.budget` in `factory-project.yaml` (an optional key, so
+non-breaking). The engine also respects the provider's own rate and usage
+limits when it can read them, and uses whichever limit is lower.
+
+## Security notes
+
+- Pause and resume are owner actions only. The control channel is local
+  (named pipe or socket), not reachable from the network.
+- Pausing fails safe: if pause state can't be read, the engine starts no new
+  sessions for that project.
+- Budget limits are owner configuration and change only through the
+  hygiene process. Agents can't raise them (S8.5).
+
+## Recommendation
+
+A for Q1 to Q3, and the recommended Q4. Build it as one feature (engine
+run control and budgets, plus the extension's Factory view). The spec
+interview starts after these decisions.
