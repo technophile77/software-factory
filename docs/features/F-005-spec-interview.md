@@ -3,7 +3,7 @@
 - **Id:** F-005
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 2
+- **Spec version:** 3
 
 ## 1. Objective and business purpose
 The requirements analyst runs inside the engine, but the owner has no way to
@@ -59,7 +59,7 @@ goes to the one inbox, labeled by category.
 | FR-4 | The skill can list every feature with an interview waiting, with counts of open and deferred questions and pending assumptions (`interview.list`). |
 | FR-5 | Opening a feature returns its deferred questions first, then the next new question (`interview.next`). |
 | FR-6 | Each reply is one of `answer`, `more_info`, `defer`, `approve_assumption`, `reject_assumption`, sent with the question id and the owner's text unchanged (`interview.reply`). |
-| FR-7 | `more_info` lets the analyst use, within its role policy: the project's code and docs, the factory's docs, specs, ADRs and past decisions, the factory's shared skills (today only `security-review`), and the web once its network rule is approved (SR-6). For a question that needs a stronger model it escalates to the advisor agent (F-006). Each finding is shown with its source. |
+| FR-7 | `more_info` lets the analyst use, within its role policy: the project's code and docs, the factory's docs, specs, ADRs and past decisions, the factory's shared skills (today only `security-review`), and the web once its network rule is approved (SR-6). For a question that needs a stronger model it escalates to the advisor agent once F-006 exists; until then escalation is not offered (OQ-3). Each finding is shown with its source. |
 | FR-8 | A deferred question keeps status `deferred` with no answer recorded. The readiness gate fails while any question is `deferred` or `open`, or any assumption is pending. |
 | FR-9 | An assumption is recorded in the spec only after `approve_assumption`, with the owner's approval and date in its decision link. |
 | FR-10 | The engine keeps the interview transcript (every question, finding and reply, with times) on `factory/state` under `.factory/interviews/<feature>/`. The skill keeps no copy. |
@@ -127,10 +127,10 @@ open and the owner's to answer:
 
 | Id | Open question | Category | Status |
 |---|---|---|---|
-| OQ-1 | When the owner approves an assumption in the interview, should the analyst also file it to the inbox as an Assumptions item (recorded as already approved), or is the interview transcript the only record? The analyst's AGENT.md currently says to file each assumption as an inbox decision. | Product | Open |
-| OQ-2 | Which sites may the analyst reach on the web: any site, or an allow list? Read-only fetches either way. | Security | Open |
-| OQ-3 | Until F-006 exists, what does the analyst do with a question that needs a stronger model: tell the owner it can't escalate yet and offer more information at its own level or a deferral, or something else? | Product | Open |
-| OQ-4 | Which of the analyst permission widenings in section 10 (web tools, shared skills, reads outside its worktree, advisor escalation) do you approve? Gate 1 #8. | Security | Open |
+| OQ-1 | Should approved assumptions also go to the inbox? **Answered: no.** The engine-written, append-only interview transcript is the record of the owner's approval (SR-11). The analyst's AGENT.md must stop requiring an inbox item for interview-approved assumptions (hygiene change). | Product | Answered (owner, 2026-11-10) |
+| OQ-2 | Web reach. **Answered: any site.** Open: how hidden prompts in web pages are handled (Gate 1 #7 grades unmitigated open fetching Critical, which blocks at every level). | Security | Partly answered (owner, 2026-11-10) |
+| OQ-3 | Escalation before F-006 exists? **Answered:** escalation is simply not available until F-006 is built. The analyst offers only its own more-information and deferral. | Product | Answered (owner, 2026-11-10) |
+| OQ-4 | Analyst permission widenings in section 10 (web tools, shared skills, reads outside its worktree, advisor escalation once F-006 exists). **Answered: all approved.** | Security | Answered (owner, 2026-11-10) |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
@@ -180,11 +180,12 @@ open and the owner's to answer:
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit (none; OQ-1 to OQ-4 open)
-- [ ] Blocking decisions resolved (OQ-1 to OQ-4, channel v1.1, role policy change)
+- [x] Assumptions explicit (none)
+- [ ] Blocking decisions resolved (OQ-2 hidden-prompt handling; channel v1.1 and role policy change need recording)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-10 | Draft from the owner interview (scope interview-only, new and existing features, answer / more information / defer, assumptions approved in the interview, web and shared skills for context, advisor as F-006, deferred list, accepted socket risk) | — |
 | 2 | 2026-11-10 | Security Gate 1 findings folded in (SR-1, SR-4, SR-6 tightened; SR-7 to SR-16 added; OQ-4 added; channel v1.1 gains access control, reply ids and revisions) | — |
+| 3 | 2026-11-10 | Owner answers: OQ-1 transcript is the record, OQ-3 no escalation before F-006, OQ-4 all widenings approved, OQ-2 any site | Owner, 2026-11-10 (thread) |
