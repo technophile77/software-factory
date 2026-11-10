@@ -1065,7 +1065,7 @@ class AC11Manifest(Base):
 CORE_ROLES = ["orchestrator", "requirements-analyst", "software-developer", "test-engineer",
               "security-reviewer", "validation-judge"]
 CONTRACT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill"}
-SUPPORT_ROLES = ["web-reader"]
+SUPPORT_ROLES = ["web-reader", "project-evaluator", "context-hygiene"]
 # Copied from interface-contracts.md, Role policy v2.2 (H-0023).
 SECRET_GLOBS = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks",
                 "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc",
@@ -1399,6 +1399,33 @@ class RolePolicyV22(Base):
                 deny = data["policy"]["roles"][role]["read"]["deny"]
                 deny.remove(".factory/engine.json")
                 self.assertRejected(data, f"{role} may read engine.json")
+
+    def test_evaluator_and_hygiene_write_only_their_report(self):
+        # H-0040 (Role policy v2.3): both roles advise; neither edits, runs commands or reaches the network.
+        roles = self.manifest()["policy"]["roles"]
+        for role in ("project-evaluator", "context-hygiene"):
+            with self.subTest(role=role):
+                rules = roles[role]
+                self.assertEqual(rules["tools"]["allow"], ["Read", "Grep", "Glob", "Write"])
+                self.assertEqual(rules["write"]["allow"], [f".factory/runs/**/{role}-*.json"])
+                self.assertEqual(rules["commands"]["allow"], [])
+                self.assertEqual(rules["network"]["allow"], [])
+
+    def test_evaluator_cannot_read_what_scores_it(self):
+        # F-002 SR-1, SR-8: calibration answers, tuning metrics and run reviews stay hidden from the evaluator.
+        for glob in ("calibration/**", "**/calibration/**", ".factory/tuning/**", "**/.factory/tuning/**",
+                     ".factory/runs/**/review.json", "**/.factory/runs/**/review.json"):
+            with self.subTest(glob=glob):
+                data = self.manifest()
+                data["policy"]["roles"]["project-evaluator"]["read"]["deny"].remove(glob)
+                self.assertRejected(data, f"evaluator may read {glob}")
+        self.assertAccepted(self.manifest(), "evaluator with the hidden globs denied")
+
+    def test_optional_roles_may_be_left_out(self):
+        data = self.manifest()
+        for role in SUPPORT_ROLES:
+            del data["policy"]["roles"][role]
+        self.assertAccepted(data, "manifest without optional roles")
 
     def test_analyst_has_skill_and_no_web(self):
         rules = self.manifest()["policy"]["roles"]["requirements-analyst"]

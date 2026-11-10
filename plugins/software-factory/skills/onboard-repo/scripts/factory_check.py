@@ -32,7 +32,7 @@ CORE_AGENTS = [
     "test-engineer", "security-reviewer", "validation-judge",
 ]
 # Optional roles the master factory ships; a manifest may give them a policy.
-SUPPORT_AGENTS = ["web-reader"]
+SUPPORT_AGENTS = ["web-reader", "project-evaluator", "context-hygiene"]
 PROTECTED = set(CORE_AGENTS) | {"security-review"}
 DEFAULT_SKILLS = ["security-review"]
 COMPLEXITY = ["simple", "moderate", "complex"]
@@ -1220,6 +1220,11 @@ SECRET_FILES = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**
                 "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json",
                 "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk",
                 "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
+# Role policy v2.3: the evaluator is scored against calibration answers, tuning
+# metrics and run reviews (which record whether it was right), so it must not
+# read them (F-002 SR-1, SR-8).
+EVALUATOR_HIDDEN = ["calibration/**", "**/calibration/**", ".factory/tuning/**", "**/.factory/tuning/**",
+                    ".factory/runs/**/review.json", "**/.factory/runs/**/review.json"]
 
 
 # Role policy commands are program names with any arguments, so a shell or
@@ -1368,6 +1373,11 @@ def validate_policy(data, agents):
             missing = [f for f in SECRET_FILES if f not in set((rule.get("read") or {}).get("deny") or [])]
             if missing:
                 errors.append(f"policy for {role} in {where} must deny reading {', '.join(missing)}")
+            if role == "project-evaluator":
+                missing = [f for f in EVALUATOR_HIDDEN if f not in set((rule.get("read") or {}).get("deny") or [])]
+                if missing:
+                    errors.append(f"policy for {role} in {where} must deny reading {', '.join(missing)}, "
+                                  "which hold the answers and metrics that score it")
             allow = (rule.get("write") or {}).get("allow") or []
             deny = set((rule.get("write") or {}).get("deny") or [])
             if any(not a.startswith(".factory/") for a in allow):
