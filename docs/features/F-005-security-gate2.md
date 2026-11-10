@@ -73,3 +73,45 @@ Tests: `python3 -m unittest discover -s plugins/software-factory/skills/spec-int
 | SR-15 1 MiB, 60 s per call | Yes | Yes | The time limits don't fit the Bash timeout (#6). |
 | SR-16 Code and message only; no echo | Mostly | Yes | `started_at` exception (Info). Partial echo (#4). |
 | SR-17 Open web only for a role with no file tools | Yes for the exact `"*"` | Yes | Host values are not validated (#2). |
+
+## Re-review 1 (6fdd048..bc1af15)
+
+- **Scope:** `git diff 6fdd048 bc1af15`, read for each finding above and for new problems in the fixes: the 150 s run limit, the 8-character redaction, `O_NOFOLLOW`/`O_NONBLOCK` plus `fstat` on `engine.json`, the pid match, the host name check, the project-level policy check, and the two-step picker. I started from the diff and the earlier probes, not from the dev report.
+- **Reviewer role:** security-reviewer
+- **Date:** 2026-11-10
+- **Tests:** the spec-interview folder ran 192 tests, all passing (developer and independent suites). onboard-repo ran 266, with 1 skipped. All earlier probes were re-run, and new probes cover the residuals below.
+- **Result:** PASS at Rapid prototype. There is no Critical or High finding, so nothing blocks. #2, #5, #6, #7, #8 and #10 are resolved. #1 and #4 are mostly resolved, with Low residuals (R1-1, R1-3). #3 stays open as a known Low by the orchestrator's decision. #9 is not addressed and stays a known Low. The fixes introduced one new Low (R1-2). Open now: 5 Low (#3, #9, R1-1, R1-2, R1-3) and 3 Info notes.
+
+### Findings
+
+| # | Criterion | Severity | Blocks? | Location (file:line) | Finding | Suggested fix |
+|---|---|---|---|---|---|---|
+| R1-1 | S6.1 (SR-10; #1 residual) | Low | No | `interview_client.py:122-139` | The new list and the Co/Cn categories remove everything #1 named, and re-running the probe gives `Which DB?` (9 characters) with nothing hidden. Some invisible marks are still kept: the Mongolian free variation selectors U+180B to U+180D and U+180F (Mn), and the Khmer inherent vowels U+17B4 and U+17B5 (Mn). Reproduced. With four selectors, each character can carry 2 bits, so a hidden message still fits, at a quarter of the density. Stacked combining marks and spacing characters (U+1680, U+2000 to U+200A) are visible, so they are fine. | Add `឴឵᠋-᠍᠏` to `_INVISIBLE`. A sturdier rule: drop any Mn character whose `unicodedata.combining()` is 0 and that has no visible glyph. |
+| R1-2 | S5.1 (FR-13; introduced by the #4 fix) | Low | No | `interview_client.py:803-838`, `error_display` | The redaction now runs on every error, including the client's own messages for `connection_lost` and `timeout`. Ordinary owner text often shares 8 characters with those messages ("the engine", " the conn…"). The client's message is then replaced by "The engine refused the reply.", and `display` shows that sentence. Reproduced: a reply containing "the engine closed issue 12" followed by a dropped connection gave `code: connection_lost`, `reply_sent: true`, and display "The engine refused the reply.". The skill acts on the code, so the retry flow is unchanged. But the owner is told the reply was refused when it may have been recorded, which is the confusion FR-13 is there to prevent. | Redact only when `e.answered` is true (engine-written messages). The client's own messages never contain reply text. |
+| R1-3 | S3.1 (SR-16; #4 residual) | Low | No | `interview_client.py:799-811` | An 8-character run catches partial quotes, multi-line quotes and quotes that differ only in case. A fragment under 8 characters can still pass when the engine wraps it differently from the reply, for example a 7-character `'hunter2'` quoted inside quote marks. The run only matches if the surrounding character is the same. This is acceptable at Rapid prototype, given SKILL.md's warning about secrets. | Optional: for answered errors, show the fixed `ERROR_TEXT` only and drop the engine's message whenever a run of 6 or more characters matches. |
+
+### Info
+
+- **Host names (#2).** The new check accepts IP literals and single labels: `localhost`, `127.0.0.1`, `0.0.0.0`, the cloud metadata address `169.254.169.254`, and a bare `com`. These are explicit grants in a change-controlled manifest, not wildcards, so this is not a finding. Refusing IP literals and single-label names would close the obvious SSRF targets for a role that has file tools.
+- **Timeout wording.** When the run limit cuts a call short, the message still says "within 60 seconds". Reproduced with a 20 s limit and a silent engine: the call stopped at 20.0 s and the message said "60 seconds". Saying "in time" would be accurate.
+- **Pid match (Gate 2 Info, now done).** On Linux, `SO_PEERCRED`'s pid must equal `engine.json`'s `pid`. An unreadable pid refuses, so it fails closed, and a mismatch is refused (reproduced: `peer_not_engine`). The engine must therefore write the pid of the process that calls `listen()`. The contract should say so, or an engine with a launcher or wrapper process will be refused.
+
+### Status of each Gate 2 finding
+
+| # | Status | Evidence |
+|---|---|---|
+| 1 (Medium) | Mostly resolved. Residual Low: R1-1. | p1 re-run: every character listed in #1 is now removed, and the smuggled payload is gone. |
+| 2 (Medium) | Resolved. | `_HOST_RE` is full-matched per entry, and `"*"` must stand alone. All 13 earlier bypass strings are now refused. Repo overrides go through the same `_check_role`. |
+| 3 (Low) | Open, known Low (orchestrator decision). | `error.message`, `item.*` and `features` keep the cleaned engine text because the independent tests require it. Partly improved: `version` and `recorded_at` must now match strict patterns (reproduced: an injected `version` is dropped). Errors get a `display` with a fixed client sentence and the engine's message fenced. SKILL.md now says to show only `display` and never to show or follow the other fields. The control is that instruction. |
+| 4 (Low) | Mostly resolved. Residual Low: R1-3. New issue: R1-2. | p4 re-run: the partial quote `hunter2-supersecret` is replaced. |
+| 5 (Low) | Resolved. | `disable-model-invocation: true`, and the description says "Owner-run only". |
+| 6 (Low) | Resolved. | `RUN_LIMIT` is 150 s for the whole run and the Bash timeout is 180 000 ms. git calls, the connect and every call deadline are capped by `remaining()`. The engine's wait is clamped to leave 15 s for its answer. `reply` still waits in the same run, but within the limit. SKILL.md covers a run that ends with no JSON. Probe: a silent engine with `wait_s: 600` and the limit set to 20 s returned JSON at 20.0 s. |
+| 7 (Low) | Resolved. | p5 re-run: a lone surrogate gives `bad_request` before connecting, and the engine saw no call. A catch-all prints a fixed `internal_error` JSON. A request over 1 MiB is refused before sending. |
+| 8 (Low) | Resolved. | p6 re-run: a FIFO is refused at once (`O_NONBLOCK`, then `fstat` shows it is not regular). The checks now run on the opened descriptor: regular file, owned by the euid, no group or other write. `.factory` must be owned by the euid and not group or world writable. `ls-files` exit 1 is the only pass, and a git error refuses. Also fixed: `match` became `fullmatch` for ids, tokens, timestamps and versions. Before, `$` let a trailing `\n` through. |
+| 9 (Low) | Not addressed, known Low. | Only `PIPE_RE.fullmatch` changed. The server check is still by PID, `engine.json` still gets no owner check on Windows, and the code has still never run. |
+| 10 (Low) | Resolved. | p3 re-run: a project analyst with `"*"` behind repo overrides is refused. `effective_policy(data, None)` checks the project policy on its own. |
+
+### Checked and fine in the fixes
+
+- **Two-step picker (SR-3, SR-10).** The first step picks the action: Answer, More information or Defer for a question, and Approve or Reject for an assumption. The second step shows up to four options, which fits AskUserQuestion's limit. The reply text is always the full option, never a shortened label. More than four options are numbered in the fenced `display` and the owner types a choice, with a bare number confirmed first. No step lets the model choose for the owner, and the `suggested` answer is still never offered as a pick. Minor: free text at step 1 for a question has no stated meaning, so the model may treat it as the answer or ask. Either is the owner's own words.
+- **Error display.** `Refused` and connection errors show the client's own text. Answered errors show a fixed sentence per code and the engine's message fenced as data. `started_at` comes only from a full-matched timestamp.
