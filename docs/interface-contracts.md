@@ -178,11 +178,11 @@ Each role has five sections: `tools` (the agent's built-in tools: `Read`,
 `Grep`, `Glob`, `Edit`, `Write`, `Bash`, `WebFetch`, `WebSearch`), `read`,
 `write`, `commands` (programs `Bash` may run) and `network`. Every role must
 list at least one tool and one read glob, and must deny reading secret files:
-`**/.env`, `**/.env.*`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`,
-`**/id_rsa*`, `**/id_ecdsa*`, `**/id_ed25519*`.
+`**/.env`, `**/.env.*`, `**/.envrc`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`, `**/*.jks`, `**/*.keystore`, `**/id_rsa*`, `**/id_dsa*`, `**/id_ecdsa*`, `**/id_ed25519*`, `**/.npmrc`, `**/.pypirc`, `**/.netrc`, `**/.git-credentials`, `**/*.tfvars`, `**/credentials*.json`.
 Every core role must be present, and every role that may write outside
-`.factory/` must deny `CLAUDE.md`, `.claude/**`, `.github/**`, `agents/**`,
-`skills/**` and `workflows/**`.
+`.factory/` must deny the change-controlled paths: `CLAUDE.md`, `**/CLAUDE.md`, `CLAUDE.local.md`, `**/CLAUDE.local.md`, `.claude/**`, `.mcp.json`, `.github/**`, `.gitignore`, `.gitattributes`, `.husky/**`, `.pre-commit-config.yaml`, `lefthook.yml`, `osv-scanner.toml`, `agents/**`, `skills/**`, `plugins/**`, `.claude-plugin/**`, `workflows/**`. Globs are relative to the worktree: no absolute paths, `\`, or segments
+that can match `..`. `commands` may not name a shell or interpreter, since
+arguments are not restricted. A repo override may not add tools.
 
 ```yaml
 policy:
@@ -192,10 +192,10 @@ policy:
         allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
       read:                      # globs relative to the worktree root
         allow: ["**"]
-        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
+        deny: [<the secret files above>]
       write:
         allow: ["src/**", "docs/**"]
-        deny: ["tests/acceptance/**", "CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]
+        deny: ["tests/acceptance/**", <the change-controlled paths above>]
       commands:                  # exact program names; arguments not restricted
         allow: ["npm", "node", "git"]
       network:
@@ -205,7 +205,7 @@ policy:
         allow: ["Read", "Grep", "Glob", "Write"]   # no Edit, no shell
       read:
         allow: ["**"]
-        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
+        deny: [<the secret files above>]
       write:
         allow: [".factory/runs/**/security-reviewer-*.json"]
       commands:
