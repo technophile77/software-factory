@@ -144,7 +144,7 @@ policy:
         allow: ["Read", "Grep", "Glob", "Write"]
       read:
         allow: ["**"]
-        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json", "calibration/**", ".factory/tuning/**", "**/.factory/tuning/**"]   # secrets, and what scores it
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json", "calibration/**", "**/calibration/**", ".factory/tuning/**", "**/.factory/tuning/**", ".factory/runs/**/review.json", "**/.factory/runs/**/review.json"]   # secrets, and what scores it
       write:
         allow: [".factory/runs/**/project-evaluator-*.json"]
       commands:

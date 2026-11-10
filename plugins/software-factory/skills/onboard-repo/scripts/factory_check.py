@@ -1215,9 +1215,11 @@ SECRET_FILES = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**
                 "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json",
                 "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk",
                 "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
-# Role policy v2.3: the evaluator is scored against calibration answers and
-# tuning metrics, so it must not read them (F-002 SR-1, SR-8).
-EVALUATOR_HIDDEN = ["calibration/**", ".factory/tuning/**", "**/.factory/tuning/**"]
+# Role policy v2.3: the evaluator is scored against calibration answers, tuning
+# metrics and run reviews (which record whether it was right), so it must not
+# read them (F-002 SR-1, SR-8).
+EVALUATOR_HIDDEN = ["calibration/**", "**/calibration/**", ".factory/tuning/**", "**/.factory/tuning/**",
+                    ".factory/runs/**/review.json", "**/.factory/runs/**/review.json"]
 
 
 # Role policy commands are program names with any arguments, so a shell or

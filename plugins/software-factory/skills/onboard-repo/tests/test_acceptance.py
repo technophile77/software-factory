@@ -1407,8 +1407,9 @@ class RolePolicyV22(Base):
                 self.assertEqual(rules["network"]["allow"], [])
 
     def test_evaluator_cannot_read_what_scores_it(self):
-        # F-002 SR-1, SR-8: calibration answers and tuning metrics stay hidden from the evaluator.
-        for glob in ("calibration/**", ".factory/tuning/**", "**/.factory/tuning/**"):
+        # F-002 SR-1, SR-8: calibration answers, tuning metrics and run reviews stay hidden from the evaluator.
+        for glob in ("calibration/**", "**/calibration/**", ".factory/tuning/**", "**/.factory/tuning/**",
+                     ".factory/runs/**/review.json", "**/.factory/runs/**/review.json"):
             with self.subTest(glob=glob):
                 data = self.manifest()
                 data["policy"]["roles"]["project-evaluator"]["read"]["deny"].remove(glob)
