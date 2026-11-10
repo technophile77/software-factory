@@ -708,6 +708,14 @@ class ManifestPolicy(Base):
             with self.subTest(glob=glob):
                 self.assertFalse(fc._escapes_worktree(glob))
 
+    def test_tool_dirs_never_open_owner_secrets(self):
+        # H-0052: agents run as the owner, so the sandbox's tool folders must not reach keys or logins.
+        base = self.manifest(dev_deny=self.CC).replace("policy:\n", "policy:\n  tool_dirs: TD\n", 1)
+        self.assertEqual(self.errors(base.replace("TD", '["~/.npm", "~/.cache/pip"]')), [])
+        for d in ("~/.ssh", "~/.SSH/x", "~/.config", "~/", "~", "/etc", "~/../x", "~/.cache/*", "~/.claude/projects"):
+            with self.subTest(d=d):
+                self.assertTrue(self.errors(base.replace("TD", json.dumps([d]))))
+
     def test_policy_is_optional(self):
         text = self.manifest().split("policy:")[0]
         self.assertEqual(self.errors(text), [])

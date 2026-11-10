@@ -298,18 +298,27 @@ its `network` list. It sets `failIfUnavailable: true` and
 `allowUnsandboxedCommands: false`, lists no `excludedCommands`, and loads
 only the settings it generates, never a repo's `.claude/` settings, hooks
 or MCP servers. If the sandbox can't start, the session doesn't start. On
-Windows, agent sessions run inside WSL2, never natively. **Owner
-credentials (H-0052, draft awaiting owner approval):** agents run as the
-owner's OS user (ADR 0014), so whatever the role's lists say, the sandbox
-also denies every session reading the engine's socket directory and
-`.factory/engine.json`, the owner's Claude Code data (`~/.claude/**`), SSH
-keys (`~/.ssh/**`), GnuPG (`~/.gnupg/**`), the GitHub CLI's config
-(`~/.config/gh/**`) and Git credential stores (`~/.git-credentials`,
-`~/.config/git/credentials`), allows no Unix socket (so neither the engine
-socket nor `SSH_AUTH_SOCK` is reachable) and no macOS Mach lookup beyond the
-sandbox's defaults, and passes no `SSH_AUTH_SOCK`, `GH_TOKEN`, `GITHUB_TOKEN`
-or `GIT_ASKPASS` into the session. File tools can't reach these either,
-since every path outside the worktree is refused. `commands` may not name a shell,
+Windows, agent sessions run inside WSL2, never natively. **Reads are
+denied by default (H-0052, draft awaiting owner approval).** Agents run as
+the owner's OS user (ADR 0014), so the sandbox works like a jail: a session
+can read only its worktree, the system's program and library folders, its
+temp folder and the project's `policy.tool_dirs`, and can write only its
+worktree, its temp folder and those tool folders. Everything else in the
+owner's home, including keys, Git and GitHub logins and Claude Code data, is
+not visible. `policy.tool_dirs` (optional) lists literal folders under `~/`
+that build tools need, such as `~/.npm`; none may be, contain or sit inside
+a folder holding the owner's keys or logins (`~/.ssh`, `~/.gnupg`,
+`~/.config/gh`, `~/.config/git`, `~/.git-credentials`, `~/.claude`, `~/.aws`,
+`~/.docker`, `~/.kube`, `~/.azure`, `~/.config/gcloud`, `~/.npmrc`,
+`~/.pypirc`, `~/.netrc`, `~/.local/share/keyrings`). The sandbox allows no
+Unix socket (so neither the engine socket nor an SSH agent is reachable) and
+no macOS Mach lookup beyond its defaults, and the session gets no
+`SSH_AUTH_SOCK`, `GH_TOKEN`, `GITHUB_TOKEN` or `GIT_ASKPASS`. On Windows,
+agents run in a WSL2 distribution of their own that holds no keys or
+logins, with the Windows drive mount and Windows interop turned off, so
+`/mnt/c` and Windows programs don't exist there; the engine checks this at
+startup and starts no agent if it fails. File tools can't reach any of this
+either, since every path outside the worktree is refused. `commands` may not name a shell,
 interpreter or command wrapper. That is a guard rail; the sandbox is the
 boundary. Build and test tools run repo code by design, so arguments are
 not restricted. A repo override may not add tools.

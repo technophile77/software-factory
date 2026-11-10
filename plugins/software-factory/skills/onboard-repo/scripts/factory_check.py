@@ -1319,6 +1319,30 @@ def effective_policy(data, repo_name):
     return roles
 
 
+# Home folders that hold the owner's keys and logins. Agents run as the owner's
+# OS user (ADR 0014), so a tool folder the sandbox opens must never reach these
+# (H-0052).
+OWNER_PRIVATE = ["~/.ssh", "~/.gnupg", "~/.config/gh", "~/.config/git", "~/.git-credentials", "~/.claude",
+                 "~/.aws", "~/.docker", "~/.kube", "~/.azure", "~/.config/gcloud", "~/.npmrc", "~/.pypirc",
+                 "~/.netrc", "~/.local/share/keyrings"]
+
+
+def _check_tool_dirs(dirs, errors):
+    if not isinstance(dirs, list) or not all(isinstance(d, str) and d for d in dirs):
+        errors.append("policy.tool_dirs must be a list of folders")
+        return
+    for d in dirs:
+        segs = d.split("/")
+        if not d.startswith("~/") or len(d) < 3 or "\\" in d or any(x in ("", ".", "..") for x in segs[1:]) \
+                or re.search(r"[*?\[\]{}]", d):
+            errors.append(f"policy.tool_dirs {d!r} must be one literal folder under ~/, without globs or `..`")
+            continue
+        low = d.lower().rstrip("/")
+        clash = [p for p in OWNER_PRIVATE if low == p or low.startswith(p + "/") or p.startswith(low + "/")]
+        if clash:
+            errors.append(f"policy.tool_dirs {d!r} would open the owner's private {', '.join(clash)}")
+
+
 def validate_policy(data, agents):
     errors = []
     policy = data.get("policy")
@@ -1328,6 +1352,8 @@ def validate_policy(data, agents):
         return ["policy.roles must be a mapping of role names"]
     custom = {a.get("name") for a in ((data.get("agents") or {}).get("custom") or []) if isinstance(a, dict)}
     known = set(agents) | set(CORE_AGENTS) | custom
+    if "tool_dirs" in policy:
+        _check_tool_dirs(policy["tool_dirs"], errors)
     for role in CORE_AGENTS:
         if role not in policy["roles"]:
             errors.append(f"policy.roles.{role} is missing, so that agent could not run")

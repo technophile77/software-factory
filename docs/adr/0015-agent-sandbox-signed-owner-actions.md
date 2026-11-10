@@ -31,10 +31,13 @@ could get past a deny. An owner action in an inbox item was a plain
   use the owner's signing key. Agents run as the owner's OS user (ADR 0014,
   F-005 SR-5), so the sandbox, not a separate account, keeps the owner's
   signing key, credentials and engine socket out of their reach (H-0052,
-  draft awaiting owner approval). There is no native-Windows case: agent
-  sessions run only inside WSL2, and if the sandbox can't start, no agent
-  session starts. The engine and the inbox extension run as the owner
-  outside the sandbox.
+  draft awaiting owner approval). It works like a jail: reads are denied
+  by default, and a session sees only its worktree, system programs and
+  libraries, its temp folder and the project's named tool folders. On
+  Windows, agents run in a WSL2 distribution of their own with no keys and
+  no Windows drive or interop; there is no native-Windows case, and if the
+  sandbox or that distribution check fails, no agent session starts. The
+  engine and the inbox extension run as the owner outside the sandbox.
 - **Known limits:** a secret already committed can be read through git
   objects, so committed-secret scanning stays; the sandbox's network filter
   trusts host names, so allowed hosts stay narrow; build and test tools
