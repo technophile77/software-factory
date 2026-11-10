@@ -3,7 +3,7 @@
 - **Id:** F-003
 - **Status:** Approved (owner, 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 4
+- **Spec version:** 5
 
 ## 1. Objective and business purpose
 Give the owner one skill they can add to any repository that turns it into a
@@ -38,7 +38,7 @@ which gaps closed and which opened, without duplicating anything.
 | Id | Requirement |
 |---|---|
 | FR-1 | Detect the repo's stacks from manifest and lock files (at least npm, Python, Go, Rust), its test folders and frameworks, coverage configuration, existing CI workflows, and whether `main` is protected (read-only, through `gh` when it is signed in). Unknown stacks are reported, not guessed. |
-| FR-2 | Check the repo against the standards and record each gap with: id, rule (criterion id, or doc and table row), the lowest maturity level it blocks, evidence (file and line, or the check that found it), and the recommended fix. Checks cover at least: lock files present (S4.3); every CI workflow declares `permissions` (S8.3); third-party actions pinned to a commit SHA (S4.3); likely secrets in tracked files (S3.1); a dependency CVE audit in CI covering dev dependencies and run weekly (S4.4); the required CI jobs for the target level (ADR 0008); test types present per `testing-strategy.md`; coverage reported; `.factory/` ignored; CLAUDE.md links the factory rules; `main` protected with owner review and required checks (ADR 0006). |
+| FR-2 | Check the repo against the standards and record each gap with: id, rule (criterion id, or doc and table row), the lowest maturity level it blocks, evidence (file and line, or the check that found it), and the recommended fix. Checks cover at least: lock files present (S4.3); every CI workflow declares `permissions` (S8.3); third-party actions pinned to a commit SHA (S4.3); likely secrets in tracked files (S3.1); a dependency CVE audit in CI covering dev dependencies and run weekly (S4.4); from Beta, govulncheck for Go code and cargo-audit for Rust code (owner, 2026-11-10); the required CI jobs for the target level (ADR 0008); test types present per `testing-strategy.md`; coverage reported; `.factory/` ignored; CLAUDE.md links the factory rules; `main` protected with owner review and required checks (ADR 0006). |
 | FR-3 | Write the assessment as JSON and Markdown to `.factory/onboarding/<date>-assessment.json` and `.md` on the `factory/state` branch. |
 | FR-4 | Recommend a starting maturity level: the highest level whose evidence in `maturity-levels.md` the repo fully meets, never below Rapid prototype, with the evidence per level. File it as a Product decision item. While the promotion table is still draft, the recommendation says so. |
 | FR-5 | Open one pull request on branch `config/onboard-factory` that adds: a factory section in `CLAUDE.md` (creating the file if missing) linking the pinned factory version's rules; `.factory/` in `.gitignore`; and a CI workflow with the required jobs for the chosen level. Existing files are extended, never replaced; existing workflows are left alone and their gaps reported. |
@@ -66,6 +66,7 @@ which gaps closed and which opened, without duplicating anything.
 | AC-8 | Given a repo that builds but has no tests, then the recommended level is Rapid prototype, with the missing evidence for Alpha listed. | FR-4 |
 | AC-9 | Given a repo with an existing CLAUDE.md and .gitignore, when the onboarding PR is prepared, then both keep all their original lines and gain only the factory additions. | FR-5 |
 | AC-10 | Given a generated CI workflow, then it declares `permissions: contents: read` at the top, pins every action to a SHA, audits all dependencies, and runs weekly. | FR-5, SR-5 |
+| AC-21 | Given a Go or Rust repo whose CI doesn't run govulncheck or cargo-audit, then a gap blocks Beta and names the tool; given the template, then every downloaded scanner is pinned and its checksum verified before it runs. | FR-2, FR-5 |
 | AC-11 | Given a new project, when onboarded, then the manifest passes all Project manifest v1.1 validation rules; given a manifest with project maturity above a repo's, then the checker rejects it. | FR-7 |
 | AC-12 | Given a repo with no coverage tool at target Alpha, then an Architecture decision item is filed whose body has the S4.1 review headings. | FR-8 |
 | AC-13 | Given an onboarded repo with no changes, when the skill runs again, then no new item, branch or PR is created and the assessment shows zero gaps opened. Given one gap fixed, then it is listed as closed. | FR-11 |
@@ -146,3 +147,4 @@ not an inter-agent contract.
 | 2 | 2026-11-10 | FR-13/AC-17 added for F-002's complexity preset; assumptions A-1 to A-6 approved | Owner, 2026-11-10 |
 | 3 | 2026-11-10 | Plugin distribution (A-1, FR-12, AC-20); test adoption and baseline feature (FR-14, FR-15, AC-18, AC-19) | Owner, 2026-11-10 (decision cards) |
 | 4 | 2026-11-10 | One project file: maturity level and role policy move into the manifest (FR-6, FR-7, AC-11; Role policy v2.0, Project manifest v1.1) | Owner, 2026-11-10 (decision card) |
+| 5 | 2026-11-10 | OSV-Scanner audits Python, Go and Rust (AC-10 deviation withdrawn); govulncheck and cargo-audit from Beta (FR-2, AC-21) | Owner, 2026-11-10 (thread) |

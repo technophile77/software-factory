@@ -33,11 +33,60 @@ jobs:
       - run: <SMOKE_TEST>            # the smallest command that proves the program starts
   dependency-audit:              # S4.4 applies at every level; required check from beta
     runs-on: ubuntu-24.04
+    # OSV-Scanner was approved by the owner on 2026-11-10 after an S4.1 review
+    # (docs/features/F-003-audit-tool-review.md). The binary is pinned to one
+    # release and checked against this SHA-256 before it runs; upgrading it is
+    # a configuration hygiene item.
+    env:
+      OSV_SCANNER_VERSION: v2.7.1
+      OSV_SCANNER_SHA256: fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8
     steps:
       - uses: actions/checkout@<SHA> # <tag>
         with:
           persist-credentials: false
-      - run: <AUDIT_ALL_DEPENDENCIES>  # npm audit --audit-level=high | pip-audit | govulncheck ./... | cargo audit
+      # npm: npm audit ships with npm and covers dev dependencies. Drop for other stacks.
+      - run: npm audit --audit-level=high
+      # Python, Go and Rust: reads lock files only, never runs project code.
+      # Any finding fails; an accepted one goes in osv-scanner.toml with a reason
+      # and an expiry, as a Security decision. Drop for npm-only repos.
+      - run: |
+          curl -fsSL -o osv-scanner "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  osv-scanner" | sha256sum --check --strict
+          chmod +x osv-scanner
+          ./osv-scanner scan source --recursive .
+  # Beta and above, Go repos (owner, 2026-11-10): govulncheck reports which
+  # vulnerable functions the code actually calls, which a lock-file scan can't.
+  # go install checks the pinned version against the Go checksum database.
+  # go-vulncheck:                # beta
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - uses: actions/checkout@<SHA> # <tag>
+  #       with:
+  #         persist-credentials: false
+  #     - uses: actions/setup-go@<SHA> # <tag>
+  #       with:
+  #         go-version-file: go.mod
+  #     - run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+  #     - run: govulncheck ./...
+  # Beta and above, Rust repos (owner, 2026-11-10): cargo-audit also fails on
+  # yanked, unmaintained and unsound crates, which OSV-Scanner doesn't fail on.
+  # The project publishes no checksums; this hash was taken from the release
+  # file during the S4.1 review.
+  # rust-audit:                  # beta
+  #   runs-on: ubuntu-24.04
+  #   env:
+  #     CARGO_AUDIT_VERSION: v0.22.2
+  #     CARGO_AUDIT_SHA256: ab28a1bdb54db4d5d8ad5981cf1f959410370b3d28250dbd35f6a44248620e39
+  #   steps:
+  #     - uses: actions/checkout@<SHA> # <tag>
+  #       with:
+  #         persist-credentials: false
+  #     - run: |
+  #         name="cargo-audit-x86_64-unknown-linux-gnu-${CARGO_AUDIT_VERSION}"
+  #         curl -fsSL -o cargo-audit.tgz "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2F${CARGO_AUDIT_VERSION}/${name}.tgz"
+  #         echo "${CARGO_AUDIT_SHA256}  cargo-audit.tgz" | sha256sum --check --strict
+  #         tar xzf cargo-audit.tgz --strip-components=1 "${name}/cargo-audit"
+  #     - run: ./cargo-audit audit --deny warnings
   # unit-tests:                  # alpha
   # acceptance-tests:            # alpha
   # secret-scan:                 # alpha

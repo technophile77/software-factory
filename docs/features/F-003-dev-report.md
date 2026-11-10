@@ -56,7 +56,7 @@ Tests in class `SecondReviewRegressions`; the test engineer's two failing accept
 
 ## Spec deviations
 
-- AC-10 says the generated workflow audits all dependencies. For Python, Go and Rust the audit tool is an external component, so S4.1 requires a review before it is used: the step stays commented and a tool decision is filed. The `cve-audit-missing` gap stays open until it is approved. npm repos get `npm audit` straight away.
+- None. The AC-10 deviation (non-npm audit waiting for a reviewed tool) was withdrawn in spec v5.
 
 ## Not done (needs the owner)
 
@@ -75,3 +75,9 @@ Tests in class `SecondReviewRegressions`; the test engineer's two failing accept
 - **One project file.** `templates/maturity.yaml` and `templates/roles.yaml` are gone. The level is recorded only in `factory-project.yaml`, and the role policy is its `policy:` section, with per-repo overrides in `repos[].policy` (Role policy v2.0, Project manifest v1.1, hygiene H-0008).
 - **Checker.** `validate-manifest` now also checks the policy: every core role present, only known roles, a repo override can't add a role, and every role that writes outside `.factory/` denies the change-controlled paths. `effective_policy` merges a repo's overrides (allow replaces, deny adds). Tests: class `ManifestPolicy`; the test engineer's FR-6 test now checks the manifest policy.
 - **SKILL.md.** Step 5 no longer writes level or policy files to `factory/state`; step 7 fills the policy placeholders; re-runs leave the manifest's level and policy alone.
+
+## Spec v5 changes (owner decision, 2026-11-10)
+
+- **Audit tools.** The CI template's `dependency-audit` job runs OSV-Scanner v2.7.1 for Python, Go and Rust, downloaded and checked against a pinned SHA-256 before it runs. From Beta, `go-vulncheck` (govulncheck v1.9.0) and `rust-audit` (cargo-audit v0.22.2, pinned SHA-256) jobs are added. S4.1 reviews in `F-003-audit-tool-review.md`.
+- **Checker.** New `stack-audit:go` and `stack-audit:rust` gaps block Beta when a Go or Rust repo's CI doesn't run its scanner (cargo-deny counts for Rust). Tests: class `StackAudits`.
+- **Test engineer's tests.** AC-10's template test now checks the filled audit steps instead of the placeholder, and counts `persist-credentials` on uncommented lines only, since the template now has commented Beta jobs. The deviation test became `test_ac10_python_repo_audited_by_template`.

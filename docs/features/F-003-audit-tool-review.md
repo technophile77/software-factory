@@ -3,6 +3,7 @@
 - **Decision:** Architecture, for the owner. Raised 2026-11-10 after the owner chose "use a tool now" for AC-10.
 - **Need:** S4.4 requires every dependency, dev tools included, to be checked against CVE entries in CI, on every change and weekly. npm repos use `npm audit`, which ships with npm. Python, Go and Rust have no built-in equivalent.
 - **Recommendation:** Option A, OSV-Scanner, pinned to one release.
+- **Owner decision (2026-11-10):** OSV-Scanner approved for every stack. From Beta, Go repos also run govulncheck and Rust repos cargo-audit, for what OSV-Scanner doesn't check. Their S4.1 reviews are below.
 
 ## Options
 
@@ -27,10 +28,34 @@
 
 **Residual risks.** Package names and versions go to osv.dev (public dependency data, not code). An unhashed `requirements.txt` gives less precise results than a lock file, and the assessment already flags a missing lock file (S4.3).
 
-## If approved
+**Pin.** v2.7.1, `osv-scanner_linux_amd64`, SHA-256 `fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8`, matching the release's published `osv-scanner_SHA256SUMS`.
 
-- The CI template gets one `dependency-audit` step for Python, Go and Rust: download OSV-Scanner at the pinned release, verify its checksum, scan the lock files, and fail on findings at the level's blocking severity.
-- `osv-scanner` is added to the checker's audit patterns (already present) and to SKILL.md step 4; the AC-10 deviation is withdrawn.
-- Upgrading the pinned version is a configuration hygiene item.
+## S4.1 review of govulncheck (Go, from Beta)
 
-Sources: [google/osv-scanner](https://github.com/google/osv-scanner), [releases](https://github.com/google/osv-scanner/releases), [OSV-Scanner v2 announcement](https://security.googleblog.com/2025/03/announcing-osv-scanner-v2-vulnerability.html), [OSV-SCALIBR CVE-2025-5981](https://advisories.gitlab.com/golang/github.com/google/osv-scalibr/CVE-2025-5981/), [Chainguard advisory for osv-scanner dependencies](https://images.chainguard.dev/security/CGA-x793-9w59-pxpm), [pip-audit](https://pypi.org/project/pip-audit/2.3.2), [RustSec](https://rustsec.org/).
+| Item | Finding |
+|---|---|
+| What it adds | Reports which vulnerable functions the code actually calls, so a Go finding can be triaged by reachability. OSV-Scanner reads `go.mod` only. |
+| Source and maintainers | `golang.org/x/vuln`, BSD-3-Clause, maintained by the Go team; data from vuln.go.dev. Pinned to v1.9.0 (11 October 2026). |
+| Known CVEs | No advisory found against govulncheck itself. |
+| Install | `go install golang.org/x/vuln/cmd/govulncheck@v1.9.0`; the Go toolchain checks every module against the Go checksum database, so the pinned version can't be swapped. |
+| Permissions needed | Read the checkout; network to the Go module proxy and vuln.go.dev. No token, `contents: read`. |
+| Runs repo code? | It type-checks the code without running it. It needs the repo's modules downloaded, which CI does anyway. |
+
+## S4.1 review of cargo-audit (Rust, from Beta)
+
+| Item | Finding |
+|---|---|
+| What it adds | With `--deny warnings` it fails on yanked crates and on RustSec's unmaintained and unsound warnings, which OSV-Scanner doesn't fail on. |
+| Source and maintainers | `rustsec/rustsec`, Apache-2.0/MIT, maintained by the Rust Secure Code Working Group. Pinned to v0.22.2. |
+| Known CVEs | No RustSec advisory against cargo-audit itself. Distributors flagged CVEs in bundled dependencies (for example CVE-2024-35197 in gitoxide), fixed by 0.21.2; 0.22.2 includes those fixes. |
+| Install | Prebuilt `cargo-audit-x86_64-unknown-linux-gnu-v0.22.2.tgz` from GitHub releases, no build scripts run. The project publishes no checksums, so the SHA-256 `ab28a1bdb54db4d5d8ad5981cf1f959410370b3d28250dbd35f6a44248620e39` was taken from the release file during this review and is pinned in the template. |
+| Permissions needed | Read `Cargo.lock`; network to GitHub (advisory database) and crates.io (yanked check). No token, `contents: read`. |
+| Runs repo code? | No. It parses `Cargo.lock` only. |
+
+## What changed
+
+- The CI template's `dependency-audit` job runs `npm audit` for npm code and OSV-Scanner for Python, Go and Rust code: download at the pinned release, verify the SHA-256, scan the lock files. Any finding fails; an accepted finding goes in `osv-scanner.toml` with a reason and an expiry, as a Security decision.
+- The template has `go-vulncheck` and `rust-audit` jobs, added when a repo reaches Beta. The checker reports `stack-audit:go` and `stack-audit:rust` gaps that block Beta when they are missing.
+- The AC-10 deviation is withdrawn. Upgrading any pinned version or checksum is a configuration hygiene item.
+
+Sources: [golang.org/x/vuln](https://go.googlesource.com/vuln), [Go vulnerability management](https://go.dev/security/vuln), [cargo-audit packaging CVEs](https://security.snyk.io/package/linux/chainguard%3Alatest/cargo-audit), [google/osv-scanner](https://github.com/google/osv-scanner), [releases](https://github.com/google/osv-scanner/releases), [OSV-Scanner v2 announcement](https://security.googleblog.com/2025/03/announcing-osv-scanner-v2-vulnerability.html), [OSV-SCALIBR CVE-2025-5981](https://advisories.gitlab.com/golang/github.com/google/osv-scalibr/CVE-2025-5981/), [Chainguard advisory for osv-scanner dependencies](https://images.chainguard.dev/security/CGA-x793-9w59-pxpm), [pip-audit](https://pypi.org/project/pip-audit/2.3.2), [RustSec](https://rustsec.org/).

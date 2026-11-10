@@ -126,11 +126,14 @@ On branch `config/onboard-factory` from the default branch:
    (dereference annotated tags with `^{}`), tag in a comment. Keep
    `permissions: contents: read`, `persist-credentials: false` and the
    fixed runner image; grant more only to a job that needs it, and pass no
-   secrets a job doesn't use. Install only from the lock file. An audit
-   tool that isn't part of the package manager (for example `pip-audit`,
-   `govulncheck`, `cargo audit`) is an external component: leave its step
-   commented, file a tool decision for it, and the `cve-audit-missing` gap
-   stays open until that decision is approved (S4.1).
+   secrets a job doesn't use. Install only from the lock file. Audit
+   (S4.4): keep `npm audit` for npm code and the OSV-Scanner step for
+   Python, Go and Rust code, both as in the template. From Beta, also add
+   `go-vulncheck` for Go code and `rust-audit` for Rust code. These tools
+   and their pinned versions and checksums were approved by the owner on
+   2026-11-10 (`docs/features/F-003-audit-tool-review.md`); never change a
+   version or checksum here, and never use any other audit tool without its
+   own S4.1 review and the owner's approval.
 4. Leave existing workflows unchanged; their gaps stay in the assessment.
 
 The PR body lists the gaps it closes, the gaps that remain, and the owner

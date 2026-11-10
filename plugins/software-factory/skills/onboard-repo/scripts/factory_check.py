@@ -397,6 +397,12 @@ FUZZ_TOOLS = [r"\bfunc Fuzz\w*\(", r"\batheris\b", r"\bjazzer\b", r"cargo-fuzz",
 MUTATION_TOOLS = [r"\bstryker\b", r"\bmutmut\b", r"\bcosmic-ray\b", r"cargo-mutants", r"go-mutesting", r"\bgremlins\b"]
 AUDIT_PATTERNS = [r"npm audit", r"yarn (npm )?audit", r"pnpm audit", r"pip-audit", r"\bsafety check\b", r"govulncheck",
                   r"cargo[- ]audit", r"cargo[- ]deny", r"osv-scanner", r"dependency-review-action", r"\btrivy\b", r"\bgrype\b"]
+STACK_AUDITS = [
+    ("go", "govulncheck", r"\bgovulncheck\b",
+     "it reports which vulnerable functions the code actually calls."),
+    ("rust", "cargo-audit", r"\bcargo[- ](audit|deny)\b",  # cargo-deny's advisories check covers the same
+     "it also fails on yanked, unmaintained and unsound crates."),
+]
 SECRET_SCAN_PATTERNS = [r"gitleaks", r"trufflehog", r"detect-secrets", r"secret[-_ ]?scan"]
 
 TOOL_CANDIDATES = {
@@ -729,6 +735,16 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
     # Required CI jobs by level (ADR 0008). Matched by keyword, so the
     # evidence says which keywords were looked for.
     ci_text = "\n".join(code_of.values())
+
+    # From Beta (owner, 2026-11-10): OSV-Scanner reads lock files only, so Go
+    # and Rust repos also run their own scanner for what it can't see.
+    present_stacks = {s["name"] for s in stacks}
+    for stack, tool, pattern, why in STACK_AUDITS:
+        if stack in present_stacks and not re.search(pattern, ci_text):
+            gaps.append(gap(f"stack-audit:{stack}", f"No {tool} in CI for this {stack.title()} code",
+                            "S4.4; owner decision 2026-11-10 (F-003-audit-tool-review.md)", "security", "beta",
+                            f"Add the `{tool}` job from the factory CI template: {why}", "onboarding-pr",
+                            [ev(".github/workflows/" if workflows else None, detail=f"no workflow runs {tool}")]))
     for job, first_level, patterns, resolution in CI_JOBS:
         if job == "dependency-audit":
             continue  # covered by the S4.4 gaps above

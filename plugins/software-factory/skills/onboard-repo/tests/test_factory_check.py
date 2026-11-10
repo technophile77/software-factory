@@ -440,7 +440,8 @@ class ReviewRegressions(Base):
         a = self.assess({"package.json": "{}", ".github/workflows/factory-ci.yml": template})
         for job in ("secret-scan", "acceptance-tests", "contract-tests", "integration-tests", "performance-tests"):
             self.assertIn(f"ci-job:{job}", ids(a))
-        self.assertIn("cve-audit-missing", ids(a))
+        go = self.assess({"go.mod": "module x\n", "go.sum": "", ".github/workflows/factory-ci.yml": template})
+        self.assertIn("stack-audit:go", ids(go))  # the commented Beta job doesn't count
 
     def test_m1_monthly_cron_is_not_weekly(self):
         wf = GOOD_WORKFLOW.replace('"0 6 * * 1"', '"0 6 1 * *"')
@@ -752,3 +753,44 @@ class Properties(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StackAudits(Base):
+    """From Beta, Go and Rust repos run their own scanner next to OSV-Scanner (owner, 2026-11-10)."""
+
+    def wf(self, run):
+        return GOOD_WORKFLOW.replace("npm audit --audit-level=high", run)
+
+    def test_go_and_rust_without_their_scanner_block_beta(self):
+        a = self.assess({"go.mod": "module x\n", "go.sum": "", "Cargo.toml": "[package]\n", "Cargo.lock": "",
+                         ".github/workflows/ci.yml": self.wf("osv-scanner scan source --recursive .")})
+        for stack, tool in (("go", "govulncheck"), ("rust", "cargo-audit")):
+            g = gap_by(a, f"stack-audit:{stack}")
+            self.assertEqual(g["blocks_level"], "beta")
+            self.assertIn("S4.4", g["rule"])
+            self.assertIn(tool, g["fix"])
+        self.assertNotIn("cve-audit-missing", ids(a))
+
+    def test_scanner_present_closes_the_gap(self):
+        for files, run in (({"go.mod": "module x\n", "go.sum": ""}, "govulncheck ./..."),
+                           ({"Cargo.toml": "[package]\n", "Cargo.lock": ""}, "./cargo-audit audit --deny warnings"),
+                           ({"Cargo.toml": "[package]\n", "Cargo.lock": ""}, "cargo deny check advisories")):
+            with self.subTest(run=run):
+                a = self.assess(dict(files, **{".github/workflows/ci.yml": self.wf(run)}))
+                self.assertFalse(any(i.startswith("stack-audit:") for i in ids(a)))
+
+    def test_other_stacks_get_no_stack_audit_gap(self):
+        a = self.assess({"package.json": "{}", "package-lock.json": "{}", "requirements.txt": "x==1\n",
+                         ".github/workflows/ci.yml": GOOD_WORKFLOW})
+        self.assertFalse(any(i.startswith("stack-audit:") for i in ids(a)))
+
+    def test_template_pins_and_verifies_every_downloaded_scanner(self):
+        text = read(os.path.join(SKILL, "templates", "ci-workflow.yml"))
+        self.assertRegex(text, r"OSV_SCANNER_VERSION: v\d+\.\d+\.\d+")
+        self.assertRegex(text, r"OSV_SCANNER_SHA256: [0-9a-f]{64}\b")
+        self.assertRegex(text, r"CARGO_AUDIT_SHA256: [0-9a-f]{64}\b")
+        self.assertRegex(text, r"govulncheck@v\d+\.\d+\.\d+")
+        self.assertNotIn("@latest", text)
+        for download, binary in (("-o osv-scanner ", "./osv-scanner scan"), ("-o cargo-audit.tgz", "tar xzf cargo-audit.tgz")):
+            self.assertLess(text.index(download), text.index("sha256sum --check", text.index(download)))
+            self.assertLess(text.index("sha256sum --check", text.index(download)), text.index(binary))

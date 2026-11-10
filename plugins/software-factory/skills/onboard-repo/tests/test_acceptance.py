@@ -761,10 +761,12 @@ class AC10GeneratedWorkflow(Base):
         uses = [m for l in code for m in re.findall(r"uses:\s*(\S+)", l)]
         self.assertTrue(uses)
         self.assertTrue(all(u.endswith("@<SHA>") for u in uses), uses)
-        self.assertEqual(text.count("persist-credentials: false"), len(uses))
+        self.assertEqual(sum("persist-credentials: false" in l for l in code), len(uses))
         cron = re.search(r'cron:\s*"([^"]+)"', text).group(1).split()
         self.assertEqual(cron[2:4], ["*", "*"])
-        self.assertIn("<AUDIT_ALL_DEPENDENCIES>", text)
+        # Spec v5: the audit step is filled for every stack (npm audit, OSV-Scanner).
+        self.assertIn("npm audit --audit-level=high", text)
+        self.assertRegex(text, r"osv-scanner scan source --recursive")
 
     def test_ac10_unfilled_template_cannot_pass_pinning(self):
         text = read(os.path.join(TEMPLATES, "ci-workflow.yml"))
@@ -775,14 +777,11 @@ class AC10GeneratedWorkflow(Base):
         a = self.assess(self.repo({".github/workflows/factory-ci.yml": filled_ci()}))
         self.assertFalse(gaps_like(a, "cve-audit-dev-excluded:"))
 
-    def test_ac10_deviation_commented_audit_stays_a_gap(self):
-        # Declared deviation: non-npm audit steps stay commented until S4.1 approval.
-        # The gap must stay visible rather than pass silently.
-        text = filled_ci(audit="true", install="pip install -r requirements.txt --require-hashes")
-        text = text.replace("      - run: true", "      # - run: pip-audit   (pending S4.1 decision)")
+    def test_ac10_python_repo_audited_by_template(self):
+        # Spec v5 withdrew the AC-10 deviation: OSV-Scanner audits Python, Go and Rust.
+        text = filled_ci(install="pip install -r requirements.txt --require-hashes")
         a = self.assess(self.repo({".github/workflows/factory-ci.yml": text, "requirements.txt": "x==1\n"}))
-        self.assertIn("cve-audit-missing", ids(a))
-
+        self.assertFalse(gaps_like(a, "cve-audit"))
 
 # ---------------------------------------------------------------------------
 # AC-11 / FR-7: project manifest
