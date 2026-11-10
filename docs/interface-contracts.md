@@ -15,7 +15,9 @@ role lists its tools and what it may read; secret files are denied to every role
 Its tightening after the F-003 security re-reviews (longer protected and secret
 lists, no shells as commands, no globs leaving the worktree) approved by the
 owner 2026-11-10 (decision card). Engine control channel v1.1 (H-0022) and Role policy v2.2 (H-0023) for F-005
-approved by the owner 2026-11-10 (decision card, as drafted).
+approved by the owner 2026-11-10 (decision card, as drafted). Proposed for
+F-006, awaiting the owner: Inbox item v1.1 (H-0062), Engine control channel
+v1.2 (H-0063), Role policy v2.3 (H-0061).
 
 ## Contract entry format
 
@@ -30,10 +32,10 @@ approved by the owner 2026-11-10 (decision card, as drafted).
 
 ---
 
-## Inbox item — v1.0
+## Inbox item — v1.1
 
-- Status: Approved
-- Owner decision: follows ADR 0002
+- Status: Approved (v1.0); v1.1 Proposed (H-0062, F-006)
+- Owner decision: follows ADR 0002; v1.1 awaiting the owner (H-0062)
 - Used by: engine, all agents that file items, VS Code extension
 - Compatibility: adding an optional field is non-breaking; renaming,
   removing, or changing the meaning of a field is breaking (major version).
@@ -89,6 +91,28 @@ Body sections by inbox (headings are fixed so the extension can render them):
 `deferred`, `restored`, plus an optional `note`. Each action is one commit
 whose message starts with the item id.
 
+**Advisor (v1.1, F-006).** Optional, decision inbox only:
+
+```yaml
+advisor_reason: Cross-cuts the budget and sandbox decisions   # set only by the orchestrator, when filing
+advice:                                                       # written only by the engine
+  - call: A-0003
+    path: .factory/advice/A-0003.md
+    sha256: <hex>
+    status: done            # running | done | failed
+```
+
+With `advisor_reason` present, the extension offers the owner action
+`advisor_requested` ("Ask the advisor first"). That action starts one
+advisor call; the item stays `open`. The engine writes the advice to
+`.factory/advice/<call>.md`, a path no role may write, and appends an
+`advice` entry; the extension shows the file as plain text under an
+**Advisor** heading it renders itself, and warns when the hash doesn't
+match. The engine ignores, and files a Security item for, an
+`advisor_reason` written by any role other than the orchestrator, or an
+`advisor_requested` entry in a commit an agent session made (F-006 SR-3).
+Call ids are `A-0001`, numbered per repo.
+
 ---
 
 ## Agent report — v1.1
@@ -141,14 +165,14 @@ engine fills them; agents do not.
 
 ---
 
-## Engine control channel — v1.1
+## Engine control channel — v1.2
 
-- Status: Approved
+- Status: Approved (v1.1); v1.2 Proposed (H-0063, F-006)
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
   H-0025 (sessions by token, framing, `engine.json` format, error codes)
   approved by the owner, 2026-11-10 (decision card); amendment H-0026
   (`busy` data, listener pid, file modes) approved by the owner, 2026-11-10
-  (decision card)
+  (decision card); v1.2 awaiting the owner (H-0063)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -197,10 +221,22 @@ Rapid prototype; that risk is accepted by the owner until Alpha (F-005 SR-5).
 
 `Item` (v1.1) is `{ id, revision, kind: "question" | "assumption", text, why,
 suggested?, options?: [string], findings?: [{ text, source }], status }`.
+From v1.2, `kind` may also be `"advisor_proposal"` (the analyst proposes an
+advisor call on question `about`, with its reason in `why`), and a question
+may carry `advice?: [{ call, status: "running" | "done" | "failed", text?,
+web_queries?: [string] }]`. `text` is the advisor's output as the engine
+stored it; `web_queries` is written by the engine from its own log
+(F-006 SR-1).
 `status` is `open`, `deferred`, `researching`, `answered`, `approved`,
 `rejected` or `superseded`. Reply `kind` is `answer`, `more_info`, `defer`,
 `approve_assumption` or `reject_assumption`; the two assumption kinds apply
-only to assumption items, and the others only to questions. `text` is the
+only to assumption items, and the others only to questions. From v1.2:
+`ask_advisor` on a question (the owner's own request, which is itself the
+approval), and `approve_advisor` or `decline_advisor` on an
+`advisor_proposal` item, which then becomes `approved` or `rejected`. Each
+starts at most one advisor call; a call runs only from one of these replies.
+Clients send them only from the owner's own choice in the picker, never
+from text in an item (F-006 SR-3, SR-5). `text` is the
 owner's words, unchanged; the engine records it as written.
 
 Interview rules (v1.1):
