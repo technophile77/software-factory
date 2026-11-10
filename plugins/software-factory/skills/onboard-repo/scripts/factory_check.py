@@ -1043,7 +1043,15 @@ def to_markdown(a):
             cells = [f"`{g['id']}` {g['title']}", g["rule"], g.get("severity", "—"), evid, g["fix"], g["resolution"]]
             out.append("| " + " | ".join(c.replace("|", "\\|").replace("\n", " ") for c in cells) + " |")
         out.append("")
-    out += ["## Starting maturity evidence", ""]
+    out += ["## Existing tests (adopted in place)", ""]
+    if a.get("test_inventory"):
+        out += ["| File | Type |", "|---|---|"]
+        out += [f"| `{t['path'].replace('|', '\\|')}` | {t['type']} |" for t in a["test_inventory"]]
+    else:
+        out.append("None found.")
+    if a.get("baseline_request"):
+        out += ["", f"**Test baseline request:** {a['baseline_request']}"]
+    out += ["", "## Starting maturity evidence", ""]
     for lv in a["maturity"]["levels"]:
         out.append(f"- **{level_name[lv['level']]}:** " + "; ".join(("✓ " if i["met"] else "✗ ") + i["evidence"] for i in lv["evidence"]))
     out += ["", a["maturity"]["note"], "", "## Recommended work", ""]

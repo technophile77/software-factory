@@ -113,3 +113,116 @@ Replay one with `ONBOARD_ACC_SEED=<seed>` for the acceptance tests or `ONBOARD_S
 - **O4, AC-10 deviation (declared by the developer):** for Python, Go and Rust, the generated workflow doesn't run an audit until an S4.1 tool decision is approved. The tests confirm the gap stays visible. This needs the owner's acceptance against AC-10's wording "audits all dependencies".
 - **O5: addressed on `1890675`.** README detection is now case-insensitive. The new test checks that `readme.md`, `Readme.rst` and `README` all count as the purpose doc, and that `docs/README.md` alone does not.
 - O3 (the recommendation can't rise above Rapid prototype) and O4 (the declared AC-10 deviation) still stand, unchanged by design; the developer report says so.
+
+## Run on the final commit (spec v6)
+
+- **Commit tested:** **`c553230`** (branch `claude/project-thread-g2huhl`), with my test edits uncommitted on top. As the orchestrator asked, I tested the working tree with the developer's Gate 2 "Re-review 2" fixes. The developer then committed them as `c553230`, after `538177f` amended the Role policy v2.1 contract text (H-0008). I checked the product files tested against `c553230` and they are identical (`git diff c553230` touches only my test file). Hashes (first 12 hex characters of the SHA-256): `factory_check.py` 9230d2cf5af1, `ci-workflow.yml` c254e5e991f7, `factory-project.yaml` b0f175139ed2, `SKILL.md` bfe7247655b0.
+- **Earlier product, for reference:** the acceptance tests as they stood before the Re-review 2 fixes, run on a clean `git archive` of `bf85988` (product identical to `543c9ae`), gave 219 run, 218 passed, 1 failed (F3), 0 skipped.
+- **Spec and contracts:** F-003 v6; Role policy v2.1; Project manifest v1.1; Inbox item v1.0.
+- **Environment:** Linux, Python 3.13.18, git 2.43.0, Claude Code CLI 2.1.322. No `gh` and no network use, except that the local `claude plugin` commands ran.
+- **Command:** `cd plugins/software-factory/skills/onboard-repo && python3 -m unittest discover -s tests`
+- **Result on `c553230`:** **227 run, 226 passed, 1 failed, 0 skipped.** That is 143 acceptance tests (142 pass) and 84 developer tests (all pass). The 1 failure is a product failure (F3 below; it fails on 4 subtests). The result was the same on 3 runs, with no flaky tests.
+- **Changes after the developer's working-tree fixes:** 2 of my tests then failed because they hard-coded a value that the product has since tightened. Both were fixed as test code, with the spec reference, and neither was weakened:
+  - `test_ac10_template_text` required the exact line `npm audit --audit-level=high`. AC-10 asks only that all dependencies are audited, so it now requires one `npm audit` step with no `--omit`, `--production` or `--only`. The template's plain `npm audit` is stricter.
+  - The control case in `FR07RolePolicy.test_factory_only_writer_given_outside_write_must_add_denies` used the contract's six change-controlled paths. The validator now requires a longer list, which is a tightening, so it is non-breaking under Role policy v2.1. I first switched the control to the template's own deny list. Once the contract was amended (next point), I switched it back to the contract's list.
+- **Contract tests aligned with the amended contract (`538177f`).** The secret-file list (19 globs) and the change-controlled list (18 paths) are now copied from `interface-contracts.md`. The test for the change-controlled-paths rule went back to using the contract's list, so `test_factory_only_writer_given_outside_write_must_add_denies` again checks the contract itself.
+- **Added for the amended rules:**
+  - Globs `[.][.]/**` and `src/[.][.]/[.][.]/**` count as leaving the worktree.
+  - `commands` may not name a shell or interpreter: `sh`, `bash`, `zsh`, `dash`, `pwsh`, `powershell`, `cmd`, `python`, `python3`, `node`, `perl`, `ruby`, `env` and `xargs` are each rejected in the project policy and in a repo override, while `go`, `cargo` and `make` are accepted.
+  - A repo override can't add tools.
+
+  All of these pass.
+- **Not tested by me (not in spec v6 or the contract):** a tracked `.factory/` giving a `factory:dir-in-repo` gap, and `plan-items` refusing a symlinked inbox. The developer's tests cover both.
+
+### Developer edits to my tests (validation M10): reviewed and taken over
+
+| Edit | Against spec v6 | What I did |
+|---|---|---|
+| `MASTER` lookup (walks up to the folder that has `agents/` and `skills/`) | Needed after the plugin move (FR-12) | Kept the idea, but rewrote it as `_find_master()`. The old loop never ended when no such folder exists, for example when the skill is copied out alone (AC-15). Now it returns `None`, and AC-20 fails with a clear message |
+| AC-10 `test_ac10_template_text`: `persist-credentials` counted only on code lines; checks for `npm audit` and the OSV-Scanner step instead of the `<AUDIT_ALL_DEPENDENCIES>` placeholder | Correct: spec v5/v6 fills the audit for every stack. The commented-out Beta jobs would otherwise skew the count | Kept. The exact `--audit-level=high` check was replaced by the AC-10 wording (see above) |
+| AC-10 deviation test replaced by `test_ac10_python_repo_audited_by_template` | Correct: v5 withdrew the deviation | Kept. Added `test_ac10_go_and_rust_repos_audited_by_template` and `test_ac10_filled_template_has_no_placeholder_left`. `filled_ci` now also fills `<DEFAULT_BRANCH>` |
+| AC-11 `filled_manifest` fills the new policy placeholders | Needed for the v2.1 template. The values (`src/**`, `test/**`, `npm`, `registry.npmjs.org`) are a realistic npm repo | Kept. Every v2.1 rule is now tested independently in `FR07RolePolicy` |
+| FR-6 test rewritten to check the manifest policy | It tested FR-7, not FR-6 | Moved that check to `FR07RolePolicy` and made it stronger. Replaced it with 2 FR-6 tests: SKILL.md's `factory/state` step creates the 3 empty inboxes and puts no level or policy on the branch, and the checker treats a state branch that holds only inboxes as complete |
+
+### Failures
+
+| # | Test | Spec | Expected | Actual | Cause |
+|---|---|---|---|---|---|
+| F3 | `AC18TestInventory.test_fr14_inventory_in_markdown_assessment` (`tests/test_acceptance.py:1896`) | FR-14 ("list every test file with its type … in the assessment"), FR-3 (the assessment is written as JSON **and** Markdown), SKILL.md step 2 ("Read the Markdown") | Each of the 4 test files (`tests/unit/test_cart.py` unit, `tests/e2e/test_checkout_flow.py` acceptance, `tests/integration/test_db.py` integration, `tests/property/test_cart_props.py` stochastic) is listed with its type in the Markdown assessment | The JSON `test_inventory` is correct, but the Markdown has no test inventory section, so none of the 4 paths appears. The `baseline_request` text is also missing from the Markdown | Product. AC-18 itself, which is checked on the JSON, passes. If the orchestrator rules that a JSON-only inventory meets FR-14, this test should go to the Decision inbox (Product), not be weakened |
+
+### Criteria-to-test map (spec v6)
+
+All tests are in `plugins/software-factory/skills/onboard-repo/tests/test_acceptance.py`.
+
+| Criterion | Tests | Result |
+|---|---|---|
+| AC-1 (FR-1) | `AC01Detection` (10), `FR01GitHubProtection` (6), `EdgeCases.test_fr1_found_test_files_and_skipped_files_are_named` | Pass |
+| AC-2 | `AC02Permissions` (5) | Pass |
+| AC-3 | `AC03ActionPinning` (5) | Pass |
+| AC-4 (FR-8, SR-3) | `AC04Secrets` (6), `AC12Items.test_fr8_critical_and_high_findings_filed_as_security_medium_not`, `Properties` (2) | Pass |
+| AC-5 | `AC05LockAndAudit` (10) | Pass |
+| AC-6 | `AC06CiJobs` (4) | Pass |
+| AC-7 (FR-3) | `AC07Schema` (5), `Properties` | Pass |
+| AC-8 (FR-4) | `AC08Level` (3), `EdgeCases.test_fr4_lowercase_readme_counts_as_purpose` | Pass |
+| AC-9 (FR-5) | `AC09ExtendNotReplace` (4) | Pass |
+| AC-10 (FR-5, SR-5) | `AC10GeneratedWorkflow` (7): the filled template passes every workflow check; `permissions: contents: read` at the top; every `uses` pinned to a SHA; `persist-credentials: false`; no secrets; weekly cron; one `npm audit` step with no `--omit`/`--production`/`--only`, which covers dev dependencies; npm, Python, Go and Rust repos each get no `cve-audit` gap; no placeholder left | Pass |
+| AC-11 (FR-7) | `AC11Manifest` (5), `FR07RolePolicy` (15), `AC17Complexity.test_ac17_manifest_with_approved_complexity_valid_and_has_no_rung` | Pass |
+| FR-7, Role policy v2.1 (contract, as amended) | `FR07RolePolicy` (15): the template meets v2.1 (all 6 core roles; five sections each; tools only from the contract's list; a read glob; all 19 secret-file denies; all 18 change-controlled denies for the 3 roles that write outside `.factory/`). Effective policy: a repo's allow replaces, its deny adds. The validator rejects each of these: a missing core role (6 cases); no or empty `tools`, no `read`, empty `read.allow`, or no `read.deny`, for each role (30); each missing secret glob, for each role (114); each missing change-controlled deny, for each writing role (54); a shell or interpreter in `commands`, in the project policy or a repo override (28); a `.factory/`-only writer given `src/**`, `.factory/../src/**` or `**` with no denies; globs outside the worktree (`../**`, `../../etc/**`, `src/../../**`, `.factory/../src/**`, `/etc/**`, `/**`, `C:/Windows/**`, `C:\Users\**`, `[.][.]/**`, `src/[.][.]/[.][.]/**`) in read or write allow or deny lists (40); repo overrides that add `Bash`, `WebFetch` or `Edit` to the security reviewer's tools; and repo overrides that empty `read` or `tools`, write outside the worktree, read `/home/**`, or let the security reviewer write code. Accepted: tightening overrides, `lib/**` and `src/a..b/**`, a missing `commands` or `network` section, and outside writes that carry all the denies. Policy values of the wrong type fail closed without a traceback | Pass |
+| AC-12 (FR-8) | `AC12Items` (6), `EdgeCases.test_fr8_tool_items_only_up_to_the_chosen_level` | Pass |
+| AC-13 (FR-11) | `AC13Idempotence` (4) | Pass |
+| AC-14 (FR-10) | Inspection of SKILL.md step 8 on `bf85988` ("If the owner declines, change nothing; the `github:branch-protection` gap stays open … as an open step"), plus `AC16HostileContent.test_sr7_checker_has_no_network_or_gh` | Pass (inspection) |
+| AC-15 (FR-12) | `AC15Portability` (3) | Pass |
+| AC-16 (SR-1, 2, 4, 6, 8) | `AC16HostileContent` (7) | Pass |
+| AC-17 (FR-13) | `AC17Complexity` (3); calibration checked by inspection (SKILL.md steps 3 and 7) | Pass |
+| AC-18 (FR-14) | `AC18TestInventory` (6): Python and npm repos, each with unit, end-to-end, integration and property-based (hypothesis or fast-check) test files, inventoried as unit, acceptance, integration and stochastic. App code is not listed, and no file, index entry or status changes. A property test is found by its content in a plain `tests/test_*.py`. Go and Rust test files are listed (`_test.go` as unit, a `//go:build integration` file as integration). No tests gives an empty inventory. `node_modules` and `.factory/` are not inventoried. The Markdown lists the inventory (**F3, fails**) | AC-18 passes; FR-14 Markdown check fails (F3) |
+| AC-19 (FR-15) | `AC19Baseline` (5): two unit tests at Alpha give "(2 unit)" and "alpha testing bar in testing-strategy.md"; no tests gives "(no tests)"; the chosen level (Beta) is named; mixed types are counted per type; SKILL.md says the test engineer writes the tests and the skill never writes or edits tests | Pass |
+| AC-20 (FR-12) | `AC20Plugin` (2): marketplace and plugin manifests (names, `source: ./plugins/software-factory`, version, and the plugin ships this skill). `claude plugin validate` passes on the repo root (marketplace) and on `plugins/software-factory`. `claude plugin marketplace add` and `claude plugin install software-factory@software-factory` succeed in a throwaway `CLAUDE_CONFIG_DIR`; `claude plugin details` lists skill `onboard-repo`; and the installed copy's checker runs with `python -I -S` | Pass. It skips with a reason only if `claude` isn't on PATH; it ran here. `validate` warns about a missing plugin icon (directory-listing check only, not an error) |
+| AC-21 (FR-2, FR-5) | `AC21StackScanners` (11): a Go repo without govulncheck, or a Rust repo without cargo-audit, gets exactly one gap that names the tool and blocks Beta, including with no CI at all. It isn't in `blocking_now` at Alpha and is at Beta. The template's own `go-vulncheck` / `rust-audit` jobs, once uncommented, close the gap and pass the pinning and permission checks. Commented-out jobs don't count. In a monorepo each stack is checked. npm and Python repos get no such gap. Template: every `curl` download uses `https`, has its version pinned through a `vX.Y.Z` env var (never `latest`), is not piped to a shell, and is checked with `sha256sum --check` against a 64-hex env value before anything else touches the file. `go install` is pinned to `@vX.Y.Z` and the Go checksum database isn't turned off. Both jobs are marked `# beta`, and every action is pinned to `<SHA>` | Pass |
+| FR-6 | `EdgeCases.test_fr6_state_branch_gets_empty_inboxes_and_no_level_or_policy`, `EdgeCases.test_fr6_state_branch_with_only_inboxes_is_complete`, plus the `factory/state` tests in `EdgeCases` | Pass |
+| FR-9, section 6 edge cases | `EdgeCases` (rest) | Pass |
+
+### Not run, and why
+
+- **Windows and macOS, and a Python 3.10 interpreter:** not available, as before. 3.10 syntax is checked with `ast.parse(feature_version=(3, 10))`. Windows-style policy globs were tested on the Linux validator.
+- **AC-20 from GitHub:** the plugin was validated and installed from the local checkout (`marketplace add <path>`), not from `technophile77/software-factory` over the network, because that needs a push and network access. The `/plugin` slash commands in an interactive session weren't run; the `claude plugin` CLI equivalents were.
+- **Real GitHub (`gh`, push, PR, repo creation, applying protection), F-002 calibration, the engine's `feature.start`, and wiring adopted tests into CI (FR-14, agent side):** these are SKILL.md steps that need the owner and the network. They were checked by inspection only.
+- **The downloaded scanners themselves (OSV-Scanner, cargo-audit, govulncheck):** not downloaded or run. AC-21 checks the template's pinning and checksum flow, not whether the recorded checksums match the release files (that was the S4.1 review's job).
+
+### Coverage (Rapid prototype bar: "Reported")
+
+How measured: the standard library's `trace`, with **each test in its own process** (`python3 -m trace --count -f <counts> --module unittest <test id>`, counts added together). As found in the first run, a `RecursionError` turns tracing off for the rest of a shared process. Executable lines come from `trace._find_executable_linenos`. The measure is **line coverage only**: no branch figure, so none for security-critical code either.
+
+| Scope | Line coverage of `scripts/factory_check.py` |
+|---|---|
+| Full suite | **94.3% (1,170 of 1,241 lines)** on `c553230` (`factory_check.py` 9230d2cf5af1), measured with 226 of the 227 tests (before the shell/interpreter test was added) |
+| Acceptance suite alone | 91.4% (1,134 of 1,241) |
+| Earlier measurement, before the developer's working-tree changes landed (same executable line count as `bf85988`) | 93.9% (1,146 of 1,220); acceptance alone 91.7%. For reference only, because the tree may have been changing during that run |
+
+The 71 uncovered lines on the working tree are mostly YAML-reader branches and error messages for wrong types (for example `standards must be a mapping`, `repos[i].policy.roles must be a mapping`, a policy role that isn't a known agent, an unknown policy section). The rest are OS-error handlers and `__main__`. The policy validator's uncovered lines are all wrong-type or unknown-name messages.
+
+### Tool choice (testing-strategy.md § Test tools, H-0020)
+
+Required at Rapid prototype: unit tests on core logic, acceptance tests (every AC), contract tests (the interfaces F-003 touches), a regression test for each fixed bug, and coverage reported (line and branch). Stochastic and integration aren't required at this level.
+
+| Test type | Best-fit tool and why | Tool used | Substitute / decision |
+|---|---|---|---|
+| Unit, acceptance, contract, regression | Python's `unittest` (stdlib). The skill must be self-contained, standard-library only, and add no external library (FR-12, section 5, S4.1). `unittest` gives subtests and explicit skip reasons, which is all these tests need. pytest's extra features don't justify a new dependency and an S4.1 review here | `unittest` | None needed |
+| Coverage (line and branch) | **coverage.py**. It is the standard Python coverage tool and gives **branch** coverage, which the line/branch bar and the security-critical branch bar need. `trace` can't measure branches and stops counting after a `RecursionError` | stdlib `trace`, line only, one process per test | **Open.** coverage.py isn't installed or approved. It needs a tool decision (Architecture, with an S4.1 review), filed by the orchestrator. It would be a test-only tool, not shipped in the skill. Until the owner decides, the line figure above is reported without the owner's OK for `trace` as a substitute, and there is no branch figure |
+| Integration (not required at this level) | The real host: the Claude Code CLI (`claude plugin validate/install/details`) | Claude Code CLI 2.1.322 | None needed. Used for AC-20 |
+| Stochastic (not required at this level) | Hypothesis (property tests). It isn't approved | Hand-rolled seeded random tests (`Properties`, 25 cases each) | Not counted as property tests (no stand-ins rule). They are extra checks only |
+
+### Seeds (property tests, `c553230`)
+
+| Run | acceptance random repos / secret values | developer manifests / secret / workflow scanner / YAML reader |
+|---|---|---|
+| 1 | 326415942 / 3909902417 | 3239509574 / 2581877304 / 1505683181 / 3309382143 |
+| 2 | 1645697739 / 3315601388 | 446768828 / 776031557 / 1772856096 / 439250406 |
+| 3 | 1787474632 / 2164729167 | 134761266 / 3310543830 / 3812742123 / 2775822174 |
+| Earlier runs on the same product, before the contract alignment (226 tests) | 1868729995 / 2007455068; 985247463 / 694532118; 1900505172 / 1201042782 | 1008089954 / 3470597786 / 24015169 / 3892994579; 3611819480 / 2694116564 / 895882659 / 1701838061; 921436545 / 2927400304 / 1780890433 / 3094897437 |
+| `bf85988` clean export | 284889876 / 3422364346 | 4001321804 / 3170182189 / 2879884561 / 2771156686 |
+
+### Observations (not failures)
+
+- **O6, m23: fixed in `c553230`.** A repo override can no longer add tools beyond the project role's tools (contract amended in `538177f`), and `test_repo_override_cannot_widen_tools` checks it.
+- **O7:** `cve-audit-missing` blocks Beta (from the S4.4 required CI job), while the template comment says S4.4 applies at every level. This was not changed in v6, so I'm only noting it.
+- **O8, change control:** since H-0021 (`bf85988`), `plugins/` is change-controlled, and my test file lives there. My edits are F-003 feature work and are uncommitted. The orchestrator should confirm they are covered by the feature's approval before committing.

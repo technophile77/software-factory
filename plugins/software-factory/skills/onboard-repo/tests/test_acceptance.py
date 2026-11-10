@@ -1,10 +1,10 @@
-"""Independent acceptance tests for F-003 (onboard-repo), from spec v2.
+"""Independent acceptance tests for F-003 (onboard-repo), from spec v6.
 
 Written by the test engineer from the spec's acceptance criteria, edge cases
-and security requirements, not from the developer's tests. Standard library
-only (S4.1).
+and security requirements, and the Role policy v2.1 and Project manifest v1.1
+contracts, not from the developer's tests. Standard library only (S4.1).
 
-Run: python3 -m unittest discover -s skills/onboard-repo/tests -v
+Run: python3 -m unittest discover -s plugins/software-factory/skills/onboard-repo/tests -v
 Property tests print their seed; set ONBOARD_ACC_SEED to replay one.
 """
 import ast
@@ -28,10 +28,21 @@ SKILL = os.path.dirname(HERE)
 SCRIPT = os.path.join(SKILL, "scripts", "factory_check.py")
 SCHEMA_PATH = os.path.join(SKILL, "schema", "assessment.schema.json")
 TEMPLATES = os.path.join(SKILL, "templates")
-# The master factory checkout: the nearest folder above the skill with agents/ and skills/.
-MASTER = SKILL
-while not (os.path.isdir(os.path.join(MASTER, "agents")) and os.path.isdir(os.path.join(MASTER, "skills"))):
-    MASTER = os.path.dirname(MASTER)
+
+
+def _find_master(start):
+    """The master factory checkout: the nearest folder above the skill with agents/ and skills/."""
+    here = start
+    while True:
+        if os.path.isdir(os.path.join(here, "agents")) and os.path.isdir(os.path.join(here, "skills")):
+            return here
+        parent = os.path.dirname(here)
+        if parent == here:
+            return None  # skill copied out of the factory repo (AC-15)
+        here = parent
+
+
+MASTER = _find_master(SKILL)
 
 _spec = importlib.util.spec_from_file_location("factory_check_acceptance", SCRIPT)
 fc = importlib.util.module_from_spec(_spec)
@@ -733,7 +744,7 @@ def filled_ci(audit="npm audit --audit-level=high", install="npm ci"):
     text = read(os.path.join(TEMPLATES, "ci-workflow.yml"))
     for old, new in (("<SHA>", SHA), ("<tag>", "v4.2.2"), ("<INSTALL_FROM_LOCK>", install), ("<BUILD>", "npm run build"),
                      ("<SMOKE_TEST>", "node dist/index.js --version"), ("<AUDIT_ALL_DEPENDENCIES>", audit),
-                     ("<REPO_NAME>", "demo"), ("<LEVEL>", "rapid-prototype")):
+                     ("<REPO_NAME>", "demo"), ("<LEVEL>", "rapid-prototype"), ("<DEFAULT_BRANCH>", "main")):
         text = text.replace(old, new)
     return text
 
@@ -765,7 +776,10 @@ class AC10GeneratedWorkflow(Base):
         cron = re.search(r'cron:\s*"([^"]+)"', text).group(1).split()
         self.assertEqual(cron[2:4], ["*", "*"])
         # Spec v5: the audit step is filled for every stack (npm audit, OSV-Scanner).
-        self.assertIn("npm audit --audit-level=high", text)
+        # AC-10 "audits all dependencies": npm audit without --omit=dev/--production covers dev dependencies.
+        npm = re.findall(r"(?m)^\s*- run: (npm audit\b.*)$", text)
+        self.assertEqual(len(npm), 1, npm)
+        self.assertNotRegex(npm[0], r"--omit|--production|--only")
         self.assertRegex(text, r"osv-scanner scan source --recursive")
 
     def test_ac10_unfilled_template_cannot_pass_pinning(self):
@@ -782,6 +796,164 @@ class AC10GeneratedWorkflow(Base):
         text = filled_ci(install="pip install -r requirements.txt --require-hashes")
         a = self.assess(self.repo({".github/workflows/factory-ci.yml": text, "requirements.txt": "x==1\n"}))
         self.assertFalse(gaps_like(a, "cve-audit"))
+
+    def test_ac10_go_and_rust_repos_audited_by_template(self):
+        # AC-10 "audits all dependencies": the template's lock-file audit covers Go and Rust too (spec v5).
+        for files in ({"go.mod": "module x\n", "go.sum": ""}, {"Cargo.toml": "[package]\nname='x'\n", "Cargo.lock": ""}):
+            with self.subTest(stack=sorted(files)[0]):
+                a = self.assess(self.repo({".github/workflows/factory-ci.yml": filled_ci(), **files}))
+                self.assertFalse(gaps_like(a, "cve-audit"), [g["id"] for g in a["gaps"]])
+
+    def test_ac10_filled_template_has_no_placeholder_left(self):
+        code = [l for l in filled_ci().splitlines() if l.strip() and not l.lstrip().startswith("#")]
+        self.assertEqual([l for l in code if re.search(r"<[A-Z_]+>", l)], [])
+
+
+# ---------------------------------------------------------------------------
+# AC-21 / FR-2, FR-5: govulncheck and cargo-audit from Beta; pinned, checked downloads
+# ---------------------------------------------------------------------------
+
+def template_lines_uncommented():
+    """The CI template with every commented-out line opened up, so optional jobs are checked too."""
+    out = []
+    for line in read(os.path.join(TEMPLATES, "ci-workflow.yml")).splitlines():
+        m = re.match(r"^(\s*)#\s?(.*)$", line)
+        out.append(m.group(1) + m.group(2) if m else line)
+    return out
+
+
+def uncomment_job(text, job):
+    """Turn the template's commented-out `job` block into a live job."""
+    lines = text.splitlines()
+    start = next(i for i, l in enumerate(lines) if re.match(rf"^  # {re.escape(job)}:", l))
+    end = start + 1
+    while end < len(lines) and lines[end].startswith("  #   "):
+        end += 1
+    lines[start:end] = ["  " + l[4:] for l in lines[start:end]]
+    return "\n".join(lines) + "\n"
+
+
+def scanner_gaps(a, tool):
+    return [g for g in a["gaps"] if tool in " ".join(str(g.get(k, "")) for k in ("id", "title", "rule", "fix"))]
+
+
+GO = {"go.mod": "module example.com/x\n", "go.sum": "", "main.go": "package main\n"}
+RUST = {"Cargo.toml": "[package]\nname='x'\n", "Cargo.lock": "", "src/main.rs": "fn main() {}\n"}
+
+
+class AC21StackScanners(Base):
+    def test_ac21_go_without_govulncheck_blocks_beta_and_names_tool(self):
+        a = self.assess(self.repo({**GO, ".github/workflows/factory-ci.yml": filled_ci()}))
+        found = scanner_gaps(a, "govulncheck")
+        self.assertEqual(len(found), 1, [g["id"] for g in a["gaps"]])
+        self.assertEqual(found[0]["blocks_level"], "beta")
+        self.assertTrue(found[0]["evidence"])
+        self.assertFalse(scanner_gaps(a, "cargo-audit"))
+
+    def test_ac21_rust_without_cargo_audit_blocks_beta_and_names_tool(self):
+        a = self.assess(self.repo({**RUST, ".github/workflows/factory-ci.yml": filled_ci()}))
+        found = scanner_gaps(a, "cargo-audit")
+        self.assertEqual(len(found), 1, [g["id"] for g in a["gaps"]])
+        self.assertEqual(found[0]["blocks_level"], "beta")
+        self.assertFalse(scanner_gaps(a, "govulncheck"))
+
+    def test_ac21_no_ci_at_all_still_names_the_tool(self):
+        for files, tool in ((GO, "govulncheck"), (RUST, "cargo-audit")):
+            with self.subTest(tool=tool):
+                found = scanner_gaps(self.assess(self.repo(files)), tool)
+                self.assertEqual([g["blocks_level"] for g in found], ["beta"])
+
+    def test_ac21_template_jobs_close_the_gaps(self):
+        for files, tool, job in ((GO, "govulncheck", "go-vulncheck"), (RUST, "cargo-audit", "rust-audit")):
+            with self.subTest(tool=tool):
+                text = uncomment_job(filled_ci(), job)
+                a = self.assess(self.repo({**files, ".github/workflows/factory-ci.yml": text}))
+                self.assertFalse(scanner_gaps(a, tool), [g["id"] for g in a["gaps"]])
+                # The opened-up job must itself pass the workflow checks (AC-10, SR-5).
+                for prefix in ("action-unpinned:", "workflow-permissions:", "workflow-unreadable:"):
+                    self.assertFalse(gaps_like(a, prefix), prefix)
+
+    def test_ac21_commented_out_scanner_does_not_count(self):
+        # The unfilled template ships both jobs commented out: they must not pass the check.
+        for files, tool in ((GO, "govulncheck"), (RUST, "cargo-audit")):
+            with self.subTest(tool=tool):
+                a = self.assess(self.repo({**files, ".github/workflows/factory-ci.yml": filled_ci()}))
+                self.assertTrue(scanner_gaps(a, tool))
+
+    def test_ac21_each_stack_checked_in_a_monorepo(self):
+        files = {"svc/" + k: v for k, v in GO.items()}
+        files.update({"core/" + k: v for k, v in RUST.items()})
+        files[".github/workflows/factory-ci.yml"] = uncomment_job(filled_ci(), "go-vulncheck")
+        a = self.assess(self.repo(files))
+        self.assertFalse(scanner_gaps(a, "govulncheck"))
+        self.assertEqual([g["blocks_level"] for g in scanner_gaps(a, "cargo-audit")], ["beta"])
+
+    def test_ac21_other_stacks_get_no_scanner_gap(self):
+        a = self.assess(self.repo({"package.json": "{}", "package-lock.json": "{}", "pyproject.toml": "",
+                                   "uv.lock": ""}))
+        self.assertFalse(scanner_gaps(a, "govulncheck"))
+        self.assertFalse(scanner_gaps(a, "cargo-audit"))
+
+    def test_ac21_scanner_gap_not_blocking_below_beta(self):
+        a = self.assess(self.repo(GO), "--level", "alpha")
+        found = scanner_gaps(a, "govulncheck")
+        self.assertTrue(found)
+        self.assertNotIn(found[0]["id"], json.dumps(a["blocking_now"]))
+        a = self.assess(self.repo(GO), "--level", "beta")
+        self.assertIn(found[0]["id"], json.dumps(a["blocking_now"]))
+
+    def test_ac21_every_download_pinned_and_checksum_checked_before_it_runs(self):
+        lines = template_lines_uncommented()
+        text = "\n".join(lines)
+        env = dict(re.findall(r"^\s*([A-Z0-9_]+):\s*(\S+)\s*$", text, re.M))
+        downloads = [(i, l) for i, l in enumerate(lines) if re.search(r"\b(curl|wget)\b", l)]
+        # npm audit is bundled; OSV-Scanner always runs; cargo-audit is downloaded in the Rust job.
+        self.assertGreaterEqual(len(downloads), 2, "expected the OSV-Scanner and cargo-audit downloads")
+        for i, line in downloads:
+            with self.subTest(line=line.strip()):
+                self.assertNotRegex(line, r"\|\s*(sh|bash)\b", "piped into a shell")
+                url = re.search(r'"(https://[^"]+)"', line).group(1)
+                self.assertNotIn("latest", url)
+                self.assertTrue(url.startswith("https://"))
+                versions = re.findall(r"\$\{([A-Z0-9_]+)\}", url)
+                self.assertTrue(versions, "version not pinned in the URL")
+                for var in versions:
+                    self.assertRegex(env.get(var, ""), r"^v?\d+\.\d+\.\d+$", var)
+                out_file = re.search(r"-o\s+(\S+)", line).group(1)
+                check = next((j for j in range(i + 1, len(lines))
+                              if "sha256sum" in lines[j] and out_file in lines[j]), None)
+                self.assertIsNotNone(check, f"no checksum check for {out_file}")
+                self.assertRegex(lines[check], r"sha256sum (--check|-c)")
+                sha_var = re.search(r"\$\{([A-Z0-9_]+)\}", lines[check]).group(1)
+                self.assertRegex(env.get(sha_var, ""), r"^[0-9a-f]{64}$", sha_var)
+                # Nothing touches the file between the download and the check.
+                between = lines[i + 1:check]
+                self.assertFalse([l for l in between if out_file in l], between)
+                # The step that runs or unpacks it comes after the check.
+                users = [j for j in range(i + 1, len(lines)) if out_file in lines[j] and j != check]
+                self.assertTrue(users, f"{out_file} is never used")
+                self.assertTrue(all(j > check for j in users))
+
+    def test_ac21_go_install_is_pinned_and_checksum_database_not_disabled(self):
+        text = "\n".join(template_lines_uncommented())
+        installs = re.findall(r"(?m)^\s*-?\s*run:\s*go install (\S+)", text)
+        self.assertEqual(len(installs), 1, installs)
+        self.assertRegex(installs[0], r"^golang\.org/x/vuln/cmd/govulncheck@v\d+\.\d+\.\d+$")
+        # go install checks a pinned module against the Go checksum database unless it is turned off.
+        for var in ("GONOSUMDB", "GONOSUMCHECK", "GOINSECURE", "GOFLAGS", "GOSUMDB", "GOPRIVATE"):
+            self.assertNotIn(var, text)
+        self.assertNotIn("@latest", text)
+
+    def test_ac21_scanner_jobs_marked_for_beta_and_actions_pinned(self):
+        lines = template_lines_uncommented()
+        for job in ("go-vulncheck", "rust-audit"):
+            with self.subTest(job=job):
+                head = next(l for l in lines if re.match(rf"^\s*{job}:", l))
+                self.assertIn("# beta", head)
+        uses = [m.group(1) for l in lines for m in [re.match(r"^\s*-?\s*uses:\s*(\S+)", l)] if m]
+        self.assertGreaterEqual(len(uses), 6, uses)
+        self.assertTrue(all(u.endswith("@<SHA>") for u in uses), uses)
+
 
 # ---------------------------------------------------------------------------
 # AC-11 / FR-7: project manifest
@@ -884,6 +1056,239 @@ class AC11Manifest(Base):
         code, _, err = cli("validate-manifest", p)
         self.assertEqual(code, 2)
         self.assertNotIn("Traceback", err)
+
+
+# ---------------------------------------------------------------------------
+# FR-7 / AC-11: Role policy v2.1 inside the manifest (contract tests)
+# ---------------------------------------------------------------------------
+
+CORE_ROLES = ["orchestrator", "requirements-analyst", "software-developer", "test-engineer",
+              "security-reviewer", "validation-judge"]
+CONTRACT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch"}
+# Copied from interface-contracts.md, Role policy v2.1 (as amended by H-0008, 538177f).
+SECRET_GLOBS = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks",
+                "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc",
+                "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json"]
+CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json",
+                     ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml",
+                     "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**",
+                     "workflows/**"]
+SHELLS_AND_INTERPRETERS = ["sh", "bash", "zsh", "dash", "pwsh", "powershell", "cmd", "python", "python3", "node",
+                           "perl", "ruby", "env", "xargs"]
+# Roles whose template write rules reach outside .factory/ (directly or through the repo override).
+WRITERS_OUTSIDE_FACTORY = ["requirements-analyst", "software-developer", "test-engineer"]
+OUTSIDE_WORKTREE = ["../**", "../../etc/**", "src/../../**", ".factory/../src/**", "/etc/**", "/**",
+                    "C:/Windows/**", "C:\\Users\\**", "[.][.]/**", "src/[.][.]/[.][.]/**"]
+
+
+def to_yaml(obj, indent=0):
+    """Block-style YAML for the manifest subset: mappings, lists of mappings, flow lists of scalars."""
+    pad, out = " " * indent, []
+    for k, v in obj.items():
+        if isinstance(v, dict):
+            out.append(f"{pad}{k}:" + ("" if v else " {}"))
+            if v:
+                out.append(to_yaml(v, indent + 2))
+        elif isinstance(v, list) and v and all(isinstance(i, dict) for i in v):
+            out.append(f"{pad}{k}:")
+            for item in v:
+                out.append(pad + "  - " + to_yaml(item, indent + 4)[indent + 4:])
+        else:
+            out.append(f"{pad}{k}: {json.dumps(v)}")
+    return "\n".join(out)
+
+
+class FR07RolePolicy(Base):
+    def manifest(self):
+        return fc.parse_yaml(filled_manifest())
+
+    def validate(self, data):
+        p = os.path.join(self.tmp(), "factory-project.yaml")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(to_yaml(data) + "\n")
+        return cli("validate-manifest", p)
+
+    def assertRejected(self, data, msg=""):
+        code, out, err = self.validate(data)
+        self.assertEqual(code, 1, f"{msg}: accepted\n{out}{err}")
+        self.assertNotIn("Manifest is valid", out)
+
+    def assertAccepted(self, data, msg=""):
+        code, out, err = self.validate(data)
+        self.assertEqual(code, 0, f"{msg}: {out}{err}")
+
+    def test_round_trip_of_filled_template_is_valid(self):
+        data = self.manifest()
+        self.assertEqual(fc.parse_yaml(to_yaml(data) + "\n"), data)
+        self.assertAccepted(data, "filled template")
+
+    def test_template_policy_meets_role_policy_v21(self):
+        roles = self.manifest()["policy"]["roles"]
+        self.assertEqual(sorted(roles), sorted(CORE_ROLES))
+        for role, rules in roles.items():
+            with self.subTest(role=role):
+                self.assertTrue(rules["tools"]["allow"])
+                self.assertLessEqual(set(rules["tools"]["allow"]), CONTRACT_TOOLS)
+                self.assertTrue(rules["read"]["allow"])
+                self.assertLessEqual(set(SECRET_GLOBS), set(rules["read"]["deny"]))
+                for section in ("tools", "read", "write", "commands", "network"):
+                    self.assertIn(section, rules)
+        for role in WRITERS_OUTSIDE_FACTORY:
+            with self.subTest(role=role):
+                self.assertLessEqual(set(CHANGE_CONTROLLED), set(roles[role]["write"]["deny"]))
+        # Only the orchestrator talks to GitHub; nobody else gets network or WebFetch by default.
+        for role in CORE_ROLES:
+            if role != "orchestrator":
+                self.assertEqual(roles[role]["network"]["allow"], [], role)
+            self.assertFalse({"WebFetch", "WebSearch"} & set(roles[role]["tools"]["allow"]), role)
+
+    def test_effective_policy_allow_replaces_and_deny_adds(self):
+        # Contract: a repo override's allow lists replace the project's; its deny lists are added.
+        data = self.manifest()
+        eff = fc.effective_policy(data, "demo")
+        dev = eff["software-developer"]
+        self.assertEqual(dev["write"]["allow"], ["src/**", "docs/**"])
+        project_deny = data["policy"]["roles"]["software-developer"]["write"]["deny"]
+        self.assertLessEqual(set(project_deny) | {"test/**"}, set(dev["write"]["deny"]))
+        self.assertEqual(dev["commands"]["allow"], ["npm", "git"])
+        self.assertEqual(eff["test-engineer"]["write"]["allow"], ["test/**"])
+        for role in CORE_ROLES:
+            self.assertLessEqual(set(SECRET_GLOBS), set(eff[role]["read"]["deny"]), role)
+            self.assertLessEqual(set(CHANGE_CONTROLLED) if role in WRITERS_OUTSIDE_FACTORY else set(),
+                                 set(eff[role]["write"].get("deny", [])), role)
+
+    def test_every_core_role_required(self):
+        for role in CORE_ROLES:
+            with self.subTest(role=role):
+                data = self.manifest()
+                del data["policy"]["roles"][role]
+                self.assertRejected(data, role)
+
+    def test_every_role_needs_tools_and_read_rules(self):
+        breakers = {
+            "no tools section": lambda r: r.pop("tools"),
+            "empty tools": lambda r: r["tools"].update(allow=[]),
+            "no read section": lambda r: r.pop("read"),
+            "empty read allow": lambda r: r["read"].update(allow=[]),
+            "no read deny": lambda r: r["read"].pop("deny"),
+        }
+        for role in CORE_ROLES:
+            for name, breaker in breakers.items():
+                with self.subTest(role=role, case=name):
+                    data = self.manifest()
+                    breaker(data["policy"]["roles"][role])
+                    self.assertRejected(data, f"{role} {name}")
+
+    def test_every_secret_file_glob_required_for_every_role(self):
+        for role in CORE_ROLES:
+            for glob in SECRET_GLOBS:
+                with self.subTest(role=role, glob=glob):
+                    data = self.manifest()
+                    deny = data["policy"]["roles"][role]["read"]["deny"]
+                    deny.remove(glob)
+                    self.assertRejected(data, f"{role} without {glob}")
+
+    def test_change_controlled_paths_denied_to_roles_writing_outside_factory(self):
+        for role in WRITERS_OUTSIDE_FACTORY:
+            for path in CHANGE_CONTROLLED:
+                with self.subTest(role=role, path=path):
+                    data = self.manifest()
+                    data["policy"]["roles"][role]["write"]["deny"].remove(path)
+                    self.assertRejected(data, f"{role} may write {path}")
+
+    def test_factory_only_writer_given_outside_write_must_add_denies(self):
+        for allow in (["src/**"], [".factory/../src/**"], ["**"]):
+            with self.subTest(allow=allow):
+                data = self.manifest()
+                data["policy"]["roles"]["security-reviewer"]["write"] = {"allow": allow}
+                self.assertRejected(data, f"security-reviewer writes {allow}")
+        data = self.manifest()
+        data["policy"]["roles"]["security-reviewer"]["write"] = {"allow": ["src/**"], "deny": list(CHANGE_CONTROLLED)}
+        self.assertAccepted(data, "outside write with the denies")
+
+    def test_globs_outside_the_worktree_rejected(self):
+        for section, key in (("read", "allow"), ("write", "allow"), ("read", "deny"), ("write", "deny")):
+            for glob in OUTSIDE_WORKTREE:
+                with self.subTest(section=f"{section}.{key}", glob=glob):
+                    data = self.manifest()
+                    rules = data["policy"]["roles"]["software-developer"][section]
+                    rules[key] = rules.get(key, []) + [glob]
+                    self.assertRejected(data, f"{section}.{key} {glob}")
+        # Control: the same edit with a glob inside the worktree is fine.
+        data = self.manifest()
+        data["policy"]["roles"]["software-developer"]["write"]["allow"] = ["lib/**", "src/a..b/**"]
+        self.assertAccepted(data, "globs inside the worktree")
+
+    def test_repo_override_cannot_break_the_effective_policy(self):
+        cases = {
+            "read allow emptied": ("software-developer", "read", {"allow": []}),
+            "tools emptied": ("software-developer", "tools", {"allow": []}),
+            "write outside the worktree": ("software-developer", "write", {"allow": ["../**"]}),
+            "read outside the worktree": ("test-engineer", "read", {"allow": ["/home/**"]}),
+            "security reviewer writes code": ("security-reviewer", "write", {"allow": ["src/**"]}),
+        }
+        for name, (role, section, rules) in cases.items():
+            with self.subTest(case=name):
+                data = self.manifest()
+                data["repos"][0]["policy"]["roles"].setdefault(role, {})[section] = rules
+                self.assertRejected(data, name)
+
+    def test_commands_may_not_name_a_shell_or_interpreter(self):
+        for cmd in SHELLS_AND_INTERPRETERS:
+            with self.subTest(command=cmd, where="project"):
+                data = self.manifest()
+                data["policy"]["roles"]["orchestrator"]["commands"]["allow"].append(cmd)
+                self.assertRejected(data, f"project command {cmd}")
+            with self.subTest(command=cmd, where="repo override"):
+                data = self.manifest()
+                data["repos"][0]["policy"]["roles"]["software-developer"]["commands"]["allow"].append(cmd)
+                self.assertRejected(data, f"repo command {cmd}")
+        data = self.manifest()
+        data["repos"][0]["policy"]["roles"]["software-developer"]["commands"]["allow"] += ["go", "cargo", "make"]
+        self.assertAccepted(data, "ordinary build tools")
+
+    def test_repo_override_cannot_widen_tools(self):
+        # Role policy v2.1: loosening a rule needs a Security decision, which a manifest can't carry here.
+        for tool in ("Bash", "WebFetch", "Edit"):
+            with self.subTest(tool=tool):
+                data = self.manifest()
+                data["repos"][0]["policy"]["roles"]["security-reviewer"] = {
+                    "tools": {"allow": ["Read", "Grep", "Glob", "Write", tool]}}
+                self.assertRejected(data, f"security-reviewer given {tool}")
+
+    def test_tightening_overrides_accepted(self):
+        data = self.manifest()
+        roles = data["repos"][0]["policy"]["roles"]
+        roles["software-developer"]["read"] = {"deny": ["secrets/**"]}
+        roles["software-developer"]["tools"] = {"allow": ["Read", "Grep"]}
+        roles["security-reviewer"] = {"network": {"allow": []}}
+        self.assertAccepted(data, "tightening override")
+        eff = fc.effective_policy(data, "demo")["software-developer"]
+        self.assertLessEqual(set(SECRET_GLOBS) | {"secrets/**"}, set(eff["read"]["deny"]))
+        self.assertEqual(eff["tools"]["allow"], ["Read", "Grep"])
+
+    def test_missing_commands_or_network_section_allows_nothing_and_is_valid(self):
+        # Contract: "a missing section allows nothing"; only tools and read are required.
+        data = self.manifest()
+        del data["policy"]["roles"]["security-reviewer"]["network"]
+        del data["policy"]["roles"]["security-reviewer"]["commands"]
+        self.assertAccepted(data, "missing commands and network")
+
+    def test_policy_rules_of_wrong_type_fail_closed(self):
+        cases = {
+            "allow is a string": lambda d: d["policy"]["roles"]["orchestrator"]["tools"].update(allow="Bash"),
+            "role is a list": lambda d: d["policy"]["roles"].update({"orchestrator": ["x"]}),
+            "roles is a string": lambda d: d["policy"].update(roles="all"),
+            "glob is a number": lambda d: d["policy"]["roles"]["orchestrator"]["read"].update(allow=[1]),
+        }
+        for name, breaker in cases.items():
+            with self.subTest(case=name):
+                data = self.manifest()
+                breaker(data)
+                code, out, err = self.validate(data)
+                self.assertIn(code, (1, 2), out + err)
+                self.assertNotIn("Traceback", err)
+                self.assertNotIn("Manifest is valid", out)
 
 
 # ---------------------------------------------------------------------------
@@ -1331,17 +1736,38 @@ class EdgeCases(Base):
                            "--assessment-ref", "x.json", "--level", "rapid-prototype")
         self.assertTrue(any(c["category"] == "Security" for c in json.loads(out)["created"]))
 
-    def test_fr6_manifest_policy_covers_every_core_role_and_protects_change_controlled_files(self):
-        # Spec v4 (owner decision 2026-11-10): the role policy lives in the manifest's policy section.
-        data = fc.parse_yaml(filled_manifest())
-        roles = data["policy"]["roles"]
-        for role in ("orchestrator", "requirements-analyst", "software-developer", "test-engineer",
-                     "security-reviewer", "validation-judge"):
-            self.assertIn(role, roles)
-        for role in ("requirements-analyst", "software-developer", "test-engineer"):
-            eff = fc.effective_policy(data, "demo")[role]
-            for path in ("CLAUDE.md", ".github/**", ".claude/**"):
-                self.assertIn(path, eff["write"]["deny"], role)
+    def test_fr6_state_branch_gets_empty_inboxes_and_no_level_or_policy(self):
+        # Spec v6 FR-6: create factory/state if missing, with empty inbox folders; maturity and role
+        # policy live in the project manifest (FR-7), not on this branch.
+        text = read(os.path.join(SKILL, "SKILL.md"))
+        step = re.search(r"(?ms)^### \d+\. Set up `factory/state`.*?(?=^### )", text)
+        self.assertIsNotNone(step, "SKILL.md has no factory/state step")
+        step = step.group(0)
+        self.assertRegex(step, r"(?i)if the branch doesn.t exist")
+        for inbox in ("inbox/decision/", "inbox/testing/", "inbox/hygiene/"):
+            self.assertIn(inbox, step)
+        self.assertRegex(step, r"(?i)empty")
+        for stale in ("maturity.yaml", "roles.yaml", ".factory/policy", "policy/"):
+            self.assertNotIn(stale, text, stale)
+        manifest = fc.parse_yaml(filled_manifest())
+        self.assertEqual(manifest["repos"][0]["maturity"], "rapid-prototype")
+        self.assertIn("policy", manifest)
+
+    def test_fr6_state_branch_with_only_inboxes_is_complete(self):
+        root = self.repo({"README.md": "x\n"}, commit=True)
+        git(root, "checkout", "-q", "--orphan", "factory/state")
+        git(root, "rm", "-rq", "--cached", ".")
+        os.remove(os.path.join(root, "README.md"))
+        for box in ("decision", "testing", "hygiene"):
+            write(root, f"inbox/{box}/.gitkeep", "")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "onboarding: state branch")
+        git(root, "checkout", "-q", "main")
+        a = self.assess(root)
+        self.assertNotIn("factory:state-branch", ids(a))
+        blob = json.dumps(a["gaps"])
+        for stale in ("maturity.yaml", "roles.yaml", ".factory/policy"):
+            self.assertNotIn(stale, blob)
 
 
 # ---------------------------------------------------------------------------
@@ -1386,6 +1812,210 @@ class AC17Complexity(Base):
                     f.write(text)
                 code, out, _ = cli("validate-manifest", p)
                 self.assertEqual(code, 0, out)
+
+
+# ---------------------------------------------------------------------------
+# AC-18 / FR-14: test inventory; AC-19 / FR-15: test baseline request
+# ---------------------------------------------------------------------------
+
+# Spec type names (FR-14): end-to-end tests are acceptance tests, property-based tests are stochastic.
+INVENTORY_FIXTURES = {
+    "python": {
+        "files": {
+            "pyproject.toml": "[project]\nname='x'\n", "uv.lock": "",
+            "src/shop/cart.py": "def total(items):\n    return sum(items)\n",
+            "tests/unit/test_cart.py": "from shop.cart import total\n\ndef test_total():\n    assert total([1]) == 1\n",
+            "tests/e2e/test_checkout_flow.py": "def test_checkout_end_to_end(browser):\n    browser.get('/')\n",
+            "tests/integration/test_db.py": "def test_db_roundtrip(db):\n    db.save(1)\n",
+            "tests/property/test_cart_props.py": "from hypothesis import given, strategies as st\n\n"
+                                                 "@given(st.lists(st.integers()))\ndef test_total(xs):\n    pass\n",
+        },
+        "expected": {"tests/unit/test_cart.py": "unit", "tests/e2e/test_checkout_flow.py": "acceptance",
+                     "tests/integration/test_db.py": "integration",
+                     "tests/property/test_cart_props.py": "stochastic"},
+    },
+    "npm": {
+        "files": {
+            "package.json": '{"name":"x","devDependencies":{"fast-check":"3.0.0"}}', "package-lock.json": "{}",
+            "src/sum.js": "module.exports = (a, b) => a + b;\n",
+            "src/sum.test.js": "const sum = require('./sum');\ntest('adds', () => expect(sum(1, 2)).toBe(3));\n",
+            "e2e/login.spec.ts": "import { test } from '@playwright/test';\ntest('login', async ({ page }) => {});\n",
+            "test/integration/api.test.js": "test('api answers', async () => {});\n",
+            "test/sum.property.test.js": "const fc = require('fast-check');\n"
+                                         "test('commutes', () => fc.assert(fc.property(fc.integer(), fc.integer(), "
+                                         "(a, b) => a + b === b + a)));\n",
+        },
+        "expected": {"src/sum.test.js": "unit", "e2e/login.spec.ts": "acceptance",
+                     "test/integration/api.test.js": "integration", "test/sum.property.test.js": "stochastic"},
+    },
+}
+
+
+class AC18TestInventory(Base):
+    def test_ac18_each_test_file_listed_with_its_type_and_nothing_changed(self):
+        for stack, fx in INVENTORY_FIXTURES.items():
+            with self.subTest(stack=stack):
+                root = self.repo(fx["files"], commit=True)
+                before, status = snapshot(root), git(root, "status", "--porcelain")
+                a = self.assess(root)
+                self.assertSchemaValid(a)
+                inventory = {t["path"]: t["type"] for t in a["test_inventory"]}
+                self.assertEqual(len(inventory), len(a["test_inventory"]), "a test file listed twice")
+                for path, kind in fx["expected"].items():
+                    with self.subTest(path=path):
+                        self.assertEqual(inventory.get(path), kind, inventory)
+                # Application code is not a test file.
+                self.assertFalse([p for p in inventory if p not in fx["expected"]], inventory)
+                self.assertEqual(snapshot(root), before)
+                self.assertEqual(git(root, "status", "--porcelain"), status)
+
+    def test_ac18_property_test_found_by_content_in_an_ordinary_test_file(self):
+        # A property-based test is one that uses a property-testing library, wherever it sits.
+        root = self.repo({"pyproject.toml": "", "uv.lock": "",
+                          "tests/test_codec.py": "from hypothesis import given\nimport hypothesis.strategies as st\n\n"
+                                                 "@given(st.binary())\ndef test_round_trip(b):\n    pass\n",
+                          "tests/test_plain.py": "def test_one():\n    assert 1\n"})
+        inventory = {t["path"]: t["type"] for t in self.assess(root)["test_inventory"]}
+        self.assertEqual(inventory, {"tests/test_codec.py": "stochastic", "tests/test_plain.py": "unit"})
+
+    def test_ac18_go_and_rust_test_files_inventoried(self):
+        root = self.repo({**GO, "core_test.go": "package main\nimport \"testing\"\nfunc TestX(t *testing.T) {}\n",
+                          "integration/db_test.go": "//go:build integration\npackage integration\n",
+                          "rs/Cargo.toml": "[package]\nname='y'\n", "rs/Cargo.lock": "",
+                          "rs/tests/api.rs": "#[test]\nfn api() {}\n"})
+        inventory = {t["path"]: t["type"] for t in self.assess(root)["test_inventory"]}
+        self.assertEqual(inventory.get("core_test.go"), "unit", inventory)
+        self.assertEqual(inventory.get("integration/db_test.go"), "integration", inventory)
+        self.assertIn("rs/tests/api.rs", inventory)
+
+    def test_ac18_no_tests_gives_empty_inventory(self):
+        a = self.assess(self.repo({"package.json": "{}", "package-lock.json": "{}", "index.js": "x\n"}))
+        self.assertEqual(a["test_inventory"], [])
+        self.assertSchemaValid(a)
+
+    def test_fr14_inventory_in_markdown_assessment(self):
+        # FR-14 lists the inventory "in the assessment"; FR-3 writes the assessment as JSON and Markdown,
+        # and the Markdown is what the owner reads (SKILL.md step 2).
+        fx = INVENTORY_FIXTURES["python"]
+        a = self.assess(self.repo(fx["files"]))
+        for path, kind in fx["expected"].items():
+            with self.subTest(path=path):
+                line = next((l for l in a["_md"].splitlines() if path in l), None)
+                self.assertIsNotNone(line, f"{path} is not listed in the Markdown assessment")
+                self.assertIn(kind, line)
+
+    def test_ac18_vendored_and_factory_files_not_inventoried(self):
+        root = self.repo({"package.json": "{}", "package-lock.json": "{}",
+                          "node_modules/lib/test/a.test.js": "test('x', () => {});\n",
+                          ".factory/onboarding/old/test_x.py": "def test_x(): pass\n",
+                          "test/a.test.js": "test('x', () => {});\n"})
+        inventory = [t["path"] for t in self.assess(root)["test_inventory"]]
+        self.assertEqual(inventory, ["test/a.test.js"])
+
+
+class AC19Baseline(Base):
+    def test_ac19_two_unit_tests_at_alpha(self):
+        root = self.repo({"pyproject.toml": "", "uv.lock": "",
+                          "tests/test_a.py": "def test_a():\n    assert 1\n",
+                          "tests/test_b.py": "def test_b():\n    assert 1\n"})
+        a = self.assess(root, "--level", "alpha")
+        req = a["baseline_request"]
+        # "(2 unit)" after "the adopted tests" names them; the count and the type are what AC-19 asks for.
+        self.assertRegex(req, r"\b2 unit\b")
+        self.assertRegex(req, r"(?i)\balpha\b")
+        self.assertRegex(req, r"(?i)testing bar|testing-strategy")
+        self.assertNotRegex(req, r"(?i)\bno tests\b")
+
+    def test_ac19_no_tests_says_so(self):
+        a = self.assess(self.repo({"pyproject.toml": "", "uv.lock": ""}), "--level", "alpha")
+        self.assertRegex(a["baseline_request"], r"(?i)\bno tests?\b")
+        self.assertNotRegex(a["baseline_request"], r"\b\d+ unit\b")
+
+    def test_ac19_level_named_is_the_chosen_level(self):
+        root = self.repo({"pyproject.toml": "", "uv.lock": "", "tests/test_a.py": "def test_a():\n    pass\n"})
+        a = self.assess(root, "--level", "beta")
+        self.assertRegex(a["baseline_request"], r"(?i)\bbeta\b")
+        self.assertRegex(a["baseline_request"], r"\b1 unit\b")
+
+    def test_ac19_mixed_types_counted_per_type(self):
+        fx = INVENTORY_FIXTURES["python"]
+        req = self.assess(self.repo(fx["files"]), "--level", "alpha")["baseline_request"]
+        for phrase in ("1 unit", "1 acceptance", "1 integration", "1 stochastic"):
+            self.assertIn(phrase, req)
+
+    def test_fr15_skill_never_writes_tests_itself(self):
+        text = read(os.path.join(SKILL, "SKILL.md"))
+        self.assertRegex(text, r"(?i)never\s+writes\s+or\s+edits\s+tests")
+        self.assertRegex(text, r"(?i)test\s+engineer\s+writes\s+the\s+tests")
+        self.assertIn("baseline_request", text)
+
+
+# ---------------------------------------------------------------------------
+# AC-20 / FR-12: plugin marketplace
+# ---------------------------------------------------------------------------
+
+def load_json(path):
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+class AC20Plugin(Base):
+    def setUp(self):
+        super().setUp()
+        self.assertIsNotNone(MASTER, "no factory checkout above the skill")
+        self.market = os.path.join(MASTER, ".claude-plugin", "marketplace.json")
+
+    def test_ac20_marketplace_and_plugin_manifests(self):
+        market = load_json(self.market)
+        self.assertEqual(market["name"], "software-factory")
+        self.assertTrue(market["owner"]["name"])
+        entries = [p for p in market["plugins"] if p["name"] == "software-factory"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["source"], "./plugins/software-factory")
+        plugin_dir = os.path.normpath(os.path.join(MASTER, entries[0]["source"]))
+        plugin = load_json(os.path.join(plugin_dir, ".claude-plugin", "plugin.json"))
+        self.assertEqual(plugin["name"], "software-factory")
+        self.assertRegex(plugin.get("version", ""), r"^\d+\.\d+\.\d+$")
+        # The skill under test is the one the plugin ships.
+        self.assertEqual(os.path.realpath(os.path.join(plugin_dir, "skills", "onboard-repo")), os.path.realpath(SKILL))
+        self.assertRegex(read(os.path.join(SKILL, "SKILL.md")), r"(?s)^---\nname: onboard-repo\n")
+
+    def claude(self, *args, env=None):
+        proc = subprocess.run(["claude", *args], capture_output=True, timeout=180, env=env, cwd=MASTER)
+        return proc.returncode, proc.stdout.decode("utf-8", "replace") + proc.stderr.decode("utf-8", "replace")
+
+    def test_ac20_claude_plugin_validate_and_install(self):
+        if not shutil.which("claude"):
+            self.skipTest("Claude Code CLI not installed: `claude plugin validate` and install not run")
+        for target in (MASTER, os.path.join(MASTER, "plugins", "software-factory")):
+            with self.subTest(validate=target):
+                code, out = self.claude("plugin", "validate", target)
+                self.assertEqual(code, 0, out)
+                self.assertIn("Validation passed", out)
+                self.assertNotRegex(out, r"(?i)\berror\b")
+        # Install into a throwaway config dir so the owner's own Claude settings are untouched.
+        config = self.tmp()
+        env = dict(os.environ, CLAUDE_CONFIG_DIR=config)
+        code, out = self.claude("plugin", "marketplace", "add", MASTER, env=env)
+        self.assertEqual(code, 0, out)
+        code, out = self.claude("plugin", "install", "software-factory@software-factory", env=env)
+        self.assertEqual(code, 0, out)
+        code, out = self.claude("plugin", "details", "software-factory@software-factory", env=env)
+        self.assertEqual(code, 0, out)
+        self.assertRegex(out, r"Skills \(1\)\s+onboard-repo")
+        installed = [os.path.join(d, "SKILL.md") for d, _, f in os.walk(config)
+                     if "SKILL.md" in f and d.endswith(os.path.join("skills", "onboard-repo"))]
+        self.assertTrue(installed, "installed copy of the skill not found")
+        skill_dir = os.path.dirname(installed[0])
+        for rel in ("scripts/factory_check.py", "schema/assessment.schema.json", "templates/ci-workflow.yml"):
+            self.assertTrue(os.path.isfile(os.path.join(skill_dir, rel)), rel)
+        # The installed checker runs on its own (FR-12: self-contained, stdlib only).
+        out_dir = self.tmp()
+        code, stdout, stderr = cli_subprocess("assess", self.repo({"go.mod": "", "go.sum": ""}), "--out-json",
+                                              os.path.join(out_dir, "a.json"),
+                                              script=os.path.join(skill_dir, "scripts", "factory_check.py"),
+                                              extra_flags=("-I", "-S"))
+        self.assertEqual(code, 0, stderr)
 
 
 # ---------------------------------------------------------------------------

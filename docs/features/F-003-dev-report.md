@@ -112,3 +112,9 @@ Tests in class `SecondGateRegressions` unless noted.
 
 Left for the owner: R2-1 (sandbox and git), R2-2 (enforcement-time normalization), R2-4 (owner approvals the orchestrator could forge on `factory/state`), R2-8 (plugin version not checked against `factory.version`), R2-10 (machine account can approve the owner's PRs; CODEOWNERS).
 
+## Fix after the test engineer's final run
+
+| Finding | Fix | Test |
+|---|---|---|
+| F3: the Markdown assessment had no test inventory or baseline request (FR-14, FR-15) | New "Existing tests (adopted in place)" section with each file's type and the baseline request | `AC18TestInventory.test_fr14_inventory_in_markdown_assessment` (test engineer) |
+
