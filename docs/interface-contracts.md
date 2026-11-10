@@ -146,7 +146,8 @@ engine fills them; agents do not.
 - Status: Approved
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
   H-0025 (sessions by token, framing, `engine.json` format, error codes)
-  approved by the owner, 2026-11-10 (decision card)
+  approved by the owner, 2026-11-10 (decision card); amendment H-0026
+  (`busy` data, listener pid, file modes) awaits the owner's approval
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -160,7 +161,11 @@ the inbox.
 **Transport:** JSON-RPC 2.0 over a local named pipe (Windows) or Unix domain
 socket (macOS/Linux), path written to `.factory/engine.json` when the engine
 starts. Not reachable from the network. `engine.json` is never committed;
-from v1.1 it is `{ "version": "1.1", "path": "<socket or pipe path>", "pid": <int> }`.
+from v1.1 it is `{ "version": "1.1", "path": "<socket or pipe path>", "pid": <int> }`,
+where `pid` is the process listening on the channel (clients check it against
+the peer where the OS reports one). The engine writes it with mode 0600, and
+the `.factory` worktree directory must not be group- or world-writable;
+clients refuse otherwise.
 Framing (v1.1): one JSON-RPC message per line, UTF-8, ending in `\n`, at most
 1 MiB.
 
@@ -214,7 +219,9 @@ Interview rules (v1.1):
   on `factory/state`, append-only. Before committing it the engine runs the
   secrets scan and blocks the commit on a hit.
 - Ids match `^[A-Za-z0-9_-]{1,64}$`; `revision` is a non-negative integer.
-  Errors carry `code` and `message`; clients don't show `data`. Codes:
+  Errors carry `code` and `message`; clients don't show `data`, except that
+  `busy` carries `data.started_at` (ISO 8601, UTC), which clients may show
+  after checking its format. Codes:
   -32001 `busy`, -32002 `stale`, -32003 unknown feature or item, -32004
   unknown or expired session, -32005 reply kind not allowed for the item.
 
