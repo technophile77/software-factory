@@ -3,7 +3,7 @@
 - **Id:** F-002
 - **Status:** Draft (requirements interview; A-9 and A-10 await the owner)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 4
+- **Spec version:** 5
 
 ## 1. Objective and business purpose
 Run each agent on the cheapest model and lowest effort level that still does
@@ -60,7 +60,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | FR-15 | Every applied change to a role's rung is a commit with the hygiene item id, so it can be traced and rolled back. |
 | FR-16 | Derived complexity: the tier whose master calibration tasks best match the rungs the roles currently need (median role rung mapped to a tier), recorded in each run review and in history. It does not edit the manifest preset. |
 | FR-17 | Run reviews and per-role history (last 20 runs) are readable by the owner as plain files on `factory/state`. |
-| FR-18 | Effort metrics are built from measurement: every calibration trial, replay, and real agent run adds its tokens, cost, duration and pass/fail to a per-project record for its role and rung (`.factory/tuning/metrics.json`). The ladder order for a role is recomputed from these as median cost per passing task. A rung with no measurements is marked unmeasured, and the review shows how many samples each figure rests on. |
+| FR-18 | Effort metrics are built from measurement: every calibration trial, replay, and real agent run adds its tokens, cost, duration, pass/fail and member repo to a per-project record for its role and rung (`.factory/tuning/metrics.json` on the project config repo's `factory/state`). The ladder order for a role is recomputed from these as median cost per passing task. A rung with no measurements is marked unmeasured, and the review shows how many samples each figure rests on. |
 
 ### Failure attribution
 | Root cause (testing-strategy.md) or event | Attributed to |
@@ -142,7 +142,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | A-4 | **Approval for every change (Product).** Spec § 6 stands: step-ups and step-downs are both hygiene items; move-downs are grouped into one low-priority item per review. | Owner, 2026-11-10 | Approved |
 | A-5 | **Triggers (Product).** Step up: a role is attributed failures in 3 of its last 5 runs, or causes a Testing inbox escalation in 2 of its last 5. Step down: 10 consecutive runs with no attributed failure and first-try pass, then a passing replay of the project's own transcripts at the cheaper rung (owner, 2026-11-10). | Owner, 2026-11-10 | Approved |
 | A-6 | **Complexity (Product).** The manifest's `complexity` is a preset set at onboarding and used only for initial calibration. After the project starts, complexity is derived from the rungs the agents actually need and reported in run reviews. | Owner, 2026-11-10 | Approved |
-| A-7 | **Calibration tasks (Architecture).** Master tasks in the master repo at `calibration/<role>/<tier>/`. A project's tests are selected transcripts of its own runs, listed in its config repo at `calibration/transcripts.yaml`; the transcripts themselves stay where transcripts are kept today (outside Git). Results and history on `factory/state` at `.factory/tuning/`. Logic is an engine module. | Owner, 2026-11-10 | Approved |
+| A-7 | **Calibration tasks (Architecture).** Master tasks in the master repo at `calibration/<role>/<tier>/`. A project's tests are selected transcripts of its own runs, listed in its config repo at `calibration/transcripts.yaml`; the transcripts themselves stay where transcripts are kept today (outside Git). Results, metrics and history on the project config repo's `factory/state` branch at `.factory/tuning/` (one record per project, per ADR 0009/0010), with each sample tagged with the member repo it ran in. Nothing project-specific is stored in the master factory repo. Logic is an engine module. | Owner, 2026-11-10 | Approved |
 | A-8 | **Formats (Interfaces).** Additive: Project manifest v1.1, Agent report v1.1, new Run review v1.0, Tuning metrics v1.0 and Calibration result v1.0 (§ 10). | Owner, 2026-11-10 | Approved |
 | A-9 | **How outputs are compared (Product).** ★ Recommended: use an objective check wherever the role has one: developer, the feature's final acceptance tests pass on the new code; test engineer, the new suite passes on the accepted code and fails on the bugs found during that run; security reviewer, every finding in the accepted report is found at the same severity; judge, same verdict and every Blocking finding; orchestrator, same root cause and next step. For the analyst, whose output is prose, a grader at a fixed top rung scores the new spec against the accepted one on a rubric (every requirement, criterion and assumption covered); its cost counts toward calibration. | Owner | Pending |
 | A-10 | **When transcripts replace master tasks (Product).** ★ Recommended: per role, once at least 5 transcripts are selected, and at least one of them is a run where that role's first attempt failed, so the set tests the hard cases too. Until then, master tasks at the derived tier fill the gap. | Owner | Pending |
@@ -204,3 +204,4 @@ All changes are additive (A-8):
 | 2 | 2026-11-10 | Owner answers: ladder ordered by cost, grouped move-downs, complexity preset then derived, project transcripts as tests; A-2, A-3, A-5, A-8 approved as proposed; A-9, A-10 added | Owner, 2026-11-10 (A-1 to A-8) |
 | 3 | 2026-11-10 | Move-downs tested only by replaying the project's own transcripts | Owner, 2026-11-10 |
 | 4 | 2026-11-10 | Ladder order and effort metrics built from measurement over time, not published data (A-1 approved) | Owner, 2026-11-10 |
+| 5 | 2026-11-10 | Clarified: tuning data lives in the project config repo, samples tagged by member repo | Follows ADR 0009/0010 |
