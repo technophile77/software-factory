@@ -1,6 +1,8 @@
 # Proposal 0017: Close the open F-003 Gate 2 security items
 
-**Status:** proposed for the owner's decision, 2026-11-10. Not a decision
+**Status:** R2-1 decided by the owner, 2026-11-10: option A (decision
+card); wording added to the Role policy contract. Others proposed for the
+owner's decision, 2026-11-10. Not a decision
 until the owner chooses. Owner approved starting this work on 2026-11-10
 (follow-up 2 after F-005 merged).
 
@@ -10,7 +12,7 @@ also an Interfaces change (Role policy). Hygiene ids: H-0045 to H-0049.
 
 | Finding | Severity | Hygiene id | Question | Drafted in this PR? |
 |---|---|---|---|---|
-| R2-1 | High | H-0045 | How Bash-capable agents are confined to their role's file and network rules | No: wording below, edited in after the decision |
+| R2-1 | High | H-0045 | How Bash-capable agents are confined to their role's file and network rules | Decided A; contract text added |
 | R2-2 | Medium | H-0046 | How the engine matches a path against a policy glob | Yes (recommended option) |
 | R2-4 | Medium | H-0047 | How the engine knows an approval really came from the owner | No: wording below, edited in after the decision |
 | R2-8 | Low | H-0048 | How the owner's installed plugin is pinned to a release | Yes |

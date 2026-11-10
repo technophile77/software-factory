@@ -275,9 +275,17 @@ matches the result relative to the worktree with `/` separators, after
 Unicode NFC normalization. Deny globs match case-insensitively on every
 filesystem; allow globs match case-sensitively. A path counts as allowed
 only if an allow glob matches and no deny glob does.
-`commands` may not name a shell, interpreter or command wrapper. That is a
-guard rail, not the boundary: build and test tools run repo code by design,
-so arguments are not restricted. A repo override may not add tools.
+**Sandbox (H-0045, owner, 2026-11-10):** the engine runs every session of
+a role with `Bash` in Claude Code's OS sandbox, whose filesystem rules are
+the role's `read` and `write` lists (deny wins) and whose network rule is
+its `network` list. It sets `failIfUnavailable: true` and
+`allowUnsandboxedCommands: false`, lists no `excludedCommands`, and loads
+only the settings it generates, never a repo's `.claude/` settings, hooks
+or MCP servers. If the sandbox can't start, the session doesn't start. On
+Windows, agent sessions run inside WSL2. `commands` may not name a shell,
+interpreter or command wrapper. That is a guard rail; the sandbox is the
+boundary. Build and test tools run repo code by design, so arguments are
+not restricted. A repo override may not add tools.
 `network.allow` lists host names. From v2.2 the single entry `"*"` means any
 host, and is allowed only for a role whose tools are `WebFetch` and
 `WebSearch` alone, so open web content never reaches an agent that can see
