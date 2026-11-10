@@ -1,9 +1,9 @@
 # Feature: Model and effort tuning per agent
 
 - **Id:** F-002
-- **Status:** Draft (requirements interview; A-11 awaits the owner)
+- **Status:** Draft (requirements interview; A-11 and A-12 await the owner)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 8
+- **Spec version:** 9
 
 ## 1. Objective and business purpose
 Run each agent on the cheapest model and lowest effort level that still does
@@ -63,6 +63,8 @@ agent up to a stronger model or higher effort is always the owner's call.
 | FR-17 | Run reviews and per-role history (last 20 runs) are readable by the owner as plain files on `factory/state`. |
 | FR-18 | Effort metrics are built from measurement: every calibration trial, replay, and real agent run adds its tokens, cost, duration, pass/fail and member repo to a per-project record for its role and rung (`.factory/tuning/metrics.json` on the project config repo's `factory/state`). The ladder order for a role is recomputed from these as median cost per passing task. A rung with no measurements is marked unmeasured, and the review shows how many samples each figure rests on. |
 | FR-19 | Project evaluator: when the project's software spec is complete, and again when the owner asks, an evaluator agent reads it and files a Product decision proposing the complexity preset, with per-role reasons (for example: many interfaces raise the test engineer's tier; untrusted input raises the security reviewer's). It never sets rungs; calibration does. |
+| FR-20 | Per-task complexity: before stage 5 of each feature, the project evaluator rates the feature's complexity and predicts the rung each role will need. The prediction and the rung actually needed are recorded in the run review, giving the evaluator's running accuracy. |
+| FR-21 | Once the evaluator meets the reliability bar (A-12), the orchestrator may run a role on the evaluator's predicted rung for that task when it is cheaper than the role's approved rung, never above it. A task that fails on the cheaper rung is retried on the approved rung, and the miss counts against the evaluator. |
 
 ### Failure attribution
 | Root cause (testing-strategy.md) or event | Attributed to |
@@ -92,6 +94,8 @@ agent up to a stronger model or higher effort is always the owner's call.
 | AC-12 | Given a role meeting the step-down trigger whose cheaper rung fails the transcript replay, then no move is proposed for it and the review records why. | FR-13 |
 | AC-17 | Given a role meeting the step-down trigger with no selected transcripts, then no move is proposed, no master task is run for it, and the review says a transcript is needed. | FR-13 |
 | AC-18 | Given a completed project spec, when the evaluator runs, then one Product decision item proposes a complexity preset with per-role reasons, and no manifest or rung changes. | FR-19 |
+| AC-19 | Given a feature entering stage 5, when the evaluator runs, then its predicted rung per role is recorded, and the run review scores it against the rung actually needed. | FR-20 |
+| AC-20 | Given the evaluator below the A-12 bar, then the orchestrator runs every role on its approved rung; given it above the bar and predicting a cheaper rung, then the orchestrator may use that rung, and never a rung above the approved one. | FR-21 |
 | AC-13 | Given an open suggestion for a role, when the trigger is met again, then no second item is filed. | FR-14 |
 | AC-14 | Given an approved suggestion, then the manifest change is one commit whose message starts with the item id. | FR-15 |
 | AC-15 | Given a role already on the top rung that meets the step-up trigger, then the item says so and recommends investigating the role's instructions instead. | FR-12 |
@@ -150,7 +154,8 @@ agent up to a stronger model or higher effort is always the owner's call.
 | A-8 | **Formats (Interfaces).** Additive: Project manifest v1.1, Agent report v1.1, new Run review v1.0, Tuning metrics v1.0 and Calibration result v1.0 (§ 10). | Owner, 2026-11-10 | Approved |
 | A-9 | **How outputs are compared (Product).** use an objective check wherever the role has one: developer, the feature's final acceptance tests pass on the new code; test engineer, the new suite passes on the accepted code and fails on the bugs found during that run; security reviewer, every finding in the accepted report is found at the same severity; judge, same verdict and every Blocking finding; orchestrator, same root cause and next step. For the analyst, whose output is prose, a grader at a fixed top rung scores the new spec against the accepted one on a rubric (every requirement, criterion and assumption covered); its cost counts toward calibration. | Owner, 2026-11-10 (PR #8 review) | Approved |
 | A-10 | **When transcripts replace master tasks (Product).** per role, once at least 5 transcripts are selected, and at least one of them is a run where that role's first attempt failed, so the set tests the hard cases too. Until then, master tasks at the derived tier fill the gap. | Owner, 2026-11-10 (PR #8 review) | Approved |
-| A-11 | **Project evaluator agent (Product + Architecture).** A seventh agent role, `project-evaluator`, reviews the completed project spec and proposes the complexity preset (FR-19), replacing the owner's guess at onboarding. It is advisory: the owner approves, and calibration still finds the rungs. It runs on its own rung, calibrated on specs of known complexity. Adding a role amends spec § 2 (six agents) and needs a new `agents/project-evaluator/AGENT.md` and role policy entry, each through a hygiene item. | Owner raised 2026-11-10; scope to confirm | Pending |
+| A-11 | **Project evaluator agent (Product + Architecture).** A seventh agent role, `project-evaluator`. (a) It reviews the completed project spec and proposes the complexity preset (FR-19). (b) It also rates the complexity of each feature before stage 5 and predicts the rung each role will need (FR-20). Its predictions are scored against the rungs the run review shows were actually needed. (c) Once it proves reliable (A-12), the orchestrator may use its advice per task, but only to run a role on a cheaper rung than the approved one; going above the approved rung still needs the owner. It is advisory throughout and runs on its own rung, calibrated on specs and features of known complexity. Adding a role amends spec § 2 (six agents) and needs `agents/project-evaluator/AGENT.md` and a role policy entry, each through a hygiene item. | Owner, 2026-11-10 (PR #8 review: per-task extension); scope to confirm | Pending |
+| A-12 | **When the evaluator counts as reliable (Product).** ★ Recommended: its predicted rung matches the rung actually needed, or errs one rung high, in at least 80% of the last 20 features, and never predicts lower than needed for the security reviewer or validation judge. Below that bar its advice is recorded but not used; it is re-checked in every run review. | Owner | Pending |
 
 ### Master calibration tasks per role (shape, not content)
 | Role | Task | Automatic check |
@@ -172,7 +177,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | SR-5 | Before a transcript is selected, it is scanned for secrets and personal data; a transcript that has any is not selected. | Analyst (S2) | Proposed |
 | SR-6 | Transcript lists and master tasks are untrusted input and are validated before use; a replay's initial context is the recorded one, unchanged. | Analyst (S1) | Proposed |
 
-Gate 1 security review follows once A-11 is decided.
+Gate 1 security review follows once A-11 and A-12 are decided.
 
 ## 10. Interface requirements
 All changes are additive (A-8):
@@ -199,7 +204,7 @@ All changes are additive (A-8):
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit and approved (A-11 pending)
+- [ ] Assumptions explicit and approved (A-11, A-12 pending)
 - [ ] Blocking decisions resolved (those two; Gate 1 not yet run)
 
 ## 12. Change log
@@ -213,3 +218,4 @@ All changes are additive (A-8):
 | 6 | 2026-11-10 | Project evaluator agent proposes the complexity preset (A-11); F-004 parked | — |
 | 7 | 2026-11-10 | A-9 approved | Owner, 2026-11-10 |
 | 8 | 2026-11-10 | A-10 approved | Owner, 2026-11-10 |
+| 9 | 2026-11-10 | Evaluator extended to per-task complexity advice for the orchestrator once reliable (A-11 b, c; FR-20, FR-21; A-12 added) | — |
