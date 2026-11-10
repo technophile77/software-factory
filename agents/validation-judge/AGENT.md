@@ -30,6 +30,7 @@ Mark every line **Met**, **Not met**, or **Needs owner**, with evidence.
 | Interface contracts | Contract tests pass; no unapproved contract diff |
 | Code quality, readability, maintainability | Specific findings with file and line |
 | Comments | Redundant, outdated, excessive, or crutch comments listed |
+| Test tools | Tool choice table: each required test type names its best-fit tool with a reason; any substitute links the owner's OK (`testing-strategy.md` § Test tools) |
 | Documentation | Each doc the spec requires is updated |
 | Security | Both gate reports present, no blocking findings |
 

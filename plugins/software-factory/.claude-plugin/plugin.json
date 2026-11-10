@@ -1,0 +1,8 @@
+{
+  "name": "software-factory",
+  "version": "0.1.0",
+  "description": "Onboard a repository into the software factory and check it against the factory's standards.",
+  "author": {"name": "technophile77"},
+  "repository": "https://github.com/technophile77/software-factory",
+  "license": "UNLICENSED"
+}

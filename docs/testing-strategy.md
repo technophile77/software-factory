@@ -58,6 +58,10 @@ criteria-to-test map, failures with expected vs actual and logs, and anything
 that did not run and why. A run with unexplained skips is incomplete, and an
 incomplete run is not a pass.
 
+It also has a **tool choice** table: for each test type required at the
+repo's level, the best-fit tool and why, the tool used, and the link to the
+owner's decision for any substitute (see Test tools).
+
 ## Failure handling
 
 The orchestrator classifies each failure and handles it by cause. Approved by
@@ -102,6 +106,22 @@ on a clean machine, on every PR and every push to `main` (ADR 0008). A red
 CI run is a test failure like any other and follows the table above. CI
 results are evidence for the judge and for maturity promotions.
 
-## Test framework
+## Test tools
 
-Chosen per project as an Architecture decision.
+Each tool is chosen per project as an Architecture decision, after its S4.1
+security review. Tools are chosen by fit, never by what is already approved
+(owner, 2026-11-10, H-0020):
+
+- **Best fit first.** For each test type required at the repo's level, the
+  test engineer names the tool that best fits the stack and the job, and why,
+  before looking at what is approved. "Already approved" is never a reason on
+  its own.
+- **Ask, don't substitute.** If the best fit isn't approved, the test
+  engineer files a tool decision that compares it with any approved
+  alternative. That test type stays open until the owner decides.
+- **Substitutes need the owner.** Using an approved tool instead of the best
+  fit needs the owner's explicit OK on that decision, recorded in the run
+  report with what the substitute can't do.
+- **No stand-ins for a test type.** A tool counts only for the types it
+  actually provides: random inputs in a unit test are not property tests,
+  and coverage is not mutation testing.

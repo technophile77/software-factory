@@ -9,6 +9,12 @@ every dependent component together.
 Engine control channel, and Role policy (PR #2, 2026-11-08), and Project
 manifest (PR #3, 2026-11-09). Agent report v1.1 and three tuning contracts
 (Run review, Tuning metrics, Calibration result) approved 2026-11-10 (F-002 A-8, H-0013).
+Role policy v2.0 and Project manifest v1.1 approved 2026-11-10 (H-0008): the
+role policy moved into the manifest. Role policy v2.1 (same day, H-0008): each
+role lists its tools and what it may read; secret files are denied to every role.
+Its tightening after the F-003 security re-reviews (longer protected and secret
+lists, no shells as commands, no globs leaving the worktree) approved by the
+owner 2026-11-10 (decision card).
 
 ## Contract entry format
 
@@ -163,45 +169,82 @@ starts. Not reachable from the network.
 
 ---
 
-## Role policy — v1.0
+## Role policy — v2.1
 
 - Status: Approved
-- Owner decision: follows ADR 0004
+- Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10 (H-0008)
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
-  Security decision.
+  Security decision. v2.0 moved the policy from `.factory/policy/roles.yaml`
+  in each repo into the project manifest; the rule format is unchanged.
+  v2.1 added `tools` and `read`. No manifest used v2.0, so making them
+  required broke nothing.
 
-**Location:** `.factory/policy/roles.yaml` (change-controlled).
+**Location:** the `policy:` key of the project manifest (change-controlled),
+with optional per-repo overrides under `repos[].policy`. Effective policy
+for a repo: the project's roles, where a repo override's `allow` lists
+replace the project's and its `deny` lists are added to the project's.
+Each role has five sections: `tools` (the agent's built-in tools: `Read`,
+`Grep`, `Glob`, `Edit`, `Write`, `Bash`, `WebFetch`, `WebSearch`), `read`,
+`write`, `commands` (programs `Bash` may run) and `network`. Every role must
+list at least one tool and one read glob, and must deny reading secret files:
+`**/.env`, `**/.env.*`, `**/.envrc`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`, `**/*.jks`, `**/*.keystore`, `**/id_rsa*`, `**/id_dsa*`, `**/id_ecdsa*`, `**/id_ed25519*`, `**/.npmrc`, `**/.pypirc`, `**/.netrc`, `**/.git-credentials`, `**/*.tfvars`, `**/credentials*.json`, `**/*.tfstate`, `**/*.tfstate.*`, `**/.aws/credentials`, `**/.docker/config.json`, `**/*.ppk`, `**/kubeconfig`, `**/.kube/config`.
+Every core role must be present, and every role that may write outside
+`.factory/` must deny the change-controlled paths: `CLAUDE.md`, `**/CLAUDE.md`, `CLAUDE.local.md`, `**/CLAUDE.local.md`, `.claude/**`, `.mcp.json`, `.github/**`, `.gitignore`, `.gitattributes`, `.husky/**`, `.pre-commit-config.yaml`, `lefthook.yml`, `osv-scanner.toml`, `agents/**`, `skills/**`, `plugins/**`, `.claude-plugin/**`, `workflows/**`, `**/.claude/**`, `.envrc`, `**/.envrc`, `.git`, `.git/**`, `.gitmodules`, `.vscode/**`, `.devcontainer/**`. Globs are relative to the worktree: no absolute paths, `\`, or segments
+that can match `..`; brace expansion, negated classes (`[!`, `[^`) and
+extglobs are refused because glob dialects read them differently.
+`commands` may not name a shell, interpreter or command wrapper. That is a
+guard rail, not the boundary: build and test tools run repo code by design,
+so arguments are not restricted. A repo override may not add tools.
 
 ```yaml
-schema: role-policy/1.0
-roles:
-  software-developer:
-    write:                       # globs relative to the worktree root
-      allow: ["src/**", "docs/**"]
-      deny: ["tests/acceptance/**", ".factory/policy/**", "CLAUDE.md", "agents/**", "skills/**", "workflows/**", ".github/workflows/**"]
-    commands:                    # exact program names; arguments not restricted
-      allow: ["npm", "node", "git"]
-    network:
-      allow: ["registry.npmjs.org"]
-  security-reviewer:
-    write:
-      allow: [".factory/runs/**/security-reviewer-*.json"]
-    commands:
-      allow: []
-    network:
-      allow: []
+policy:
+  roles:
+    software-developer:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
+      read:                      # globs relative to the worktree root
+        allow: ["**"]
+        deny: [<the secret files above>]
+      write:
+        allow: ["src/**", "docs/**"]
+        deny: ["tests/acceptance/**", <the change-controlled paths above>]
+      commands:                  # exact program names; arguments not restricted
+        allow: ["npm", "node", "git"]
+      network:
+        allow: ["registry.npmjs.org"]
+    security-reviewer:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Write"]   # no Edit, no shell
+      read:
+        allow: ["**"]
+        deny: [<the secret files above>]
+      write:
+        allow: [".factory/runs/**/security-reviewer-*.json"]
+      commands:
+        allow: []
+      network:
+        allow: []
+repos:
+  - name: web
+    policy:
+      roles:
+        software-developer:
+          write:
+            allow: ["app/**"]    # replaces the project's allow list for this repo
+            deny: ["app/generated/**"]   # added to the project's deny list
 ```
 
-Rules: deny wins over allow; anything not allowed is denied; a role missing
-from the file may not run.
+Rules: deny wins over allow; anything not allowed is denied (a missing
+section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.0
+## Project manifest — v1.1
 
 - Status: Approved
-- Owner decision: ADR 0010; requirements from the owner (2026-11-09)
+- Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
+  adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008)
 - Used by: engine (resolves effective config), owner (edits it), VS Code extension (later)
 - Compatibility: adding an optional key is non-breaking; renaming or removing one is breaking.
 
@@ -209,7 +252,10 @@ from the file may not run.
 Full format, validation rules, and an example are in
 `proposals/0013-project-manifest.md`. Required top-level keys: `schema`
 (`factory-project/1.0`), `name`, `factory.version`, `repos`, `maturity`.
-Optional: `description`, `skills`, `agents`, `standards`, `settings`, `notes`.
+Optional: `description`, `skills`, `agents`, `standards`, `settings`, `notes`,
+`policy` (Role policy v2.0). Each entry of `repos` may carry `policy`
+overrides. The manifest is the only record of repo and project maturity
+levels. `schema` stays `factory-project/1.0`: v1.1 only adds optional keys.
 
 **Protected defaults:** `security-review` and the six core agents (orchestrator,
 requirements-analyst, software-developer, test-engineer, security-reviewer,

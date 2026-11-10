@@ -1,0 +1,132 @@
+schema: factory-project/1.0
+name: <project-name>
+description: <one line on what the project is>
+
+factory:
+  version: <tag or commit of the master factory>
+
+repos:
+  - name: <repo-name>
+    url: https://github.com/<owner>/<repo>
+    maturity: <level>       # the only record of this repo's level
+    policy:                 # per-repo overrides: allow lists replace the project's, deny lists add to them
+      roles:
+        software-developer:
+          write:
+            allow: ["<SOURCE_GLOBS>", "docs/**"]
+            deny: ["<TEST_GLOBS>"]
+          commands:
+            allow: [<BUILD_COMMANDS>, "git"]
+          network:
+            allow: [<REGISTRIES>]
+        test-engineer:
+          write:
+            allow: ["<TEST_GLOBS>"]
+          commands:
+            allow: [<TEST_COMMANDS>]
+          network:
+            allow: [<REGISTRIES>]
+        validation-judge:
+          commands:
+            allow: [<TEST_COMMANDS>]
+maturity: <level>             # may not exceed the lowest repo's maturity
+
+# complexity: <simple | moderate | complex>   # F-002 preset; add only once F-002 is merged
+                                              # and the owner has approved the value
+
+skills:
+  custom: []
+  override: []
+  exclude: []
+
+agents:
+  custom: []
+  override: []
+
+standards: {}
+
+# Role policy (Role policy v2.1, from ADR 0004's table). Anything not allowed
+# is denied; deny wins over allow; a role missing here may not run. `tools`
+# are the agent's built-in tools; Bash runs only the `commands` listed. Loosening
+# a rule is a Security decision. Fill placeholders per repo above; one you
+# can't fill becomes an empty list, never a guess.
+policy:
+  roles:
+    requirements-analyst:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Edit", "Write"]
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config"]   # secret files (Role policy v2.1)
+      write:
+        allow: ["docs/features/**"]
+        deny: ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json", ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml", "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**", "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**", ".gitmodules", ".vscode/**", ".devcontainer/**"]
+      commands:
+        allow: []
+      network:
+        allow: []
+    software-developer:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config"]
+      write:
+        allow: []
+        deny: ["docs/features/**", "CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json", ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml", "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**", "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**", ".gitmodules", ".vscode/**", ".devcontainer/**"]
+      commands:
+        allow: []
+      network:
+        allow: []
+    test-engineer:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config"]
+      write:
+        allow: []
+        deny: ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json", ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml", "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**", "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**", ".gitmodules", ".vscode/**", ".devcontainer/**"]
+      commands:
+        allow: []
+      network:
+        allow: []
+    security-reviewer:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Write"]
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config"]
+      write:
+        allow: [".factory/runs/**/security-reviewer-*.json"]
+      commands:
+        allow: []
+      network:
+        allow: []
+    validation-judge:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Write", "Bash"]
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config"]
+      write:
+        allow: [".factory/runs/**/validation-judge-*.json"]
+      commands:
+        allow: []
+      network:
+        allow: []
+    orchestrator:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config"]
+      write:
+        allow: [".factory/inbox/**", ".factory/runs/**"]
+      commands:
+        allow: ["git", "gh"]
+      network:
+        allow: ["github.com", "api.github.com"]
+
+notes: |
+  <project-specific context every agent reads>

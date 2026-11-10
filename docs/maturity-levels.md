@@ -6,8 +6,8 @@ promotion needs, and how strict each gate is at each level.
 **Status: DRAFT.** Neither table is approved. The orchestrator must not
 promote, demote, or relax a gate based on them until the owner approves them.
 
-Where levels are recorded: `.factory/maturity.yaml` in each repo, and the
-project manifest for the project level (proposed, follows ADR 0002).
+Where levels are recorded: the project manifest, `repos[].maturity` for
+each repo and `maturity` for the project (owner, 2026-11-10, H-0008).
 
 ## Promotion criteria (cumulative)
 
