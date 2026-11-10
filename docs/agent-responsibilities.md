@@ -1,6 +1,6 @@
 # Agent responsibilities
 
-Six roles. Each role's full definition is in `agents/<role>/AGENT.md`. This
+Eight roles: six primary roles and two advisory support roles (spec section 2). Each role's full definition is in `agents/<role>/AGENT.md`. This
 page is the summary and the authority matrix.
 
 | Role | Does | Produces | Must not |
@@ -11,6 +11,8 @@ page is the summary and the authority matrix.
 | Test engineer | Writes and runs independent tests from the spec and contracts | Test suite, run reports with logs | Read the developer's reasoning to shape tests; weaken tests to pass |
 | Security reviewer | Gate 1 (spec) and Gate 2 (implementation) reviews | Gate reports; Security decisions | Fix code; review continuously during development |
 | Validation judge | Checks the result against spec, standards, and evidence | PASS, FAIL, or NEEDS HUMAN REVIEW with findings | Fix code; take the developer's word as evidence |
+| Project evaluator | Rates project and feature complexity; predicts the model and effort each role needs | Complexity preset proposal (Product decision); per-feature predictions; advice to the orchestrator once reliable | Set a role's model or effort; advise a gate agent below its floor or approved setting |
+| Context hygiene | Reviews agent instructions and skills for duplication, size, skill extraction, and missed skill use | Configuration hygiene items | Edit any file |
 
 ## Independence rules
 
@@ -26,8 +28,8 @@ page is the summary and the authority matrix.
 
 | Inbox | Created by |
 |---|---|
-| Decision: Product, Assumptions | Requirements analyst, orchestrator |
+| Decision: Product, Assumptions | Requirements analyst, orchestrator; project evaluator (complexity preset only) |
 | Decision: Architecture, Interfaces | Orchestrator, developer (as proposals) |
 | Decision: Security | Security reviewer |
 | Testing | Orchestrator |
-| Configuration hygiene | Orchestrator (any agent may suggest to it) |
+| Configuration hygiene | Orchestrator, context hygiene agent (any agent may suggest to the orchestrator) |

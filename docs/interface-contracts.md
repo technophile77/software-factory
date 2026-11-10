@@ -211,9 +211,11 @@ Full format, validation rules, and an example are in
 (`factory-project/1.0`), `name`, `factory.version`, `repos`, `maturity`.
 Optional: `description`, `skills`, `agents`, `standards`, `settings`, `notes`.
 
-**Protected defaults:** `security-review` and the six core agents may never
-be excluded; overriding one requires a linked, approved Security decision
-and may only add rules.
+**Protected defaults:** `security-review` and the six core agents (orchestrator,
+requirements-analyst, software-developer, test-engineer, security-reviewer,
+validation-judge) may never be excluded; overriding one requires a linked,
+approved Security decision and may only add rules. The two support roles are
+not protected unless the owner decides otherwise.
 
 ---
 
