@@ -162,3 +162,37 @@ I ran every new test against a clean export of `43772c5`, before the fixes. Each
 - **O2 is resolved** by the two-step picker. Options now reach the picker whenever there are four or fewer, which is the picker's limit.
 - **Gate 2 #3 and my tests (dev report).** My tests read the raw output fields (`item.text`, `options`, `findings`, `error.message`) only to check that they are cleaned and pass through unchanged. The spec doesn't require those fields. If the orchestrator decides the client should drop them and output only `display`, I'll move those checks to `display`. The spec doesn't block either way.
 - **Coverage** was not re-measured this round. The figures above are for `43772c5`.
+
+## Final run
+
+- **Commit tested:** **`52a8d54`**, the branch head, with my new tests uncommitted on top (committed with this section). The product is as of `5f20e1b` (fix rounds 2 and 3); `c4fa227` and `52a8d54` changed docs only (H-0026, H-0027, spec v8 and v9). Product hashes: `interview_client.py` d72003289a54, `SKILL.md` 7c295360f856, `factory_check.py` 2d1307d71879
+- **Spec and contracts:** F-005 v9 (AC-7 and AC-8 now belong to the engine feature, by the owner's decision, so they stay out of scope here); Engine control channel v1.1 as amended by H-0025 and H-0026; Role policy v2.2
+- **Result:** **all pass, 0 skipped** on each of Python 3.11, 3.12 and 3.13, 3 runs each, with no flaky tests. None of the existing tests changed: all 142 passed on the new product before I added anything
+
+| Suite | Per run (each of 3.11, 3.12, 3.13, 3 runs) |
+|---|---|
+| F-005 acceptance and contract | 154 run, 154 passed (142 existing + 12 new) |
+| F-005 developer | 86 run, 86 passed |
+| onboard-repo, both suites | 266 run, 265 passed, 1 skipped (python3.10 not installed, as before) |
+| `python3 scripts/check_docs.py` | passes |
+
+### New tests (channel v1.1 as amended by H-0026, and SR-7)
+
+- `H0026FileModes` (2): a `.factory` directory that is group- or world-writable (0775, 0757, 0777) is refused before connecting, with a message naming the cause. So is an `engine.json` that is group- or world-writable (0620, 0602, 0666). Both are accepted again once the mode is fixed.
+- `H0026ListenerPid` (1): an `engine.json` whose `pid` is a live process other than the one listening on the socket is refused with nothing sent. The kernel reports the peer pid on Linux, so the test runs here.
+- `H0026BusyStartedAt` (3): `busy` shows a well-formed `data.started_at` that appears nowhere else. A malformed value is not shown, nor any other `data` key. That covers prose, a timestamp followed by a newline and an injected instruction, a timestamp followed by an escape, a non-ISO form, a number, and null. `started_at` in the `data` of any other error code is not shown either (SR-16 as worded in v9).
+- `SR07PipeTransport` (6): the pipe transport's logic, run on Unix with a stand-in for the Win32 calls, wired to my contract fake engine:
+  - Calls to `engine.status`, `interview.open` and `interview.next` work with partial writes, and the handle is closed afterwards.
+  - The transport never reads when nothing is waiting, so a write can't stall behind a blocked read (validation M5).
+  - Remote, `\\?\`, newline-suffixed and non-pipe names are refused before the pipe is opened.
+  - A server not running as the owner is refused, and its handle is closed with nothing sent.
+  - An engine that isn't running gives `engine_unreachable`.
+  - A silent pipe times out on time.
+  - A broken pipe gives `connection_lost`.
+
+### Not run, and why (unchanged)
+
+- **The real Win32 calls (`_Win32Pipe`) and macOS `getpeereid`:** no Windows or macOS machine. The pipe transport's logic is now covered with the stand-in, but the Win32 calls themselves have still never run.
+- **Python 3.10:** not installed.
+- **AC-7 and AC-8:** these are with the engine feature (spec v8).
+- **Coverage:** not re-measured. The figures above are for `43772c5`.
