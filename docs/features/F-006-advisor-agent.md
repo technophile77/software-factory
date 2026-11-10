@@ -34,6 +34,11 @@ Interview answers (owner):
   ask for the advisor on any interview question. This adds an "ask the
   advisor" choice to the F-005 interview skill. The owner always sees that
   the advisor was used and why.
+- Q4 (2026-11-10): the analyst's research sources, read only (project code
+  and docs; factory docs, ADRs and past decisions; shared skills; the web
+  only through the web reader), plus a shell inside a sandbox so it can
+  test code. No file writes outside the sandbox and no inbox access. Its
+  output goes back only to the caller.
 
 ## 2. Expected behavior
 _To be written from the interview._
@@ -78,7 +83,8 @@ policy entry and shared agent-list edits, each through a hygiene item
 | Q1 | Who can call the advisor? | Product | Answered: analyst and orchestrator (owner, 2026-11-10) |
 | Q2 | Which model does the advisor run on? | Product | Answered: always strongest, high effort (owner, 2026-11-10) |
 | Q3 | Who decides a question goes to the advisor? | Product | Answered: caller with reason, or the owner (owner, 2026-11-10) |
-| Q4 | What can the advisor read and use? | Security | Open |
+| Q4 | What can the advisor read and use? | Security | Answered: analyst's sources read only, plus shell in a sandbox (owner, 2026-11-10) |
+| Q5 | What sandbox does the advisor's shell run in, and what can it reach? | Security | Open |
 
 ## 12. Readiness gate
 - [ ] Clear objective
