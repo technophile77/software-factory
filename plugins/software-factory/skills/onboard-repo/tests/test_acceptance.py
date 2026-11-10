@@ -2375,7 +2375,13 @@ class AC20Plugin(Base):
         self.assertEqual(code, 0, out)
         code, out = self.claude("plugin", "details", "software-factory@software-factory", env=env)
         self.assertEqual(code, 0, out)
-        self.assertRegex(out, r"Skills \(1\)\s+onboard-repo")
+        # The plugin may ship other skills (F-005 added spec-interview); this
+        # test only needs onboard-repo among them.
+        listed = re.search(r"Skills \((\d+)\)[ \t]+([^\n]*)", out)
+        self.assertIsNotNone(listed, out)
+        names = [n.strip() for n in listed.group(2).split(",")]
+        self.assertIn("onboard-repo", names)
+        self.assertEqual(len(names), int(listed.group(1)), out)
         installed = [os.path.join(d, "SKILL.md") for d, _, f in os.walk(config)
                      if "SKILL.md" in f and d.endswith(os.path.join("skills", "onboard-repo"))]
         self.assertTrue(installed, "installed copy of the skill not found")
