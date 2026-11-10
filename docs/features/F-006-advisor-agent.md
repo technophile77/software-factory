@@ -45,7 +45,13 @@ Interview answers (owner):
   and gains it once that sandbox is decided and built.
 - Q6 (2026-11-10): every advisor call needs the owner's OK. Agents can only
   propose a call (with their reason, per Q3); it runs when the owner
-  approves it. The owner's own requests need no further approval.
+  approves it. The owner's own requests need no further approval. In an
+  interview the analyst proposes the call as an interview item.
+- Q7 (2026-11-10): the orchestrator files the hard decision as a normal
+  inbox item in its own category, with its options and recommendation, plus
+  an "Ask the advisor first" action carrying its reason. If the owner picks
+  it, the advisor runs and its advice is added to the same item. No new
+  category or second item.
 
 ## 2. Expected behavior
 _To be written from the interview._
@@ -94,7 +100,8 @@ policy entry and shared agent-list edits, each through a hygiene item
 | Q4 | What can the advisor read and use? | Security | Answered: analyst's sources read only, plus shell in a sandbox (owner, 2026-11-10) |
 | Q5 | What sandbox does the advisor's shell run in? | Security | Answered: the R2-1 sandbox; shell added once it exists (owner, 2026-11-10) |
 | Q6 | What limits the advisor's spend? | Product | Answered: owner's OK for every call (owner, 2026-11-10) |
-| Q7 | How does the orchestrator's request for an advisor call reach the owner? | Product | Open |
+| Q7 | How does the orchestrator's request for an advisor call reach the owner? | Product | Answered: extra action on the decision item (owner, 2026-11-10) |
+| Q8 | What does the advisor return, and how is it shown? | Product | Open |
 
 ## 12. Readiness gate
 - [ ] Clear objective
