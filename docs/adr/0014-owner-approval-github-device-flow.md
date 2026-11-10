@@ -46,15 +46,16 @@ device sign-in before the engine accepts any reply in it.
 
 ## Implications
 - **Security, residual risk (recorded at the owner's choice):** the check
-  happens once per session. After approval, an agent running as the owner
-  that can read the session token (from the client or the owner's Claude
-  Code history) or connect to the socket could send replies in that session.
-  This is narrowed, not closed, by: the engine refusing processes it started
-  (SR-14); the sandbox of ADR 0015 (proposal 0017) denying agents the engine
-  socket, `engine.json` and the owner's Claude Code history; and the 2-hour
-  cap. Running agents as a separate OS account (option A) or a per-reply
-  presence check (option C) would close it; either can be added later
-  without changing this flow.
+  happens once per session. After approval, a process that can read the
+  session token (from the client or the owner's Claude Code history) or
+  connect to the socket could send replies in that session. Narrowed by: the
+  engine refusing processes it started (SR-14); the 2-hour cap; and, once
+  approved, ADR 0015 (proposal 0017), which runs every agent session in its
+  own container with only its worktree and caches mounted: no owner home, no
+  engine socket or `engine.json`, no owner credentials. With that in place
+  the remaining exposure is a container escape, or a non-factory program the
+  owner runs themselves. A per-reply presence check (option C) would close
+  it and can be added later without changing this flow.
 - **Code confusion:** an agent could start its own device sign-in and hope
   the owner approves the wrong code. The one-session-per-feature lock and the
   owner comparing the code shown in the skill guard against this.

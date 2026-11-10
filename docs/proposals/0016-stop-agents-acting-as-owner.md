@@ -158,12 +158,12 @@ feature starts, to decide at Beta. Drop B, D and E.
   owner's login did it" holds, because agents no longer have the owner's
   login. No separate phone flow is needed for it.
 
-Proposal 0017 was decided by the owner on 2026-11-10 (ADR 0015): each agent
-session runs in Claude Code's sandbox built from its role policy (through WSL2
-on Windows), and owner actions are commits signed with the owner's SSH signing
-key listed on GitHub. Both assume the signing key and the owner's credentials
-are out of agents' reach, which is what option A provides. Under option B, C
-or E alone, an agent running as the owner could read that key.
+Proposal 0017 was decided by the owner on 2026-11-10 (ADR 0015, wording
+awaiting approval): each agent session runs in its own container with only
+its worktree and caches mounted, and owner actions are commits signed with
+the owner's SSH signing key listed on GitHub. The container gives most of
+what option A would: agents can't reach the owner's home, credentials, the
+engine socket or `engine.json`.
 
 ## Questions for the owner
 
@@ -179,7 +179,7 @@ or E alone, an agent running as the owner could read that key.
 |---|---|---|
 | H-0050 | ADR 0014 recording option B | Drafted, awaiting owner approval |
 | H-0051 | Engine control channel v1.2: pending sessions, `interview.awaitApproval`, error codes | Drafted, awaiting owner approval |
-| H-0052 | Sandbox rules deny agents the engine socket, `engine.json` and the owner's Claude Code history | Drafted in PR #20 (ADR 0015 sandbox rules), awaiting owner approval |
+| H-0052 | Agents can't reach the engine socket, `engine.json`, the owner's Claude Code history or credentials | Covered by ADR 0015's container per agent session (PR #20), awaiting owner approval |
 | H-0053 | F-005 spec SR-5: decided, residual risk recorded | Drafted, awaiting owner approval |
 | H-0054 | Reserved for option C if the owner adds it later | Not used |
 
