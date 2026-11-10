@@ -151,3 +151,10 @@ Not done: per-repo protected paths (R3-6, so the factory repo can add `scripts/*
 
 Left as logged Lows: R4-3 (repo text stays inline in Markdown, without escaping backticks, `<` or links) and the R3-6/R3-7 leftovers.
 
+## Fixes after re-validation 4
+
+| Finding | Fix | Test |
+|---|---|---|
+| M16: 9b84007 narrowed interpreter families to exact names (`pythonw`, `luajit`, `nodemon` slipped through) | Interpreter families match as prefixes again; shells and awks as suffixes of the unversioned name; common build tools stay allowed | `ThirdGateRegressions.test_m16_interpreter_families_match_as_prefixes` |
+| m28: `[x[:punct:]]` | Any `[:`, `[.` or `[=` in a glob is refused | `test_m28_bracket_classes_anywhere_in_a_bracket` |
+

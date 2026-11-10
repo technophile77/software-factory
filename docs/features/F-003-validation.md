@@ -509,3 +509,92 @@ For `8dd0d19`, no. It adds new output built from repo-controlled text, and that 
 2. Test engineer: add a regression test for B4 (an older-interpreter compile or a source check) and one for M15 (a hostile file name), then run on the new commit, under 3.11 as well as 3.13 if possible.
 3. Orchestrator: get and record the owner's approval of the `538177f` contract amendment and the tightened default policy (M14).
 4. Security reviewer: a narrow check of the M15 fix. A full re-review isn't needed.
+
+## Re-validation 4 (d45aca1)
+
+- **Commit:** `d45aca1` (`claude/project-thread-g2huhl`). Since re-validation 3: `ee6be85` (B4, M15, m26), `16f88c6` (test engineer on `ee6be85`: F4, F5), `794c830` (H-0008 amendment) and `c4e8fb6` (F4, F5, R3-1 to R3-7), `3acd48d` (test engineer on `c4e8fb6`: F6, F7), `9b84007` (R4-1, R4-2, R4-4, R4-5, F6, F7, plus Gate 2 re-review 4), `d45aca1` (docs only).
+- **Spec:** v6. **Maturity level:** Rapid prototype.
+- **Verdict:** **NEEDS HUMAN REVIEW**
+  - B4 is fixed. The checker compiles and the full suite passes on Python 3.11 and 3.13, and the test engineer ran 3.11, 3.12 and 3.13 on `c4e8fb6`. M15 is fixed in its Markdown-structure sense (R3-1 fixed; residual R4-3 Low). F6 and F7 now pass.
+  - Every line is Met except Interface contracts, which is **Needs owner** (M14). It is the only thing outstanding. The owner's approval of the H-0008 amendments (`538177f`, `794c830`) and of the tightened default policy in `templates/factory-project.yaml` is still unrecorded. Once the owner approves it and the approval is recorded (commit message plus `interface-contracts.md:8-13` and `:165`), this becomes PASS at Rapid prototype with no further run needed.
+  - New: M16. `9b84007` narrowed the interpreter families, so names that `c4e8fb6` refused now validate (`pythonw`, `rubyw`, `pypyw`, `luajit`, `nodemon`, `perlbrew`, `tclkit`). Neither the test engineer nor Gate 2 has seen `9b84007`. Major findings are allowed at Rapid prototype, so this is logged and doesn't block.
+
+### My own run
+
+| Step | Result |
+|---|---|
+| `cd plugins/software-factory/skills/onboard-repo && python3.11 -m unittest discover -s tests` (3.11.18) | **254 run, OK**, 1 skipped (`test_fr12_checker_runs_on_python_3_10`: no 3.10 installed) |
+| Same with `python3.13` (3.13.18) | **254 run, OK**, 1 skipped (same) |
+| `python3 scripts/check_docs.py` | "All docs checks passed.", exit 0 |
+| `git diff 3acd48d d45aca1 --stat` | `tests/test_acceptance.py` is byte-identical to the test engineer's commit. Only `factory_check.py`, `SKILL.md` (step 5 wording), the developer's `test_factory_check.py` and reports changed |
+| Product hashes (SHA-256, 12 hex) | `factory_check.py` 28e51220ee12 (was 3bbe7ca8ac7f at the test engineer's run), `SKILL.md` e0efff9deb82 (was bf112e779db9), `factory-project.yaml` f87b36363366 and `ci-workflow.yml` c254e5e991f7 unchanged |
+| Probe p5, `plan-items` against the `factory/state` worktree check (scratch repos, absolute paths, run from outside the repo) | Real `factory/state` worktree: accepted, items written. Tracked `.factory -> ../out` (non-git): `--write` and the dry run are both refused (R4-1/F6 fixed). Repo checked out on `factory/state` with a tracked `.factory/`: refused (R4-2 fixed). A `factory/state` worktree of a different repo placed at `.factory`: refused. A repo reached through a symlinked parent: accepted (no m26 regression) |
+| Probe p6, globs through `validate-manifest` (orchestrator write allow on the template) | `.factory/[[:punct:]][[:punct:]]/CLAUDE.md` is refused (R4-5 fixed as reported). `.factory/[x[:punct:]][x[:punct:]]/CLAUDE.md` passes as a factory-only write, and bash `[[ ".." == [x[:punct:]][x[:punct:]] ]]` matches (m28) |
+| Probe p7, command names: `c4e8fb6` vs `d45aca1` rules | Now refused: `bash5.2`, `ksh93`, `busybox.static`, `sh.distrib`, `pwsh-preview`, `py`, the `stdbuf`/`setsid`/`chroot`/… wrappers, `irb`, `cscript`. **Refused before, accepted now:** `pythonw`, `rubyw`, `pypyw`, `luajit`, `nodemon`, `perlbrew`, `perldoc`, `tclkit`, `php_cli`, `pythonx` (M16) |
+
+### Is the test engineer's run on `c4e8fb6` enough for `d45aca1`?
+
+Yes, for the acceptance criteria at Rapid prototype. This matches how re-validation 3 treated a narrow change. The test engineer's acceptance file is unchanged and fully passes on 3.11 and 3.13 on `d45aca1`, including their F6 (`FactoryStateInbox.test_symlinked_factory_folder_refused_from_any_working_directory`) and F7 (`FR07RolePolicy.test_commands_may_not_name_a_shell_or_interpreter`) tests. The product diff is three places in `factory_check.py` (`:1218-1226`, `:1236`, `:1262-1264`, `:1495-1528`) and one SKILL.md paragraph, and each is aimed at a reported finding. My probes p5 and p6 confirm the R4 fixes independently of the developer's tests.
+
+That is not enough for the parts no test covers. Probe p7 shows `9b84007` also loosened a security check without saying so, and no one but me has looked at it (M16). That doesn't change any AC line, but it is the reason the next round should include a test-engineer run on the final commit.
+
+### Evidence checklist
+
+| Line | Status | Evidence |
+|---|---|---|
+| FR-1 to FR-11, FR-13 | Met | The test engineer's criteria-to-test map (`F-003-test-report.md`, "Run on the final commit" plus "Run on c4e8fb6" changes). All pass on `d45aca1` in my 3.11 and 3.13 runs |
+| FR-12 | Met | Compiles and runs on 3.11 and 3.13 (my run); the test engineer ran 3.11 to 3.13 on `c4e8fb6`. `SecondGateRegressions.test_b4_checker_compiles_on_python_3_10` guards B4. No 3.10 interpreter is available anywhere (logged in the test report's "Not run") |
+| FR-14, FR-15 | Met | `AC18TestInventory`, `AC19Baseline`, `SR01RepoTextInMarkdown` pass |
+| AC-1 to AC-21 | Met | As above. AC-15 now holds on 3.11 (B4 resolved) |
+| SR-1 to SR-8 | Met, with M16, m28 | SR-1: line breaks fold everywhere (`SR01RepoTextInMarkdown`, R3-1 fixed; R4-3 residual Low). SR-4: probe p5, `FactoryStateInbox` (8/8 pass) |
+| Architecture / ADRs | Met | No ADR diff. ADR 0004 and 0009: `.factory/` is trusted only as the `factory/state` linked worktree (`factory_check.py:1495-1528`) |
+| Interface contracts | **Needs owner** | Contract tests pass, and `FR07RolePolicy.test_role_policy_lists_match_the_contract_text` ties the test lists to `interface-contracts.md`. But the `538177f` and `794c830` amendments to Role policy v2.1 and the tightened template policy still have no recorded owner decision: neither commit has an "Owner decision" line, and `interface-contracts.md:8-13,165` name only the original H-0008 approvals (M14). The owner has an open decision card for it |
+| Code quality, readability, maintainability | Met, with findings | `_require_state_worktree` is clear, and it fails closed for every `.factory` path. Findings: M16, m28, m29 |
+| Comments | Met | The new comments say why (`:1216-1217`, `:1262`, `:1496-1499`). m24's stale text remains: `test_factory_check.py:3` (old run path), `interface-contracts.md:246` ("Role policy v2.0"), `F-003-dev-report.md:70` (`maturity.yaml`) |
+| Test tools | Met for F-003 (m25, m27 open) | Tool choice table in `F-003-test-report.md`. Line coverage only |
+| Documentation | Met | SKILL.md step 5 now matches the code and says to stop and tell the owner (O10, R4-2). Dev, test and gate reports are updated. `check_docs.py` passes |
+| Security | Met at Rapid prototype, with M16 | Gate 1 is present. Gate 2 re-review 4 (`ee6be85..c4e8fb6`) passes, with 5 Low findings and nothing Critical. `9b84007` fixes R4-1, R4-2, R4-4, R4-5 (probes p5, p6) and is unreviewed by Gate 2. My probes found one partial bypass of R4-5 (m28) and one regression of the R4-4 guard rail (M16). Both are Low on Gate 2's scale (the contract calls this a guard rail, and R2-1 stays High and open with the owner), so neither blocks at this level |
+
+### Status of earlier findings
+
+| # | Now | Evidence |
+|---|---|---|
+| B4 | **Resolved** | My run on 3.11; the test engineer's run on 3.11 to 3.13 (`c4e8fb6`) |
+| M14 | **Open, Needs owner** | See the Interface contracts line |
+| M15 | **Resolved** | No line break reaches `assessment.md` or the inbox items (`SR01RepoTextInMarkdown`, Gate 2 re-review 4 on R3-1). Inline residual: R4-3 (Low, Gate 2) |
+| m26 | **Resolved** | `test_m26_symlinked_folders_above_the_working_folder_are_fine`; probe p5 (symlinked parent accepted) |
+| F4 to F7 (test report) | **Resolved** | The test engineer's tests pass on `d45aca1` |
+| m27 | Open | Branch coverage still waits on the coverage.py tool decision |
+| m2, m3, m5, m6, m7, m8, m10, m11, m14, m21, m22, m24, m25 | Open | Unchanged |
+
+### Findings
+
+#### Blocking
+
+None.
+
+#### Major (allowed at Rapid prototype; logged)
+
+| # | Location | Finding |
+|---|---|---|
+| M14 | `docs/interface-contracts.md:8-13,165,181-190` (`538177f`, `794c830`); `templates/factory-project.yaml` | Same as re-validation 3, now also covering `794c830`. The owner must approve the Role policy v2.1 amendments and the tightened default policy, and the approval must be recorded. Needs owner. |
+| M16 | `plugins/software-factory/skills/onboard-repo/scripts/factory_check.py:1218`, `:1262-1264` | `9b84007` replaced the open-ended families (`python.*`, `pypy.*`, `node.*`, `ruby.*`, `perl.*`, `php.*`, `lua.*`, `tcl.*`) with exact stems matched after cutting at the first `-`, `.` or digit. Versioned names are now caught, but every interpreter whose suffix is a letter or `_` passes again: `pythonw` (Windows Python), `rubyw`, `pypyw`, `luajit`, `tclkit`, `php_cli`, `nodemon` and `perlbrew` (both run scripts). `c4e8fb6` refused all of them (probe p7). The dev report says only that names were "added". So a commit meant to tighten the rule loosened it, without saying so and without review: Gate 2 stops at `c4e8fb6`, and the test engineer's list has none of these names. The contract rule (`interface-contracts.md:186`, "may not name a shell, interpreter or command wrapper") is unconditional. Fix: match both the full name and the stem against the old open families, or add the lost names. The test engineer should add them to `test_commands_may_not_name_a_shell_or_interpreter`. |
+
+#### Minor (logged; never block)
+
+| # | Location | Finding |
+|---|---|---|
+| m28 | `factory_check.py:1236` | The R4-5 fix refuses `[[` but not a POSIX class later in a bracket expression. `.factory/[x[:punct:]][x[:punct:]]/CLAUDE.md` validates as a factory-only orchestrator write with no change-controlled denies, and in bash it matches `.factory/../CLAUDE.md` (probe p6). This is the same Low as R4-5. Gate 2's own simpler suggestion would close it: refuse `[:`, `[.` and `[=` anywhere, or refuse `[` in globs altogether. |
+| m29 | `SKILL.md:150-152` | The step 5 edit leaves one 130-character line in a file wrapped at about 75. Cosmetic. |
+
+### Counts (re-validation 4)
+
+- Blocking: 0. B4 is resolved.
+- Major: 2 open (M14 Needs owner, M16 new). M15 is resolved.
+- Minor: 16 open (m2, m3, m5, m6, m7, m8, m10, m11, m14, m21, m22, m24, m25, m27, m28, m29). m26 is resolved. Gate 2's R4-3 and the R3-6/R3-7 leftovers are tracked in the gate report.
+- Lines: 0 Not met, 1 Needs owner (Interface contracts).
+
+### To reach PASS at Rapid prototype
+
+1. Owner: approve the H-0008 amendments (`538177f`, `794c830`) and the tightened template policy on the open decision card. The orchestrator then records the approval in `interface-contracts.md` and in a commit. Nothing else is required.
+2. Recommended, not required: the developer fixes M16 and m28. The test engineer then adds the names lost in M16 to the command test and runs on the final commit, and Gate 2 checks `9b84007` and that fix narrowly.

@@ -1215,7 +1215,10 @@ SECRET_FILES = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**
 
 # Role policy commands are program names with any arguments, so a shell or
 # interpreter would undo every read and write rule (Gate 2 re-review R2-1).
-SHELL_FAMILIES = re.compile(r"^(.*sh|python|pypy|ipython|node|nodejs|.*awk|perl|ruby|irb|php|lua|tcl|tclsh|r|rscript|py)$")
+# Interpreter families match as prefixes (pythonw, luajit, nodemon); shells and
+# awks as suffixes of the name without its version (ksh93, bash5.2, gawk).
+SHELL_FAMILIES = re.compile(r"^(python|pypy|ipython|node|ruby|irb|perl|php|lua|tcl|rscript)|^(r|py)$")
+SHELL_SUFFIXES = re.compile(r"(sh|awk)$")
 # A guard rail, not the boundary: build and test tools run repo code by design
 # (R2-1 stays with the owner). Wrappers that run any command count as shells.
 SHELL_COMMANDS = {"busybox", "find", "npx", "uv", "uvx", "pipx", "toybox", "script", "expect", "watch", "nohup",
@@ -1233,7 +1236,7 @@ def _escapes_worktree(glob):
     # and `**` are matched per segment by the engine and never cross upward.
     # Brace expansion, negated classes and extglobs read differently across glob
     # dialects, so they are refused rather than interpreted.
-    if re.search(r"[{}]|\[[!^\[]|[@!+*?]\(", glob):
+    if re.search(r"[{}]|\[[!^\[]|\[[:.=]|[@!+*?]\(", glob):
         return True
     return glob.startswith(("/", "~")) or "\\" in glob or re.match(r"^[A-Za-z]:", glob) is not None \
         or any(seg not in ("*", "**") and fnmatch.fnmatchcase("..", seg) for seg in glob.split("/"))
@@ -1260,8 +1263,10 @@ def _check_role(where, rule, errors):
             elif key == "commands":
                 names = {os.path.basename(i).lower().removesuffix(".exe") for i in items}
                 # Versioned or suffixed names (`python3.12`, `bash5.2`, `busybox.static`) count as their family.
-                shells = sorted(n for n in names if {n, re.split(r"[-.\d]", n)[0]} & SHELL_COMMANDS
-                                or SHELL_FAMILIES.match(re.split(r"[-.\d]", n)[0]))
+                def base(n):
+                    return re.split(r"[-.\d]", n)[0]
+                shells = sorted(n for n in names if {n, base(n)} & SHELL_COMMANDS or SHELL_FAMILIES.match(n)
+                                or SHELL_SUFFIXES.search(base(n)))
                 if shells:
                     errors.append(f"{where}.commands.allow has shells or interpreters, which bypass the policy: {', '.join(shells)}")
             elif key == "tools":

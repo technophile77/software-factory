@@ -986,3 +986,16 @@ class ThirdGateRegressions(Base):
             self.assertTrue(fc._escapes_worktree(glob))
         self.assertFalse(fc._escapes_worktree("src/app/(auth)/**"))
 
+    def test_m16_interpreter_families_match_as_prefixes(self):
+        for cmd in ("pythonw", "rubyw", "pypyw", "luajit", "nodemon", "perlbrew", "tclkit", "php_cli", "ksh93", "bash5.2"):
+            with self.subTest(cmd=cmd):
+                text = self.mp.manifest().replace('allow: ["npm"]', f'allow: ["npm", "{cmd}"]')
+                self.assertTrue(any("bypass the policy" in e for e in fc.validate_manifest(fc.parse_yaml(text))))
+        for cmd in ("npm", "cargo", "go", "pytest", "make", "git", "gh", "mvn", "gradle", "dotnet"):
+            with self.subTest(cmd=cmd):
+                text = self.mp.manifest().replace('allow: ["npm"]', f'allow: ["{cmd}"]')
+                self.assertFalse(any("bypass the policy" in e for e in fc.validate_manifest(fc.parse_yaml(text))))
+
+    def test_m28_bracket_classes_anywhere_in_a_bracket(self):
+        self.assertTrue(fc._escapes_worktree(".factory/[x[:punct:]][x[:punct:]]/CLAUDE.md"))
+
