@@ -1,9 +1,9 @@
 # Feature: Model and effort tuning per agent
 
 - **Id:** F-002
-- **Status:** Draft (requirements interview; A-9 and A-10 await the owner)
+- **Status:** Draft (requirements interview; A-9, A-10 and A-11 await the owner)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 5
+- **Spec version:** 6
 
 ## 1. Objective and business purpose
 Run each agent on the cheapest model and lowest effort level that still does
@@ -13,8 +13,9 @@ not guessed, and is tuned from evidence after every feature run. Moving any
 agent up to a stronger model or higher effort is always the owner's call.
 
 ## 2. Expected behavior
-1. **Initial calibration.** When a project is onboarded, the owner sets a
-   complexity preset. The engine runs the master calibration tasks for that
+1. **Initial calibration.** When a project's software spec is complete, a
+   project evaluator agent reviews it and proposes the complexity preset,
+   with its reasons, for the owner to approve (A-11). The engine runs the master calibration tasks for that
    tier for each agent role, starting on the cheapest rung of the ladder and
    climbing one rung at a time until the role passes. The cheapest passing
    rung becomes the role's starting setting, proposed to the owner as one
@@ -61,6 +62,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | FR-16 | Derived complexity: the tier whose master calibration tasks best match the rungs the roles currently need (median role rung mapped to a tier), recorded in each run review and in history. It does not edit the manifest preset. |
 | FR-17 | Run reviews and per-role history (last 20 runs) are readable by the owner as plain files on `factory/state`. |
 | FR-18 | Effort metrics are built from measurement: every calibration trial, replay, and real agent run adds its tokens, cost, duration, pass/fail and member repo to a per-project record for its role and rung (`.factory/tuning/metrics.json` on the project config repo's `factory/state`). The ladder order for a role is recomputed from these as median cost per passing task. A rung with no measurements is marked unmeasured, and the review shows how many samples each figure rests on. |
+| FR-19 | Project evaluator: when the project's software spec is complete, and again when the owner asks, an evaluator agent reads it and files a Product decision proposing the complexity preset, with per-role reasons (for example: many interfaces raise the test engineer's tier; untrusted input raises the security reviewer's). It never sets rungs; calibration does. |
 
 ### Failure attribution
 | Root cause (testing-strategy.md) or event | Attributed to |
@@ -89,6 +91,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | AC-11 | Given two roles meeting the step-down trigger in one review, and both pass at the cheaper rung, then one grouped hygiene item proposes both moves. | FR-13 |
 | AC-12 | Given a role meeting the step-down trigger whose cheaper rung fails the transcript replay, then no move is proposed for it and the review records why. | FR-13 |
 | AC-17 | Given a role meeting the step-down trigger with no selected transcripts, then no move is proposed, no master task is run for it, and the review says a transcript is needed. | FR-13 |
+| AC-18 | Given a completed project spec, when the evaluator runs, then one Product decision item proposes a complexity preset with per-role reasons, and no manifest or rung changes. | FR-19 |
 | AC-13 | Given an open suggestion for a role, when the trigger is met again, then no second item is filed. | FR-14 |
 | AC-14 | Given an approved suggestion, then the manifest change is one commit whose message starts with the item id. | FR-15 |
 | AC-15 | Given a role already on the top rung that meets the step-up trigger, then the item says so and recommends investigating the role's instructions instead. | FR-12 |
@@ -126,8 +129,9 @@ agent up to a stronger model or higher effort is always the owner's call.
 - The orchestration engine (ADR 0001), not built yet. F-002 cannot be built
   before the engine can launch agents and keep transcripts.
 - Project manifest (ADR 0010), Agent report and Inbox item contracts.
-- F-003 (repo onboarding) sets the complexity preset and triggers initial
-  calibration.
+- F-003 (repo onboarding) runs the project evaluator, records the approved
+  preset, and triggers initial calibration.
+- F-004 (parked): opt-in cross-project baseline for a new project's starting order.
 - After approval, these change-controlled files need hygiene items:
   `workflows/feature-development/workflow.yaml` (run review step),
   `agents/orchestrator/AGENT.md` (writes the review, proposes transcripts),
@@ -146,6 +150,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | A-8 | **Formats (Interfaces).** Additive: Project manifest v1.1, Agent report v1.1, new Run review v1.0, Tuning metrics v1.0 and Calibration result v1.0 (§ 10). | Owner, 2026-11-10 | Approved |
 | A-9 | **How outputs are compared (Product).** ★ Recommended: use an objective check wherever the role has one: developer, the feature's final acceptance tests pass on the new code; test engineer, the new suite passes on the accepted code and fails on the bugs found during that run; security reviewer, every finding in the accepted report is found at the same severity; judge, same verdict and every Blocking finding; orchestrator, same root cause and next step. For the analyst, whose output is prose, a grader at a fixed top rung scores the new spec against the accepted one on a rubric (every requirement, criterion and assumption covered); its cost counts toward calibration. | Owner | Pending |
 | A-10 | **When transcripts replace master tasks (Product).** ★ Recommended: per role, once at least 5 transcripts are selected, and at least one of them is a run where that role's first attempt failed, so the set tests the hard cases too. Until then, master tasks at the derived tier fill the gap. | Owner | Pending |
+| A-11 | **Project evaluator agent (Product + Architecture).** A seventh agent role, `project-evaluator`, reviews the completed project spec and proposes the complexity preset (FR-19), replacing the owner's guess at onboarding. It is advisory: the owner approves, and calibration still finds the rungs. It runs on its own rung, calibrated on specs of known complexity. Adding a role amends spec § 2 (six agents) and needs a new `agents/project-evaluator/AGENT.md` and role policy entry, each through a hygiene item. | Owner raised 2026-11-10; scope to confirm | Pending |
 
 ### Master calibration tasks per role (shape, not content)
 | Role | Task | Automatic check |
@@ -167,7 +172,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | SR-5 | Before a transcript is selected, it is scanned for secrets and personal data; a transcript that has any is not selected. | Analyst (S2) | Proposed |
 | SR-6 | Transcript lists and master tasks are untrusted input and are validated before use; a replay's initial context is the recorded one, unchanged. | Analyst (S1) | Proposed |
 
-Gate 1 security review follows once A-9 and A-10 are decided.
+Gate 1 security review follows once A-9, A-10 and A-11 are decided.
 
 ## 10. Interface requirements
 All changes are additive (A-8):
@@ -194,7 +199,7 @@ All changes are additive (A-8):
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit and approved (A-9, A-10 pending)
+- [ ] Assumptions explicit and approved (A-9, A-10, A-11 pending)
 - [ ] Blocking decisions resolved (those two; Gate 1 not yet run)
 
 ## 12. Change log
@@ -205,3 +210,4 @@ All changes are additive (A-8):
 | 3 | 2026-11-10 | Move-downs tested only by replaying the project's own transcripts | Owner, 2026-11-10 |
 | 4 | 2026-11-10 | Ladder order and effort metrics built from measurement over time, not published data (A-1 approved) | Owner, 2026-11-10 |
 | 5 | 2026-11-10 | Clarified: tuning data lives in the project config repo, samples tagged by member repo | Follows ADR 0009/0010 |
+| 6 | 2026-11-10 | Project evaluator agent proposes the complexity preset (A-11); F-004 parked | — |
