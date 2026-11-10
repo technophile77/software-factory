@@ -122,7 +122,8 @@ _ANSI = re.compile(r"(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|(?:\x1b\]|\x9d)[^\x07\x1b\
 _DROP_CATEGORIES = {"Cc", "Cf", "Co", "Cn", "Cs", "Zl", "Zp"}
 # Invisible characters in visible categories. Variation selectors can encode
 # arbitrary bytes the owner never sees but the model reads (Gate 2 #1).
-_INVISIBLE = re.compile("[\u034f\u115f\u1160\u2800\u3164\uffa0\ufe00-\ufe0f\U000e0100-\U000e01ef]")
+_INVISIBLE = re.compile("[\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180d\u180f\u2800\u3164\uffa0"
+                        "\ufe00-\ufe0f\U000e0100-\U000e01ef]")
 
 
 def clean(text, single_line=False):
@@ -480,6 +481,11 @@ def connect(address, pid=None):
 # ---------------------------------------------------------------------------
 # JSON-RPC 2.0, one message per line
 
+def _seconds(limit):
+    n = max(1, round(limit))
+    return f"{n} second" if n == 1 else f"{n} seconds"
+
+
 class Channel:
     def __init__(self, transport):
         self.t = transport
@@ -523,14 +529,15 @@ class Channel:
         self.t.send(line)
         # The 60 s limit is per call (SR-15); a call that asks the engine to
         # wait for research gets that wait on top.
-        deadline = time.monotonic() + min(TIMEOUT + wait_s, remaining())
+        limit = min(TIMEOUT + wait_s, remaining())
+        deadline = time.monotonic() + limit
         try:
             while True:
                 msg = self._read(deadline)
                 if msg.get("id") == rid and "method" not in msg:
                     break
         except TimeoutError:
-            raise ChannelError("timeout", f"The engine didn't answer {method} within {int(TIMEOUT)} seconds.", sent=True) from None
+            raise ChannelError("timeout", f"The engine didn't answer {method} within {_seconds(limit)}.", sent=True) from None
         except ChannelError as e:
             e.sent = True
             raise
@@ -830,8 +837,10 @@ def cmd_reply(ch, req):
             "reply_id": reply_id, "kind": req["kind"], "text": req["text"],
         }))
     except ChannelError as e:
-        # Engine messages may quote the request; never echo the owner's words (SR-16).
-        if quotes_reply(e.message, req["text"]):
+        # Engine messages may quote the request; never echo the owner's words
+        # (SR-16). The client's own messages (connection_lost, timeout) can't,
+        # and must stay as they are so the owner isn't told "refused" (R1-2).
+        if e.answered and quotes_reply(e.message, req["text"]):
             e.message = "The engine refused the reply."
         if not e.answered:
             e.reply_id = reply_id

@@ -13,7 +13,7 @@
 | `plugins/software-factory/skills/spec-interview/SKILL.md` | New skill: relay rules (SR-2, SR-3, SR-9, SR-10), the client call pattern, keeping the session token between calls, new-feature and existing-feature flows, takeover only after the owner's yes, the reply loop, waiting on research with `wait_s`, retry after a dropped connection, closing the session |
 | `plugins/software-factory/skills/spec-interview/scripts/interview_client.py` | New client, Python 3.10+ standard library only. Subcommands `status`, `start`, `list`, `open`, `next`, `reply`, `state`, `close`; request as one JSON object on stdin, result as one JSON object on stdout. One connection per run; the session is the engine's token |
 | `plugins/software-factory/skills/spec-interview/tests/fake_engine.py` | Fake engine: channel v1.1 with H-0025 on a Unix socket: sessions by token with the per-feature lock and takeover, revisions, the five error codes, reply ids recorded once, each deferred item once per session, `interview.next` waiting up to `wait_s` for research, and switches to drop, stall, interleave notifications or send oversized or broken answers |
-| `plugins/software-factory/skills/spec-interview/tests/test_interview_client.py` | 74 developer tests (after fix round 1) |
+| `plugins/software-factory/skills/spec-interview/tests/test_interview_client.py` | 78 developer tests (after fix round 2) |
 | `plugins/software-factory/skills/onboard-repo/scripts/factory_check.py` | Fix round 1: `network.allow` host validation; project-level policy checked on its own |
 | `plugins/software-factory/.claude-plugin/plugin.json` | Version 0.2.0; description mentions the interview |
 | `.claude-plugin/marketplace.json` | Plugin description mentions the interview |
@@ -46,11 +46,11 @@ AC-7 and AC-8 (readiness gate and the spec's assumptions table) are engine and a
 
 ## Tests run
 
-After fix round 1, on each of `python3.11`, `python3.12` and `python3.13`:
+After fix round 2, on each of `python3.11`, `python3.12` and `python3.13`:
 
-- spec-interview, both suites (`python3 -m unittest discover -s plugins/software-factory/skills/spec-interview/tests`): 192 run (74 developer, 118 acceptance). 191 pass and 1 errors: `SR15Limits.test_sr15_client_never_sends_a_line_over_1_mib`. The client now refuses the over-limit request before sending anything, so the fake engine records no lines. The test's failure message then calls `max()` on that empty list and raises `ValueError`, even though its assertion (every line sent is at most 1 MiB) holds. This is a test bug for the test engineer: the message needs a default for an empty list. The other five of the six tests that failed (F1, F2, F4) now pass.
-- onboard-repo, both suites: 263 run, 262 pass, 1 skipped (Python 3.10 not installed). That includes the test engineer's updated AC-20 test.
-- `python3 scripts/check_docs.py` and `claude plugin validate`: pass.
+- spec-interview, both suites (`python3 -m unittest discover -s plugins/software-factory/skills/spec-interview/tests`): 220 run, all pass (78 developer tests; the rest are the test engineer's as of e5064bc).
+- onboard-repo, both suites: 266 run, 265 pass, 1 skipped (Python 3.10 not installed).
+- `python3 scripts/check_docs.py`: passes.
 
 ## Fix round 1 (test report and Gate 2)
 
@@ -75,6 +75,18 @@ Inputs: `F-005-test-report.md` (af53d11, failures F1 to F4, observation O2) and 
 **Gate 2 #3 and the test engineer's tests.** The coordinator asked for engine strings to reach the session only inside the fenced `display`. The test engineer's suite requires the raw fields: `error.message` equal to the engine's message (`SR16Errors.test_sr16_each_contract_code_*`), and `item.text`, `item.options` and `findings` in the output (`AC06`, `ContractChannel`, `EdgeCases`). Those fields are still there, cleaned. The control is the SKILL.md rule plus the fenced `display`. Removing the raw fields needs the test engineer's tests to change first. That is a decision for the orchestrator.
 
 **Known issues kept from Gate 2.** #9: the Windows server check goes through `GetNamedPipeServerProcessId`; on Windows there is no pipe-owner SID or `engine.json` owner check. The Windows class has still never run. Info notes: `data.started_at` is still read for busy (the contract should say where the time goes), the macOS peer check is still untested, and `run_git` still keeps the owner's `GIT_*` environment.
+
+## Fix round 2 (Gate 2 re-review 1)
+
+Tests are in `test_interview_client.py` class `FixRound2`.
+
+| Item | Fix | Test |
+|---|---|---|
+| R1-1: Mongolian free variation selectors and Khmer inherent vowels kept | `_INVISIBLE` also drops U+180B–180D, U+180F, U+17B4 and U+17B5. U+115F, U+1160, U+3164, U+FFA0 and U+2800 are still covered | `test_r1_1_*` |
+| R1-2: the client's own error messages could be replaced by "The engine refused the reply." | Reply redaction runs only on engine-written (answered) errors; `connection_lost`, `timeout` and the other client messages are left as they are | `test_r1_2_*` |
+| Info: timeout message always said "60 seconds" | The message gives the limit that actually applied to the call: 60 s plus any `wait_s`, or less when the 150 s run limit cut it short | `test_timeout_message_states_the_limit_that_applied` |
+
+**Known Lows kept open** (orchestrator's decision): R1-3 (a quote shorter than 8 characters, wrapped differently, can still pass the redaction), #3 (raw cleaned engine fields stay in the output because the independent tests require them; SKILL.md tells the session to show only `display`), and #9 (Windows server check by pipe PID, no Windows `engine.json` owner check, Windows code never run). Info notes still open: IP literals and single-label host names pass the `network.allow` check; the contract should say the engine writes the pid of the process that listens on the socket, since the client refuses any other pid.
 
 ## Spec deviations
 

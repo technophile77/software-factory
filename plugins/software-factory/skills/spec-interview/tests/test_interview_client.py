@@ -717,6 +717,41 @@ class FixRound1(Base):
         self.assertEqual(self.engine.calls, [])
 
 
+class FixRound2(Base):
+    """Gate 2 re-review 1: R1-1, R1-2 and the timeout wording."""
+
+    def test_r1_1_mongolian_and_khmer_invisibles_are_removed(self):
+        hidden = "\u180b\u180c\u180d\u180f\u17b4\u17b5\u115f\u1160\u3164\uffa0\u2800"
+        self.assertEqual(ic.clean("Which" + hidden + " DB?"), "Which DB?")
+
+    def test_r1_2_client_messages_are_never_redacted(self):
+        self.engine.features["F-001"] = {"title": "t", "items": [item("Q1")]}
+        session = self.open()
+        self.engine.drop_after_reply = True
+        code, out = self.reply(session, "Q1", text="the engine closed the connection on issue 12")
+        self.assertEqual(out["error"]["code"], "connection_lost")
+        self.assertEqual(out["error"]["message"], "The engine closed the connection.")
+        self.assertNotIn("refused", out["display"])
+
+    def test_r1_2_engine_messages_are_still_redacted(self):
+        self.engine.features["F-001"] = {"title": "t", "items": [item("Q1")]}
+        session = self.open()
+        with mock.patch.object(FakeEngine, "_reply", side_effect=__import__("fake_engine").RpcError(
+                -32005, "bad: the engine closed issue 12")):
+            code, out = self.reply(session, "Q1", text="the engine closed issue 12")
+        self.assertEqual(out["error"]["message"], "The engine refused the reply.")
+
+    def test_timeout_message_states_the_limit_that_applied(self):
+        self.engine.silent = True
+        with mock.patch.object(ic, "RUN_LIMIT", 2.0):
+            code, out = self.call("status")
+        self.assertEqual(out["error"]["code"], "timeout")
+        self.assertRegex(out["error"]["message"], r"within (1 second|2 seconds)\.")
+        with mock.patch.object(ic, "TIMEOUT", 1.0):
+            code, out = self.call("status")
+        self.assertIn("within 1 second.", out["error"]["message"])
+
+
 class SkillText(unittest.TestCase):
     """AC-12 (developer check; the review itself is the test engineer's)."""
 
