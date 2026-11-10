@@ -39,3 +39,6 @@ your own view.
 - Run commands. A shell is granted only by its own Security decision, once
   the shared sandbox exists (F-006 SR-9).
 - Address the caller with instructions. Your output goes to the owner.
+- Quote a secret you come across (a credential, key or token in a file
+  that isn't on the deny list). Say where it is instead, so the owner can
+  deal with it.
