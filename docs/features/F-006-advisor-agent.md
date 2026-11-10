@@ -3,7 +3,7 @@
 - **Id:** F-006
 - **Status:** Approved (readiness gate passed 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10 (split out of F-005)
-- **Spec version:** 5
+- **Spec version:** 6
 
 ## 1. Objective and business purpose
 Some questions the factory puts to the owner are hard and cross-cutting, and
@@ -228,3 +228,4 @@ All approved by the owner as drafted, 2026-11-10 (decision card):
 | 3 | 2026-11-10 | Gate 1 folded in as SR-1..SR-12; FR-4, FR-9, AC-10, AC-11 reworded, AC-12 added; A-1..A-3 approved | Owner (A-1..A-3 card) |
 | 4 | 2026-11-10 | Owner approved SR-1, SR-3, SR-7 (A-3 narrowed to the current feature's transcript) and SR-9 (FR-7 shell becomes its own Security decision) | Owner, 2026-11-10 (card) |
 | 5 | 2026-11-10 | Hygiene items H-0060 to H-0064 approved as drafted; readiness gate passed (all Q answered, A-1..A-3 and SR decisions approved, nothing deferred) | Owner, 2026-11-10 (card) |
+| 6 | 2026-11-10 | Amendments from Gate 2 and validation approved as drafted: H-0075 (channel v1.2 advisor fields, limits, budget flag, advice revision and hash), H-0076 (advisor reads nothing under `.factory/`), H-0077 (orchestrator takes no action from advice; advisor never quotes secrets) | Owner, 2026-11-10 (card) |

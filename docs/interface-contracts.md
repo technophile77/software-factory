@@ -175,7 +175,7 @@ engine fills them; agents do not.
   (decision card); v1.2 approved by the owner, 2026-11-10 (H-0063, F-006, decision card);
   amendment H-0075 (advisor fields stated exactly, call limits, budget
   flag, advice revision and hash; F-006 Gate 2 #2, validation M1, M2)
-  awaiting the owner
+  approved by the owner, 2026-11-10 (decision card)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -316,7 +316,7 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   the advisor policy and request rule approved in substance by the owner,
   2026-11-10 (F-006 SR-7, card); v2.3 approved by the owner, 2026-11-10 (H-0061, decision card);
   amendment H-0076 (the advisor denied all of `.factory/`; F-006 Gate 2 #1)
-  awaiting the owner
+  approved by the owner, 2026-11-10 (decision card)
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
   Security decision. v2.0 moved the policy from `.factory/policy/roles.yaml`
