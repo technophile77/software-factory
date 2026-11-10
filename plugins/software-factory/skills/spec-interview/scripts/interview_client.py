@@ -383,8 +383,9 @@ class _SocketTransport:
 
 class _Win32Pipe:
     """The few Win32 calls the pipe transport needs, through ctypes. Kept
-    apart so the transport's logic can be tested with a stand-in on Unix;
-    this class itself has never run (no Windows machine)."""
+    apart so the transport's logic can be tested with a stand-in on Unix.
+    First run on Windows 11 with Python 3.10, against Python and Node pipe
+    servers: 2026-11-10 (tests/windows/win_check.py)."""
 
     def __init__(self):
         import ctypes
@@ -435,12 +436,18 @@ class _Win32Pipe:
         finally:
             self.k32.CloseHandle(token)
 
+    def server_pid(self, handle):
+        pid = self.wt.ULONG()
+        if not self.k32.GetNamedPipeServerProcessId(handle, self.ctypes.byref(pid)):
+            return None
+        return pid.value
+
     def server_is_owner(self, handle):
-        ctypes, wt = self.ctypes, self.wt
-        pid = wt.ULONG()
-        if not self.k32.GetNamedPipeServerProcessId(handle, ctypes.byref(pid)):
+        pid = self.server_pid(handle)
+        if pid is None:
             return False
-        server = self.k32.OpenProcess(0x1000, False, pid.value)
+        ctypes = self.ctypes
+        server = self.k32.OpenProcess(0x1000, False, pid)
         if not server:
             return False
         try:
@@ -485,7 +492,7 @@ class _PipeTransport:
 
     POLL_S = 0.02
 
-    def __init__(self, path, api=None):
+    def __init__(self, path, api=None, pid=None):
         if not PIPE_RE.fullmatch(path):
             raise Refused("unsafe_pipe", "The engine address is not a local \\\\.\\pipe\\ name.")
         self.api = api or _Win32Pipe()
@@ -495,6 +502,10 @@ class _PipeTransport:
         if not self.api.server_is_owner(self.handle):
             self.api.close(self.handle)
             raise Refused("peer_not_owner", "The process behind the engine pipe is not running as you.")
+        # Same guard rail as the socket's (SR-5); Windows always reports the pid.
+        if pid is not None and self.api.server_pid(self.handle) != pid:
+            self.api.close(self.handle)
+            raise Refused("peer_not_engine", "The process behind the engine pipe is not the engine named in engine.json.")
 
     def send(self, data):
         while data:
@@ -522,7 +533,7 @@ class _PipeTransport:
 
 def connect(address, pid=None):
     if os.name == "nt":
-        return _PipeTransport(address)
+        return _PipeTransport(address, pid=pid)
     if address.startswith("\\\\"):
         raise Refused("unsafe_socket", "The engine address is a Windows pipe; this machine is not Windows.")
     return _SocketTransport(address, pid)
@@ -994,8 +1005,16 @@ def main(argv=None, stdin=None, stdout=None, cwd=None):
             out, code = {"ok": False, "error": {"code": "internal_error",
                                                 "message": "The client failed unexpectedly; nothing more is shown."}}, 1
             out["display"] = out["error"]["message"]
-    stdout.write(json.dumps(out, ensure_ascii=False, indent=2) + "\n")
-    stdout.flush()
+    text = json.dumps(out, ensure_ascii=False, indent=2) + "\n"
+    if hasattr(stdout, "buffer"):
+        # The channel is UTF-8, but piped stdout on Windows uses the ANSI code
+        # page (cp1252), and -I ignores PYTHONUTF8: accents came out garbled
+        # and a check mark (U+2713) crashed the run with no JSON.
+        stdout.buffer.write(text.encode("utf-8"))
+        stdout.buffer.flush()
+    else:
+        stdout.write(text)
+        stdout.flush()
     return code
 
 

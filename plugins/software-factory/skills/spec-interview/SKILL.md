@@ -70,6 +70,9 @@ SF_REQUEST_END
 ```
 
 The JSON is always a single line, so it can never contain the end marker.
+On Windows, Python usually installs as `python` with no `python3`, so
+there write `python` in place of `python3`; the rest of the command is
+the same.
 Run it from the repo (or config repo) the owner is working in; the script
 finds the engine only through `.factory/engine.json` in that repo's
 `factory/state` worktree. It prints one JSON object: `"ok": true` with the

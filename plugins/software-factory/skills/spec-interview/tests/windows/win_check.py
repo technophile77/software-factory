@@ -343,16 +343,23 @@ def git_bash():
     env = os.environ.get("CLAUDE_CODE_GIT_BASH_PATH")
     if env and os.path.isfile(env):
         return env
+    # git.exe sits in Git\cmd, Git\bin or Git\mingw64\bin depending on the installer.
     git = shutil.which("git")
-    if git:
-        base = os.path.dirname(os.path.dirname(git))     # ...\Git\cmd\git.exe -> ...\Git
+    base = os.path.dirname(git) if git else None
+    for _ in range(3):
+        if not base:
+            break
+        base = os.path.dirname(base)
         for cand in (os.path.join(base, "bin", "bash.exe"), os.path.join(base, "usr", "bin", "bash.exe")):
             if os.path.isfile(cand):
                 return cand
+    for cand in (r"C:\Program Files\Git\bin\bash.exe", r"C:\Program Files (x86)\Git\bin\bash.exe"):
+        if os.path.isfile(cand):
+            return cand
     return None
 
 
-@check("C13", "Through Git Bash with python3 and the heredoc, exactly as SKILL.md writes the command")
+@check("C13", "Through Git Bash with the heredoc, as SKILL.md writes the command (python3, else python as it says for Windows)")
 def c13():
     bash = git_bash()
     if not bash:
@@ -365,14 +372,15 @@ def c13():
         script = os.path.join(root, "run.sh")
         with open(script, "w", newline="\n") as f:
             f.write('cd "$1" || exit 9\n'
-                    'echo "python3=$(command -v python3)"\n'
-                    'python3 --version 2>&1\n'
-                    'python3 -I "$2" status <<\'SF_REQUEST_END\'\n{}\nSF_REQUEST_END\n'
+                    'PY=python3; command -v python3 >/dev/null || PY=python\n'
+                    'echo "python3=$(command -v python3) using=$PY"\n'
+                    '"$PY" --version 2>&1\n'
+                    '"$PY" -I "$2" list <<\'SF_REQUEST_END\'\n{}\nSF_REQUEST_END\n'
                     'echo "exit=$?"\n')
         p = subprocess.run([bash, script, repo.replace("\\", "/"), CLIENT.replace("\\", "/")],
                            capture_output=True, timeout=120)
         out = p.stdout.decode("utf-8", "replace") + p.stderr.decode("utf-8", "replace")
-        need('"ok": true' in out and "exit=0" in out, f"bash={bash}\n{out[-2000:]}")
+        need('"ok": true' in out and "exit=0" in out and "d\u00e9j\u00e0" in out, f"bash={bash}\n{out[-2000:]}")
         return f"bash={bash}\n{out[-800:]}"
     finally:
         eng.stop()

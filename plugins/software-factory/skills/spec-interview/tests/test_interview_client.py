@@ -792,6 +792,9 @@ class FakePipeApi:
     def server_is_owner(self, handle):
         return self.owner
 
+    def server_pid(self, handle):
+        return 4242
+
     def available(self, handle):
         return None if self.broken and not self.inbox else len(self.inbox)
 
@@ -876,6 +879,15 @@ class PipeTransport(unittest.TestCase):
         self.assertTrue(api.closed)
         self.assertEqual(api.written, [])
 
+    def test_server_not_the_engine_pid_is_refused_and_closed(self):
+        ic._PipeTransport(self.PIPE, api=FakePipeApi(), pid=4242)
+        api = FakePipeApi()
+        with self.assertRaises(ic.Refused) as e:
+            ic._PipeTransport(self.PIPE, api=api, pid=4243)
+        self.assertEqual(e.exception.code, "peer_not_engine")
+        self.assertTrue(api.closed)
+        self.assertEqual(api.written, [])
+
     def test_open_failure_and_bad_names(self):
         with self.assertRaises(ic.ChannelError) as e:
             ic._PipeTransport(self.PIPE, api=FakePipeApi(opens=False))
@@ -883,6 +895,18 @@ class PipeTransport(unittest.TestCase):
         for bad in ("\\\\host\\pipe\\x", "\\\\.\\pipe\\x\n"):
             with self.assertRaises(ic.Refused):
                 ic._PipeTransport(bad, api=FakePipeApi())
+
+
+class WindowsOutput(unittest.TestCase):
+    """Piped stdout on Windows is cp1252; the answer must still be UTF-8."""
+
+    def test_output_is_utf8_whatever_the_stdout_encoding(self):
+        raw = io.BytesIO()
+        out = io.TextIOWrapper(raw, encoding="cp1252")
+        with mock.patch.object(ic, "run", return_value={"display": "caf\u00e9 \u2713 \U0001f600"}):
+            code = ic.main(["status"], stdin=io.StringIO("{}"), stdout=out)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(raw.getvalue().decode("utf-8"))["display"], "caf\u00e9 \u2713 \U0001f600")
 
 
 class SkillText(unittest.TestCase):
