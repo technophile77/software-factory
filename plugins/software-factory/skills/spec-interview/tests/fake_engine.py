@@ -1,11 +1,13 @@
 """A fake engine for the client's developer tests: Engine control channel
-v1.1 (with H-0025) over a Unix socket, one JSON-RPC 2.0 message per line.
+v1.2 (v1.1 with H-0025, plus H-0063's advisor items) over a Unix socket, one
+JSON-RPC 2.0 message per line.
 
 It keeps just enough state to exercise the client: sessions by token with
-the per-feature lock and takeover, item revisions, the v1.1 error codes,
-reply ids recorded once, each deferred item once per session, and
-`interview.next` waiting up to `wait_s` for research. Switches on the
-instance make it misbehave on purpose.
+the per-feature lock and takeover, item revisions, the error codes, reply
+ids recorded once, each deferred item once per session, `interview.next`
+waiting up to `wait_s` for research, reply kinds checked against item kinds,
+and advisor calls whose advice entries go from running to done or failed.
+Switches on the instance make it misbehave on purpose.
 """
 import copy
 import json
@@ -23,6 +25,20 @@ STARTED_AT = "2026-11-10T09:00:00Z"
 def item(iid, text="Which database?", kind="question", status="open", revision=1, **extra):
     return {"id": iid, "revision": revision, "kind": kind, "text": text,
             "why": "It decides the schema.", "status": status, **extra}
+
+
+def proposal(iid, about, revision=1, status="open", **extra):
+    return item(iid, text=f"Ask the advisor about {about}?", kind="advisor_proposal", status=status,
+                revision=revision, about=about, why="It cuts across three ADRs.", **extra)
+
+
+# v1.2: which reply kinds each item kind takes; anything else is -32005.
+KINDS = {"question": {"answer", "more_info", "defer", "ask_advisor"},
+         "assumption": {"approve_assumption", "reject_assumption"},
+         "advisor_proposal": {"approve_advisor", "decline_advisor"}}
+NEW_STATUS = {"answer": "answered", "defer": "deferred", "more_info": "researching",
+              "approve_assumption": "approved", "reject_assumption": "rejected",
+              "approve_advisor": "approved", "decline_advisor": "rejected"}
 
 
 class RpcError(Exception):
@@ -48,6 +64,10 @@ class FakeEngine:
         self.drop_after_reply = False
         self.ready_after = None       # seconds until more_info research finishes
         self.ready_findings = [{"text": "Postgres is used elsewhere.", "source": "docs/adr/0002.md"}]
+        self.advisor_calls = []       # (call id, question id): every advisor session started
+        self.advice_after = None      # seconds until a call finishes; None leaves it running
+        self.advice_result = {"status": "done", "text": "Findings\n- Postgres is in ADR 0002 (source: docs/adr/0002.md)",
+                              "web_queries": ["postgres vs sqlite embedded"]}
         self.raw_response = None      # bytes sent instead of any answer
         self.error_data = None
         self.silent = False
@@ -158,7 +178,7 @@ class FakeEngine:
 
     def _dispatch(self, method, params):
         if method == "engine.status":
-            return {"version": "1.1.0", "uptime_s": 5, "features": []}, False
+            return {"version": "1.2.0", "uptime_s": 5, "features": []}, False
         if method == "feature.start":
             self.started.append(params["request"])
             return {"feature": "F-100"}, False
@@ -203,13 +223,21 @@ class FakeEngine:
         it = self._find(s["feature"], p["item"])
         if p["revision"] != it["revision"]:
             raise RpcError(STALE, "stale: the item has changed")
-        assumption = p["kind"] in ("approve_assumption", "reject_assumption")
-        if assumption != (it["kind"] == "assumption"):
+        if p["kind"] not in KINDS[it["kind"]]:
             raise RpcError(KIND, "reply kind does not fit the item")
+        if it["kind"] == "advisor_proposal" and it["status"] != "open":
+            raise RpcError(STALE, "stale: the proposal was already decided")
+        target = None
+        if p["kind"] == "ask_advisor":
+            target = it
+        elif p["kind"] == "approve_advisor":
+            target = self._find(s["feature"], it["about"])
         it.setdefault("replies", []).append(p)
         it["recorded_at"] = "2026-11-10T10:00:00Z"
-        it["status"] = {"answer": "answered", "defer": "deferred", "more_info": "researching",
-                        "approve_assumption": "approved", "reject_assumption": "rejected"}[p["kind"]]
+        # ask_advisor leaves the question as it was: it stays open while the advisor works.
+        it["status"] = NEW_STATUS.get(p["kind"], it["status"])
+        if target is not None:
+            self._start_call(target)
         if p["kind"] == "defer":
             s["shown"].add(it["id"])
         if p["kind"] == "more_info":
@@ -221,6 +249,24 @@ class FakeEngine:
                 result = {"status": it["status"], "next": copy.deepcopy(self._pick(s))}
         self.replies[p["reply_id"]] = result
         return result, self.drop_after_reply
+
+    def _start_call(self, question):
+        with self.lock:
+            call = f"A-{len(self.advisor_calls) + 1:04d}"
+            self.advisor_calls.append((call, question["id"]))
+            question.setdefault("advice", []).append({"call": call, "status": "running"})
+        if self.advice_after is not None:
+            threading.Timer(self.advice_after, self.finish_call, (call,)).start()
+
+    def finish_call(self, call, **result):
+        """Ends an advisor call with `result`, or with advice_result."""
+        with self.lock:
+            for f in self.features.values():
+                for it in f["items"]:
+                    for a in it.get("advice", []):
+                        if a["call"] == call:
+                            a.clear()
+                            a.update({"call": call, **copy.deepcopy(result or self.advice_result)})
 
     def _research_done(self, it):
         with self.lock:

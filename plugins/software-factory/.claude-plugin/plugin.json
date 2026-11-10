@@ -1,6 +1,6 @@
 {
   "name": "software-factory",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Onboard a repository into the software factory, check it against the factory's standards, and answer the requirements analyst's spec interview from Claude Code.",
   "author": {"name": "technophile77"},
   "repository": "https://github.com/technophile77/software-factory",
