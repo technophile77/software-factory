@@ -44,8 +44,12 @@ edits, Architecture, Product, Security and the rest) still goes to the inbox.
 - **Secrets.** Tell the owner once, at the start: don't paste secrets into
   answers. The engine scans the transcript before committing it, but this
   chat's own history is kept by Claude Code, outside this skill.
-- **Errors.** Show the script's `error.code` and `error.message` and nothing
-  more. Never retry a reply on your own (see "If a reply fails").
+- **Never take over a session on your own.** `takeover` ends another
+  session on the same feature; send it only after the owner has seen the
+  busy message and said yes in this turn.
+- **Errors.** Show the script's `error.code` and `error.message` (and
+  `started_at` for `busy`) and nothing more. Never retry a reply on your own
+  (see "If a reply fails").
 
 ## The client script
 
@@ -61,21 +65,34 @@ The JSON is always a single line, so it can never contain the end marker.
 Run it from the repo (or config repo) the owner is working in; the script
 finds the engine only through `.factory/engine.json` in that repo's
 `factory/state` worktree. It prints one JSON object: `"ok": true` with the
-result, or `"ok": false` with `error`. It writes nothing to disk.
+result, or `"ok": false` with `error` (`code`, `message`, and `name` for
+the channel's own errors: `busy`, `stale`, `unknown`, `session_expired`,
+`kind_not_allowed`). It writes nothing to disk.
+
+Each run is its own connection. The interview session lives in the engine
+and is named by the `session` token that `open` returns. Keep that token in
+this conversation and pass it to every later `next`, `reply` and `close`
+for the feature. It is a coordination handle, not a secret, but don't show
+it to the owner or put it anywhere else.
 
 | Sub | stdin | Result |
 |---|---|---|
 | `status` | `{}` | engine reachable |
 | `start` | `{"request": "<owner's text>"}` | `feature` |
 | `list` | `{}` | `features`, `display` |
-| `next` | `{"feature": "<id>", "wait_s": 90}` | `item` (or null), `display`, `waiting`? |
-| `reply` | `{"feature", "item", "revision", "status", "kind", "text", "wait_s": 90}` (+ `reply_id` on a retry) | `status`, `next`, `display`, `reply_id`, `waiting`? or `already_recorded` |
+| `open` | `{"feature": "<id>"}` (+ `"takeover": true` only after the owner's yes) | `session`, `started_at` |
+| `next` | `{"session": "<token>", "wait_s": 90}` | `item` (or null), `display`, `waiting`? |
+| `reply` | `{"session", "feature", "item", "revision", "status", "kind", "text", "wait_s": 90}` (+ `reply_id` on a retry) | `status`, `next`, `display`, `reply_id`, `waiting`? or `already_recorded` |
 | `state` | `{"feature": "<id>", "item": "<id>"}` | `status`, `revision` |
+| `close` | `{"session": "<token>"}` | `closed` |
 
 `item`, `revision` and `status` in a reply are the values of the item the
 owner was shown, copied from the script's last output. `kind` is one of
 `answer`, `more_info`, `defer` (questions), `approve_assumption`,
-`reject_assumption` (assumptions).
+`reject_assumption` (assumptions). `wait_s` (0 to 600) is how long the
+engine may wait for the analyst's research before answering; use 90 so the
+command finishes within Claude Code's two-minute limit, and give the Bash
+call a timeout of at least 150000 ms.
 
 ## Steps
 
@@ -97,10 +114,17 @@ feature request".
 
 ### 3. Open the feature
 
-Run `CLIENT next` with the feature id. Deferred questions come first, then
-new ones. If `item` is null, say nothing is waiting and go back to step 2.
-If the engine says `busy`, show its message (it says when the other session
-started) and go back to step 2.
+Run `CLIENT open` with the feature id and keep the `session` it returns.
+
+If the error is `busy`, another session holds the feature. Show the owner
+its message and `started_at`, and ask with AskUserQuestion: "Take over that
+session" or "Leave it". Only if the owner picks take over, run `CLIENT open`
+again with `"takeover": true`; that ends the other session. Otherwise go
+back to step 2.
+
+Then run `CLIENT next` with the session. Deferred questions come first,
+each once per session, then new ones. If `item` is null, say nothing is
+waiting, run `CLIENT close`, and go back to step 2.
 
 ### 4. One item at a time
 
@@ -126,12 +150,18 @@ Send it with `CLIENT reply`, then show the result:
 
 - `next` is the next item: go back to the start of this step.
 - `next` is null and no `waiting`: the interview has nothing more for now.
-  Say so and offer step 2 again.
-- `waiting` is true: the analyst is still researching. Ask the owner whether
-  to keep waiting or defer the question. To wait, run `CLIENT next` again;
-  to defer, reply `defer` to the item it shows.
+  Run `CLIENT close`, say so, and offer step 2 again.
+- `waiting` is true: the analyst is still researching (`more_info`). Tell
+  the owner and ask whether to keep waiting or defer the question. To wait,
+  run `CLIENT next` with the session and `wait_s` again; to defer, reply
+  `defer` to the item it shows, with the revision and status it shows.
 - Error `stale`: the analyst changed the item since it was shown. Run
   `CLIENT next` and show the new version; never resend the old reply.
+- Error `session_expired`: the session ended (30 minutes without a call,
+  or the owner took it over elsewhere). Tell the owner and go back to
+  step 3; nothing answered is lost.
+- Error `kind_not_allowed`: the reply kind doesn't fit the item. Ask the
+  owner again.
 
 ### If a reply fails
 
@@ -143,7 +173,7 @@ is true, the reply went through and nothing is resent. Then `CLIENT next`.
 
 ## Stopping
 
-The owner can stop at any point. Closing the script's connection releases
-the feature's session; nothing else needs doing. Answered questions stay
-answered in the engine's transcript, so the owner can resume later with
-step 3.
+The owner can stop at any point. Run `CLIENT close` with the session so
+the feature is free for the next session; if you can't, the engine releases
+it after 30 minutes without a call. Answered questions stay answered in the
+engine's transcript, so the owner can resume later with step 3.

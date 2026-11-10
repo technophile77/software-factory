@@ -10,14 +10,21 @@ text and ids never travel on a command line, where a quote or `$(...)` could
 run a shell command. The answer is one JSON object on stdout. The script
 writes nothing to disk and logs nothing (SR-4).
 
+Each run is one connection. The interview session lives in the engine,
+named by the token `interview.open` returns (channel v1.1, H-0025); the
+skill passes that token back on every later call.
+
 Subcommands and their stdin:
   status   {}
   start    {"request": str}
   list     {}
-  next     {"feature": id, "wait_s"?: int}
-  reply    {"feature": id, "item": id, "revision": rev, "status": str,
-            "kind": str, "text": str, "reply_id"?: id, "wait_s"?: int}
+  open     {"feature": id, "takeover"?: bool}
+  next     {"session": token, "wait_s"?: int}
+  reply    {"session": token, "feature": id, "item": id, "revision": int,
+            "status": str, "kind": str, "text": str, "reply_id"?: id,
+            "wait_s"?: int}
   state    {"feature": id, "item": id}
+  close    {"session": token}
 
 Exit codes: 0 success, 1 the engine or channel failed, 2 refused before
 sending anything (bad request, untrusted engine.json or socket).
@@ -39,6 +46,9 @@ import unicodedata
 import uuid
 
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+SESSION_RE = re.compile(r"^[0-9a-f]{32}$")          # 128 random bits, hex
+TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$")
+ENGINE_VERSION_RE = re.compile(r"^1\.([1-9]\d*)$")
 # Only local pipes: `\\host\pipe\x` reaches another machine and `\\?\` skips
 # the namespace checks (SR-7).
 PIPE_RE = re.compile(r"^\\\\\.\\pipe\\[A-Za-z0-9._{}-]{1,200}$")
@@ -47,7 +57,10 @@ MAX_MESSAGE = 1024 * 1024          # SR-15
 MAX_REQUEST = 1024 * 1024
 MAX_ENGINE_JSON = 64 * 1024
 TIMEOUT = 60.0                     # SR-15, per call
-MAX_WAIT = 3600
+MAX_WAIT = 600                     # the engine's own cap on wait_s
+# Channel v1.1 error codes; the skill acts on the name, the owner sees both.
+ERROR_NAMES = {-32001: "busy", -32002: "stale", -32003: "unknown", -32004: "session_expired",
+               -32005: "kind_not_allowed"}
 REPLY_KINDS = ("answer", "more_info", "defer", "approve_assumption", "reject_assumption")
 ITEM_KINDS = ("question", "assumption")
 ITEM_STATUSES = ("open", "deferred", "researching", "answered", "approved", "rejected", "superseded")
@@ -56,9 +69,11 @@ FIELDS = {
     "status": set(),
     "start": {"request"},
     "list": set(),
-    "next": {"feature", "wait_s"},
-    "reply": {"feature", "item", "revision", "status", "kind", "text", "reply_id", "wait_s"},
+    "open": {"feature", "takeover"},
+    "next": {"session", "wait_s"},
+    "reply": {"session", "feature", "item", "revision", "status", "kind", "text", "reply_id", "wait_s"},
     "state": {"feature", "item"},
+    "close": {"session"},
 }
 
 
@@ -73,11 +88,12 @@ class Refused(Exception):
 class ChannelError(Exception):
     """The engine or the connection failed (exit 1)."""
 
-    def __init__(self, code, message, sent=False, answered=False):
+    def __init__(self, code, message, sent=False, answered=False, started_at=None):
         super().__init__(message)
         self.code, self.message, self.sent = code, message, sent
         # The engine answered with an error, so it saw and refused the call.
         self.answered = answered
+        self.started_at = started_at
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +204,15 @@ def read_engine_address(path):
         data = json.loads(raw.decode("utf-8"))
     except (OSError, ValueError, RecursionError):
         raise Refused("bad_engine_file", "engine.json can't be read as JSON.") from None
-    addr = data.get("path") if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        raise Refused("bad_engine_file", "engine.json is not a JSON object.")
+    version = data.get("version")
+    if not isinstance(version, str) or not ENGINE_VERSION_RE.match(version):
+        raise Refused("bad_engine_file", "engine.json is not from an engine speaking channel v1.1 or a later 1.x.")
+    pid = data.get("pid")
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        raise Refused("bad_engine_file", "engine.json has no valid pid.")
+    addr = data.get("path")
     if not isinstance(addr, str) or not addr:
         raise Refused("bad_engine_file", "engine.json has no channel path.")
     return addr
@@ -389,7 +413,6 @@ class Channel:
         self.t = transport
         self.buf = b""
         self.next_id = 1
-        self.ready = []
 
     def _read(self, deadline):
         while b"\n" not in self.buf:
@@ -413,27 +436,23 @@ class Channel:
             raise ChannelError("bad_response", "The engine sent a message that is not JSON-RPC 2.0.")
         return msg
 
-    def _note(self, msg):
-        if msg.get("method") == "interview.itemReady" and isinstance(msg.get("params"), dict):
-            self.ready.append(msg["params"])
-
-    def call(self, method, params=None):
+    def call(self, method, params=None, wait_s=0):
+        """One request and its answer. Notifications arriving meanwhile are
+        skipped: a per-call client waits with `wait_s`, not itemReady."""
         rid = self.next_id
         self.next_id += 1
         req = {"jsonrpc": "2.0", "id": rid, "method": method}
         if params is not None:
             req["params"] = params
         self.t.send(json.dumps(req, ensure_ascii=False).encode("utf-8") + b"\n")
-        deadline = time.monotonic() + TIMEOUT
+        # The 60 s limit is per call (SR-15); a call that asks the engine to
+        # wait for research gets that wait on top.
+        deadline = time.monotonic() + TIMEOUT + wait_s
         try:
             while True:
                 msg = self._read(deadline)
-                if "id" not in msg:
-                    self._note(msg)
-                    continue
-                if msg["id"] != rid:
-                    continue
-                break
+                if msg.get("id") == rid and "method" not in msg:
+                    break
         except TimeoutError:
             raise ChannelError("timeout", f"The engine didn't answer {method} within {int(TIMEOUT)} seconds.", sent=True) from None
         except ChannelError as e:
@@ -443,34 +462,22 @@ class Channel:
             err = msg["error"] if isinstance(msg["error"], dict) else {}
             # `data` is dropped unread: it can carry stack traces and paths (SR-16).
             code = err.get("code")
-            if isinstance(code, bool) or not isinstance(code, (int, str)):
+            if isinstance(code, bool) or not isinstance(code, int):
                 code = "error"
-            elif isinstance(code, str):
-                code = clean(code, single_line=True)[:64]
             message = err.get("message")
             message = clean(message, single_line=True)[:500] if isinstance(message, str) else "The engine reported an error."
-            raise ChannelError(code, message, sent=True, answered=True)
+            started = None
+            if code == -32001 and isinstance(err.get("data"), dict):
+                # The one exception to dropping `data`: the owner needs to know
+                # when the other session started (FR-11), and a value that
+                # matches a strict timestamp carries nothing else.
+                value = err["data"].get("started_at")
+                if isinstance(value, str) and TIMESTAMP_RE.match(value):
+                    started = value
+            raise ChannelError(code, message, sent=True, answered=True, started_at=started)
         if "result" not in msg:
             raise ChannelError("bad_response", "The engine's answer has no result.", sent=True)
         return msg["result"]
-
-    def wait_ready(self, feature, item_id, wait_s):
-        """Waits for the analyst's research to finish. The 60 s call limit
-        doesn't apply: research can take minutes (SR-15). The skill picks the
-        wait so the owner can defer instead of waiting."""
-        deadline = time.monotonic() + wait_s
-        while True:
-            for params in self.ready:
-                it = params.get("item")
-                if params.get("feature") == feature and (it == item_id or (isinstance(it, dict) and it.get("id") == item_id)):
-                    return it
-            self.ready.clear()
-            try:
-                msg = self._read(deadline)
-            except TimeoutError:
-                return None
-            if "id" not in msg:
-                self._note(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -489,7 +496,7 @@ def _count(value):
 
 
 def _revision(value):
-    if isinstance(value, bool) or not ((isinstance(value, int) and value >= 0) or (isinstance(value, str) and ID_RE.match(value))):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ChannelError("bad_response", "The engine sent an invalid revision.", sent=True)
     return value
 
@@ -558,6 +565,13 @@ def _need_id(req, key):
     return value
 
 
+def _need_session(req):
+    value = req.get("session")
+    if not isinstance(value, str) or not SESSION_RE.match(value):
+        raise Refused("bad_request", "`session` must be the token `open` returned.")
+    return value
+
+
 def _wait_s(req):
     value = req.get("wait_s", 0)
     if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_WAIT:
@@ -573,30 +587,28 @@ def _validate(cmd, req):
     if cmd == "start":
         if not isinstance(req.get("request"), str) or not req["request"].strip():
             raise Refused("bad_request", "`request` must be the owner's feature request text.")
-    if cmd in ("next", "reply", "state"):
+    if cmd in ("open", "reply", "state"):
         _need_id(req, "feature")
+    if cmd in ("next", "reply", "close"):
+        _need_session(req)
     if cmd in ("reply", "state"):
         _need_id(req, "item")
     if cmd in ("next", "reply"):
         _wait_s(req)
+    if cmd == "open" and not isinstance(req.get("takeover", False), bool):
+        raise Refused("bad_request", "`takeover` must be true or false.")
     if cmd == "reply":
         if req.get("kind") not in REPLY_KINDS:
             raise Refused("bad_request", f"`kind` must be one of {', '.join(REPLY_KINDS)}.")
         if not isinstance(req.get("text"), str):
             raise Refused("bad_request", "`text` must be the owner's words, as a string.")
         rev = req.get("revision")
-        if isinstance(rev, bool) or not ((isinstance(rev, int) and rev >= 0) or (isinstance(rev, str) and ID_RE.match(rev))):
+        if isinstance(rev, bool) or not isinstance(rev, int) or rev < 0:
             raise Refused("bad_request", "`revision` must be the revision the owner was shown.")
         if req.get("status") not in ITEM_STATUSES:
             raise Refused("bad_request", "`status` must be the item status the owner was shown.")
         if "reply_id" in req:
             _need_id(req, "reply_id")
-
-
-def _item_or_next(ch, feature, ready):
-    if isinstance(ready, dict):
-        return parse_item(ready)
-    return parse_item(_result(ch.call("interview.next", {"feature": feature})).get("item"))
 
 
 def _result(value):
@@ -605,9 +617,9 @@ def _result(value):
     return value
 
 
-def _with_display(item, waiting=False):
+def _shown(item):
     out = {"item": item, "display": item_display(item)}
-    if waiting:
+    if item is not None and item["status"] == "researching":
         out["waiting"] = True
     return out
 
@@ -652,15 +664,28 @@ def cmd_list(ch, req):
     return {"features": feats, "display": display}
 
 
+def cmd_open(ch, req):
+    params = {"feature": req["feature"]}
+    if req.get("takeover"):
+        params["takeover"] = True
+    r = _result(ch.call("interview.open", params))
+    session, started = r.get("session"), r.get("started_at")
+    if not isinstance(session, str) or not SESSION_RE.match(session):
+        raise ChannelError("bad_response", "The engine sent an invalid session token.", sent=True)
+    if not isinstance(started, str) or not TIMESTAMP_RE.match(started):
+        raise ChannelError("bad_response", "The engine sent an invalid session start time.", sent=True)
+    return {"session": session, "started_at": started, "feature": req["feature"]}
+
+
+def _next(ch, session, wait_s):
+    params = {"session": session}
+    if wait_s:
+        params["wait_s"] = wait_s
+    return parse_item(_result(ch.call("interview.next", params, wait_s=wait_s)).get("item"))
+
+
 def cmd_next(ch, req):
-    feature = req["feature"]
-    item = parse_item(_result(ch.call("interview.next", {"feature": feature})).get("item"))
-    if item and item["status"] == "researching":
-        ready = ch.wait_ready(feature, item["id"], _wait_s(req))
-        if ready is None:
-            return _with_display(item, waiting=True)
-        item = _item_or_next(ch, feature, ready)
-    return _with_display(item)
+    return _shown(_next(ch, req["session"], _wait_s(req)))
 
 
 def cmd_state(ch, req):
@@ -674,25 +699,21 @@ def cmd_state(ch, req):
 
 
 def cmd_reply(ch, req):
-    feature, item_id = req["feature"], req["item"]
     retry = "reply_id" in req
     reply_id = req["reply_id"] if retry else uuid.uuid4().hex
-    try:
-        if retry:
-            # The earlier attempt may have been recorded before the connection
-            # dropped (FR-13). If the item moved on, don't send again.
+    if retry:
+        # The earlier attempt may have been recorded before the connection
+        # dropped (FR-13). If the item moved on, don't send again.
+        try:
             st = cmd_state(ch, req)
-            if st["revision"] != req["revision"] or st["status"] != req["status"]:
-                return {"already_recorded": True, "state": st, "reply_id": reply_id}
-        # The session lock belongs to the connection that called
-        # interview.next, and each script run is a new connection.
-        ch.call("interview.next", {"feature": feature})
-    except ChannelError as e:
-        e.sent = False
-        raise
+        except ChannelError as e:
+            e.sent = False
+            raise
+        if st["revision"] != req["revision"] or st["status"] != req["status"]:
+            return {"already_recorded": True, "state": st, "reply_id": reply_id}
     try:
         r = _result(ch.call("interview.reply", {
-            "feature": feature, "item": item_id, "revision": req["revision"],
+            "session": req["session"], "item": req["item"], "revision": req["revision"],
             "reply_id": reply_id, "kind": req["kind"], "text": req["text"],
         }))
     except ChannelError as e:
@@ -706,23 +727,32 @@ def cmd_reply(ch, req):
     status = r.get("status")
     if status not in ITEM_STATUSES:
         raise ChannelError("bad_response", "The engine sent an unknown item status.", sent=True)
-    out = {"status": status, "reply_id": reply_id}
     nxt = parse_item(r.get("next"))
-    if req["kind"] == "more_info" and status == "researching" and nxt is None:
-        wait_s = _wait_s(req)
-        ready = ch.wait_ready(feature, item_id, wait_s) if wait_s else None
-        if ready is None:
-            out["waiting"] = True
-            out["display"] = "The analyst is researching. You can wait for it or defer the question."
-            out["next"] = None
-            return out
-        nxt = _item_or_next(ch, feature, ready)
-    out.update({"next": nxt, "display": item_display(nxt)})
+    wait_s = _wait_s(req)
+    if nxt is None and req["kind"] == "more_info" and wait_s:
+        # The reply is recorded; a failure while waiting must not look like
+        # a reply that may need resending.
+        try:
+            nxt = _next(ch, req["session"], wait_s)
+        except ChannelError as e:
+            e.code, e.message, e.answered = "wait_failed", "The reply was recorded, but waiting for the analyst failed.", True
+            raise
+    out = {"status": status, "reply_id": reply_id}
+    out.update(_shown(nxt))
+    out["next"] = out.pop("item")
+    if nxt is None and status == "researching":
+        out["waiting"] = True
+        out["display"] = "The analyst is researching. You can wait for it or defer the question."
     return out
 
 
-COMMANDS = {"status": cmd_status, "start": cmd_start, "list": cmd_list,
-            "next": cmd_next, "reply": cmd_reply, "state": cmd_state}
+def cmd_close(ch, req):
+    _result(ch.call("interview.close", {"session": req["session"]}))
+    return {"closed": True}
+
+
+COMMANDS = {"status": cmd_status, "start": cmd_start, "list": cmd_list, "open": cmd_open,
+            "next": cmd_next, "reply": cmd_reply, "state": cmd_state, "close": cmd_close}
 
 
 def _load_request(stdin):
@@ -765,6 +795,10 @@ def main(argv=None, stdin=None, stdout=None, cwd=None):
             out, code = {"ok": False, "error": {"code": e.code, "message": e.message}}, 2
         except ChannelError as e:
             out, code = {"ok": False, "error": {"code": e.code, "message": e.message}}, 1
+            if e.code in ERROR_NAMES:
+                out["error"]["name"] = ERROR_NAMES[e.code]
+            if e.started_at:
+                out["error"]["started_at"] = e.started_at
             if hasattr(e, "reply_id"):
                 # The skill passes this back on a retry, so the engine can
                 # tell a repeat from a new reply (SR-12).
