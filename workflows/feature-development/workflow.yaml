@@ -42,3 +42,9 @@ stages:
     owner: orchestrator
     exit: [definition_of_done_met, pr_opened, ci_green]   # ADR 0008
     # The owner merges. No agent merges.
+# Not a gate: runs once a feature's run ends, whether a PR opened or the run
+# stopped at an inbox. Files hygiene items only (F-002).
+after_run:
+  - id: run_review
+    owner: orchestrator
+    produces: .factory/runs/<feature>/review.json   # Run review v1.0
