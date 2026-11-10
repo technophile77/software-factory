@@ -20,3 +20,4 @@ in order, using `template.md`.
 | [0009](0009-factory-state-branch.md) | Inbox items live on a dedicated factory/state branch | Accepted |
 | [0010](0010-project-config-repo.md) | One config repo per project, layered on the master factory | Accepted |
 | [0011](0011-inbox-extension-libraries.md) | Libraries for the VS Code inbox extension | Accepted |
+| [0012](0012-project-control-resumable-runs-budgets.md) | Project control, resumable runs, and token budgets | Accepted |
