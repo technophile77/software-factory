@@ -269,12 +269,14 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
-## Role policy — v2.2
+## Role policy — v2.3
 
-- Status: Approved
+- Status: Approved (v2.2); v2.3 Proposed (H-0061, F-006)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
-  2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card)
+  2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
+  the advisor policy and request rule approved in substance by the owner,
+  2026-11-10 (F-006 SR-7, card); v2.3 awaiting the owner (H-0061)
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
   Security decision. v2.0 moved the policy from `.factory/policy/roles.yaml`
@@ -283,7 +285,9 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   required broke nothing. v2.2 adds the `Skill` tool, the open-web network
   rule for a role with no file tools, the optional `web-reader` role, and
   denies every role the engine's channel file; manifests on v2.1 must add
-  the two new deny entries.
+  the two new deny entries. v2.3 adds the optional `advisor` role and the
+  `may_request` key. Both are additions: a manifest without them is valid
+  and no role can be requested, so v2.2 manifests need no change.
 
 **Location:** the `policy:` key of the project manifest (change-controlled),
 with optional per-repo overrides under `repos[].policy`. Effective policy
@@ -335,6 +339,52 @@ The requirements analyst gets `Skill` and reaches the web only through the
 web reader; its own `network` stays empty. Reading other features' specs and
 interview transcripts, and escalating to the advisor (F-006, once built), go
 through the engine, not through new read globs.
+
+**Advisor (v2.3, optional role).** Researches one hard question, after the
+owner approves the call, and returns advice for the owner (F-006). It reads
+what the requirements analyst may read, uses the shared skills, and reaches
+the web only by asking the web reader through the engine (F-006 SR-1); its
+own `network` stays empty. It has no writes and no shell: a shell needs its
+own Security decision once the R2-1 sandbox exists (F-006 SR-9). Its policy
+is fixed, and the checker refuses anything wider:
+
+```yaml
+    advisor:
+      may_request: ["requirements-analyst", "orchestrator"]
+      tools:
+        allow: ["Read", "Grep", "Glob", "Skill"]
+      read:
+        allow: [<the requirements analyst's read allow list>]
+        deny: [<the requirements analyst's read deny list>, <the advisor's extra denies>]
+      write:
+        allow: []
+      commands:
+        allow: []
+      network:
+        allow: []
+```
+
+Its tools are a subset of `Read`, `Grep`, `Glob` and `Skill`. Each glob in
+its `read.allow` must be one of the analyst's, or sit under an analyst glob
+`**` or `<path>/**`; the checker refuses any it can't show is inside. Its
+`read.deny` includes the analyst's and the advisor's extra denies: `.factory/inbox/**`, `**/.factory/inbox/**`, `.factory/interviews/**`, `**/.factory/interviews/**`.
+These hold in the project policy and in each repo's effective policy.
+`write.allow`, `commands.allow` and `network.allow` are empty or missing.
+Of the interview transcripts, the advisor sees only the current feature's,
+which the engine supplies in its input; it reads no inbox item or other
+transcript (F-006 FR-6, A-3). File pointers the caller gives the advisor
+must match its read rules; the engine drops any other pointer from the
+input and reports it to the owner.
+
+**Requests (v2.3).** A role may carry `may_request`: the roles that may ask
+the engine to start it. A missing key means no role may. The engine takes
+the requesting role from the session it started, never from a field in a
+request or a file (F-006 SR-3), and refuses requests from any role not
+listed. Only `advisor` may have the key, and it may list only
+`requirements-analyst` and `orchestrator`; on any other role it is refused.
+`may_request` is set in the project policy only, never in a repo override.
+A request is not an approval: an advisor call still needs the owner's
+(F-006 FR-3).
 
 ```yaml
 policy:

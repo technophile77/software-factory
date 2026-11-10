@@ -1065,7 +1065,12 @@ class AC11Manifest(Base):
 CORE_ROLES = ["orchestrator", "requirements-analyst", "software-developer", "test-engineer",
               "security-reviewer", "validation-judge"]
 CONTRACT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill"}
-SUPPORT_ROLES = ["web-reader"]
+SUPPORT_ROLES = ["web-reader", "advisor"]
+# Copied from interface-contracts.md, Role policy v2.3 (H-0061): the advisor's fixed policy.
+ADVISOR_TOOLS = ["Read", "Grep", "Glob", "Skill"]
+ADVISOR_EXTRA_DENY = [".factory/inbox/**", "**/.factory/inbox/**", ".factory/interviews/**",
+                      "**/.factory/interviews/**"]
+ADVISOR_REQUESTERS = ["requirements-analyst", "orchestrator"]
 # Copied from interface-contracts.md, Role policy v2.2 (H-0023).
 SECRET_GLOBS = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks",
                 "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc",
@@ -1450,6 +1455,129 @@ class RolePolicyV22(Base):
                 self.assertEqual([path in fc.effective_policy(data, r["name"])[role][section]["deny"]
                                   for r in data["repos"]], [True] * len(data["repos"]))
                 self.assertRejected(data, f"project {role} lacks {section} deny {path}")
+
+
+class RolePolicyV23(Base):
+    """H-0061 (F-006 SR-7): the advisor's fixed policy, and a request rule that starts closed."""
+    manifest = FR07RolePolicy.manifest
+    validate = FR07RolePolicy.validate
+    assertRejected = FR07RolePolicy.assertRejected
+    assertAccepted = FR07RolePolicy.assertAccepted
+
+    def advisor(self, data):
+        return data["policy"]["roles"]["advisor"]
+
+    def test_template_advisor_is_the_contract_policy(self):
+        roles = self.manifest()["policy"]["roles"]
+        adv, analyst = roles["advisor"], roles["requirements-analyst"]
+        self.assertEqual(adv["tools"]["allow"], ADVISOR_TOOLS)
+        self.assertEqual(adv["read"]["allow"], analyst["read"]["allow"])
+        self.assertLessEqual(set(analyst["read"]["deny"]) | set(ADVISOR_EXTRA_DENY), set(adv["read"]["deny"]))
+        for section in ("write", "commands", "network"):
+            self.assertEqual(adv[section]["allow"], [], section)
+        self.assertEqual(adv["may_request"], ADVISOR_REQUESTERS)
+        # Only the advisor can be requested; every other role stays closed.
+        self.assertEqual([r for r, rule in roles.items() if "may_request" in rule], ["advisor"])
+
+    def test_advisor_lists_match_the_contract_text(self):
+        if MASTER is None:
+            self.skipTest("skill copied out of the factory repo; interface-contracts.md is not here")
+        text = read(os.path.join(MASTER, "docs", "interface-contracts.md"))
+        section = re.search(r"(?ms)^## Role policy .*?(?=^## )", text).group(0)
+        block = re.search(r"(?ms)^\*\*Advisor \(v2\.3.*?```yaml\n(.*?)```", section).group(1)
+        self.assertIn(f"allow: {json.dumps(ADVISOR_TOOLS)}", block)
+        self.assertIn(f"may_request: {json.dumps(ADVISOR_REQUESTERS)}", block)
+        for key in ("write", "commands", "network"):
+            self.assertRegex(block, rf"{key}:\n\s+allow: \[\]")
+        extra = re.search(r"the advisor's extra denies:\s*(.*?)\.\n", section, re.S).group(1)
+        self.assertEqual(re.findall(r"`([^`]+)`", extra), ADVISOR_EXTRA_DENY)
+
+    def test_advisor_gets_no_write_shell_or_web_tool(self):
+        for tool in ("Edit", "Write", "Bash", "WebFetch", "WebSearch"):
+            with self.subTest(tool=tool):
+                data = self.manifest()
+                self.advisor(data)["tools"]["allow"].append(tool)
+                self.assertRejected(data, f"advisor with {tool}")
+
+    def test_advisor_allows_no_writes_commands_or_network(self):
+        cases = [("write", [".factory/runs/**"]), ("write", ["docs/features/**"]), ("commands", ["git"]),
+                 ("network", ["github.com"]), ("network", ["*"])]
+        for section, allow in cases:
+            for where in ("project", "repo override"):
+                with self.subTest(section=section, allow=allow, where=where):
+                    data = self.manifest()
+                    if where == "project":
+                        self.advisor(data)[section]["allow"] = allow
+                    else:
+                        data["repos"][0]["policy"]["roles"]["advisor"] = {section: {"allow": allow}}
+                    self.assertRejected(data, f"advisor {section} {allow} in {where}")
+
+    def test_advisor_reads_no_more_than_the_analyst(self):
+        data = self.manifest()
+        data["policy"]["roles"]["requirements-analyst"]["read"]["allow"] = ["docs/**", "src/**"]
+        self.assertRejected(data, "advisor reads ** while the analyst reads docs and src")
+        self.advisor(data)["read"]["allow"] = ["docs/**", "src/app/**", "src/main.py"]
+        self.assertAccepted(data, "advisor reads inside the analyst's globs")
+        for glob in ("test/**", "srcx/**", "**", "*/docs/**"):
+            with self.subTest(glob=glob):
+                self.advisor(data)["read"]["allow"] = [glob]
+                self.assertRejected(data, f"advisor reads {glob}")
+        # A repo override that narrows the analyst narrows what the advisor may read there too.
+        data = self.manifest()
+        data["repos"][0]["policy"]["roles"]["requirements-analyst"] = {"read": {"allow": ["docs/**"]}}
+        self.assertRejected(data, "analyst narrowed in a repo, advisor not")
+        data["repos"][0]["policy"]["roles"]["advisor"] = {"read": {"allow": ["docs/**"]}}
+        self.assertAccepted(data, "both narrowed in the repo")
+
+    def test_advisor_denied_inbox_transcripts_and_the_analysts_denies(self):
+        for path in ADVISOR_EXTRA_DENY + [SECRET_GLOBS[0]]:
+            with self.subTest(path=path):
+                data = self.manifest()
+                self.advisor(data)["read"]["deny"].remove(path)
+                self.assertRejected(data, f"advisor may read {path}")
+        data = self.manifest()
+        data["policy"]["roles"]["requirements-analyst"]["read"]["deny"].append("private/**")
+        self.assertRejected(data, "analyst denied private/**, advisor not")
+        self.advisor(data)["read"]["deny"].append("private/**")
+        self.assertAccepted(data, "advisor denied it too")
+
+    def test_tighter_advisor_accepted_and_role_is_optional(self):
+        data = self.manifest()
+        self.advisor(data)["tools"]["allow"] = ["Read", "Grep"]
+        del self.advisor(data)["network"]
+        del self.advisor(data)["commands"]
+        self.assertAccepted(data, "narrower advisor")
+        del data["policy"]["roles"]["advisor"]
+        data["repos"][0]["policy"]["roles"].pop("advisor", None)
+        self.assertAccepted(data, "no advisor role")
+
+    def test_may_request_starts_closed_and_names_only_the_two_callers(self):
+        for value in ([], ["orchestrator"], ["requirements-analyst"], ADVISOR_REQUESTERS):
+            with self.subTest(value=value):
+                data = self.manifest()
+                self.advisor(data)["may_request"] = value
+                self.assertAccepted(data, f"may_request {value}")
+        data = self.manifest()
+        del self.advisor(data)["may_request"]
+        self.assertAccepted(data, "no may_request: nobody may request the advisor")
+        for value in (["software-developer"], ["advisor"], ["web-reader"], ["orchestrator", "test-engineer"],
+                      ["owner"], "orchestrator", [""], [1]):
+            with self.subTest(value=value):
+                data = self.manifest()
+                self.advisor(data)["may_request"] = value
+                self.assertRejected(data, f"may_request {value!r}")
+
+    def test_may_request_only_on_the_advisor_and_only_in_the_project_policy(self):
+        for role in CORE_ROLES + ["web-reader"]:
+            with self.subTest(role=role):
+                data = self.manifest()
+                data["policy"]["roles"][role]["may_request"] = ["orchestrator"]
+                self.assertRejected(data, f"may_request on {role}")
+        for role in ("advisor", "software-developer"):
+            with self.subTest(override=role):
+                data = self.manifest()
+                data["repos"][0]["policy"]["roles"][role] = {"may_request": ["orchestrator"]}
+                self.assertRejected(data, f"may_request in a repo override for {role}")
 
 
 class AC12Items(Base):

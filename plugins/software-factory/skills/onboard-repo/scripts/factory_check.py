@@ -31,7 +31,7 @@ CORE_AGENTS = [
     "test-engineer", "security-reviewer", "validation-judge",
 ]
 # Optional roles the master factory ships; a manifest may give them a policy.
-SUPPORT_AGENTS = ["web-reader"]
+SUPPORT_AGENTS = ["web-reader", "advisor"]
 PROTECTED = set(CORE_AGENTS) | {"security-review"}
 DEFAULT_SKILLS = ["security-review"]
 COMPLEXITY = ["simple", "moderate", "complex"]
@@ -1215,6 +1215,15 @@ SECRET_FILES = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**
                 "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json",
                 "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk",
                 "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
+# Role policy v2.3 (F-006 SR-7): the advisor reads no more than the analyst, and
+# no inbox or transcript; the engine hands it the current feature's transcript
+# itself, so no read glob can reach another feature's (FR-6, A-3).
+ADVISOR_TOOLS = {"Read", "Grep", "Glob", "Skill"}
+ADVISOR_EXTRA_DENY = [".factory/inbox/**", "**/.factory/inbox/**", ".factory/interviews/**",
+                      "**/.factory/interviews/**"]
+# Who may ask the engine to start a role. A role not listed here can't carry
+# `may_request` at all, so the request rule starts closed.
+MAY_REQUEST = {"advisor": {"requirements-analyst", "orchestrator"}}
 
 
 # Role policy commands are program names with any arguments, so a shell or
@@ -1256,8 +1265,10 @@ def _check_role(where, rule, errors):
         errors.append(f"{where} must be a mapping")
         return
     for key, value in rule.items():
+        if key == "may_request":
+            continue
         if key not in POLICY_KEYS:
-            errors.append(f"{where}.{key} is not a policy key (tools, read, write, commands, network)")
+            errors.append(f"{where}.{key} is not a policy key (tools, read, write, commands, network, may_request)")
             continue
         if not isinstance(value, dict):
             errors.append(f"{where}.{key} must be a mapping")
@@ -1289,6 +1300,45 @@ def _check_role(where, rule, errors):
                 unknown = sorted(set(items) - AGENT_TOOLS)
                 if unknown:
                     errors.append(f"{where}.tools.allow has unknown tools: {', '.join(unknown)}")
+
+
+def _check_may_request(where, role, value, errors):
+    allowed = MAY_REQUEST.get(role)
+    if allowed is None:
+        errors.append(f"{where}.may_request is not allowed: only {', '.join(sorted(MAY_REQUEST))} can be requested")
+    elif not isinstance(value, list) or not all(isinstance(i, str) and i for i in value):
+        errors.append(f"{where}.may_request must be a list of role names")
+    elif set(value) - allowed:
+        errors.append(f"{where}.may_request may name only {', '.join(sorted(allowed))}, not "
+                      f"{', '.join(sorted(set(value) - allowed))}")
+
+
+def _covered(glob, by):
+    # Glob containment in general is undecidable here, so only the forms that
+    # are plainly inside count; anything else is refused rather than guessed.
+    return any(g == glob or g == "**" or (g.endswith("/**") and glob.startswith(g[:-2])) for g in by)
+
+
+def _check_advisor(where, rule, analyst):
+    errors = []
+    wider = sorted(set((rule.get("tools") or {}).get("allow") or []) - ADVISOR_TOOLS)
+    if wider:
+        errors.append(f"policy for advisor in {where} may use only {', '.join(sorted(ADVISOR_TOOLS))}, "
+                      f"not {', '.join(wider)}")
+    for section in ("write", "commands", "network"):
+        if (rule.get(section) or {}).get("allow"):
+            errors.append(f"policy for advisor in {where} must allow no {section}")
+    read = rule.get("read") or {}
+    analyst_reads = ((analyst or {}).get("read") or {}).get("allow") or []
+    beyond = sorted(g for g in read.get("allow") or [] if not _covered(g, analyst_reads))
+    if beyond:
+        errors.append(f"policy for advisor in {where} may read only what the requirements analyst may; "
+                      f"not {', '.join(beyond)}")
+    required = ADVISOR_EXTRA_DENY + list(((analyst or {}).get("read") or {}).get("deny") or [])
+    missing = [d for d in dict.fromkeys(required) if d not in set(read.get("deny") or [])]
+    if missing:
+        errors.append(f"policy for advisor in {where} must deny reading {', '.join(missing)}")
+    return errors
 
 
 def effective_policy(data, repo_name):
@@ -1324,6 +1374,8 @@ def validate_policy(data, agents):
         if role not in known:
             errors.append(f"policy.roles.{role} is not a known agent")
         _check_role(f"policy.roles.{role}", rule, errors)
+        if isinstance(rule, dict) and "may_request" in rule:
+            _check_may_request(f"policy.roles.{role}", role, rule["may_request"], errors)
     for i, repo in enumerate(data.get("repos") or []):
         if not isinstance(repo, dict) or repo.get("policy") is None:
             continue
@@ -1340,6 +1392,9 @@ def validate_policy(data, agents):
                 if wider:
                     errors.append(f"repos[{i}].policy.roles.{role}.tools adds {', '.join(wider)}; "
                                   "widening a role is a Security decision made in the project policy")
+            if isinstance(rule, dict) and "may_request" in rule:
+                errors.append(f"repos[{i}].policy.roles.{role}.may_request is not allowed; "
+                              "who may request a role is set in the project policy only")
             _check_role(f"repos[{i}].policy.roles.{role}", rule, errors)
     if errors:
         return errors
@@ -1349,7 +1404,10 @@ def validate_policy(data, agents):
     for repo in [None, *(data.get("repos") or [])]:
         name = repo.get("name") if isinstance(repo, dict) else None
         where = f"repo {name}" if name else "the project"
-        for role, rule in effective_policy(data, name).items():
+        roles = effective_policy(data, name)
+        for role, rule in roles.items():
+            if role == "advisor":
+                errors += _check_advisor(where, rule, roles.get("requirements-analyst"))
             if not (rule.get("tools") or {}).get("allow"):
                 errors.append(f"policy for {role} in {where} lists no tools, so that agent could not run")
             tools = set((rule.get("tools") or {}).get("allow") or [])

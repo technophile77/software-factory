@@ -45,7 +45,7 @@ agents:
 
 standards: {}
 
-# Role policy (Role policy v2.2, from ADR 0004's table). Anything not allowed
+# Role policy (Role policy v2.3, from ADR 0004's table). Anything not allowed
 # is denied; deny wins over allow; a role missing here may not run. `tools`
 # are the agent's built-in tools; Bash runs only the `commands` listed. Loosening
 # a rule is a Security decision. Fill placeholders per repo above; one you
@@ -139,6 +139,19 @@ policy:
         allow: []
       network:
         allow: ["*"]           # any host: allowed only because this role has no file tools
+    advisor:                   # advises the owner on one hard question; reads like the analyst, writes nothing
+      may_request: ["requirements-analyst", "orchestrator"]   # the engine checks its own session, never a field
+      tools:
+        allow: ["Read", "Grep", "Glob", "Skill"]   # web only through web-reader; no shell until its own Security decision
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json", ".factory/inbox/**", "**/.factory/inbox/**", ".factory/interviews/**", "**/.factory/interviews/**"]   # no inbox or transcripts: the engine supplies the current feature's
+      write:
+        allow: []
+      commands:
+        allow: []
+      network:
+        allow: []
 
 notes: |
   <project-specific context every agent reads>
