@@ -955,3 +955,34 @@ class ThirdGateRegressions(Base):
         for path in ("**/*.tfstate", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig"):
             self.assertIn(path, fc.SECRET_FILES)
 
+    def state_repo(self):
+        root = self.repo({"package.json": "{}"})
+        g = ["git", "-C", root, "-c", "user.email=t@t", "-c", "user.name=t"]
+        subprocess.run(g + ["commit", "-q", "--allow-empty", "-m", "x"], check=True)
+        subprocess.run(g + ["worktree", "add", "-q", "-b", "factory/state", os.path.join(root, ".factory")], check=True)
+        os.makedirs(os.path.join(root, ".factory", "inbox", "decision"))
+        return root
+
+    def test_r4_real_state_worktree_is_accepted(self):
+        root = self.state_repo()
+        fc._require_state_worktree(os.path.join(root, ".factory", "inbox", "decision"))
+
+    def test_r4_1_symlinked_factory_outside_git_is_refused(self):
+        root = self.repo({"package.json": "{}"})
+        outside = tempfile.mkdtemp()
+        os.makedirs(os.path.join(outside, "inbox", "decision"))
+        os.symlink(outside, os.path.join(root, ".factory"))
+        with self.assertRaises(fc.CheckError):
+            fc._require_state_worktree(os.path.join(root, ".factory", "inbox", "decision"))
+
+    def test_r4_2_repo_whose_own_branch_is_factory_state_is_refused(self):
+        root = self.repo({"package.json": "{}", ".factory/inbox/decision/.keep": ""})
+        subprocess.run(["git", "-C", root, "checkout", "-q", "-b", "factory/state"], check=True)
+        with self.assertRaises(fc.CheckError):
+            fc._require_state_worktree(os.path.join(root, ".factory", "inbox", "decision"))
+
+    def test_r4_5_posix_bracket_expressions_are_refused(self):
+        for glob in (".factory/[[:punct:]][[:punct:]]/CLAUDE.md", ".factory/[[.period.]]x", "a/[[=.=]]"):
+            self.assertTrue(fc._escapes_worktree(glob))
+        self.assertFalse(fc._escapes_worktree("src/app/(auth)/**"))
+

@@ -140,3 +140,14 @@ Tests in class `ThirdGateRegressions` unless noted.
 
 Not done: per-repo protected paths (R3-6, so the factory repo can add `scripts/**` and `docs/**`) and listing `osv-scanner.toml` ignores in the assessment; both are new features for the owner to prioritize.
 
+## Fixes after Gate 2 re-review 4 and the test engineer's run on c4e8fb6
+
+| Finding | Fix | Test |
+|---|---|---|
+| R4-1, F6: symlinked `.factory` outside git still written from another folder | Any inbox path through a `.factory` folder must be the real `factory/state` linked worktree of the repo above it: not a symlink, its own top level, on `factory/state`, sharing the repo's git common dir | `ThirdGateRegressions.test_r4_*`; test engineer's `FactoryStateInbox` |
+| R4-2: a repo whose own branch is `factory/state` | Refused by the same check (the folder must be a linked worktree, not the repo itself); SKILL.md step 5 says to stop and tell the owner | `test_r4_2_repo_whose_own_branch_is_factory_state_is_refused` |
+| R4-4, F7: more wrappers and interpreters | Added (`stdbuf`, `setsid`, `chroot`, `runuser`, `cscript`, `irb`, `bunx`, `tsx`, ...); versioned and suffixed names count as their family | test engineer's `test_commands_may_not_name_a_shell_or_interpreter` |
+| R4-5: POSIX bracket expressions | `[[` refused in globs | `test_r4_5_posix_bracket_expressions_are_refused` |
+
+Left as logged Lows: R4-3 (repo text stays inline in Markdown, without escaping backticks, `<` or links) and the R3-6/R3-7 leftovers.
+

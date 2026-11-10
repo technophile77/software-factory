@@ -1215,11 +1215,13 @@ SECRET_FILES = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**
 
 # Role policy commands are program names with any arguments, so a shell or
 # interpreter would undo every read and write rule (Gate 2 re-review R2-1).
-SHELL_FAMILIES = re.compile(r"^(.*sh|python.*|pypy.*|ipython.*|node.*|.*awk|perl.*|ruby.*|php.*|lua.*|tcl.*|r|rscript)$")
+SHELL_FAMILIES = re.compile(r"^(.*sh|python|pypy|ipython|node|nodejs|.*awk|perl|ruby|irb|php|lua|tcl|tclsh|r|rscript|py)$")
 # A guard rail, not the boundary: build and test tools run repo code by design
 # (R2-1 stays with the owner). Wrappers that run any command count as shells.
 SHELL_COMMANDS = {"busybox", "find", "npx", "uv", "uvx", "pipx", "toybox", "script", "expect", "watch", "nohup",
-                  "timeout", "nice", "time", "parallel", "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "pwsh", "powershell", "cmd", "env",
+                  "timeout", "nice", "time", "parallel", "stdbuf", "setsid", "ionice", "taskset", "flock", "chroot",
+                  "runuser", "unbuffer", "unshare", "nsenter", "pkexec", "systemd-run", "strace", "gdb", "cscript",
+                  "wscript", "mshta", "bunx", "pnpx", "tsx", "ts-node", "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "pwsh", "powershell", "cmd", "env",
                   "python", "python3", "node", "deno", "bun", "ruby", "perl", "php", "lua", "osascript", "xargs",
                   "eval", "exec", "sudo", "su", "doas"}
 
@@ -1231,7 +1233,7 @@ def _escapes_worktree(glob):
     # and `**` are matched per segment by the engine and never cross upward.
     # Brace expansion, negated classes and extglobs read differently across glob
     # dialects, so they are refused rather than interpreted.
-    if re.search(r"[{}]|\[[!^]|[@!+*?]\(", glob):
+    if re.search(r"[{}]|\[[!^\[]|[@!+*?]\(", glob):
         return True
     return glob.startswith(("/", "~")) or "\\" in glob or re.match(r"^[A-Za-z]:", glob) is not None \
         or any(seg not in ("*", "**") and fnmatch.fnmatchcase("..", seg) for seg in glob.split("/"))
@@ -1257,7 +1259,9 @@ def _check_role(where, rule, errors):
                 errors.append(f"{where}.{key}.{sub} has a path outside the worktree (absolute, `..` or `\\`)")
             elif key == "commands":
                 names = {os.path.basename(i).lower().removesuffix(".exe") for i in items}
-                shells = sorted(n for n in names if n in SHELL_COMMANDS or SHELL_FAMILIES.match(n))
+                # Versioned or suffixed names (`python3.12`, `bash5.2`, `busybox.static`) count as their family.
+                shells = sorted(n for n in names if {n, re.split(r"[-.\d]", n)[0]} & SHELL_COMMANDS
+                                or SHELL_FAMILIES.match(re.split(r"[-.\d]", n)[0]))
                 if shells:
                     errors.append(f"{where}.commands.allow has shells or interpreters, which bypass the policy: {', '.join(shells)}")
             elif key == "tools":
@@ -1489,16 +1493,39 @@ def _load_json(path):
 
 
 def _require_state_worktree(inbox_dir):
-    """A repo can carry its own `.factory/` with forged items marked as filed;
-    only the factory/state worktree's inbox is trusted (Gate 2 R3-2, R3-3)."""
-    probe = os.path.realpath(inbox_dir)
-    while not os.path.isdir(probe) and os.path.dirname(probe) != probe:
-        probe = os.path.dirname(probe)
-    if run_git(probe, "rev-parse", "--is-inside-work-tree") is None:
+    """A repo can carry its own `.factory/` with forged items marked as filed,
+    or a `.factory` link pointing elsewhere; only the factory/state worktree's
+    inbox is trusted (Gate 2 R3-2, R3-3, R4-1, R4-2). A folder outside any git
+    work tree and outside any `.factory` is a plain folder chosen by the caller."""
+    full = os.path.abspath(inbox_dir)
+    parts = full.split(os.sep)
+    if ".factory" not in parts:
+        probe = os.path.realpath(full)
+        while not os.path.isdir(probe) and os.path.dirname(probe) != probe:
+            probe = os.path.dirname(probe)
+        if run_git(probe, "rev-parse", "--is-inside-work-tree") is None:
+            return
+        branch = run_git(probe, "symbolic-ref", "--short", "HEAD")
+        if branch is None or branch.decode().strip() != "factory/state":
+            raise CheckError(f"inbox folder is not in the factory/state worktree: {inbox_dir}")
         return
-    branch = run_git(probe, "symbolic-ref", "--short", "HEAD")
-    if branch is None or branch.decode().strip() != "factory/state":
-        raise CheckError(f"inbox folder is not in the factory/state worktree: {inbox_dir}")
+    k = len(parts) - 1 - parts[::-1].index(".factory")
+    factory = os.sep.join(parts[:k + 1]) or os.sep
+    repo = os.path.dirname(factory)
+    fail = f"inbox folder is not in the factory/state worktree at {factory}"
+    if os.path.islink(factory) or not os.path.isdir(factory):
+        raise CheckError(fail)
+
+    def git(where, *args):
+        out = run_git(where, *args)
+        return os.path.realpath(out.decode().strip()) if out is not None else None
+    branch = run_git(factory, "symbolic-ref", "--short", "HEAD")
+    if git(factory, "rev-parse", "--show-toplevel") != os.path.realpath(factory) \
+            or branch is None or branch.decode().strip() != "factory/state" \
+            or git(repo, "rev-parse", "--show-toplevel") != os.path.realpath(repo) \
+            or git(factory, "rev-parse", "--path-format=absolute", "--git-common-dir") \
+            != git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir"):
+        raise CheckError(fail)
 
 
 def _through_symlink(path):
