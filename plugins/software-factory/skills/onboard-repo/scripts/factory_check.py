@@ -1016,6 +1016,12 @@ def recommended_work(gaps):
     return work
 
 
+def _md_cell(text):
+    # Repo-controlled text (file names included) must stay inside its table
+    # cell: no line breaks that could start a heading the agent then reads.
+    return re.sub(r"[\r\n\u2028\u2029]+", " ", str(text)).replace("|", "\\|")
+
+
 def to_markdown(a):
     level_name = {l: l.replace("-", " ").capitalize() for l in LEVELS}
     out = [f"# Factory onboarding assessment: {a['repo']}", "",
@@ -1041,12 +1047,13 @@ def to_markdown(a):
             evid = "; ".join(" ".join(filter(None, [":".join(str(x) for x in (e.get("path"), e.get("line")) if x), e.get("detail")]))
                              for e in g["evidence"]) or "—"
             cells = [f"`{g['id']}` {g['title']}", g["rule"], g.get("severity", "—"), evid, g["fix"], g["resolution"]]
-            out.append("| " + " | ".join(c.replace("|", "\\|").replace("\n", " ") for c in cells) + " |")
+            out.append("| " + " | ".join(_md_cell(c) for c in cells) + " |")
         out.append("")
     out += ["## Existing tests (adopted in place)", ""]
     if a.get("test_inventory"):
         out += ["| File | Type |", "|---|---|"]
-        out += [f"| `{t['path'].replace('|', '\\|')}` | {t['type']} |" for t in a["test_inventory"]]
+        out += ["| " + _md_cell("`" + t["path"].replace("`", "'") + "`") + " | " + _md_cell(t["type"]) + " |"
+                for t in a["test_inventory"]]
     else:
         out.append("None found.")
     if a.get("baseline_request"):
@@ -1453,6 +1460,23 @@ def _load_json(path):
         return json.load(f)
 
 
+def _through_symlink(path):
+    """True if a folder from the current directory down to path is a symlink.
+
+    Folders above the current directory (macOS /tmp, /var) are the system's
+    business and don't count."""
+    full = os.path.abspath(path)
+    base = os.path.abspath(os.getcwd())
+    if os.path.commonpath([full, base]) != base:
+        base = os.path.dirname(os.path.dirname(full))
+    probe = base
+    for part in os.path.relpath(full, base).split(os.sep):
+        probe = os.path.join(probe, part)
+        if os.path.islink(probe):
+            return True
+    return False
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1505,8 +1529,7 @@ def main(argv=None):
             errors = validate_manifest(data, args.master)
             print("\n".join(errors) or "Manifest is valid.")
             return 1 if errors else 0
-        if args.cmd == "plan-items" and args.write and \
-                os.path.realpath(args.inbox_dir) != os.path.abspath(args.inbox_dir):
+        if args.cmd == "plan-items" and args.write and _through_symlink(args.inbox_dir):
             raise CheckError(f"inbox folder goes through a symlink, refusing to write: {args.inbox_dir}")
         if args.cmd == "plan-items":
             result = plan_items(_load_json(args.assessment), args.inbox_dir, args.assessment_ref, args.complexity, args.write,

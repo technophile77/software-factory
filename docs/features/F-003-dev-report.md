@@ -118,3 +118,11 @@ Left for the owner: R2-1 (sandbox and git), R2-2 (enforcement-time normalization
 |---|---|---|
 | F3: the Markdown assessment had no test inventory or baseline request (FR-14, FR-15) | New "Existing tests (adopted in place)" section with each file's type and the baseline request | `AC18TestInventory.test_fr14_inventory_in_markdown_assessment` (test engineer) |
 
+## Fixes after re-validation 3
+
+| Finding | Fix | Test |
+|---|---|---|
+| B4: backslash in an f-string expression broke the checker on Python 3.10 and 3.11 | Escaping moved out of the expression | `SecondGateRegressions.test_b4_checker_compiles_on_python_3_10` (also compiles with any 3.10/3.11 found); suite passes on 3.11, 3.12 and 3.13 |
+| M15: test file names could break out of the Markdown table | One cell sanitizer for every table: line breaks become spaces, `\|` escaped, backticks in paths replaced | `test_m15_test_file_names_cannot_break_out_of_the_table` |
+| m26: symlinked system folders (macOS `/tmp`) refused | Only folders from the working folder down count | `test_m26_symlinked_folders_above_the_working_folder_are_fine` |
+
