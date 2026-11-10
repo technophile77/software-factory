@@ -12,6 +12,8 @@
     "stacks": {"type": "array", "items": {"type": "object", "required": ["name", "dir", "manifest", "locks"]}},
     "files_scanned": {"type": "integer"},
     "files_skipped": {"type": "integer"},
+    "skipped_files": {"type": "array", "items": {"type": "string"}},
+    "test_files_found": {"type": "array", "items": {"type": "string"}},
     "chosen_level": {"type": ["string", "null"]},
     "blocking_now": {"type": "array", "items": {"type": "string"}},
     "github": {"type": "object", "required": ["branch_protection"],

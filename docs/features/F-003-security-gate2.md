@@ -64,3 +64,54 @@ Tests: `python3 -m unittest discover -s skills/onboard-repo/tests` passes (39 te
 | SR-6 git/gh with argument lists | Yes in the checker; by instruction in SKILL.md | No | The Bash tool is a shell, so the instruction can't be followed literally (#20, #22). |
 | SR-7 No GitHub change without the owner's yes; no tokens | Mostly, by instruction | No; no reason stated | Pushes and PRs lack explicit confirmation points (#21). The protection applied doesn't stop a factory merge (#1). The token identity is the owner's (#12). |
 | SR-8 Readers fail closed | Yes for factory YAML and unreadable workflows | Yes (property tests, unreadable workflow) | Crafted workflow syntax hides unpinned actions (#4). Commented-out text counts as a present job or audit (#3). Deep nesting and bad encodings crash with a traceback (#16). |
+
+## Re-review after fixes (2026-11-10)
+
+- **Scope:** `git diff b77b825..04fd6bb -- skills/` (commit 04fd6bb), read against the findings above, S1 to S8, and `docs/features/F-003-dev-report.md`
+- **Reviewer role:** security-reviewer
+- **Tests:** 52 pass. I re-ran the adversarial cases above against the new checker in `/tmp/claude-0/gate2/`.
+- **Result:** PASS at Rapid prototype. Nothing is Critical. Of the 24 findings, 11 are fixed, 10 partly fixed and 3 not fixed. Still open: one High (#1, with the token on the owner's account), two Medium (#4 residual, #12), and the rest Low. The fixes introduce no new issue beyond the residuals noted under #3, #4 and #17.
+
+### Branch protection design choice (#1)
+
+The payload at `SKILL.md:170-184` turns on `dismiss_stale_reviews`, `require_last_push_approval` and `strict` checks, and `_protection` now reports anything weaker as incomplete. That closes the gap I reported ("push after approval, then merge"), **but only for a token that belongs to a separate, non-admin account.**
+
+`enforce_admins: false` exempts every repo admin. On a personal repo the owner is an admin. Step 8 still sends the owner to create the token on their own account (`SKILL.md:192-197`, "that is the owner's call"). In that case the token acts as an exempt admin, and it has Contents write, so it may be able to push straight to the default branch or merge with no approval at all. I have not tested whether GitHub's admin exemption applies to a fine-grained token that has no Administration permission, so this is to be confirmed. The design should still assume it does.
+
+There is a second problem with the owner's account. Every factory PR is then authored by the owner, who can't approve their own PRs. Every factory merge would need the admin exemption, so using it becomes routine instead of the exception the payload intends.
+
+**Verdict:** #1 is closed only if the factory token belongs to a separate account with the Write role, not Admin. With the token on the owner's account it stays **High**. It does not block at Rapid prototype.
+
+**Suggested fix:**
+- Make a dedicated machine account (or a GitHub App) the default in step 8. `enforce_admins: false` can then stay for the owner's own PRs, such as the onboarding PR, because the factory isn't an admin.
+- Keep the owner's own account only as an explicit Security decision (S8.5). If the owner chooses it, set `enforce_admins: true`, or use a repository ruleset with the owner as the only bypass actor in "pull requests only" mode.
+- Have `assess` record which account the token belongs to, if known. If it can't, list this as an owner step.
+
+### Status of each finding
+
+| # | Was | Status | Evidence / what remains |
+|---|---|---|---|
+| 1 | High | Partly fixed | See above. Still High while the token is on the owner's account. |
+| 2 | Medium | Fixed | Tracked files in `build/`, `dist/`, `vendor/` are now scanned (reproduced: 3 secret gaps). `VENDORED` only affects stack and test detection. Skipped paths are still not listed (see #24). |
+| 3 | Medium | Fixed (Low residual) | CI and audit checks now read comment-stripped text, and only weekly-or-more crons count (reproduced: the filled-in template and the comment-only workflow now report every missing job and `cve-audit-missing`). Residual, Low: `_strip_comment` (`factory_check.py:63-74`) treats an apostrophe in an unquoted value as an open quote, so `run: echo don't # npm audit secret-scan acceptance` still counts as audit, secret scan and acceptance present (reproduced). Fix: only treat `'` and `"` as quotes when they start a scalar, or drop everything after ` #` outside proper quoted scalars. |
+| 4 | Medium | Partly fixed (Medium remains) | Fixed: block-style flow items, `- {uses: …}`, quoted keys and `docker://` (reproduced). Remaining: `scan_workflow` hits `continue` for every indent-0 line (`factory_check.py:503-511`) before the `uses` scan at line 528. So a workflow written as one top-level flow or JSON line (`jobs: {b: {steps: [{uses: evil/act@main}]}}`, or a JSON workflow) still hides unpinned actions, and in JSON form `"permissions":"write-all"` too (reproduced: no `action-unpinned` gap). Fix: run the `uses`, `write-all` and cron scans before the indent-0 branch, and treat any `{` or `[` value at top level under `jobs:` or `on:` as unreadable. |
+| 5 | Medium | Partly fixed (Low remains) | `write-all` (Medium) and `pull_request_target` (High) are now gaps. Not flagged: job-level `contents: write` or `id-token: write` grants and the `workflow_run` trigger (reproduced). |
+| 6 | Medium | Partly fixed (Low remains) | Added npm, GitLab and AI-key rules, and `.env*` assignments (reproduced). Not added: a generic assignment rule for other files (`password:` in `config.yaml` is not found). |
+| 7 | Medium | Fixed | `SKILL.md:19-22`: every git command runs with `core.hooksPath=/dev/null` and `core.fsmonitor=false`. |
+| 8 | Medium | Fixed | `SKILL.md:23-25`: flagged lines are never opened, printed or grepped. |
+| 9 | Medium | Fixed | `SKILL.md:78-81`: only `ci-job`, `tests` and `tool` gaps may be removed; a security gap needs the owner's yes. |
+| 10 | Medium | Fixed | `roles.yaml` denies `.claude/**`, `.github/**`, `.gitignore`, `agents/**`, `skills/**` and `workflows/**` for the three writing roles. Minor: `.gitattributes` and "no `**` for `<SOURCE_GLOBS>`" were not added. |
+| 11 | Medium | Fixed | `SKILL.md:41-48`: run from the pinned master, or diff the in-repo copy against it first and stop on a difference. |
+| 12 | Medium | Partly fixed (Medium remains) | Step 8 now says a separate account is stronger, but leaves the owner's account as the default with no Security decision. Because of #1, this now carries the High risk. |
+| 13 | Low | Not fixed | Reproduced: an AWS-format key used as a job name or `uses:` ref still appears in the JSON and Markdown evidence. |
+| 14 | Low | Fixed | `docker://` needs `@sha256:` (reproduced). |
+| 15 | Low | Fixed | `run_git` passes `-c core.fsmonitor=false -c core.hooksPath=/dev/null`. The earlier reproduction no longer runs the command. Test added. |
+| 16 | Low | Partly fixed | `validate-manifest` now exits 2 with a message on deep nesting and non-UTF-8 input (reproduced). A malformed `--previous` assessment still crashes with `KeyError` (`factory_check.py:827`). |
+| 17 | Low | Partly fixed (Low remains) | Free text like `x#onboard:<key>` no longer counts. But the new regex (`factory_check.py:1103`) matches **any** indented `ref:` line, body included. An item whose body contains `  ref: x#onboard:<secret key>` still suppresses the Security item (reproduced). The new test only uses an unindented line. Symlinked item files are still followed (reproduced: a symlink to a file outside the inbox was read). Fix: parse only the frontmatter `links` block, and `lstat`/skip symlinks. |
+| 18 | Low | Mostly fixed | `persist-credentials: false` and the `ubuntu-24.04` runner are in. The weekly schedule still runs build and smoke as well as the audit (minor). |
+| 19 | Low | Partly fixed | Expiry of 90 days or less added. Contents write still covers every unprotected branch, wider than ADR 0009's "factory/state only", and this isn't stated to the owner. |
+| 20 | Low | Fixed | `SKILL.md:26-29`: strict patterns, values quoted, stop otherwise. |
+| 21 | Low | Fixed | `SKILL.md:30-33`: one yes before the first push, and a separate yes per setting or repo. |
+| 22 | Low | Partly fixed | Tests added for SR-2 (git config can't run commands) and SR-6 (no shell). SR-1 and SR-7 are still checked by inspection only, with no reason stated in the spec or a test report. |
+| 23 | Low | Not fixed | No hygiene item for the change-controlled `skills/onboard-repo/**` and `.gitignore` changes. |
+| 24 | Low | Not fixed | Skipped files are still reported as a count only. |

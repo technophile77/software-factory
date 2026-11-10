@@ -28,6 +28,32 @@ Each fix has a regression test in `tests/test_factory_check.py` (class `ReviewRe
 | Gate 2 Low: CI template | `persist-credentials: false`, fixed `ubuntu-24.04` runner | `test_ac10_ci_template` (pins), inspection |
 | Gate 2 #5 instruction gaps; validation M8, M9 | SKILL.md: hooks off for all git commands; secrets never opened; security gaps removed only with the owner; run from the master checkout; one owner yes before pushing; strict patterns for command values; owner values never changed to pass; existing config repo committed directly (A-2); edge cases: other project's manifest, remote-only `factory/state`, partly onboarded `.factory/`, empty repo, default branch not `main`; token expiry | inspection |
 
+## Fixes after the Gate 2 re-review and the test engineer's run
+
+Tests in class `SecondReviewRegressions`; the test engineer's two failing acceptance tests now pass.
+
+| Finding | Fix |
+|---|---|
+| Test run F1: every job declaring permissions still flagged | S8.3 is met when the workflow, or every job in it, declares permissions |
+| Test run F2: weekly audit hidden by a second audit workflow | Any audit workflow with an at-least-weekly cron satisfies the schedule rule |
+| Gate 2 re #1 and #12 (High): token on the owner's admin account bypasses protection | Step 8 now puts the token on a separate machine account with the Write role; using the owner's own account needs a Security decision first. Admins stay exempt so the owner can merge their own PRs |
+| Gate 2 re #4: one-line flow or JSON workflow | `uses`, `cron` and `write-all` are read on every line, including top-level ones |
+| Gate 2 re #3: apostrophe stopped comment stripping | A quote only opens a string at the start of a value |
+| Gate 2 re #17: indented `ref:` in an item body; symlinked items | Filed markers are read from frontmatter only; symlinked item files are skipped |
+| Gate 2 re #16: malformed `--previous` crashed | Fails closed with a message |
+| Gate 2 re #13: secret in a `uses` ref copied to the report | Every gap is passed through the secret rules and redacted before output |
+| Gate 2 re #19: Contents write wider than ADR 0009 | Step 8 tells the owner, and why branch protection covers it |
+| Gate 2 re #24, test run O1: skipped files and found tests not named | `skipped_files` and `test_files_found` added to the assessment |
+| Test run O2: tool decisions for every level | `plan-items --level` files tool decisions up to the chosen level only |
+| Test run O5: lowercase README missed | Case-insensitive |
+| Test run AC-14 note | Step 8 says a declined step changes nothing and stays open |
+
+**SR-1 and SR-7 by inspection.** Both govern what the agent running the skill does (treat repo text as data; ask before changing GitHub). The checker can't enforce them because it never acts on GitHub or follows text; its side is tested (`test_ac16_instructions_in_repo_are_data`, no network, no `gh`). The agent side is verified by reading SKILL.md's rules and steps 4, 7 and 8.
+
+**Not changed, by design.** The recommended starting level rarely rises above Rapid prototype, because higher levels need records only the factory produces (Gate 2 reports, CI history); the assessment says so. Job-level write grants and `workflow_run` triggers aren't flagged, since jobs may legitimately need them; they are Low. A generic password rule runs only in `.env` files to keep false positives down.
+
+**Change control.** `skills/onboard-repo/` is change-controlled. Its location was approved as A-1, and PR #9 is its review; merging it is the approval.
+
 ## Spec deviations
 
 - AC-10 says the generated workflow audits all dependencies. For Python, Go and Rust the audit tool is an external component, so S4.1 requires a review before it is used: the step stays commented and a tool decision is filed. The `cve-audit-missing` gap stays open until it is approved. npm repos get `npm audit` straight away.

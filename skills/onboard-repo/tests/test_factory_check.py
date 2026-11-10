@@ -527,6 +527,59 @@ class ReviewRegressions(Base):
         self.assertIn(fc.main(["validate-manifest", path]), (1, 2))
 
 
+class SecondReviewRegressions(Base):
+    """Findings from the Gate 2 re-review and the test engineer's run."""
+
+    def test_apostrophe_does_not_hide_a_comment(self):
+        wf = "permissions: {}\non: push\njobs:\n  a:\n    steps:\n      - run: echo don't # npm audit gitleaks e2e\n"
+        a = self.assess({".github/workflows/ci.yml": wf})
+        self.assertTrue({"cve-audit-missing", "ci-job:secret-scan", "ci-job:acceptance-tests"} <= ids(a))
+
+    def test_one_line_flow_workflow(self):
+        wf = '{"on": "push", "permissions": "write-all", "jobs": {"a": {"steps": [{"uses": "evil/act@main"}]}}}\n'
+        a = self.assess({".github/workflows/ci.yml": wf})
+        self.assertIn("action-unpinned:.github/workflows/ci.yml:evil/act", ids(a))
+        self.assertIn("workflow-write-all:.github/workflows/ci.yml", ids(a))
+
+    def test_malformed_previous_fails_closed(self):
+        root = self.repo({"README.md": "x"})
+        with self.assertRaises(fc.CheckError):
+            fc.assess(root, previous={"gaps": [{"title": "no id"}]})
+
+    def test_indented_ref_in_body_does_not_suppress(self):
+        inbox = tempfile.mkdtemp()
+        self.roots.append(inbox)
+        a = self.assess({"src/k.py": f"K='{FAKE_AWS}'\n"})
+        key = "secret:aws-access-key:src/k.py:1"
+        with open(os.path.join(inbox, "D-0001.md"), "w") as f:
+            f.write(f"---\nid: D-0001\n---\n\n    ref: x#onboard:{key}\n")
+        os.symlink(os.path.join(inbox, "D-0001.md"), os.path.join(inbox, "D-0002.md"))
+        created = [c["key"] for c in fc.plan_items(a, inbox, "x", write=True)["created"]]
+        self.assertIn(key, created)
+
+    def test_secret_in_a_quoted_ref_is_redacted(self):
+        wf = f"permissions: {{}}\non: push\njobs:\n  a:\n    steps:\n      - uses: x/y@{FAKE_AWS}\n"
+        a = self.assess({".github/workflows/ci.yml": wf})
+        self.assertNotIn(FAKE_AWS, json.dumps(a) + fc.to_markdown(a))
+
+    def test_tool_items_limited_to_chosen_level(self):
+        inbox = tempfile.mkdtemp()
+        self.roots.append(inbox)
+        a = self.assess({"package.json": "{}"})
+        keys = [c["key"] for c in fc.plan_items(a, inbox, "x", level="rapid-prototype")["created"]]
+        self.assertIn("tool:coverage", keys)
+        self.assertNotIn("tool:mutation", keys)
+
+    def test_lowercase_readme_and_named_files(self):
+        root = self.repo({"readme.md": "x", "tests/test_a.py": "", "logo.png": "x"})
+        with open(os.path.join(root, "logo.png"), "wb") as f:
+            f.write(b"\0PNG")
+        a = fc.assess(root)
+        self.assertNotIn("docs:purpose", ids(a))
+        self.assertEqual(a["skipped_files"], ["logo.png"])
+        self.assertEqual(a["test_files_found"], ["tests/test_a.py"])
+
+
 class Protection(unittest.TestCase):
     def test_states(self):
         self.assertEqual(fc._protection({"message": "Branch not protected"})[0], "missing")

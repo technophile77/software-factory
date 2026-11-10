@@ -69,7 +69,7 @@ def _strip_comment(text):
         if quote:
             if ch == quote:
                 quote = None
-        elif ch in "'\"":
+        elif ch in "'\"" and (not text[:i].strip() or text[:i].rstrip()[-1] in ":[{,-"):
             quote = ch
         elif ch == "#" and (i == 0 or text[i - 1] in " \t"):
             break
@@ -498,8 +498,12 @@ def scan_workflow(text):
         s = line.strip()
         if re.search(r"\bpull_request_target\b", s):
             info["pr_target"] = info.get("pr_target") or n
-        if re.match(r"permissions:\s*['\"]?write-all", s):
+        if re.search(r"permissions['\"]?\s*:\s*['\"]?write-all", s):
             info["write_all"] = info.get("write_all") or n
+        for m in re.finditer(r"['\"]?\buses['\"]?\s*:\s*['\"]?([^'\"\s,}\]]+)", s):
+            info["uses"].append((n, m.group(1)))
+        for m in re.finditer(r"['\"]?\bcron['\"]?\s*:\s*['\"]([^'\"]+)['\"]", s):
+            info["crons"].append(m.group(1))
         if indent == 0:
             in_jobs = s.startswith("jobs:")
             in_on = s.startswith(("on:", '"on":', "'on':", "true:"))
@@ -525,10 +529,9 @@ def scan_workflow(text):
                 job["text"].append(s)
                 if indent == job_indent + 2 and s.startswith("permissions:"):
                     job["permissions"] = n
-        for m in re.finditer(r"['\"]?\buses['\"]?\s*:\s*['\"]?([^'\"\s,}\]]+)", s):
-            info["uses"].append((n, m.group(1)))
-        if re.match(r"-?\s*cron:\s*['\"]?(.+?)['\"]?$", s):
-            info["crons"].append(re.match(r"-?\s*cron:\s*['\"]?(.+?)['\"]?$", s).group(1))
+        m = re.match(r"-?\s*cron:\s*([^'\"].*)$", s)
+        if m:
+            info["crons"].append(m.group(1).strip())
 
     return info
 
@@ -643,8 +646,9 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
             continue
         info = scan_workflow(text)
         wf_infos[wf] = info
-        if info["top_permissions"] is None:
-            missing = [j for j, d in info["jobs"].items() if d["permissions"] is None] or ["(no jobs found)"]
+        missing = [j for j, d in info["jobs"].items() if d["permissions"] is None]
+        if info["top_permissions"] is None and (missing or not info["jobs"]):
+            missing = missing or ["(no jobs found)"]
             gaps.append(gap(f"workflow-permissions:{wf}", f"Workflow {wf} does not declare permissions", "S8.3", "security",
                             SEVERITY_BLOCKS["medium"],
                             "Add `permissions: contents: read` at the top and grant more only to the jobs that need it.",
@@ -673,6 +677,7 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
     # Secrets: report file, line and type only, never the value (SR-3).
     secret_counts = {}
     skipped = 0
+    skipped_files = []
     for rel in repo.files:
         try:
             text = text_of(rel) if rel in texts_cache else repo.read(rel)
@@ -680,6 +685,7 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
             text = None
         if text is None:
             skipped += 1
+            skipped_files.append(rel)
             continue
         is_env = bool(re.search(r"(^|/)\.env(\.[^/]*)?$", rel)) and not rel.endswith((".example", ".sample", ".template"))
         for n, line in enumerate(text.splitlines(), 1):
@@ -699,10 +705,12 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
 
     # Dependency audit (S4.4): present, covers dev dependencies, runs weekly.
     audit_wf = None
+    audit_wfs = []
     for wf, info in wf_infos.items():
         body = code_of.get(wf, "")
         if any(re.search(p, body) for p in AUDIT_PATTERNS):
             audit_wf = wf
+            audit_wfs.append(wf)
             if re.search(r"npm audit[^\n]*(--omit[= ]dev|--production|--only[= ]prod)", body):
                 gaps.append(gap(f"cve-audit-dev-excluded:{wf}", "Dependency audit skips development dependencies", "S4.4",
                                 "security", min_level("beta", SEVERITY_BLOCKS["medium"]),
@@ -712,11 +720,11 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
                         min_level("beta", SEVERITY_BLOCKS["medium"]),
                         "Add a CI step that checks every dependency, dev tools included, against CVE entries.",
                         "onboarding-pr", [ev(".github/workflows/", detail="no audit tool found")], "medium"))
-    elif not any(weekly_or_more(c) for c in wf_infos[audit_wf]["crons"]):
+    elif not any(weekly_or_more(c) for w in audit_wfs for c in wf_infos[w]["crons"]):
         gaps.append(gap("cve-audit-not-weekly", "Dependency audit does not run on a schedule", "S4.4", "security",
                         min_level("beta", SEVERITY_BLOCKS["medium"]),
                         "Run the audit weekly too, so a CVE published after a merge is still found.",
-                        "onboarding-pr", [ev(audit_wf)], "medium"))
+                        "onboarding-pr", [ev(w) for w in audit_wfs], "medium"))
 
     # Required CI jobs by level (ADR 0008). Matched by keyword, so the
     # evidence says which keywords were looked for.
@@ -767,7 +775,7 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
                             "feature-request", [ev(detail="matched by file and folder names")]))
 
     # Factory setup in the repo.
-    readme = [f for f in repo.files if re.fullmatch(r"README(\.[A-Za-z]+)?", f)]
+    readme = [f for f in repo.files if re.fullmatch(r"README(\.[A-Za-z]+)?", f, re.I)]
     if not readme:
         gaps.append(gap("docs:purpose", "No README stating the repo's purpose", "maturity-levels.md (→ Prototype: purpose written down)",
                         "config", "rapid-prototype", "Add a README that says what the repo is for.", "feature-request",
@@ -801,6 +809,7 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
                         "rapid-prototype", "Sign in to `gh` and re-run, or check it in the repo's settings.", "owner-step",
                         [ev(detail="no GitHub data given")]))
 
+    gaps = redact(gaps)
     gaps.sort(key=lambda g: (LEVELS.index(g["blocks_level"]) if g["blocks_level"] else 99, g["id"]))
     ids = {g["id"] for g in gaps}
     if len(ids) != len(gaps):
@@ -814,6 +823,8 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
         "stacks": stacks,
         "files_scanned": len(repo.files) - skipped,
         "files_skipped": skipped,
+        "skipped_files": skipped_files[:200],
+        "test_files_found": test_files[:50],
         "chosen_level": level,
         "github": {"branch_protection": protection_status},
         "gaps": gaps,
@@ -824,13 +835,28 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
     if level:
         result["blocking_now"] = [g["id"] for g in gaps if g["blocks_level"] and LEVELS.index(g["blocks_level"]) <= LEVELS.index(level)]
     if previous is not None:
-        prev_ids = {g["id"] for g in previous.get("gaps", [])}
+        if not isinstance(previous, dict) or not isinstance(previous.get("gaps"), list) or \
+                not all(isinstance(g, dict) and isinstance(g.get("id"), str) for g in previous["gaps"]):
+            raise CheckError("previous assessment is not a valid assessment file")
+        prev_ids = {g["id"] for g in previous["gaps"]}
         result["since_previous"] = {
             "previous_generated_at": previous.get("generated_at"),
             "closed": sorted(prev_ids - ids),
             "opened": sorted(ids - prev_ids),
         }
     return result
+
+
+def redact(value):
+    if isinstance(value, str):
+        for kind, rx in SECRET_RULES:
+            value = rx.sub(f"[redacted {kind}]", value)
+        return value
+    if isinstance(value, list):
+        return [redact(v) for v in value]
+    if isinstance(value, dict):
+        return {redact(k): redact(v) for k, v in value.items()}
+    return value
 
 
 def _protection(data):
@@ -1098,14 +1124,17 @@ def existing_items(inbox_dir):
         if not m:
             continue
         highest = max(highest, int(m.group(2)))
+        if os.path.islink(os.path.join(inbox_dir, name)):
+            continue
         with open(os.path.join(inbox_dir, name), encoding="utf-8", errors="replace") as f:
             text = f.read()
-        for ref in re.findall(r"^\s+ref:\s*\"?[^\n\"]*#onboard:([^\s\"']+)", text, re.M):
+        front = text.split("\n---", 1)[0] if text.startswith("---") else ""
+        for ref in re.findall(r"^\s+ref:\s*\"?[^\n\"]*#onboard:([^\s\"']+)", front, re.M):
             filed[ref] = m.group(1)
     return filed, highest
 
 
-def planned_items(a, assessment_ref, include_complexity=False):
+def planned_items(a, assessment_ref, include_complexity=False, level=None):
     items = []
     stack_names = sorted({s["name"] for s in a["stacks"]})
     rec = a["maturity"]["recommended"]
@@ -1136,6 +1165,8 @@ def planned_items(a, assessment_ref, include_complexity=False):
         })
     for g in a["gaps"]:
         if g["id"].startswith("tool:"):
+            if level and LEVELS.index(g["blocks_level"]) > LEVELS.index(level):
+                continue
             tool = g["id"].split(":", 1)[1]
             candidates = sorted({c for s in stack_names for c in TOOL_CANDIDATES[tool].get(s, [])}) or ["(depends on stack)"]
             items.append({
@@ -1203,11 +1234,11 @@ def atomic_write(path, text):
         raise
 
 
-def plan_items(a, inbox_dir, assessment_ref, include_complexity=False, write=False, now=None):
+def plan_items(a, inbox_dir, assessment_ref, include_complexity=False, write=False, now=None, level=None):
     now = now or dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     filed, highest = existing_items(inbox_dir)
     created, skipped = [], []
-    for item in planned_items(a, assessment_ref, include_complexity):
+    for item in planned_items(a, assessment_ref, include_complexity, level):
         if item["key"] in filed:
             skipped.append({"key": item["key"], "id": filed[item["key"]]})
             continue
@@ -1245,6 +1276,7 @@ def main(argv=None):
     i.add_argument("--assessment-ref", required=True, help="path of the assessment on factory/state, used in item links")
     i.add_argument("--complexity", action="store_true", help="also file the complexity preset decision (new project)")
     i.add_argument("--write", action="store_true", help="write the items; without it, only print the plan")
+    i.add_argument("--level", choices=LEVELS, help="file tool decisions only for levels up to this one")
     args = p.parse_args(argv)
 
     try:
@@ -1278,7 +1310,8 @@ def main(argv=None):
             print("\n".join(errors) or "Manifest is valid.")
             return 1 if errors else 0
         if args.cmd == "plan-items":
-            result = plan_items(_load_json(args.assessment), args.inbox_dir, args.assessment_ref, args.complexity, args.write)
+            result = plan_items(_load_json(args.assessment), args.inbox_dir, args.assessment_ref, args.complexity, args.write,
+                                level=args.level)
             print(json.dumps(result, indent=2))
             return 0
     except (CheckError, OSError, json.JSONDecodeError) as e:

@@ -137,7 +137,7 @@ Each commit message starts with `onboarding:`. Push the branch.
 
 ```
 CHECK plan-items <scratch>/assessment.json --inbox-dir .factory/inbox/decision \
-  --assessment-ref onboarding/<date>-assessment.json [--complexity] --write
+  --assessment-ref onboarding/<date>-assessment.json --level <chosen level> [--complexity] --write
 ```
 
 This files the starting-level decision, tool choices (with S4.1 review
@@ -189,12 +189,21 @@ factory's token from pushing after the owner approves and then merging.
 Admins stay exempt so the owner can still merge PRs they authored, since
 GitHub doesn't let anyone approve their own PR.
 
-Then give the owner the link to create the factory's fine-grained token
+If the owner declines, change nothing; the `github:branch-protection` gap
+stays open in the assessment and goes in your report as an open step.
+
+The factory's token (ADR 0006) belongs to a **separate machine account**
+(or GitHub App) with the Write role on this repo, never Admin. Admins are
+exempt from the protection above, so a token on the owner's own account
+could merge without review. Give the owner the steps to invite that account
+and, signed in as it, create a fine-grained token
 (https://github.com/settings/personal-access-tokens/new): this repo only,
 Contents read/write and Pull requests read/write, nothing else, expiring in
-90 days or less. If the owner's account owns the token, GitHub can't tell
-the factory apart from them; a separate machine account is the stronger
-choice, and that is the owner's call.
+90 days or less. Tell the owner that Contents write covers every branch,
+wider than ADR 0009's "factory/state only", because GitHub can't scope a
+token to one branch; branch protection is what keeps the default branch safe.
+If the owner wants the token on their own account instead, file that as a
+Security decision before going on.
 
 ### 9. Report
 
