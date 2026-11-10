@@ -1064,13 +1064,14 @@ class AC11Manifest(Base):
 
 CORE_ROLES = ["orchestrator", "requirements-analyst", "software-developer", "test-engineer",
               "security-reviewer", "validation-judge"]
-CONTRACT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch"}
-# Copied from interface-contracts.md, Role policy v2.1 (as amended by H-0008, 794c830).
+CONTRACT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill"}
+SUPPORT_ROLES = ["web-reader"]
+# Copied from interface-contracts.md, Role policy v2.2 (H-0023).
 SECRET_GLOBS = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks",
                 "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc",
                 "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json",
                 "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk",
-                "**/kubeconfig", "**/.kube/config"]
+                "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
 CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json",
                      ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml",
                      "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**",
@@ -1142,12 +1143,13 @@ class FR07RolePolicy(Base):
 
     def test_template_policy_meets_role_policy_v21(self):
         roles = self.manifest()["policy"]["roles"]
-        self.assertEqual(sorted(roles), sorted(CORE_ROLES))
+        self.assertEqual(sorted(roles), sorted(CORE_ROLES + SUPPORT_ROLES))
         for role, rules in roles.items():
             with self.subTest(role=role):
                 self.assertTrue(rules["tools"]["allow"])
                 self.assertLessEqual(set(rules["tools"]["allow"]), CONTRACT_TOOLS)
-                self.assertTrue(rules["read"]["allow"])
+                if role not in SUPPORT_ROLES:
+                    self.assertTrue(rules["read"]["allow"])
                 self.assertLessEqual(set(SECRET_GLOBS), set(rules["read"]["deny"]))
                 for section in ("tools", "read", "write", "commands", "network"):
                     self.assertIn(section, rules)
@@ -1294,7 +1296,7 @@ class FR07RolePolicy(Base):
             self.skipTest("skill copied out of the factory repo; interface-contracts.md is not here")
         text = read(os.path.join(MASTER, "docs", "interface-contracts.md"))
         section = re.search(r"(?ms)^## Role policy .*?(?=^## )", text).group(0)
-        secret = re.search(r"deny reading secret files:\s*(.*?)\.\n", section, re.S).group(1)
+        secret = re.search(r"deny reading secret files[^:]*:\s*(.*?)\.\n", section, re.S).group(1)
         changes = re.search(r"deny the change-controlled paths:\s*(.*?)\. Globs", section, re.S).group(1)
         self.assertEqual(re.findall(r"`([^`]+)`", secret), SECRET_GLOBS)
         self.assertEqual(re.findall(r"`([^`]+)`", changes), CHANGE_CONTROLLED)
@@ -1358,6 +1360,96 @@ def frontmatter(text):
     if not m:
         raise AssertionError("no frontmatter")
     return m.group(1), text[m.end():]
+
+
+class RolePolicyV22(Base):
+    """H-0023: the open web reaches only a role with no file tools, and nobody reads the channel file."""
+    manifest = FR07RolePolicy.manifest
+    validate = FR07RolePolicy.validate
+    assertRejected = FR07RolePolicy.assertRejected
+    assertAccepted = FR07RolePolicy.assertAccepted
+
+    def test_any_host_only_for_a_role_without_file_tools(self):
+        for tool in ("Read", "Grep", "Glob", "Edit", "Write", "Bash", "Skill"):
+            with self.subTest(tool=tool):
+                data = self.manifest()
+                data["policy"]["roles"]["web-reader"]["tools"]["allow"].append(tool)
+                data["policy"]["roles"]["web-reader"]["read"]["allow"] = ["docs/**"]
+                self.assertRejected(data, f"web-reader with {tool} and any host")
+        data = self.manifest()
+        data["policy"]["roles"]["requirements-analyst"]["network"]["allow"] = ["*"]
+        self.assertRejected(data, "analyst with any host")
+
+    def test_web_reader_needs_no_read_glob(self):
+        data = self.manifest()
+        self.assertEqual(data["policy"]["roles"]["web-reader"]["read"]["allow"], [])
+        self.assertAccepted(data, "web-reader without reads")
+        data["policy"]["roles"]["security-reviewer"]["read"]["allow"] = []
+        self.assertRejected(data, "a role with file tools and no reads")
+
+    def test_every_role_denied_the_channel_file(self):
+        for role in CORE_ROLES + SUPPORT_ROLES:
+            with self.subTest(role=role):
+                data = self.manifest()
+                deny = data["policy"]["roles"][role]["read"]["deny"]
+                deny.remove(".factory/engine.json")
+                self.assertRejected(data, f"{role} may read engine.json")
+
+    def test_analyst_has_skill_and_no_web(self):
+        rules = self.manifest()["policy"]["roles"]["requirements-analyst"]
+        self.assertIn("Skill", rules["tools"]["allow"])
+        self.assertFalse({"WebFetch", "WebSearch"} & set(rules["tools"]["allow"]))
+        self.assertEqual(rules["network"]["allow"], [])
+
+    def test_network_allow_holds_host_names_only(self):
+        # Contract: `network.allow` lists host names, and "*" is the one
+        # wildcard. Anything an engine might trim or glob-match into wider
+        # access is not a host name.
+        bad = [" *", "* ", "*.com", "*.github.com", "0.0.0.0/0", "https://api.github.com",
+               "api.github.com/path", "api.github.com:443", "", "a..b", "-github.com", "github.com ",
+               "user@github.com", "git hub.com"]
+        for host in bad:
+            for where in ("project", "repo override"):
+                with self.subTest(host=host, where=where):
+                    data = self.manifest()
+                    if where == "project":
+                        data["policy"]["roles"]["orchestrator"]["network"]["allow"].append(host)
+                    else:
+                        data["repos"][0]["policy"]["roles"]["software-developer"]["network"]["allow"] = [host]
+                    self.assertRejected(data, f"network host {host!r}")
+        data = self.manifest()
+        data["policy"]["roles"]["orchestrator"]["network"]["allow"] = ["github.com", "api.github.com",
+                                                                       "registry.npmjs.org", "localhost"]
+        self.assertAccepted(data, "plain host names")
+
+    def test_any_host_must_be_the_only_entry(self):
+        # Contract: the single entry "*" means any host.
+        data = self.manifest()
+        data["policy"]["roles"]["web-reader"]["network"]["allow"] = ["*", "example.com"]
+        self.assertRejected(data, "any host mixed with a host name")
+        data["policy"]["roles"]["web-reader"]["network"]["allow"] = ["*"]
+        self.assertAccepted(data, "any host alone")
+
+    def test_project_policy_checked_even_when_every_repo_overrides_it(self):
+        # The contract's role rules hold for the project's roles themselves,
+        # not only for each repo's effective policy: a later repo without an
+        # override would get the project rule as it stands.
+        # The analyst writes docs/features/** in the project policy, so it
+        # needs the change-controlled denies there; secret and channel-file
+        # denies apply to every role.
+        cases = [("requirements-analyst", "write", CHANGE_CONTROLLED[0]),
+                 ("software-developer", "read", SECRET_GLOBS[0]),
+                 ("software-developer", "read", ".factory/engine.json")]
+        for role, section, path in cases:
+            with self.subTest(role=role, section=section, path=path):
+                data = self.manifest()
+                data["policy"]["roles"][role][section]["deny"].remove(path)
+                for repo in data["repos"]:
+                    over = repo.setdefault("policy", {}).setdefault("roles", {}).setdefault(role, {})
+                    over.setdefault(section, {}).setdefault("deny", []).append(path)
+                self.assertEqual([path in fc.effective_policy(data, r["name"])[role][section]["deny"]
+                                  for r in data["repos"]], [True] * len(data["repos"]))
+                self.assertRejected(data, f"project {role} lacks {section} deny {path}")
 
 
 class AC12Items(Base):
@@ -2333,7 +2425,13 @@ class AC20Plugin(Base):
         self.assertEqual(code, 0, out)
         code, out = self.claude("plugin", "details", "software-factory@software-factory", env=env)
         self.assertEqual(code, 0, out)
-        self.assertRegex(out, r"Skills \(1\)\s+onboard-repo")
+        # The plugin may ship other skills (F-005 added spec-interview); this
+        # test only needs onboard-repo among them.
+        listed = re.search(r"Skills \((\d+)\)[ \t]+([^\n]*)", out)
+        self.assertIsNotNone(listed, out)
+        names = [n.strip() for n in listed.group(2).split(",")]
+        self.assertIn("onboard-repo", names)
+        self.assertEqual(len(names), int(listed.group(1)), out)
         installed = [os.path.join(d, "SKILL.md") for d, _, f in os.walk(config)
                      if "SKILL.md" in f and d.endswith(os.path.join("skills", "onboard-repo"))]
         self.assertTrue(installed, "installed copy of the skill not found")

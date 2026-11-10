@@ -6,7 +6,7 @@
     {
       "name": "software-factory",
       "source": "./plugins/software-factory",
-      "description": "Onboard a repository into the software factory and check it against the factory's standards."
+      "description": "Onboard a repository into the software factory, check it against the factory's standards, and answer the requirements analyst's spec interview from Claude Code."
     }
   ]
 }

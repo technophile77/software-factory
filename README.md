@@ -24,3 +24,20 @@ Install the factory's plugin once, then run it inside any repository:
 ```
 
 See [`plugins/software-factory/skills/onboard-repo/SKILL.md`](plugins/software-factory/skills/onboard-repo/SKILL.md).
+
+## Answer the analyst's spec questions
+
+The same plugin (version 0.2.0 or later) holds the requirements analyst's
+interview in a Claude Code chat. Run it inside an onboarded repo or config
+repo whose factory engine is running:
+
+```
+/software-factory:spec-interview
+```
+
+Request a new feature, or pick a feature with questions waiting, then
+answer, ask for more information, or defer each question, and approve or
+reject the analyst's assumptions. The skill relays questions and replies
+word for word and never answers for you. It needs the engine (not built
+yet); without it the skill says so and stops. See
+[`plugins/software-factory/skills/spec-interview/SKILL.md`](plugins/software-factory/skills/spec-interview/SKILL.md).

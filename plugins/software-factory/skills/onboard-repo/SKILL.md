@@ -149,7 +149,9 @@ onboarded): keep what it has and add only what is missing. A `.factory/`
 the repo itself tracks is a gap (`factory:dir-in-repo`), never a source of
 records. `plan-items` refuses an inbox inside a git work tree unless it
 is that worktree, and any inbox under a `.factory/` that isn't. If `.factory/` exists but isn't the worktree, stop and tell
-the owner. Commit:
+the owner. Make the worktree directory owner-writable only (`chmod go-w .factory`),
+because the interview client refuses a group-writable one (Engine control
+channel v1.1). Commit:
 
 - `onboarding/<date>-assessment.json` and `.md` (from step 2).
 - Empty `inbox/decision/`, `inbox/testing/`, `inbox/hygiene/` (with `.gitkeep`).

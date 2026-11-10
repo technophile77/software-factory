@@ -30,6 +30,8 @@ CORE_AGENTS = [
     "orchestrator", "requirements-analyst", "software-developer",
     "test-engineer", "security-reviewer", "validation-judge",
 ]
+# Optional roles the master factory ships; a manifest may give them a policy.
+SUPPORT_AGENTS = ["web-reader"]
 PROTECTED = set(CORE_AGENTS) | {"security-review"}
 DEFAULT_SKILLS = ["security-review"]
 COMPLEXITY = ["simple", "moderate", "complex"]
@@ -1095,7 +1097,7 @@ def known_defaults(master):
         skills = sorted(d for d in os.listdir(os.path.join(master, "skills")) if os.path.isfile(os.path.join(master, "skills", d, "SKILL.md")))
         agents = sorted(d for d in os.listdir(os.path.join(master, "agents")) if os.path.isfile(os.path.join(master, "agents", d, "AGENT.md")))
         return set(skills), set(agents)
-    return set(DEFAULT_SKILLS), set(CORE_AGENTS)
+    return set(DEFAULT_SKILLS), set(CORE_AGENTS) | set(SUPPORT_AGENTS)
 
 
 def _inside(path):
@@ -1204,13 +1206,15 @@ CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.
                      ".gitmodules", ".vscode/**", ".devcontainer/**"]
 POLICY_KEYS = {"tools": {"allow"}, "read": {"allow", "deny"}, "write": {"allow", "deny"},
                "commands": {"allow"}, "network": {"allow"}}
-AGENT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch"}
-# Role policy v2.1: no agent reads these, whatever its allow list says.
+AGENT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill"}
+FILE_TOOLS = AGENT_TOOLS - {"WebFetch", "WebSearch"}
+# Role policy v2.2: no agent reads these, whatever its allow list says. The
+# channel file would let an agent answer the owner's interview (F-005 SR-14).
 SECRET_FILES = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks",
                 "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc",
                 "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json",
                 "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk",
-                "**/kubeconfig", "**/.kube/config"]
+                "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
 
 
 # Role policy commands are program names with any arguments, so a shell or
@@ -1242,6 +1246,11 @@ def _escapes_worktree(glob):
         or any(seg not in ("*", "**") and fnmatch.fnmatchcase("..", seg) for seg in glob.split("/"))
 
 
+# Host names only: an engine that trims entries or matches them as globs
+# would read " *", "*.com" or "0.0.0.0/0" as open web access (F-005 Gate 2 #2).
+_HOST_RE = re.compile(r"(?=.{1,253}\Z)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*")
+
+
 def _check_role(where, rule, errors):
     if not isinstance(rule, dict):
         errors.append(f"{where} must be a mapping")
@@ -1269,6 +1278,13 @@ def _check_role(where, rule, errors):
                                 or SHELL_SUFFIXES.search(base(n)))
                 if shells:
                     errors.append(f"{where}.commands.allow has shells or interpreters, which bypass the policy: {', '.join(shells)}")
+            elif key == "network":
+                bad = sorted(i for i in items if i != "*" and not _HOST_RE.fullmatch(i))
+                if bad:
+                    errors.append(f"{where}.network.{sub} entries must be lower-case host names or exactly \"*\": "
+                                  + ", ".join(repr(i) for i in bad))
+                elif "*" in items and len(items) > 1:
+                    errors.append(f"{where}.network.{sub} must be exactly [\"*\"] when it allows any host")
             elif key == "tools":
                 unknown = sorted(set(items) - AGENT_TOOLS)
                 if unknown:
@@ -1278,6 +1294,8 @@ def _check_role(where, rule, errors):
 def effective_policy(data, repo_name):
     """Project roles with one repo's overrides: its allow lists replace the project's, deny lists add up."""
     roles = json.loads(json.dumps(((data.get("policy") or {}).get("roles")) or {}))
+    if repo_name is None:
+        return roles
     repo = next((r for r in data.get("repos") or [] if isinstance(r, dict) and r.get("name") == repo_name), {})
     for role, rule in (((repo.get("policy") or {}).get("roles")) or {}).items():
         base = roles.setdefault(role, {})
@@ -1326,14 +1344,21 @@ def validate_policy(data, agents):
     if errors:
         return errors
     # Any role that can write outside the factory's own records must be denied change-controlled files.
-    for repo in data.get("repos") or [None]:
+    # The project policy is checked on its own too: it applies wherever a repo
+    # has no override, and an override can hide a bad project rule (Gate 2 #10).
+    for repo in [None, *(data.get("repos") or [])]:
         name = repo.get("name") if isinstance(repo, dict) else None
         where = f"repo {name}" if name else "the project"
         for role, rule in effective_policy(data, name).items():
             if not (rule.get("tools") or {}).get("allow"):
                 errors.append(f"policy for {role} in {where} lists no tools, so that agent could not run")
-            if not (rule.get("read") or {}).get("allow"):
+            tools = set((rule.get("tools") or {}).get("allow") or [])
+            if tools & FILE_TOOLS and not (rule.get("read") or {}).get("allow"):
                 errors.append(f"policy for {role} in {where} allows no reads")
+            # Open web content must never reach an agent that can see project files (F-005 SR-17).
+            if "*" in ((rule.get("network") or {}).get("allow") or []) and tools & FILE_TOOLS:
+                errors.append(f"policy for {role} in {where} allows any host but has file tools "
+                              f"({', '.join(sorted(tools & FILE_TOOLS))}); only a WebFetch/WebSearch-only role may")
             missing = [f for f in SECRET_FILES if f not in set((rule.get("read") or {}).get("deny") or [])]
             if missing:
                 errors.append(f"policy for {role} in {where} must deny reading {', '.join(missing)}")
