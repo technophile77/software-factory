@@ -158,6 +158,13 @@ feature starts, to decide at Beta. Drop B, D and E.
   owner's login did it" holds, because agents no longer have the owner's
   login. No separate phone flow is needed for it.
 
+Proposal 0017 was decided by the owner on 2026-11-10 (ADR 0015): each agent
+session runs in Claude Code's sandbox built from its role policy (through WSL2
+on Windows), and owner actions are commits signed with the owner's SSH signing
+key listed on GitHub. Both assume the signing key and the owner's credentials
+are out of agents' reach, which is what option A provides. Under option B, C
+or E alone, an agent running as the owner could read that key.
+
 ## Questions for the owner
 
 1. Which option closes SR-5 before Alpha: A (recommended), B, C, or another?
@@ -170,7 +177,7 @@ feature starts, to decide at Beta. Drop B, D and E.
 
 | Id | Change |
 |---|---|
-| H-0050 | New ADR recording the choice; ADR 0004 amended on the OS-permissions point |
+| H-0050 | ADR 0014 recording the choice; ADR 0004 amended on the OS-permissions point |
 | H-0051 | Engine control channel: SR-5 text replaced with the account boundary; agent sessions run as the agent account |
 | H-0052 | Role policy: the agent account name and what it may hold (factory token only) |
 | H-0053 | F-005 spec SR-5 status, and onboarding (F-003) creates and checks the account |
