@@ -61,7 +61,7 @@ Tests in class `SecondReviewRegressions`; the test engineer's two failing accept
 ## Not done (needs the owner)
 
 - The default `policy:` section in `templates/factory-project.yaml` becomes the default role policy for new projects (Security).
-- The CLAUDE.md section names which files are change-controlled in a managed repo (Product).
+- ~~The CLAUDE.md section names which files are change-controlled in a managed repo (Product).~~ Approved by the owner in a PR #9 review comment, 2026-11-10.
 
 ## Spec v3 changes (owner decisions, 2026-11-10)
 
