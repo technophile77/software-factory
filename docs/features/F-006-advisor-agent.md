@@ -27,6 +27,8 @@ Interview answers (owner):
 - Q1 (2026-11-10): two callers. The analyst during an interview's "more
   information" step, and the orchestrator when it prepares options and a
   recommendation for a hard inbox decision. No other agent calls it.
+- Q2 (2026-11-10): always the strongest model at high effort (the top rung
+  of the F-002 ladder). Not calibrated or tuned by F-002.
 
 ## 2. Expected behavior
 _To be written from the interview._
@@ -69,7 +71,8 @@ policy entry and shared agent-list edits, each through a hygiene item
 | Id | Question | Category | Status |
 |---|---|---|---|
 | Q1 | Who can call the advisor? | Product | Answered: analyst and orchestrator (owner, 2026-11-10) |
-| Q2 | Which model does the advisor run on? | Product | Open |
+| Q2 | Which model does the advisor run on? | Product | Answered: always strongest, high effort (owner, 2026-11-10) |
+| Q3 | Who decides a question goes to the advisor? | Product | Open |
 
 ## 12. Readiness gate
 - [ ] Clear objective
