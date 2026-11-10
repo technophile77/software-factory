@@ -484,8 +484,9 @@ levels. `schema` stays `factory-project/1.0`: v1.1 and v1.2 only add optional ke
 **Protected defaults:** `security-review` and the six core agents (orchestrator,
 requirements-analyst, software-developer, test-engineer, security-reviewer,
 validation-judge) may never be excluded; overriding one requires a linked,
-approved Security decision and may only add rules. The two support roles are
-not protected unless the owner decides otherwise.
+approved Security decision and may only add rules. The two support roles,
+`project-evaluator` and `context-hygiene`, are not protected: a project may
+exclude either with a reason (owner, 2026-11-10).
 
 ---
 
@@ -525,10 +526,10 @@ run ends. Only the engine and orchestrator write it (F-002 SR-8).
 
 ---
 
-## Tuning metrics — v1.0
+## Tuning metrics — v1.1
 
-- Status: Approved
-- Owner decision: F-002 A-1, A-8
+- Status: Approved (v1.0); v1.1 draft, awaiting owner approval (H-0015)
+- Owner decision: F-002 A-1, A-8; v1.1 adds the cost unit (owner, 2026-11-10, decision card)
 - Used by: engine (writes; orders the ladder), orchestrator and owner (read)
 - Compatibility: as for inbox items.
 
@@ -539,6 +540,7 @@ run ends. Only the engine and orchestrator write it (F-002 SR-8).
 {
   "schema": "tuning-metrics/1.0",
   "updated_at": "2026-11-10T00:00:00Z",
+  "cost_unit": "usd | plan_usage",
   "prices": { "source": "<url>", "as_of": "2026-11-03" },
   "roles": {
     "software-developer": {
@@ -559,6 +561,11 @@ run ends. Only the engine and orchestrator write it (F-002 SR-8).
 
 A rung with no samples is left out of `rungs` and listed last, in seed
 order, in `ladder_order`.
+
+From v1.1, `cost_unit` follows the project's budget mode (ADR 0012):
+`usd` in `tokens` mode, `plan_usage` (share of the plan's usage window) in
+`subscription` mode. `cost_usd` fields then hold that unit; the ladder
+order always uses it. Token counts are kept either way.
 
 ---
 
