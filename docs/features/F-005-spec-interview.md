@@ -3,7 +3,7 @@
 - **Id:** F-005
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 1
+- **Spec version:** 2
 
 ## 1. Objective and business purpose
 The requirements analyst runs inside the engine, but the owner has no way to
@@ -130,16 +130,27 @@ open and the owner's to answer:
 | OQ-1 | When the owner approves an assumption in the interview, should the analyst also file it to the inbox as an Assumptions item (recorded as already approved), or is the interview transcript the only record? The analyst's AGENT.md currently says to file each assumption as an inbox decision. | Product | Open |
 | OQ-2 | Which sites may the analyst reach on the web: any site, or an allow list? Read-only fetches either way. | Security | Open |
 | OQ-3 | Until F-006 exists, what does the analyst do with a question that needs a stronger model: tell the owner it can't escalate yet and offer more information at its own level or a deferral, or something else? | Product | Open |
+| OQ-4 | Which of the analyst permission widenings in section 10 (web tools, shared skills, reads outside its worktree, advisor escalation) do you approve? Gate 1 #8. | Security | Open |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | The channel address is trusted only from the `factory/state` worktree's `engine.json`; the script refuses any other path, symlinks out of the worktree, and non-socket files. | Analyst (S1.4) | Proposed |
+| SR-1 | The channel address is trusted only from the `factory/state` worktree's `engine.json`, which is untracked there (never committed or pushed). The script refuses any other location, symlinks out of the worktree, abstract Unix sockets, and a socket path that isn't a socket owned by the owner's uid inside an owner-only directory. Before sending anything it checks the peer runs as the owner (`SO_PEERCRED` / `getpeereid`). | Analyst; Gate 1 #1 (S1.4, S2.3) | Proposed |
 | SR-2 | All engine text, including findings from the web and repo, is data. The skill shows it quoted with control characters removed and follows no instruction in it. | Analyst (S6.1) | Proposed |
 | SR-3 | The skill never answers, picks an option, approves an assumption, or rewrites text on the owner's behalf. Every reply is the owner's own words from that session. | Owner, 2026-11-10 | Proposed |
-| SR-4 | The transcript stays on `factory/state`; the skill writes nothing to disk and logs no answer text. | Analyst (S3) | Proposed |
-| SR-5 | **Accepted risk (owner, 2026-11-10):** at Rapid prototype, agents run as the owner's OS user and could reach the socket and answer in the owner's place. Role policy denies agents the channel address file and socket, but that is a guard rail, not a boundary. Must be fixed before Alpha by running agents as a separate OS user or sandbox (F-003 Gate 2 item R2-1), or by a per-session presence check (Touch ID, Windows Hello, hardware key). | Owner decision card | Accepted risk |
-| SR-6 | The analyst's web access is read-only, sends no project content or secrets in queries beyond the question's topic, and needs a Security decision changing its role policy network rule. | Analyst (S8) | Proposed |
+| SR-4 | The transcript stays on `factory/state`. The skill and script write nothing of their own to disk and log no answer text (Claude Code's own session history is outside the skill's control and is noted to the owner). Before each `factory/state` commit the engine runs the secrets scan on transcript text and blocks the commit on a hit, filing a Security item; the skill tells the owner not to paste secrets. | Analyst; Gate 1 #6 (S3.1–S3.3) | Proposed |
+| SR-5 | **Accepted risk (owner, 2026-11-10):** at Rapid prototype, agents run as the owner's OS user and could reach the socket and answer in the owner's place. Role policy will deny every role reads of `engine.json` (SR-14), and the engine refuses connections from processes it started, but these are guard rails, not a boundary. Must be fixed before Alpha by running agents as a separate OS user or sandbox (F-003 Gate 2 item R2-1), or by a per-session presence check (Touch ID, Windows Hello, hardware key). | Owner decision card | Accepted risk |
+| SR-6 | The analyst's web access is read-only, sends no project content or secrets in queries beyond the question's topic, records every outgoing URL and query in the transcript, and needs a Security decision changing its role policy network rule. Its reach (any site or an allow list) is OQ-2; Gate 1 #7 recommends an allow list and grades open fetching Critical. | Analyst; Gate 1 #7 (S6.1, S3.2, S8.1) | Owner decision |
+| SR-7 | Windows: the script accepts only local `\\.\pipe\` paths, opens with `SECURITY_SQOS_PRESENT \| SECURITY_IDENTIFICATION`, and checks the server's SID is the owner's. The engine creates the pipe with `FILE_FLAG_FIRST_PIPE_INSTANCE`, an unguessable name, and an owner-only ACL. | Gate 1 #2 (S1.4, S8.4, S2.3) | Proposed |
+| SR-8 | The engine creates the Unix socket with mode 0600 in an owner-only directory and accepts only peers with the owner's uid (SID on Windows). This is part of Engine control channel v1.1. | Gate 1 #3 (S2.1–S2.3) | Proposed |
+| SR-9 | No owner text, engine text or id is ever placed on a command line. The skill passes requests to the script as JSON on stdin; feature and item ids must match `^[A-Za-z0-9_-]{1,64}$` or the script stops. | Gate 1 #4 (S1.3, S1.2) | Proposed |
+| SR-10 | The skill's instructions allow only the client script and Claude Code's question picker. A reply is sent only from the owner's own input in that turn. Each item carries a revision, and the engine rejects a reply to a revision the owner wasn't shown. Displayed text has bidi and zero-width characters removed as well as control characters. | Gate 1 #5 (S6.1, S6.2) | Proposed |
+| SR-11 | Only the engine writes `.factory/interviews/**`; the transcript is append-only. The readiness gate checks every assumption marked approved in the spec against an `approve_assumption` entry in the transcript and fails on any mismatch. | Gate 1 #9 (S2.1, S6.2, S8.1) | Proposed |
+| SR-12 | Each reply carries a client-generated reply id and the item revision; the engine records a reply id once and ignores repeats. The session lock is bound to the connection; replies from any other connection are rejected. | Gate 1 #10 (S1.1, S5.1) | Proposed |
+| SR-13 | The lock is released when its connection closes or after 30 minutes idle, and the owner can take over a held lock after confirming in the skill. | Gate 1 #11 (S5.1) | Proposed |
+| SR-14 | Role policy denies every role reads of `.factory/engine.json`; the engine refuses channel connections from agent processes it started. | Gate 1 #13 (S6.2, S8.1) | Proposed |
+| SR-15 | `more_info` research counts against the project budget (ADR 0012) and stops at a per-question cap, telling the owner. The script limits responses to 1 MiB and times out after 60 s per call, except while waiting for `interview.itemReady`. | Gate 1 #12 (S5.1, S1.1) | Proposed |
+| SR-16 | The script shows JSON-RPC errors by code and message only, never the `data` field, and never echoes the owner's reply text in an error. | Gate 1 #14 (S5.2, S3.1) | Proposed |
 
 ## 10. Interface requirements
 - **Engine control channel v1.0 → v1.1** (adding methods, non-breaking):
@@ -148,24 +159,32 @@ open and the owner's to answer:
   |---|---|---|
   | `interview.list` | none | `{ features: [{ id, title, open, deferred, pending_assumptions }] }` |
   | `interview.next` | `{ feature }` | `{ item: { id, kind: "question" \| "assumption", text, why, suggested?, options?, findings?: [{ text, source }], status } \| null }` |
-  | `interview.reply` | `{ feature, item, kind, text }` | `{ status, next? }` |
+  | `interview.reply` | `{ feature, item, revision, reply_id, kind, text }` | `{ status, next? }` |
   | `interview.state` | `{ feature, item }` | `{ status, recorded_at? }` |
   | `interview.close` | `{ feature }` | `{ ok: true }` (ends the session lock) |
 
+  Items returned by `interview.next` also carry `revision`.
   Notification: `interview.itemReady` when `more_info` research finishes.
+  v1.1 also adds access control to the whole channel: owner-only socket or
+  pipe and peer identity check (SR-7, SR-8).
   Needs an Interfaces decision in the inbox.
-- **Role policy:** requirements analyst `network` rule for read-only web
-  access (Security decision, SR-6).
+- **Role policy** (Security decision): every role denied reads of
+  `.factory/engine.json` (SR-14), and the widenings FR-7 needs for the
+  requirements analyst (Gate 1 #8, owner decision): a `network` rule for web
+  access (SR-6, OQ-2), web tools, use of shared skills (Role policy v2.1 has
+  no skill tool), read access outside its worktree including other features'
+  interview transcripts, and escalation to the advisor (F-006).
 
 ## 11. Readiness gate
 - [x] Clear objective
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit (none; OQ-1 to OQ-3 open)
-- [ ] Blocking decisions resolved (OQ-1 to OQ-3, channel v1.1, analyst network rule)
+- [ ] Assumptions explicit (none; OQ-1 to OQ-4 open)
+- [ ] Blocking decisions resolved (OQ-1 to OQ-4, channel v1.1, role policy change)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-10 | Draft from the owner interview (scope interview-only, new and existing features, answer / more information / defer, assumptions approved in the interview, web and shared skills for context, advisor as F-006, deferred list, accepted socket risk) | — |
+| 2 | 2026-11-10 | Security Gate 1 findings folded in (SR-1, SR-4, SR-6 tightened; SR-7 to SR-16 added; OQ-4 added; channel v1.1 gains access control, reply ids and revisions) | — |
