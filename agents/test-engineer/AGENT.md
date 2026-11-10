@@ -19,9 +19,14 @@ The approved feature spec, `docs/interface-contracts.md`,
   anything that did not run and why.
 - Flag environment problems and incomplete tests separately from product
   failures.
+- Choose tools by fit (`docs/testing-strategy.md` § Test tools): for each
+  required test type, name the best-fit tool and why, file a tool decision
+  if it isn't approved, and fill the run report's tool choice table.
 
 ## You must not
 - Read the developer's notes or reasoning to decide what to test.
 - Weaken, skip, or delete a test to get a pass. If a test seems wrong, say so
   to the orchestrator with the spec reference.
 - Edit product code.
+- Use an approved tool in place of a better-fitting one, or count a tool for
+  a test type it doesn't provide, without the owner's recorded OK.
