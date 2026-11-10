@@ -1246,6 +1246,11 @@ def _escapes_worktree(glob):
         or any(seg not in ("*", "**") and fnmatch.fnmatchcase("..", seg) for seg in glob.split("/"))
 
 
+# Host names only: an engine that trims entries or matches them as globs
+# would read " *", "*.com" or "0.0.0.0/0" as open web access (F-005 Gate 2 #2).
+_HOST_RE = re.compile(r"(?=.{1,253}\Z)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*")
+
+
 def _check_role(where, rule, errors):
     if not isinstance(rule, dict):
         errors.append(f"{where} must be a mapping")
@@ -1273,6 +1278,13 @@ def _check_role(where, rule, errors):
                                 or SHELL_SUFFIXES.search(base(n)))
                 if shells:
                     errors.append(f"{where}.commands.allow has shells or interpreters, which bypass the policy: {', '.join(shells)}")
+            elif key == "network":
+                bad = sorted(i for i in items if i != "*" and not _HOST_RE.fullmatch(i))
+                if bad:
+                    errors.append(f"{where}.network.{sub} entries must be lower-case host names or exactly \"*\": "
+                                  + ", ".join(repr(i) for i in bad))
+                elif "*" in items and len(items) > 1:
+                    errors.append(f"{where}.network.{sub} must be exactly [\"*\"] when it allows any host")
             elif key == "tools":
                 unknown = sorted(set(items) - AGENT_TOOLS)
                 if unknown:
@@ -1282,6 +1294,8 @@ def _check_role(where, rule, errors):
 def effective_policy(data, repo_name):
     """Project roles with one repo's overrides: its allow lists replace the project's, deny lists add up."""
     roles = json.loads(json.dumps(((data.get("policy") or {}).get("roles")) or {}))
+    if repo_name is None:
+        return roles
     repo = next((r for r in data.get("repos") or [] if isinstance(r, dict) and r.get("name") == repo_name), {})
     for role, rule in (((repo.get("policy") or {}).get("roles")) or {}).items():
         base = roles.setdefault(role, {})
@@ -1330,7 +1344,9 @@ def validate_policy(data, agents):
     if errors:
         return errors
     # Any role that can write outside the factory's own records must be denied change-controlled files.
-    for repo in data.get("repos") or [None]:
+    # The project policy is checked on its own too: it applies wherever a repo
+    # has no override, and an override can hide a bad project rule (Gate 2 #10).
+    for repo in [None, *(data.get("repos") or [])]:
         name = repo.get("name") if isinstance(repo, dict) else None
         where = f"repo {name}" if name else "the project"
         for role, rule in effective_policy(data, name).items():

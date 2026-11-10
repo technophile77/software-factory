@@ -790,6 +790,38 @@ class Properties(unittest.TestCase):
             shutil.rmtree(root, ignore_errors=True)
 
 
+
+class F005GateRegressions(Base):
+    """F-005 Gate 2 #2 and #10: host values and the project-level policy."""
+
+    mp = ManifestPolicy()
+
+    def with_network(self, hosts, role="requirements-analyst"):
+        data = fc.parse_yaml(self.mp.manifest())
+        data["policy"]["roles"][role]["network"] = {"allow": hosts}
+        return fc.validate_manifest(data)
+
+    def test_network_entries_are_lower_case_host_names(self):
+        self.assertEqual(self.with_network(["registry.npmjs.org", "pypi.org", "a-b.example", "localhost"]), [])
+        for bad in (" *", "* ", "*.*", "**", "*.com", "*:*", "*/*", "0.0.0.0/0", "?", "*\u200b", "\uff0a",
+                    "https://*", "*.*.*.*", "Registry.npmjs.org", "pypi.org:443", "-a.org", "a..org", "a" * 64 + ".org"):
+            with self.subTest(host=bad):
+                errs = self.with_network([bad])
+                self.assertTrue(any("host names" in e for e in errs), errs)
+
+    def test_any_host_must_stand_alone(self):
+        errs = self.with_network(["*", "pypi.org"], role="security-reviewer")
+        self.assertTrue(any('exactly ["*"]' in e for e in errs), errs)
+
+    def test_project_policy_is_checked_even_when_every_repo_overrides_it(self):
+        override = ("    policy:\n      roles:\n        requirements-analyst:\n          network:\n"
+                    "            allow: []\n")
+        data = fc.parse_yaml(self.mp.manifest(repo_policy=override))
+        data["policy"]["roles"]["requirements-analyst"]["network"] = {"allow": ["*"]}
+        self.assertEqual(fc.effective_policy(data, "a")["requirements-analyst"]["network"]["allow"], [])
+        errs = fc.validate_manifest(data)
+        self.assertTrue(any("requirements-analyst in the project allows any host" in e for e in errs), errs)
+
 if __name__ == "__main__":
     unittest.main()
 
