@@ -3,7 +3,7 @@
 - **Id:** F-003
 - **Status:** Approved (owner, 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 5
+- **Spec version:** 6
 
 ## 1. Objective and business purpose
 Give the owner one skill they can add to any repository that turns it into a
@@ -43,7 +43,7 @@ which gaps closed and which opened, without duplicating anything.
 | FR-4 | Recommend a starting maturity level: the highest level whose evidence in `maturity-levels.md` the repo fully meets, never below Rapid prototype, with the evidence per level. File it as a Product decision item. While the promotion table is still draft, the recommendation says so. |
 | FR-5 | Open one pull request on branch `config/onboard-factory` that adds: a factory section in `CLAUDE.md` (creating the file if missing) linking the pinned factory version's rules; `.factory/` in `.gitignore`; and a CI workflow with the required jobs for the chosen level. Existing files are extended, never replaced; existing workflows are left alone and their gaps reported. |
 | FR-6 | Create the `factory/state` branch if missing, with empty inbox folders. The repo's maturity level and role policy live in the project manifest (FR-7), not on this branch. |
-| FR-7 | Add the repo, with its maturity level, to the project's `factory-project.yaml` (Project manifest v1.1), creating the project config repo and manifest if the project is new, pinning `factory.version` to the current master tag or commit. A new manifest gets the default `policy` section (Role policy v2.0); repo-specific globs, commands and registries go in `repos[].policy`. The result must pass every manifest validation rule, including protected defaults, project maturity not above the lowest repo, every core role in the policy, and change-controlled paths denied to every role that writes outside `.factory/`. |
+| FR-7 | Add the repo, with its maturity level, to the project's `factory-project.yaml` (Project manifest v1.1), creating the project config repo and manifest if the project is new, pinning `factory.version` to the current master tag or commit. A new manifest gets the default `policy` section (Role policy v2.1: tools, read, write, commands and network per role); repo-specific globs, commands and registries go in `repos[].policy`. The result must pass every manifest validation rule, including protected defaults, project maturity not above the lowest repo, every core role in the policy, every role with tools and read rules that deny secret files, and change-controlled paths denied to every role that writes outside `.factory/`. |
 | FR-8 | File decision items (Inbox item v1.0) for: each tool the testing bar for the chosen level needs but the repo lacks (test framework, coverage, property testing, fuzzing), as Architecture items whose body includes the S4.1 review; each likely secret or Critical/High finding, as a Security item, blocking. |
 | FR-9 | Write a "Recommended work" list in the assessment: each code gap phrased as a feature request, grouped by the maturity level it blocks, ready for the owner to start. The skill does not change application code or tests itself. |
 | FR-10 | Prepare GitHub settings: branch protection on `main` requiring the owner's review and the level's CI checks. Apply it with the owner's `gh` login only after the owner confirms in the session; otherwise list it as an open step. The factory token is never created or stored by the skill; the owner gets a link to create it with the exact scopes from ADR 0006. |
@@ -80,7 +80,7 @@ which gaps closed and which opened, without duplicating anything.
 
 ## 5. Constraints
 - Runs inside Claude Code, driven by the owner; the engine is not needed.
-- Uses the approved contracts: Inbox item v1.0, Role policy v2.0,
+- Uses the approved contracts: Inbox item v1.0, Role policy v2.1,
   Project manifest v1.1.
 - Works on Windows, macOS and Linux (Python 3.10+, git, optional `gh`).
 - No new external library (S4.1): the checker is standard-library Python.
@@ -126,7 +126,7 @@ which gaps closed and which opened, without duplicating anything.
 | SR-8 | The YAML/TOML/JSON readers in the checker fail closed: a file that can't be parsed is a reported gap, never a silent pass. | Gate 1 (S5.1) | Accepted |
 
 ## 10. Interface requirements
-Uses Inbox item v1.0, Role policy v2.0 and Project manifest v1.1 (both
+Uses Inbox item v1.0, Role policy v2.1 and Project manifest v1.1 (both
 changed by the owner on 2026-11-10, H-0008, to keep all project config in
 one file).
 Adds one internal format, the assessment JSON, owned by the skill; it is
@@ -148,3 +148,4 @@ not an inter-agent contract.
 | 3 | 2026-11-10 | Plugin distribution (A-1, FR-12, AC-20); test adoption and baseline feature (FR-14, FR-15, AC-18, AC-19) | Owner, 2026-11-10 (decision cards) |
 | 4 | 2026-11-10 | One project file: maturity level and role policy move into the manifest (FR-6, FR-7, AC-11; Role policy v2.0, Project manifest v1.1) | Owner, 2026-11-10 (decision card) |
 | 5 | 2026-11-10 | OSV-Scanner audits Python, Go and Rust (AC-10 deviation withdrawn); govulncheck and cargo-audit from Beta (FR-2, AC-21) | Owner, 2026-11-10 (thread) |
+| 6 | 2026-11-10 | Role policy v2.1: tools and read rules per role, secret files unreadable (FR-7) | Owner, 2026-11-10 (decision card) |

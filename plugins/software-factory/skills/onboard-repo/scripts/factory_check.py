@@ -1157,7 +1157,12 @@ def validate_manifest(data, master=None):
 
 # Files no agent may write without an approved hygiene item (S6.3).
 CHANGE_CONTROLLED = ["CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]
-POLICY_KEYS = {"write": {"allow", "deny"}, "commands": {"allow"}, "network": {"allow"}}
+POLICY_KEYS = {"tools": {"allow"}, "read": {"allow", "deny"}, "write": {"allow", "deny"},
+               "commands": {"allow"}, "network": {"allow"}}
+AGENT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch"}
+# Role policy v2.1: no agent reads these, whatever its allow list says.
+SECRET_FILES = ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx",
+                "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
 
 
 def _check_role(where, rule, errors):
@@ -1166,7 +1171,7 @@ def _check_role(where, rule, errors):
         return
     for key, value in rule.items():
         if key not in POLICY_KEYS:
-            errors.append(f"{where}.{key} is not a policy key (write, commands, network)")
+            errors.append(f"{where}.{key} is not a policy key (tools, read, write, commands, network)")
             continue
         if not isinstance(value, dict):
             errors.append(f"{where}.{key} must be a mapping")
@@ -1176,6 +1181,10 @@ def _check_role(where, rule, errors):
                 errors.append(f"{where}.{key}.{sub} is not allowed")
             elif not isinstance(items, list) or not all(isinstance(i, str) and i for i in items):
                 errors.append(f"{where}.{key}.{sub} must be a list of strings")
+            elif key == "tools":
+                unknown = sorted(set(items) - AGENT_TOOLS)
+                if unknown:
+                    errors.append(f"{where}.tools.allow has unknown tools: {', '.join(unknown)}")
 
 
 def effective_policy(data, repo_name):
@@ -1225,13 +1234,20 @@ def validate_policy(data, agents):
     # Any role that can write outside the factory's own records must be denied change-controlled files.
     for repo in data.get("repos") or [None]:
         name = repo.get("name") if isinstance(repo, dict) else None
+        where = f"repo {name}" if name else "the project"
         for role, rule in effective_policy(data, name).items():
+            if not (rule.get("tools") or {}).get("allow"):
+                errors.append(f"policy for {role} in {where} lists no tools, so that agent could not run")
+            if not (rule.get("read") or {}).get("allow"):
+                errors.append(f"policy for {role} in {where} allows no reads")
+            missing = [f for f in SECRET_FILES if f not in set((rule.get("read") or {}).get("deny") or [])]
+            if missing:
+                errors.append(f"policy for {role} in {where} must deny reading {', '.join(missing)}")
             allow = (rule.get("write") or {}).get("allow") or []
             deny = set((rule.get("write") or {}).get("deny") or [])
             if any(not a.startswith(".factory/") for a in allow):
                 missing = [c for c in CHANGE_CONTROLLED if c not in deny]
                 if missing:
-                    where = f"repo {name}" if name else "the project"
                     errors.append(f"policy for {role} in {where} must deny writes to {', '.join(missing)}")
     return sorted(set(errors))
 

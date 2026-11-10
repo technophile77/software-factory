@@ -45,13 +45,19 @@ agents:
 
 standards: {}
 
-# Role policy (Role policy v2.0, from ADR 0004's table). Anything not allowed
-# is denied; deny wins over allow; a role missing here may not run. Loosening
+# Role policy (Role policy v2.1, from ADR 0004's table). Anything not allowed
+# is denied; deny wins over allow; a role missing here may not run. `tools`
+# are the agent's built-in tools; Bash runs only the `commands` listed. Loosening
 # a rule is a Security decision. Fill placeholders per repo above; one you
 # can't fill becomes an empty list, never a guess.
 policy:
   roles:
     requirements-analyst:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Edit", "Write"]
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]   # secret files (Role policy v2.1)
       write:
         allow: ["docs/features/**"]
         deny: ["CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]
@@ -60,6 +66,11 @@ policy:
       network:
         allow: []
     software-developer:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
       write:
         allow: []
         deny: ["docs/features/**", "CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]
@@ -68,6 +79,11 @@ policy:
       network:
         allow: []
     test-engineer:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
       write:
         allow: []
         deny: ["CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]
@@ -76,6 +92,11 @@ policy:
       network:
         allow: []
     security-reviewer:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Write"]
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
       write:
         allow: [".factory/runs/**/security-reviewer-*.json"]
       commands:
@@ -83,6 +104,11 @@ policy:
       network:
         allow: []
     validation-judge:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Write", "Bash"]
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
       write:
         allow: [".factory/runs/**/validation-judge-*.json"]
       commands:
@@ -90,6 +116,11 @@ policy:
       network:
         allow: []
     orchestrator:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
       write:
         allow: [".factory/inbox/**", ".factory/runs/**"]
       commands:

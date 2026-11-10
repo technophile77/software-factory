@@ -613,13 +613,21 @@ class ManifestPolicy(Base):
 
     CC = '["CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]'
 
-    def manifest(self, dev_deny=None, repo_policy=""):
-        roles = "".join(f"    {r}:\n      write:\n        allow: []\n" for r in fc.CORE_AGENTS if r != "software-developer")
+    @staticmethod
+    def access(tools='["Read", "Grep", "Glob"]', read_deny=None):
+        read_deny = read_deny if read_deny is not None else json.dumps(fc.SECRET_FILES)
+        return (f"      tools:\n        allow: {tools}\n"
+                f"      read:\n        allow: [\"**\"]\n        deny: {read_deny}\n")
+
+    def manifest(self, dev_deny=None, repo_policy="", dev_tools='["Read", "Edit", "Bash"]', dev_read_deny=None):
+        roles = "".join(f"    {r}:\n{self.access()}      write:\n        allow: []\n"
+                        for r in fc.CORE_AGENTS if r != "software-developer")
         dev_deny = dev_deny if dev_deny is not None else self.CC
         return ("schema: factory-project/1.0\nname: p\nfactory:\n  version: v1\nrepos:\n"
                 "  - name: a\n    url: https://github.com/o/a\n    maturity: alpha\n" + repo_policy +
                 "maturity: alpha\npolicy:\n  roles:\n" + roles +
-                f"    software-developer:\n      write:\n        allow: [\"src/**\"]\n        deny: {dev_deny}\n"
+                f"    software-developer:\n{self.access(dev_tools, dev_read_deny)}"
+                f"      write:\n        allow: [\"src/**\"]\n        deny: {dev_deny}\n"
                 "      commands:\n        allow: [\"npm\"]\n")
 
     def errors(self, text):
@@ -638,7 +646,7 @@ class ManifestPolicy(Base):
         self.assertEqual(self.errors(text), [])
 
     def test_missing_core_role(self):
-        text = self.manifest().replace("    orchestrator:\n      write:\n        allow: []\n", "")
+        text = self.manifest().replace(f"    orchestrator:\n{self.access()}      write:\n        allow: []\n", "")
         self.assertTrue(any("orchestrator is missing" in e for e in self.errors(text)))
 
     def test_writer_must_deny_change_controlled_files(self):
@@ -658,6 +666,30 @@ class ManifestPolicy(Base):
         self.assertTrue(any("not in the project policy" in e for e in self.errors(self.manifest(repo_policy=override))))
         bad = self.manifest().replace("      commands:\n        allow: [\"npm\"]\n", "      sudo:\n        allow: [\"all\"]\n")
         self.assertTrue(any("not a policy key" in e for e in self.errors(bad)))
+
+    def test_every_role_must_deny_reading_secret_files(self):
+        # Owner decision 2026-11-10 (Role policy v2.1).
+        errs = self.errors(self.manifest(dev_read_deny='["**/.env"]'))
+        self.assertTrue(any("software-developer" in e and "must deny reading" in e and "**/*.pem" in e for e in errs), errs)
+
+    def test_repo_override_cannot_drop_secret_read_denies(self):
+        override = ("    policy:\n      roles:\n        software-developer:\n          read:\n"
+                    "            allow: [\"src/**\"]\n            deny: []\n")
+        data = fc.parse_yaml(self.manifest(repo_policy=override))
+        self.assertIn("**/.env", fc.effective_policy(data, "a")["software-developer"]["read"]["deny"])
+        self.assertEqual(fc.validate_manifest(data), [])
+
+    def test_tools_must_be_listed_and_known(self):
+        self.assertTrue(any("lists no tools" in e for e in self.errors(self.manifest(dev_tools="[]"))))
+        errs = self.errors(self.manifest(dev_tools='["Read", "Sudo"]'))
+        self.assertTrue(any("unknown tools: Sudo" in e for e in errs), errs)
+
+    def test_template_gives_reviewers_no_edit_or_shell(self):
+        data = fc.parse_yaml(read(os.path.join(SKILL, "templates", "factory-project.yaml")).replace("<", "").replace(">", ""))
+        roles = data["policy"]["roles"]
+        self.assertFalse({"Edit", "Bash"} & set(roles["security-reviewer"]["tools"]["allow"]))
+        self.assertNotIn("Edit", roles["validation-judge"]["tools"]["allow"])
+        self.assertNotIn("Bash", roles["requirements-analyst"]["tools"]["allow"])
 
     def test_policy_is_optional(self):
         text = self.manifest().split("policy:")[0]

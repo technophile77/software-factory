@@ -177,7 +177,9 @@ item's `history` (`by: owner`) per the Inbox item v1.0 contract.
   enforces (ADR 0004). A new project gets the template's project policy;
   each repo gets a `policy:` override with its stack's source and test
   globs, build and test commands, and package registries. A placeholder you
-  can't fill becomes an empty list, never a guess.
+  can't fill becomes an empty list, never a guess. Never widen a role's
+  `tools` or `read` rules or drop its secret-file denies; that is a
+  Security decision for the owner.
 - Existing project: clone its config repo, add the repo under `repos`, and
   commit directly (A-2) after the owner's yes.
 - New project: ask the owner before creating a private

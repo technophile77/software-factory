@@ -81,3 +81,8 @@ Tests in class `SecondReviewRegressions`; the test engineer's two failing accept
 - **Audit tools.** The CI template's `dependency-audit` job runs OSV-Scanner v2.7.1 for Python, Go and Rust, downloaded and checked against a pinned SHA-256 before it runs. From Beta, `go-vulncheck` (govulncheck v1.9.0) and `rust-audit` (cargo-audit v0.22.2, pinned SHA-256) jobs are added. S4.1 reviews in `F-003-audit-tool-review.md`.
 - **Checker.** New `stack-audit:go` and `stack-audit:rust` gaps block Beta when a Go or Rust repo's CI doesn't run its scanner (cargo-deny counts for Rust). Tests: class `StackAudits`.
 - **Test engineer's tests.** AC-10's template test now checks the filled audit steps instead of the placeholder, and counts `persist-credentials` on uncommented lines only, since the template now has commented Beta jobs. The deviation test became `test_ac10_python_repo_audited_by_template`.
+
+## Spec v6 changes (owner decision, 2026-11-10)
+
+- **Read and tool rules.** Each role in the manifest template now has `tools` (built-in agent tools) and `read` (allow the worktree, deny secret files). Reviewers get no Edit; the security reviewer and the requirements analyst get no shell. Role policy v2.1 in `docs/interface-contracts.md` (H-0008, amended).
+- **Checker.** `validate-manifest` requires every role to list tools, allow some reads and deny the secret-file globs, and rejects unknown tools. A repo override can't drop the secret denies (deny lists only add up). Tests: four new in `ManifestPolicy`.
