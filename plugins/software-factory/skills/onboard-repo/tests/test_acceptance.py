@@ -1401,6 +1401,56 @@ class RolePolicyV22(Base):
         self.assertFalse({"WebFetch", "WebSearch"} & set(rules["tools"]["allow"]))
         self.assertEqual(rules["network"]["allow"], [])
 
+    def test_network_allow_holds_host_names_only(self):
+        # Contract: `network.allow` lists host names, and "*" is the one
+        # wildcard. Anything an engine might trim or glob-match into wider
+        # access is not a host name.
+        bad = [" *", "* ", "*.com", "*.github.com", "0.0.0.0/0", "https://api.github.com",
+               "api.github.com/path", "api.github.com:443", "", "a..b", "-github.com", "github.com ",
+               "user@github.com", "git hub.com"]
+        for host in bad:
+            for where in ("project", "repo override"):
+                with self.subTest(host=host, where=where):
+                    data = self.manifest()
+                    if where == "project":
+                        data["policy"]["roles"]["orchestrator"]["network"]["allow"].append(host)
+                    else:
+                        data["repos"][0]["policy"]["roles"]["software-developer"]["network"]["allow"] = [host]
+                    self.assertRejected(data, f"network host {host!r}")
+        data = self.manifest()
+        data["policy"]["roles"]["orchestrator"]["network"]["allow"] = ["github.com", "api.github.com",
+                                                                       "registry.npmjs.org", "localhost"]
+        self.assertAccepted(data, "plain host names")
+
+    def test_any_host_must_be_the_only_entry(self):
+        # Contract: the single entry "*" means any host.
+        data = self.manifest()
+        data["policy"]["roles"]["web-reader"]["network"]["allow"] = ["*", "example.com"]
+        self.assertRejected(data, "any host mixed with a host name")
+        data["policy"]["roles"]["web-reader"]["network"]["allow"] = ["*"]
+        self.assertAccepted(data, "any host alone")
+
+    def test_project_policy_checked_even_when_every_repo_overrides_it(self):
+        # The contract's role rules hold for the project's roles themselves,
+        # not only for each repo's effective policy: a later repo without an
+        # override would get the project rule as it stands.
+        # The analyst writes docs/features/** in the project policy, so it
+        # needs the change-controlled denies there; secret and channel-file
+        # denies apply to every role.
+        cases = [("requirements-analyst", "write", CHANGE_CONTROLLED[0]),
+                 ("software-developer", "read", SECRET_GLOBS[0]),
+                 ("software-developer", "read", ".factory/engine.json")]
+        for role, section, path in cases:
+            with self.subTest(role=role, section=section, path=path):
+                data = self.manifest()
+                data["policy"]["roles"][role][section]["deny"].remove(path)
+                for repo in data["repos"]:
+                    over = repo.setdefault("policy", {}).setdefault("roles", {}).setdefault(role, {})
+                    over.setdefault(section, {}).setdefault("deny", []).append(path)
+                self.assertEqual([path in fc.effective_policy(data, r["name"])[role][section]["deny"]
+                                  for r in data["repos"]], [True] * len(data["repos"]))
+                self.assertRejected(data, f"project {role} lacks {section} deny {path}")
+
 
 class AC12Items(Base):
     def plan(self, root, *flags, inbox=None, level="alpha", ref="onboarding/2026-11-10-assessment.json"):

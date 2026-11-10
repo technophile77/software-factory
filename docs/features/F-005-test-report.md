@@ -107,3 +107,58 @@ Required at Rapid prototype: unit tests on core logic, acceptance tests (every A
 - **O1, AC-11 with a re-deferral.** When the owner re-defers a question that was already deferred, its status and revision don't change, so `interview.state` can't show that the first attempt was recorded. The retry then resends the reply with the same `reply_id`, and only the engine's reply-id rule (SR-12) stops a duplicate. That meets the contract, but it means AC-11's "does not send a duplicate" depends on the engine honoring reply ids.
 - **O2, options in the picker (expected behavior 4).** SKILL.md step 4 puts options in the picker only for questions with two options or fewer (the picker takes four choices, and "More information" and "Defer" use two). With three or more options, the owner reads them in the display and types the answer. Behavior 4 says the picker shows the options wherever a question has them. This may be an acceptable reading of the picker's limit, but it's the owner's call (Product).
 - **O3, change control.** `plugins/` is change-controlled (CLAUDE.md rule 3). My files there are F-005 test work and the AC-20 test update the orchestrator asked for.
+
+## Re-test on bc1af15 (fix round 1)
+
+- **Commit tested:** `bc1af15`, with my test changes uncommitted on top (committed with this section). Product hashes: `interview_client.py` 425caec99405, `SKILL.md` b5250eb6b4ce, `factory_check.py` 2d1307d71879
+- **Order:** I re-ran my suite first and fixed my own test bug (below). Only then did I read the fix-round section of `F-005-dev-report.md`, and I added tests for the new behavior where the spec or a contract requires it
+- **Result:** **all pass, 0 skipped**, on each of Python 3.11, 3.12 and 3.13, 3 runs each, with no flaky tests
+
+| Suite | Per run (each of 3.11, 3.12, 3.13, 3 runs) |
+|---|---|
+| F-005 acceptance and contract | 142 run, 142 passed (118 earlier tests + 24 new) |
+| F-005 developer | 74 run, 74 passed |
+| onboard-repo, both suites | 266 run, 265 passed, 1 skipped (python3.10 not installed, as before); includes my 3 new Role policy v2.2 tests |
+| `python3 scripts/check_docs.py` | passes |
+
+### Earlier failures
+
+| # | Status on `bc1af15` |
+|---|---|
+| F1 (ids with a trailing newline) | **Fixed, passes.** Engine-sent ids, session tokens, `started_at` and the `engine.json` version are now matched as whole strings too (new tests) |
+| F2 (lone surrogate traceback) | **Fixed, passes.** The new test is stricter: refused before connecting, in `start` and in `reply` text. A correctly paired surrogate (an emoji) still goes through unchanged |
+| F3 (message over 1 MiB sent) | **Fixed, passes**, after my test fix below |
+| F4 (multi-line reply echoed) | **Fixed, passes.** New tests: a partial quote, an upper-cased quote, re-spaced whitespace, and a quote with an escape in the middle are all kept out of the output |
+
+### My test fix
+
+`SR15Limits.test_sr15_client_never_sends_a_line_over_1_mib` built its failure message with `max()` over the lines sent. Now that the client sends nothing, that list is empty, so the test raised `ValueError` instead of passing. This was a test-code bug. The test now asserts the contract directly: no line over 1 MiB reaches the engine, the client refuses cleanly (non-zero exit, JSON error), and the text isn't echoed. It's no weaker than before: a client that sent the line, or reported success, still fails it.
+
+### New tests
+
+In `spec-interview/tests/test_acceptance.py`:
+- `Retest1` (8 tests):
+  - Contract id rule: an item id, a session token, `started_at` or a feature id with a trailing newline, sent by the engine, fails cleanly. An `engine.json` version of `"1.1\n"` is refused before connecting.
+  - SR-9: lone surrogates are refused before connecting.
+  - SR-16: partial and reformatted quotes of the reply are not echoed.
+  - SR-10 (zero-width; invisible text): Hangul fillers, braille blank, the combining grapheme joiner, variation selectors and tag characters are removed from every displayed and output string. The owner's own text with those characters is still sent unchanged (FR-3, FR-6).
+  - SR-2: an engine error's message sits inside a fence in `display`, and every result has a `display`.
+- `Retest1SkillText` (5 new tests, plus the 11 AC-12 checks re-run on the new text):
+  - `disable-model-invocation: true` and the owner-run-only description (SR-10: a reply only from the owner's input).
+  - Engine text only through `display`, and errors through their `display` (SR-2).
+  - Expected behavior 4: the two-step picker, with up to four options copied exactly, more than four numbered in the fenced display, and a typed number confirmed before it is sent. Free text is allowed at each step.
+  - FR-13: a reply with no JSON output means `state` first, then ask the owner.
+  - SR-15: a 180 s Bash timeout over the client's 150 s run limit, and `wait_s` within 0 to 600.
+
+In `onboard-repo/tests/test_acceptance.py`, `RolePolicyV22` (Role policy v2.2), 3 tests:
+- **`network.allow` holds host names only.** These are rejected in the project policy and in a repo override: `" *"`, `"* "`, `"*.com"`, `"*.github.com"`, `"0.0.0.0/0"`, a URL, a path, a port, an empty entry, `"a..b"`, a leading hyphen, trailing space, `user@`, an inner space. Plain host names are accepted.
+- **`"*"` must be the only entry.**
+- **The project policy is checked on its own.** It is checked even when every repo's override adds the missing deny. The cases are the analyst's change-controlled deny, a secret-file deny, and the `engine.json` deny.
+
+I ran every new test against a clean export of `43772c5`, before the fixes. Each one fails there except `test_sr2_every_result_has_a_display`, so the tests catch the problems the fixes address.
+
+### Observations
+
+- **O2 is resolved** by the two-step picker. Options now reach the picker whenever there are four or fewer, which is the picker's limit.
+- **Gate 2 #3 and my tests (dev report).** My tests read the raw output fields (`item.text`, `options`, `findings`, `error.message`) only to check that they are cleaned and pass through unchanged. The spec doesn't require those fields. If the orchestrator decides the client should drop them and output only `display`, I'll move those checks to `display`. The spec doesn't block either way.
+- **Coverage** was not re-measured this round. The figures above are for `43772c5`.
