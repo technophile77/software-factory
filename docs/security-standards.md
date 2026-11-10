@@ -6,7 +6,16 @@ criteria anywhere else; link here.
 
 **Status:** criteria S1 to S7 are a draft for review. Severity levels and
 blocking rules were approved by the owner on 2026-11-08 (open decision 7,
-`proposals/0007-security-severity.md`).
+`proposals/0007-security-severity.md`). The least-privilege principle and S8
+were set by the owner on 2026-11-10 (H-0004).
+
+## Design principle: least privilege
+
+Security design follows the Principle of Least Privilege. Every agent,
+process, credential, CI job and component gets only the access its task
+needs, for only as long as it needs it. Anything not granted is denied. S8
+turns this into checkable criteria; S2.2 and S6.2 apply it to actions and
+agents.
 
 ## Criteria
 
@@ -45,6 +54,13 @@ Each finding cites the criterion id it fails.
 ### S7 Spec compliance
 - S7.1 Every security requirement in the approved feature spec is implemented and has a test or a stated reason it cannot be tested.
 
+### S8 Least privilege
+- S8.1 Each agent, process and component has only the permissions its task needs. Access is granted explicitly, never inherited by default.
+- S8.2 Credentials and tokens are scoped to the narrowest resource and operation (one repo, read-only unless writing is needed) and expire or are revoked when no longer needed.
+- S8.3 CI jobs declare their permissions explicitly, at the minimum needed, and get secrets only if they use them.
+- S8.4 Processes run as an ordinary user, never elevated, and touch only the files and network endpoints they need.
+- S8.5 A feature that adds or widens a permission states it in its spec, with the reason. Widening a permission is a Security decision for the owner.
+
 ## Severity
 
 | Severity | Meaning | Examples |
@@ -73,12 +89,13 @@ promotion to the next level.
 ## Gate 1 (requirements) checklist
 
 - Does the feature touch input, auth, secrets, sensitive data, dependencies, or external systems?
+- What permissions does it need (files, network, tokens, CI, agent tools)? Is each one the minimum (S8)?
 - For each, is there a requirement that covers it?
 - What are the abuse cases? Are they in the edge cases?
 - What needs the owner's decision? File it as Security.
 
 ## Gate 2 (implementation) checklist
 
-- Review the diff against S1 to S7.
+- Review the diff against S1 to S8.
 - Confirm each spec security requirement (S7.1).
 - Report findings with criterion id, severity, location, explanation, and suggested fix.
