@@ -484,8 +484,9 @@ levels. `schema` stays `factory-project/1.0`: v1.1 and v1.2 only add optional ke
 **Protected defaults:** `security-review` and the six core agents (orchestrator,
 requirements-analyst, software-developer, test-engineer, security-reviewer,
 validation-judge) may never be excluded; overriding one requires a linked,
-approved Security decision and may only add rules. The two support roles are
-not protected unless the owner decides otherwise.
+approved Security decision and may only add rules. The two support roles,
+`project-evaluator` and `context-hygiene`, are not protected: a project may
+exclude either with a reason (owner, 2026-11-10).
 
 ---
 
