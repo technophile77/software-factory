@@ -15,7 +15,9 @@ role lists its tools and what it may read; secret files are denied to every role
 Its tightening after the F-003 security re-reviews (longer protected and secret
 lists, no shells as commands, no globs leaving the worktree) approved by the
 owner 2026-11-10 (decision card). Engine control channel v1.1 (H-0022) and Role policy v2.2 (H-0023) for F-005
-approved by the owner 2026-11-10 (decision card, as drafted).
+approved by the owner 2026-11-10 (decision card, as drafted). Role policy v2.3
+(H-0040, policies for the project evaluator and context hygiene agents) and
+Agent report v1.2 (H-0041): drafts, awaiting owner approval.
 
 ## Contract entry format
 
@@ -91,10 +93,12 @@ whose message starts with the item id.
 
 ---
 
-## Agent report — v1.1
+## Agent report — v1.2
 
-- Status: Approved
-- Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8)
+- Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0041)
+- Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8);
+  v1.2 adds the context-hygiene body and `proposed_items`, requested by the
+  owner 2026-11-10 (PR #17)
 - Used by: engine, every agent, validation judge (as evidence)
 - Compatibility: as for inbox items.
 
@@ -137,7 +141,13 @@ engine fills them; agents do not.
 | security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks) |
 | validation-judge | `verdict` (PASS, FAIL, NEEDS_HUMAN_REVIEW), `checklist` (area, status, evidence), `findings` (grade, location, explanation) |
 | orchestrator | `gate`, `checks` (name, passed, evidence) |
-| project-evaluator | `scope` (project or feature), `complexity` (simple, moderate, complex), `predictions` (role → rung, reason) |
+| project-evaluator | `scope` (project or feature), `complexity` (simple, moderate, complex), `predictions` (role → rung, reason), and from v1.2 `proposed_items` |
+| context-hygiene (v1.2) | `sizes` (file, tokens, budget, change since last review), `duplicates` (instruction, locations), `skill_misses` (run, skill, `not_loaded` or `not_applicable`), `conflicts` (location, explanation), `proposed_items` |
+
+**`proposed_items` (v1.2).** Items a role with no inbox write access wants
+filed: each is a complete Inbox item v1.0 without `id`, `created_at` or
+`history`. The orchestrator files them unchanged, sets `created_by` to the
+proposing role, and lists the new ids in its own report's `items_filed`.
 
 ---
 
@@ -233,12 +243,13 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
-## Role policy — v2.2
+## Role policy — v2.3
 
-- Status: Approved
+- Status: Approved (v2.2); v2.3 draft, awaiting owner approval (H-0040)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
-  2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card)
+  2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
+  v2.3 roles requested by the owner, 2026-11-10
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
   Security decision. v2.0 moved the policy from `.factory/policy/roles.yaml`
@@ -247,7 +258,9 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   required broke nothing. v2.2 adds the `Skill` tool, the open-web network
   rule for a role with no file tools, the optional `web-reader` role, and
   denies every role the engine's channel file; manifests on v2.1 must add
-  the two new deny entries.
+  the two new deny entries. v2.3 adds two optional roles, `project-evaluator`
+  and `context-hygiene`; a manifest without them stays valid, but those
+  agents may not run in it.
 
 **Location:** the `policy:` key of the project manifest (change-controlled),
 with optional per-repo overrides under `repos[].policy`. Effective policy
@@ -293,6 +306,46 @@ search. Its policy is fixed:
         allow: []
       network:
         allow: ["*"]
+```
+
+**Project evaluator and context hygiene (v2.3, optional roles).** Both are
+advisory: they read the project and write only their own agent report. Items
+they propose (the evaluator's Product decision, the hygiene agent's
+Configuration hygiene items) go in that report and are filed by the
+orchestrator from the report's `proposed_items`. The evaluator must also
+deny reading `calibration/**`, `**/calibration/**`, `.factory/tuning/**`,
+`**/.factory/tuning/**`, `.factory/runs/**/review.json` and
+`**/.factory/runs/**/review.json`: calibration answers, tuning metrics and run
+reviews (which record whether its predictions were right) all score it
+(F-002 SR-1, SR-8). Neither role gets `Edit`, `Bash`, `Skill`, commands or network. The
+prompts and skill-use records the hygiene agent reviews are outside Git, so
+the engine hands them over; they add no read globs.
+
+```yaml
+    project-evaluator:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Write"]
+      read:
+        allow: ["**"]
+        deny: [<the secret files above>, "calibration/**", "**/calibration/**", ".factory/tuning/**", "**/.factory/tuning/**", ".factory/runs/**/review.json", "**/.factory/runs/**/review.json"]
+      write:
+        allow: [".factory/runs/**/project-evaluator-*.json"]
+      commands:
+        allow: []
+      network:
+        allow: []
+    context-hygiene:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Write"]
+      read:
+        allow: ["**"]
+        deny: [<the secret files above>]
+      write:
+        allow: [".factory/runs/**/context-hygiene-*.json"]
+      commands:
+        allow: []
+      network:
+        allow: []
 ```
 
 The requirements analyst gets `Skill` and reaches the web only through the
