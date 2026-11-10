@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
     paths: ["extension/**", ".github/workflows/extension.yml"]
+  # Weekly, so a CVE published after a merge is still found (S4.4).
+  schedule:
+    - cron: "0 6 * * 1"
 permissions:
   contents: read
 jobs:
@@ -25,7 +28,8 @@ jobs:
           cache-dependency-path: extension/package-lock.json
       - run: npm ci
         if: hashFiles('extension/package-lock.json') != ''
-      - run: npm audit --omit=dev --audit-level=high
+      # All dependencies, dev tools included (S4.4).
+      - run: npm audit --audit-level=high
         if: hashFiles('extension/package-lock.json') != ''
       - run: npm run typecheck
         if: hashFiles('extension/package-lock.json') != ''
