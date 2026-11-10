@@ -314,7 +314,9 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
   the advisor policy and request rule approved in substance by the owner,
-  2026-11-10 (F-006 SR-7, card); v2.3 approved by the owner, 2026-11-10 (H-0061, decision card)
+  2026-11-10 (F-006 SR-7, card); v2.3 approved by the owner, 2026-11-10 (H-0061, decision card);
+  amendment H-0076 (the advisor denied all of `.factory/`; F-006 Gate 2 #1)
+  awaiting the owner
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
   Security decision. v2.0 moved the policy from `.factory/policy/roles.yaml`
@@ -326,6 +328,9 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   the two new deny entries. v2.3 adds the optional `advisor` role and the
   `may_request` key. Both are additions: a manifest without them is valid
   and no role can be requested, so v2.2 manifests need no change.
+  Amendment H-0076 tightens the advisor's extra denies to all of
+  `.factory/`; a manifest with an `advisor` role must replace its four
+  inbox and transcript denies with the two new entries.
 
 **Location:** the `policy:` key of the project manifest (change-controlled),
 with optional per-repo overrides under `repos[].policy`. Effective policy
@@ -405,12 +410,15 @@ is fixed, and the checker refuses anything wider:
 Its tools are a subset of `Read`, `Grep`, `Glob` and `Skill`. Each glob in
 its `read.allow` must be one of the analyst's, or sit under an analyst glob
 `**` or `<path>/**`; the checker refuses any it can't show is inside. Its
-`read.deny` includes the analyst's and the advisor's extra denies: `.factory/inbox/**`, `**/.factory/inbox/**`, `.factory/interviews/**`, `**/.factory/interviews/**`.
+`read.deny` includes the analyst's and the advisor's extra denies: `.factory/**`, `**/.factory/**`.
 These hold in the project policy and in each repo's effective policy.
 `write.allow`, `commands.allow` and `network.allow` are empty or missing.
-Of the interview transcripts, the advisor sees only the current feature's,
-which the engine supplies in its input; it reads no inbox item or other
-transcript (F-006 FR-6, A-3). File pointers the caller gives the advisor
+The advisor reads nothing on `factory/state` (amendment H-0076): no inbox
+item, transcript, earlier advice (`.factory/advice/`), run record or tuning
+data, since stored advice quotes other features' questions and answers and
+would let planted text return as "past research". Of the interview
+transcripts, it sees only the current feature's, which the engine supplies
+in its input (F-006 FR-6, A-3). File pointers the caller gives the advisor
 must match its read rules; the engine drops any other pointer from the
 input and reports it to the owner.
 

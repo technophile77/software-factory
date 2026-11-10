@@ -822,6 +822,52 @@ class F005GateRegressions(Base):
         errs = fc.validate_manifest(data)
         self.assertTrue(any("requirements-analyst in the project allows any host" in e for e in errs), errs)
 
+class AdvisorFactoryDeny(unittest.TestCase):
+    """H-0076 (F-006 Gate 2 #1): the advisor reads nothing on factory/state."""
+
+    FILL = (("<project-name>", "p"), ("<one line on what the project is>", "d"),
+            ("<tag or commit of the master factory>", "v1"), ("<repo-name>", "a"), ("<owner>/<repo>", "o/a"),
+            ("<level>", "alpha"), ("<project-specific context every agent reads>", "n"),
+            ('"<SOURCE_GLOBS>"', '"src/**"'), ('"<TEST_GLOBS>"', '"test/**"'), ("<BUILD_COMMANDS>", '"npm"'),
+            ("<TEST_COMMANDS>", '"npm"'), ("<REGISTRIES>", '"registry.npmjs.org"'))
+
+    def manifest(self):
+        text = read(os.path.join(SKILL, "templates", "factory-project.yaml"))
+        for a, b in self.FILL:
+            text = text.replace(a, b)
+        return fc.parse_yaml(text)
+
+    def test_template_advisor_denies_all_of_factory(self):
+        data = self.manifest()
+        deny = data["policy"]["roles"]["advisor"]["read"]["deny"]
+        self.assertLessEqual({".factory/**", "**/.factory/**"}, set(deny))
+        self.assertEqual(fc.validate_manifest(data), [])
+
+    def test_each_factory_deny_is_required(self):
+        for path in (".factory/**", "**/.factory/**"):
+            with self.subTest(path=path):
+                data = self.manifest()
+                data["policy"]["roles"]["advisor"]["read"]["deny"].remove(path)
+                errs = fc.validate_manifest(data)
+                self.assertTrue(any("advisor" in e and path in e for e in errs), errs)
+
+    def test_old_inbox_and_transcript_denies_alone_are_not_enough(self):
+        # Under v2.3 as first approved, advice and run records stayed readable.
+        data = self.manifest()
+        deny = data["policy"]["roles"]["advisor"]["read"]["deny"]
+        deny[:] = [d for d in deny if d not in (".factory/**", "**/.factory/**")] + [
+            ".factory/inbox/**", "**/.factory/inbox/**", ".factory/interviews/**", "**/.factory/interviews/**"]
+        errs = fc.validate_manifest(data)
+        self.assertTrue(any("advisor" in e and ".factory/**" in e for e in errs), errs)
+
+    def test_repo_override_cannot_drop_them(self):
+        data = self.manifest()
+        data["repos"][0].setdefault("policy", {}).setdefault("roles", {})["advisor"] = {"read": {"deny": []}}
+        eff = fc.effective_policy(data, data["repos"][0]["name"])
+        self.assertIn(".factory/**", eff["advisor"]["read"]["deny"])
+        self.assertEqual(fc.validate_manifest(data), [])
+
+
 if __name__ == "__main__":
     unittest.main()
 

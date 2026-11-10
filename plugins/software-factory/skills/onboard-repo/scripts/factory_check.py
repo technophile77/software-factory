@@ -1215,12 +1215,12 @@ SECRET_FILES = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**
                 "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json",
                 "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk",
                 "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
-# Role policy v2.3 (F-006 SR-7): the advisor reads no more than the analyst, and
-# no inbox or transcript; the engine hands it the current feature's transcript
-# itself, so no read glob can reach another feature's (FR-6, A-3).
+# Role policy v2.3 (F-006 SR-7): the advisor reads no more than the analyst,
+# and nothing on factory/state (H-0076): inbox, transcripts, earlier advice and
+# run records all quote other features. The engine hands it the current
+# feature's transcript itself, so no read glob can reach another's (FR-6, A-3).
 ADVISOR_TOOLS = {"Read", "Grep", "Glob", "Skill"}
-ADVISOR_EXTRA_DENY = [".factory/inbox/**", "**/.factory/inbox/**", ".factory/interviews/**",
-                      "**/.factory/interviews/**"]
+ADVISOR_EXTRA_DENY = [".factory/**", "**/.factory/**"]
 # Who may ask the engine to start a role. A role not listed here can't carry
 # `may_request` at all, so the request rule starts closed.
 MAY_REQUEST = {"advisor": {"requirements-analyst", "orchestrator"}}
@@ -1314,7 +1314,7 @@ def _check_may_request(where, role, value, errors):
 
 
 def _covered(glob, by):
-    # Glob containment in general is undecidable here, so only the forms that
+    # Glob containment is hard to prove in general, so only the forms that
     # are plainly inside count; anything else is refused rather than guessed.
     return any(g == glob or g == "**" or (g.endswith("/**") and glob.startswith(g[:-2])) for g in by)
 

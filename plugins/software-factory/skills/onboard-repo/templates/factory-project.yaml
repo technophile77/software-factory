@@ -145,7 +145,7 @@ policy:
         allow: ["Read", "Grep", "Glob", "Skill"]   # web only through web-reader; no shell until its own Security decision
       read:
         allow: ["**"]
-        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json", ".factory/inbox/**", "**/.factory/inbox/**", ".factory/interviews/**", "**/.factory/interviews/**"]   # no inbox or transcripts: the engine supplies the current feature's
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json", ".factory/**", "**/.factory/**"]   # nothing on factory/state: the engine supplies the current feature's transcript
       write:
         allow: []
       commands:
