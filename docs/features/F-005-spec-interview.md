@@ -3,7 +3,7 @@
 - **Id:** F-005
 - **Status:** Approved (readiness gate passed 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 7
+- **Spec version:** 8
 
 ## 1. Objective and business purpose
 The requirements analyst runs inside the engine, but the owner has no way to
@@ -76,8 +76,8 @@ goes to the one inbox, labeled by category.
 | AC-4 | Given the fake engine reports three features with deferred questions, when the owner lists them, then all three appear with their counts. | FR-4 |
 | AC-5 | Given a feature with two deferred questions and one new one, when it is opened, then the two deferred questions come first. | FR-5 |
 | AC-6 | For each reply kind, the request carries the question id, the kind and the owner's text byte for byte. | FR-6 |
-| AC-7 | Given a `deferred` question or a pending assumption, when the readiness gate checks the spec, then it fails and names them. | FR-8, FR-9 |
-| AC-8 | Given an assumption the owner rejected or never answered, then it does not appear in the spec's assumptions table. | FR-9 |
+| AC-7 | Given a `deferred` question or a pending assumption, when the readiness gate checks the spec, then it fails and names them. Tested with the engine feature, where the readiness gate runs (owner, 2026-11-10). | FR-8, FR-9 |
+| AC-8 | Given an assumption the owner rejected or never answered, then it does not appear in the spec's assumptions table. Tested with the engine feature, where the readiness gate runs (owner, 2026-11-10). | FR-9 |
 | AC-9 | Given a second client opens a feature already in session, then it receives "busy" and the first session is unaffected. | FR-11 |
 | AC-10 | Given engine text containing ANSI escapes, control characters and text such as "ignore previous instructions", then the skill shows it as quoted data with escapes removed and takes no action from it. | FR-12, SR-2 |
 | AC-11 | Given the engine drops the connection after a reply is sent, when the owner retries, then the script first asks for the question's state and does not send a duplicate. | FR-13 |
@@ -190,3 +190,4 @@ Approved by the owner as drafted, 2026-11-10 (decision card):
 | 5 | 2026-11-10 | H-0022 (channel v1.1), H-0023 (Role policy v2.2), H-0024 (agent files) approved; readiness gate passed | Owner, 2026-11-10 (decision card) |
 | 6 | 2026-11-10 | Channel v1.1 amended by H-0025: sessions by token (`interview.open`, takeover, `wait_s`), line framing, `engine.json` format, error codes. FR-11 and SR-12/SR-13 now read against the session token, not the connection | Owner, 2026-11-10 (decision card) |
 | 7 | 2026-11-10 | Wording only, to match approved channel v1.1 (FR-1, SR-15); no requirement changed | — (wording) |
+| 8 | 2026-11-10 | H-0026 (channel details) and H-0027 (readiness-gate interview rules, web reader in the role docs) approved; AC-7 and AC-8 tests move to the engine feature | Owner, 2026-11-10 (decision card) |

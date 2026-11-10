@@ -147,7 +147,8 @@ engine fills them; agents do not.
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
   H-0025 (sessions by token, framing, `engine.json` format, error codes)
   approved by the owner, 2026-11-10 (decision card); amendment H-0026
-  (`busy` data, listener pid, file modes) awaits the owner's approval
+  (`busy` data, listener pid, file modes) approved by the owner, 2026-11-10
+  (decision card)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
