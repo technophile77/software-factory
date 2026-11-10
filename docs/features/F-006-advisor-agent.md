@@ -39,6 +39,10 @@ Interview answers (owner):
   only through the web reader), plus a shell inside a sandbox so it can
   test code. No file writes outside the sandbox and no inbox access. Its
   output goes back only to the caller.
+- Q5 (2026-11-10): the shell runs only in the shared OS sandbox proposed in
+  F-003 Gate 2 item R2-1 (throwaway copy of the code, no network, no
+  secrets, no access to the real repo). The advisor ships without a shell
+  and gains it once that sandbox is decided and built.
 
 ## 2. Expected behavior
 _To be written from the interview._
@@ -62,7 +66,8 @@ _To be written from the interview and Gate 1._
 - F-005 spec interview (merged): the escalation entry point.
 - F-002 model/effort tuning: model choice builds on its rungs and floors.
 - ADR 0012: spend counts against project budgets.
-- Web reader role (F-005), if the advisor needs the web.
+- Web reader role (F-005), for the advisor's web research.
+- F-003 Gate 2 R2-1 OS sandbox (owner decision pending), for the shell only.
 
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
@@ -84,7 +89,8 @@ policy entry and shared agent-list edits, each through a hygiene item
 | Q2 | Which model does the advisor run on? | Product | Answered: always strongest, high effort (owner, 2026-11-10) |
 | Q3 | Who decides a question goes to the advisor? | Product | Answered: caller with reason, or the owner (owner, 2026-11-10) |
 | Q4 | What can the advisor read and use? | Security | Answered: analyst's sources read only, plus shell in a sandbox (owner, 2026-11-10) |
-| Q5 | What sandbox does the advisor's shell run in, and what can it reach? | Security | Open |
+| Q5 | What sandbox does the advisor's shell run in? | Security | Answered: the R2-1 sandbox; shell added once it exists (owner, 2026-11-10) |
+| Q6 | What limits the advisor's spend? | Product | Open |
 
 ## 12. Readiness gate
 - [ ] Clear objective
