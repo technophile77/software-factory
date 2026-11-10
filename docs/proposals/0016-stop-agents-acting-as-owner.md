@@ -179,7 +179,7 @@ or E alone, an agent running as the owner could read that key.
 |---|---|---|
 | H-0050 | ADR 0014 recording option B | Drafted, awaiting owner approval |
 | H-0051 | Engine control channel v1.2: pending sessions, `interview.awaitApproval`, error codes | Drafted, awaiting owner approval |
-| H-0052 | Sandbox rules deny agents the engine socket, `engine.json` and the owner's Claude Code history | Asked of ADR 0015 (proposal 0017), which owns the sandbox rules |
+| H-0052 | Sandbox rules deny agents the engine socket, `engine.json` and the owner's Claude Code history | Drafted in PR #20 (ADR 0015 sandbox rules), awaiting owner approval |
 | H-0053 | F-005 spec SR-5: decided, residual risk recorded | Drafted, awaiting owner approval |
 | H-0054 | Reserved for option C if the owner adds it later | Not used |
 
