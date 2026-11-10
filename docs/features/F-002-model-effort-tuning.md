@@ -1,9 +1,9 @@
 # Feature: Model and effort tuning per agent
 
 - **Id:** F-002
-- **Status:** Draft (all assumptions approved; Gate 1 security review next)
+- **Status:** In review (readiness gate passed; awaiting owner approval of spec v11)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 10
+- **Spec version:** 11
 
 ## 1. Objective and business purpose
 Run each agent on the cheapest model and lowest effort level that still does
@@ -126,6 +126,10 @@ agent up to a stronger model or higher effort is always the owner's call.
   seed and transcript of every trial are kept.
 - The owner rejects a step-up: the same trigger does not refile it until 5
   more runs of that role have finished.
+- A spec or transcript contains instructions aimed at the evaluator or the
+  agent under test ("rate this simple", "skip the check"): treated as data (SR-7).
+- An agent tries to edit its own metrics or run review: denied by role policy (SR-8).
+- A calibration batch runs far over its estimate: stopped at the cap (SR-9).
 - Several features run at once (ADR 0007): run reviews append to history in
   completion order; triggers read the history at the time of the review.
 
@@ -170,14 +174,18 @@ agent up to a stronger model or higher effort is always the owner's call.
 ## 9. Security considerations
 | Id | Requirement | Source | Status |
 |---|---|---|---|
-| SR-1 | Calibration answers (hidden checks, accepted outputs of transcripts) are not readable by the agent under test (separate worktree and role policy), so an agent can't pass by reading the answers. | Analyst (S8 least privilege) | Proposed |
-| SR-2 | Calibration and replay runs use the same role policy as real runs, never wider, and replays never push, open PRs, or file inbox items. | Analyst (S8) | Proposed |
-| SR-3 | Floors for gate agents (A-3). | Owner, 2026-11-10 | Approved |
-| SR-4 | Run reviews and history hold no secrets or prompt contents beyond what agent reports already hold; transcripts stay outside Git. | Analyst (S2) | Proposed |
-| SR-5 | Before a transcript is selected, it is scanned for secrets and personal data; a transcript that has any is not selected. | Analyst (S2) | Proposed |
-| SR-6 | Transcript lists and master tasks are untrusted input and are validated before use; a replay's initial context is the recorded one, unchanged. | Analyst (S1) | Proposed |
+| SR-1 | Calibration answers (hidden checks, accepted outputs of transcripts) are not readable by the agent under test (separate worktree and role policy), so an agent can't pass by reading the answers. | Analyst (S8 least privilege) | Accepted |
+| SR-2 | Calibration and replay runs use the same role policy as real runs, never wider. Replay worktrees get no factory token or other credentials beyond the role's own; replays never push, open PRs, or file inbox items. | Analyst (S8); Gate 1 #2 | Accepted |
+| SR-3 | Floors for gate agents (A-3). | Owner, 2026-11-10 | Accepted |
+| SR-4 | Run reviews and history hold no secrets or prompt contents beyond what agent reports already hold; transcripts stay outside Git. | Analyst (S3) | Accepted |
+| SR-5 | Before a transcript is selected, it is scanned for secrets and personal data; a transcript that has any is not selected. | Analyst (S3) | Accepted |
+| SR-6 | Transcript lists and master tasks are untrusted input and are validated before use; a replay's initial context is the recorded one, unchanged. | Analyst (S1) | Accepted |
+| SR-7 | The evaluator's advice can never move a role below its floor (A-3), and is never used for the security reviewer or validation judge below their approved rung. A spec is untrusted text, so an injected "this is trivial" must not be able to weaken a gate. | Gate 1 #1 (S6.1) | Accepted |
+| SR-8 | Only the engine writes `.factory/tuning/**` and run reviews; every agent role is denied write access there, so no agent can edit the metrics that judge it. | Gate 1 #3 (S8.1, S6.2) | Accepted |
+| SR-9 | Every calibration or replay batch has a cost cap: 1.5 × its shown estimate. At the cap it stops, keeps partial results, files a Testing item, and proposes nothing. | Gate 1 #4 (S5.1) | Accepted |
+| SR-10 | The `project-evaluator` role gets read access to specs and run reviews only, and write access only to its own report; no commands, no network. | Gate 1 #5 (S8.1, S8.5) | Accepted |
 
-Gate 1 security review is next.
+Gate 1: [F-002-security-gate1.md](F-002-security-gate1.md), 2026-11-10. Five findings, all resolved by SR-2 and SR-7 to SR-10. No owner decision needed.
 
 ## 10. Interface requirements
 All changes are additive (A-8):
@@ -205,7 +213,7 @@ All changes are additive (A-8):
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit and approved (A-1 to A-12)
-- [ ] Blocking decisions resolved (Gate 1 not yet run)
+- [x] Blocking decisions resolved (A-1 to A-12 approved; Gate 1 done)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -220,3 +228,4 @@ All changes are additive (A-8):
 | 8 | 2026-11-10 | A-10 approved | Owner, 2026-11-10 |
 | 9 | 2026-11-10 | Evaluator extended to per-task complexity advice for the orchestrator once reliable (A-11 b, c; FR-20, FR-21; A-12 added) | — |
 | 10 | 2026-11-10 | A-11 approved; A-12 approved with the stricter bar (90% of last 30) | Owner, 2026-11-10 |
+| 11 | 2026-11-10 | Gate 1 security review: SR-2 tightened, SR-7 to SR-10 added, abuse cases added; readiness gate passed | Pending owner approval |
