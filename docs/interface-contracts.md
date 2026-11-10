@@ -89,7 +89,10 @@ Body sections by inbox (headings are fixed so the extension can render them):
 **Owner actions** append to `history` with `by: owner` and one of
 `approved`, `rejected`, `changes_requested`, `research_requested`,
 `deferred`, `restored`, plus an optional `note`. Each action is one commit
-whose message starts with the item id.
+whose message starts with the item id. From ADR 0015 (H-0047, owner, 2026-11-10) the
+commit must be signed with one of the owner's SSH signing keys as listed on
+GitHub; the engine ignores an owner action whose commit is not, and files a
+Security alert for it.
 
 ---
 
@@ -276,8 +279,8 @@ must deny reading secret files and, from v2.2, the engine's channel file:
 `**/.env`, `**/.env.*`, `**/.envrc`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`, `**/*.jks`, `**/*.keystore`, `**/id_rsa*`, `**/id_dsa*`, `**/id_ecdsa*`, `**/id_ed25519*`, `**/.npmrc`, `**/.pypirc`, `**/.netrc`, `**/.git-credentials`, `**/*.tfvars`, `**/credentials*.json`, `**/*.tfstate`, `**/*.tfstate.*`, `**/.aws/credentials`, `**/.docker/config.json`, `**/*.ppk`, `**/kubeconfig`, `**/.kube/config`, `.factory/engine.json`, `**/.factory/engine.json`.
 Every core role must be present, and every role that may write outside
 `.factory/` must deny the change-controlled paths: `CLAUDE.md`, `**/CLAUDE.md`, `CLAUDE.local.md`, `**/CLAUDE.local.md`, `.claude/**`, `.mcp.json`, `.github/**`, `.gitignore`, `.gitattributes`, `.husky/**`, `.pre-commit-config.yaml`, `lefthook.yml`, `osv-scanner.toml`, `agents/**`, `skills/**`, `plugins/**`, `.claude-plugin/**`, `workflows/**`, `**/.claude/**`, `.envrc`, `**/.envrc`, `.git`, `.git/**`, `.gitmodules`, `.vscode/**`, `.devcontainer/**`. Globs are relative to the worktree: no absolute paths, `\`, or segments
-that can match `..`. **Glob dialect and matching (H-0046, draft awaiting
-owner approval):** a glob is literal segments separated by `/`, where `*`
+that can match `..`. **Glob dialect and matching (H-0046, owner,
+2026-11-10):** a glob is literal segments separated by `/`, where `*`
 matches any characters within one segment (dot files included) and `**`
 matches zero or more whole segments. `?`, bracket classes, braces and
 extglobs are refused, because glob libraries read them differently. Before

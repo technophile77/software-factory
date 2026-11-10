@@ -1,22 +1,18 @@
 # Proposal 0017: Close the open F-003 Gate 2 security items
 
-**Status:** R2-1 decided by the owner, 2026-11-10: option A (decision
-card); wording added to the Role policy contract. Others proposed for the
-owner's decision, 2026-11-10. Not a decision
-until the owner chooses. Owner approved starting this work on 2026-11-10
-(follow-up 2 after F-005 merged).
+**Status:** all decided by the owner on 2026-11-10 (decision cards): R2-1 A, R2-2 A, R2-4 A, H-0048 and H-0049 approved as drafted. Recorded as ADR 0015 and in the Role policy and Inbox item contracts.
 
 The F-003 Gate 2 review (`docs/features/F-003-security-gate2.md`) left five
 findings that only the owner can close. All are Security decisions; R2-2 is
 also an Interfaces change (Role policy). Hygiene ids: H-0045 to H-0049.
 
-| Finding | Severity | Hygiene id | Question | Drafted in this PR? |
+| Finding | Severity | Hygiene id | Question | Outcome |
 |---|---|---|---|---|
 | R2-1 | High | H-0045 | How Bash-capable agents are confined to their role's file and network rules | Decided A; contract text added |
-| R2-2 | Medium | H-0046 | How the engine matches a path against a policy glob | Yes (recommended option) |
-| R2-4 | Medium | H-0047 | How the engine knows an approval really came from the owner | No: wording below, edited in after the decision |
-| R2-8 | Low | H-0048 | How the owner's installed plugin is pinned to a release | Yes |
-| R2-10 | Low | H-0049 | How the factory's machine account is kept from approving PRs | Yes |
+| R2-2 | Medium | H-0046 | How the engine matches a path against a policy glob | Decided A; drafted text approved |
+| R2-4 | Medium | H-0047 | How the engine knows an approval really came from the owner | Decided A; contract text added |
+| R2-8 | Low | H-0048 | How the owner's installed plugin is pinned to a release | Approved as drafted |
+| R2-10 | Low | H-0049 | How the factory's machine account is kept from approving PRs | Approved as drafted |
 
 **Related:** proposal 0016 (owner presence and the agents' OS user, from the
 thread closing F-005 SR-5) decides which OS account agents run as. This
