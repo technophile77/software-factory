@@ -13,6 +13,44 @@
 - **Never weaken a test to make it pass.** A test that seems wrong goes to the
   orchestrator, which decides with the spec in hand.
 
+## Test types
+
+| Type | What it is |
+|---|---|
+| Unit | Tests one function or module in isolation, from its contract |
+| Acceptance | Tests each acceptance criterion of the spec end to end |
+| Contract | Tests an interface against `interface-contracts.md` |
+| Integration | Tests components together, in the real host (for example the VS Code extension host) |
+| Regression | The full existing suite, plus one test for every fixed bug, so a fixed bug cannot come back |
+| Stochastic | Randomized tests: property tests (many generated inputs checked against a rule) and fuzzing (malformed input thrown at parsers). Mutation testing (planted bugs the suite must catch) measures the suite itself |
+
+Testing for a feature is complete only when every type required at the
+repo's maturity level is present and passing. Production ready requires
+every type.
+
+## Pass bars by maturity level
+
+Every test that runs must pass: 100%, with no unexplained skips, at every
+level. The percentages below are coverage only. "New code" means lines the
+change adds or edits. Security-critical code is code that parses outside
+input, resolves paths, checks permissions, or runs external commands.
+
+| | Prototype | Alpha | Beta | Release | Production ready |
+|---|---|---|---|---|---|
+| Unit tests | Core logic | All modules | All modules | All modules | All modules |
+| Coverage, whole repo (line / branch) | Reported | 60% / 50% | 75% / 65% | 85% / 75% | 85% / 75% |
+| Coverage, new code (line / branch) | Reported | 70% / 60% | 80% / 70% | 90% / 80% | 90% / 80% |
+| Security-critical code (branch) | Reported | 80% | 90% | 95% | 95% |
+| Regression | A test for each fixed bug | + full suite on every change | + full suite on every change | + clean environment, upgrade and rollback | + production-like environment |
+| Stochastic | None | Property tests on parsers and validators of outside input, 100 cases each | Property tests on all core logic and contracts, 1,000 cases; fuzzing 10 min per parser, weekly | Fuzzing 1 hour per parser, weekly, zero crashes | + mutation score of at least 60% |
+
+- Every stochastic run records its seed. A failure found this way becomes a
+  regression test with that input.
+- Coverage below the bar is a test failure of cause "test code" and follows
+  the failure table below.
+- Tools (coverage, property testing, fuzzing, mutation) are chosen per
+  project as Architecture decisions, after the security review in S4.1.
+
 ## Run report
 
 Each run reports: commit tested, tests run / passed / failed / skipped,
