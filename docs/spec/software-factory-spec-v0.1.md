@@ -1,7 +1,7 @@
 # Software Factory — Requirements, Architecture & Implementation Plan
 
 - **Document status:** Working specification
-- **Version:** 0.2
+- **Version:** 0.3
 - **Development environment:** VS Code
 - **Primary coding environment:** Claude Code
 - **Project owner:** Human approval authority
@@ -13,6 +13,7 @@
 > |---|---|---|---|
 > | 0.1 | 2026-11-08 | Original specification | Owner |
 > | 0.2 | 2026-11-08 | Added section 16, Software Maturity Levels (proposal 0011) | Owner |
+> | 0.3 | 2026-11-10 | Section 2: two support roles added, 2.7 Project Evaluator (F-002 A-11) and 2.8 Context Hygiene; section 16 wording (H-0009) | Owner |
 
 ---
 
@@ -42,7 +43,9 @@ Agents should continue working on unrelated tasks while awaiting human decisions
 
 ## 2. Agent Architecture
 
-The initial factory will have six primary agent roles.
+The initial factory will have six primary agent roles (2.1 to 2.6). Two
+support roles were added later (2.7 and 2.8); they advise and file inbox
+items, and never change code, specs, or configuration.
 
 ### 2.1 Orchestrator
 
@@ -190,6 +193,29 @@ It produces one of three outcomes:
 Findings are returned to the orchestrator for appropriate action.
 
 The validation judge must remain independent of the developer's implementation decisions.
+
+### 2.7 Project Evaluator
+
+Responsibility: Judge how complex the work is, so each agent runs on the cheapest model and effort that still does the job.
+
+The project evaluator:
+
+- Reviews a project's completed specification and proposes its complexity preset, with reasons per agent role, as a Product decision.
+- Rates each feature's complexity before development and predicts the model and effort each role will need.
+- Has its predictions scored against what each run actually needed.
+- Once proven reliable, advises the orchestrator per task, only ever toward a cheaper setting than the approved one, never below a role's floor.
+
+It is advisory. It never sets a role's model or effort; calibration and the owner do (feature F-002).
+
+### 2.8 Context Hygiene
+
+Responsibility: Keep agent instructions and skills lean, consistent, and well used.
+
+The context hygiene agent:
+
+- Reviews agent instructions and skills for duplication, size, content that should become a shared skill, and skills agents should have used but did not.
+- Runs after each pull request stage, on any change to an instruction file, and on the owner's request.
+- Files Configuration hygiene items only. It never edits a file.
 
 ## 3. Feature Development Lifecycle
 
@@ -623,7 +649,7 @@ Every repository and every project has a maturity level:
 5. **Production ready** — fit to run in production and be supported.
 
 **Same gates at every level.** Every feature, at every level, goes through
-all nine lifecycle stages, all six agents, and both security gates. What
+all nine lifecycle stages, every agent role, and both security gates. What
 scales with maturity is the bar inside each gate: the depth of testing
 required, which security findings block, and how strict the validation
 judge is. The bar for each level is defined in `docs/maturity-levels.md`.
