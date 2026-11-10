@@ -52,6 +52,11 @@ Interview answers (owner):
   an "Ask the advisor first" action carrying its reason. If the owner picks
   it, the advisor runs and its advice is added to the same item. No new
   category or second item.
+- Q8 (2026-11-10): fixed output shape: findings each with a source (web
+  findings marked untrusted); two to four options with trade-offs; a
+  recommendation with reasoning and confidence; risks or unknowns. Shown to
+  the owner word for word, labelled as the advisor's, beside the caller's
+  own question or options. It never fills in an answer.
 
 ## 2. Expected behavior
 _To be written from the interview._
@@ -101,7 +106,8 @@ policy entry and shared agent-list edits, each through a hygiene item
 | Q5 | What sandbox does the advisor's shell run in? | Security | Answered: the R2-1 sandbox; shell added once it exists (owner, 2026-11-10) |
 | Q6 | What limits the advisor's spend? | Product | Answered: owner's OK for every call (owner, 2026-11-10) |
 | Q7 | How does the orchestrator's request for an advisor call reach the owner? | Product | Answered: extra action on the decision item (owner, 2026-11-10) |
-| Q8 | What does the advisor return, and how is it shown? | Product | Open |
+| Q8 | What does the advisor return, and how is it shown? | Product | Answered: fixed shape, shown word for word (owner, 2026-11-10) |
+| Q9 | What context does the caller give the advisor? | Product | Open |
 
 ## 12. Readiness gate
 - [ ] Clear objective
