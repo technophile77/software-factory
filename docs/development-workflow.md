@@ -26,6 +26,12 @@ The owner merges. Nobody else does.
 5. Explicit assumptions.
 6. All blocking decisions resolved (approved, not deferred).
 
+For a spec written through an interview (F-005), check 5 also fails while any
+assumption is pending, and check 6 fails while any interview question is
+`open` or `deferred`. Every assumption the spec marks approved must match an
+`approve_assumption` entry in the interview transcript
+(`.factory/interviews/<feature>/`); a mismatch fails check 5.
+
 If any check fails, the orchestrator sends the gap back to the analyst.
 A deferred decision is not an approval, so a deferred blocking decision fails
 check 6.
