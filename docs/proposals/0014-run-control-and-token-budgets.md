@@ -1,6 +1,8 @@
 # Proposal 0014: Project control, resumable runs, and token budgets
 
-**Status:** proposed, for the owner's decision. Raised by the owner on
+**Status:** Q1 to Q4 decided by the owner on 2026-11-10 (see "Owner
+decisions" at the end); Q5 to Q8 still open.
+Originally proposed for the owner's decision. Raised by the owner on
 2026-11-10. Not a decision until the owner chooses; the outcome becomes an
 ADR and a feature spec.
 
@@ -157,3 +159,12 @@ feature (engine run control, authorization checks and budgets, plus the
 extension's Factory view). The spec interview starts after these decisions.
 Q5's onboarding change needs a matching amendment to F-003 (FR-13, FR-15:
 calibration and test baseline wait for activation).
+
+## Owner decisions
+
+| Q | Decision (owner, 2026-11-10) |
+|---|---|
+| Q1 | **Both.** `factory-project.yaml` gets an `enabled: true \| false` flag (not a `paused` flag) as the durable, committed switch. The engine's `project.pause` / `project.resume` methods and the extension's buttons give an instant, temporary pause on top. A project runs only when it is enabled and not paused. |
+| Q2 | **Checkpoint and resume, with commits made by the engine, not the agent.** A hook on every file edit in an agent's worktree (the Agent SDK's post-tool hook on edit and write tools) triggers an automatic commit to the agent's branch, so lost work is at most one edit. On resume the engine resumes the same session; if it can't, it starts a new session from the last commit with a summary of the interrupted run's transcript saying what is already done. Squash merge (ADR 0005) keeps these commits out of `main`. |
+| Q3 | **A: estimate, admit, reserve.** The fixed starting defaults are replaced by measured values as soon as there is run data. |
+| Q4 | **Subscription mode:** the budget is the plan's own usage windows. **Pay-per-token mode:** the owner sets the limits manually. (Aligns with Q8's `mode` setting.) |
