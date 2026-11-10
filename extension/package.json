@@ -1,0 +1,75 @@
+{
+  "name": "software-factory-inbox",
+  "displayName": "Software Factory Inbox",
+  "description": "Decision inbox for the software factory.",
+  "version": "0.1.0",
+  "publisher": "technophile77",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:.factory/inbox"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "softwareFactory",
+          "title": "Factory",
+          "icon": "media/factory.svg"
+        }
+      ]
+    },
+    "views": {
+      "softwareFactory": [
+        {
+          "id": "softwareFactory.decisions",
+          "name": "Decisions"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "softwareFactory.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "softwareFactory.openItem",
+        "title": "Open decision"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "softwareFactory.refresh",
+          "when": "view == softwareFactory.decisions",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "markdown-it": "14.3.3",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "14.1.2",
+    "@types/node": "22.19.1",
+    "@types/vscode": "1.90.0",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.2",
+    "vitest": "5.1.0"
+  }
+}
