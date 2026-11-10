@@ -144,8 +144,6 @@ as a worktree at `.factory/`. If `.factory/` is already there (partly
 onboarded), keep what it has and add only what is missing. Commit:
 
 - `onboarding/<date>-assessment.json` and `.md` (from step 2).
-- `policy/roles.yaml` from `templates/roles.yaml`, filled per stack. A
-  placeholder you can't fill becomes an empty list, never a guess.
 - Empty `inbox/decision/`, `inbox/testing/`, `inbox/hygiene/` (with `.gitkeep`).
 
 Each commit message starts with `onboarding:`. Push the branch.
@@ -172,6 +170,11 @@ item's `history` (`by: owner`) per the Inbox item v1.0 contract.
   ask the owner which project it belongs to.
 - The repo's entry under `repos` carries the level the owner approved in
   step 3; the manifest is the only record of repo and project levels.
+- The manifest also holds the role policy (`policy:`), which the engine
+  enforces (ADR 0004). A new project gets the template's project policy;
+  each repo gets a `policy:` override with its stack's source and test
+  globs, build and test commands, and package registries. A placeholder you
+  can't fill becomes an empty list, never a guess.
 - Existing project: clone its config repo, add the repo under `repos`, and
   commit directly (A-2) after the owner's yes.
 - New project: ask the owner before creating a private

@@ -3,7 +3,7 @@
 - **Id:** F-003
 - **Status:** Approved (owner, 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 3
+- **Spec version:** 4
 
 ## 1. Objective and business purpose
 Give the owner one skill they can add to any repository that turns it into a
@@ -42,8 +42,8 @@ which gaps closed and which opened, without duplicating anything.
 | FR-3 | Write the assessment as JSON and Markdown to `.factory/onboarding/<date>-assessment.json` and `.md` on the `factory/state` branch. |
 | FR-4 | Recommend a starting maturity level: the highest level whose evidence in `maturity-levels.md` the repo fully meets, never below Rapid prototype, with the evidence per level. File it as a Product decision item. While the promotion table is still draft, the recommendation says so. |
 | FR-5 | Open one pull request on branch `config/onboard-factory` that adds: a factory section in `CLAUDE.md` (creating the file if missing) linking the pinned factory version's rules; `.factory/` in `.gitignore`; and a CI workflow with the required jobs for the chosen level. Existing files are extended, never replaced; existing workflows are left alone and their gaps reported. |
-| FR-6 | Create the `factory/state` branch if missing, with `.factory/maturity.yaml`, empty inbox folders, and `.factory/policy/roles.yaml` copied from the master default (Role policy v1.0). |
-| FR-7 | Add the repo to the project's `factory-project.yaml` (Project manifest v1.0), creating the project config repo and manifest if the project is new, pinning `factory.version` to the current master tag or commit. The result must pass every manifest validation rule, including protected defaults and project maturity not above the lowest repo. |
+| FR-6 | Create the `factory/state` branch if missing, with empty inbox folders. The repo's maturity level and role policy live in the project manifest (FR-7), not on this branch. |
+| FR-7 | Add the repo, with its maturity level, to the project's `factory-project.yaml` (Project manifest v1.1), creating the project config repo and manifest if the project is new, pinning `factory.version` to the current master tag or commit. A new manifest gets the default `policy` section (Role policy v2.0); repo-specific globs, commands and registries go in `repos[].policy`. The result must pass every manifest validation rule, including protected defaults, project maturity not above the lowest repo, every core role in the policy, and change-controlled paths denied to every role that writes outside `.factory/`. |
 | FR-8 | File decision items (Inbox item v1.0) for: each tool the testing bar for the chosen level needs but the repo lacks (test framework, coverage, property testing, fuzzing), as Architecture items whose body includes the S4.1 review; each likely secret or Critical/High finding, as a Security item, blocking. |
 | FR-9 | Write a "Recommended work" list in the assessment: each code gap phrased as a feature request, grouped by the maturity level it blocks, ready for the owner to start. The skill does not change application code or tests itself. |
 | FR-10 | Prepare GitHub settings: branch protection on `main` requiring the owner's review and the level's CI checks. Apply it with the owner's `gh` login only after the owner confirms in the session; otherwise list it as an open step. The factory token is never created or stored by the skill; the owner gets a link to create it with the exact scopes from ADR 0006. |
@@ -66,7 +66,7 @@ which gaps closed and which opened, without duplicating anything.
 | AC-8 | Given a repo that builds but has no tests, then the recommended level is Rapid prototype, with the missing evidence for Alpha listed. | FR-4 |
 | AC-9 | Given a repo with an existing CLAUDE.md and .gitignore, when the onboarding PR is prepared, then both keep all their original lines and gain only the factory additions. | FR-5 |
 | AC-10 | Given a generated CI workflow, then it declares `permissions: contents: read` at the top, pins every action to a SHA, audits all dependencies, and runs weekly. | FR-5, SR-5 |
-| AC-11 | Given a new project, when onboarded, then the manifest passes all Project manifest v1.0 validation rules; given a manifest with project maturity above a repo's, then the checker rejects it. | FR-7 |
+| AC-11 | Given a new project, when onboarded, then the manifest passes all Project manifest v1.1 validation rules; given a manifest with project maturity above a repo's, then the checker rejects it. | FR-7 |
 | AC-12 | Given a repo with no coverage tool at target Alpha, then an Architecture decision item is filed whose body has the S4.1 review headings. | FR-8 |
 | AC-13 | Given an onboarded repo with no changes, when the skill runs again, then no new item, branch or PR is created and the assessment shows zero gaps opened. Given one gap fixed, then it is listed as closed. | FR-11 |
 | AC-14 | Given the owner declines branch protection, then nothing is changed on GitHub and the step is listed as open. | FR-10 |
@@ -79,8 +79,8 @@ which gaps closed and which opened, without duplicating anything.
 
 ## 5. Constraints
 - Runs inside Claude Code, driven by the owner; the engine is not needed.
-- Uses the approved contracts unchanged: Inbox item v1.0, Role policy v1.0,
-  Project manifest v1.0.
+- Uses the approved contracts: Inbox item v1.0, Role policy v2.0,
+  Project manifest v1.1.
 - Works on Windows, macOS and Linux (Python 3.10+, git, optional `gh`).
 - No new external library (S4.1): the checker is standard-library Python.
 
@@ -125,7 +125,9 @@ which gaps closed and which opened, without duplicating anything.
 | SR-8 | The YAML/TOML/JSON readers in the checker fail closed: a file that can't be parsed is a reported gap, never a silent pass. | Gate 1 (S5.1) | Accepted |
 
 ## 10. Interface requirements
-Uses Inbox item v1.0, Role policy v1.0 and Project manifest v1.0 unchanged.
+Uses Inbox item v1.0, Role policy v2.0 and Project manifest v1.1 (both
+changed by the owner on 2026-11-10, H-0008, to keep all project config in
+one file).
 Adds one internal format, the assessment JSON, owned by the skill; it is
 not an inter-agent contract.
 
@@ -143,3 +145,4 @@ not an inter-agent contract.
 | 1 | 2026-11-10 | Draft, with Gate 1 security requirements | — |
 | 2 | 2026-11-10 | FR-13/AC-17 added for F-002's complexity preset; assumptions A-1 to A-6 approved | Owner, 2026-11-10 |
 | 3 | 2026-11-10 | Plugin distribution (A-1, FR-12, AC-20); test adoption and baseline feature (FR-14, FR-15, AC-18, AC-19) | Owner, 2026-11-10 (decision cards) |
+| 4 | 2026-11-10 | One project file: maturity level and role policy move into the manifest (FR-6, FR-7, AC-11; Role policy v2.0, Project manifest v1.1) | Owner, 2026-11-10 (decision card) |

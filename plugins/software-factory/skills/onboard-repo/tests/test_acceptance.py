@@ -793,7 +793,9 @@ def filled_manifest(complexity=None):
     for old, new in (("<project-name>", "demo-project"), ("<one line on what the project is>", "A demo"),
                      ("<tag or commit of the master factory>", "v0.3.0"), ("<repo-name>", "demo"),
                      ("<owner>/<repo>", "acme/demo"), ("<level>", "rapid-prototype"),
-                     ("<project-specific context every agent reads>", "Nothing special.")):
+                     ("<project-specific context every agent reads>", "Nothing special."),
+                     ('"<SOURCE_GLOBS>"', '"src/**"'), ('"<TEST_GLOBS>"', '"test/**"'),
+                     ("<BUILD_COMMANDS>", '"npm"'), ("<TEST_COMMANDS>", '"npm"'), ("<REGISTRIES>", '"registry.npmjs.org"')):
         text = text.replace(old, new)
     if complexity:
         text = text.replace("# complexity: <simple | moderate | complex>", f"complexity: {complexity}")
@@ -1330,15 +1332,17 @@ class EdgeCases(Base):
                            "--assessment-ref", "x.json", "--level", "rapid-prototype")
         self.assertTrue(any(c["category"] == "Security" for c in json.loads(out)["created"]))
 
-    def test_fr6_roles_template_covers_every_core_role_with_deny_on_policy(self):
-        text = read(os.path.join(TEMPLATES, "roles.yaml"))
-        self.assertRegex(text, r"(?m)^schema: role-policy/1\.0$")
+    def test_fr6_manifest_policy_covers_every_core_role_and_protects_change_controlled_files(self):
+        # Spec v4 (owner decision 2026-11-10): the role policy lives in the manifest's policy section.
+        data = fc.parse_yaml(filled_manifest())
+        roles = data["policy"]["roles"]
         for role in ("orchestrator", "requirements-analyst", "software-developer", "test-engineer",
                      "security-reviewer", "validation-judge"):
-            self.assertRegex(text, rf"(?m)^  {role}:$", role)
-        for role in ("requirements-analyst", "software-developer", "test-engineer", "orchestrator"):
-            block = re.search(rf"(?ms)^  {role}:\n(.*?)(?=^  \S|\Z)", text).group(1)
-            self.assertIn(".factory/policy/**", block, role)
+            self.assertIn(role, roles)
+        for role in ("requirements-analyst", "software-developer", "test-engineer"):
+            eff = fc.effective_policy(data, "demo")[role]
+            for path in ("CLAUDE.md", ".github/**", ".claude/**"):
+                self.assertIn(path, eff["write"]["deny"], role)
 
 
 # ---------------------------------------------------------------------------

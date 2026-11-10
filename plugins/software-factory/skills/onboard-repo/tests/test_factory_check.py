@@ -607,6 +607,62 @@ class TestAdoption(Base):
         self.assertIn("never writes or edits tests itself", text)
 
 
+class ManifestPolicy(Base):
+    """Owner decision 2026-11-10: the role policy lives in the manifest (Role policy v2.0, manifest v1.1)."""
+
+    CC = '["CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]'
+
+    def manifest(self, dev_deny=None, repo_policy=""):
+        roles = "".join(f"    {r}:\n      write:\n        allow: []\n" for r in fc.CORE_AGENTS if r != "software-developer")
+        dev_deny = dev_deny if dev_deny is not None else self.CC
+        return ("schema: factory-project/1.0\nname: p\nfactory:\n  version: v1\nrepos:\n"
+                "  - name: a\n    url: https://github.com/o/a\n    maturity: alpha\n" + repo_policy +
+                "maturity: alpha\npolicy:\n  roles:\n" + roles +
+                f"    software-developer:\n      write:\n        allow: [\"src/**\"]\n        deny: {dev_deny}\n"
+                "      commands:\n        allow: [\"npm\"]\n")
+
+    def errors(self, text):
+        return fc.validate_manifest(fc.parse_yaml(text))
+
+    def test_valid_policy(self):
+        self.assertEqual(self.errors(self.manifest()), [])
+
+    def test_template_policy_is_valid_once_filled(self):
+        text = read(os.path.join(SKILL, "templates", "factory-project.yaml"))
+        for a, b in (("<project-name>", "p"), ("<one line on what the project is>", "d"), ("<tag or commit of the master factory>", "v1"),
+                     ("<repo-name>", "a"), ("<owner>/<repo>", "o/a"), ("<level>", "alpha"), ("<project-specific context every agent reads>", "n"),
+                     ('"<SOURCE_GLOBS>"', '"src/**"'), ('"<TEST_GLOBS>"', '"test/**"'), ("<BUILD_COMMANDS>", '"npm"'),
+                     ("<TEST_COMMANDS>", '"npm"'), ("<REGISTRIES>", '"registry.npmjs.org"')):
+            text = text.replace(a, b)
+        self.assertEqual(self.errors(text), [])
+
+    def test_missing_core_role(self):
+        text = self.manifest().replace("    orchestrator:\n      write:\n        allow: []\n", "")
+        self.assertTrue(any("orchestrator is missing" in e for e in self.errors(text)))
+
+    def test_writer_must_deny_change_controlled_files(self):
+        errs = self.errors(self.manifest(dev_deny='["CLAUDE.md"]'))
+        self.assertTrue(any("software-developer" in e and ".github/**" in e for e in errs), errs)
+
+    def test_repo_override_cannot_drop_project_denies(self):
+        override = "    policy:\n      roles:\n        software-developer:\n          write:\n            allow: [\"lib/**\"]\n            deny: []\n"
+        data = fc.parse_yaml(self.manifest(repo_policy=override))
+        eff = fc.effective_policy(data, "a")["software-developer"]["write"]
+        self.assertEqual(eff["allow"], ["lib/**"])
+        self.assertIn(".github/**", eff["deny"])
+        self.assertEqual(fc.validate_manifest(data), [])
+
+    def test_repo_override_unknown_role_and_bad_keys(self):
+        override = "    policy:\n      roles:\n        stranger:\n          write:\n            allow: []\n"
+        self.assertTrue(any("not in the project policy" in e for e in self.errors(self.manifest(repo_policy=override))))
+        bad = self.manifest().replace("      commands:\n        allow: [\"npm\"]\n", "      sudo:\n        allow: [\"all\"]\n")
+        self.assertTrue(any("not a policy key" in e for e in self.errors(bad)))
+
+    def test_policy_is_optional(self):
+        text = self.manifest().split("policy:")[0]
+        self.assertEqual(self.errors(text), [])
+
+
 class Protection(unittest.TestCase):
     def test_states(self):
         self.assertEqual(fc._protection({"message": "Branch not protected"})[0], "missing")

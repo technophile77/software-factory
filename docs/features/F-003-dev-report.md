@@ -60,8 +60,7 @@ Tests in class `SecondReviewRegressions`; the test engineer's two failing accept
 
 ## Not done (needs the owner)
 
-- `templates/maturity.yaml` proposes a new file format (`repo-maturity/1.0`); no contract defines `.factory/maturity.yaml` yet (Interfaces).
-- `templates/roles.yaml` becomes the default role policy for onboarded repos; the master has no default file (Security).
+- The default `policy:` section in `templates/factory-project.yaml` becomes the default role policy for new projects (Security).
 - The CLAUDE.md section names which files are change-controlled in a managed repo (Product).
 
 ## Spec v3 changes (owner decisions, 2026-11-10)
@@ -70,3 +69,9 @@ Tests in class `SecondReviewRegressions`; the test engineer's two failing accept
 - **Test adoption.** The assessment has `test_inventory` (each test file and its type) and `baseline_request`; SKILL.md step 4 wires existing test commands into CI without editing tests, and new step 9 starts the baseline feature (engine `feature.start` after the owner's yes, else an open step). Tests: class `TestAdoption`.
 - **Re-runs.** A re-run reads the level from `maturity.yaml`, never regenerates `factory-ci.yml`, and only adds missing branch protection settings, never removing any.
 - The test engineer's `test_acceptance.py` located the master checkout by a fixed relative path; after the move it now walks up to the folder with `agents/` and `skills/`. No assertion changed.
+
+## Spec v4 changes (owner decision, 2026-11-10)
+
+- **One project file.** `templates/maturity.yaml` and `templates/roles.yaml` are gone. The level is recorded only in `factory-project.yaml`, and the role policy is its `policy:` section, with per-repo overrides in `repos[].policy` (Role policy v2.0, Project manifest v1.1, hygiene H-0008).
+- **Checker.** `validate-manifest` now also checks the policy: every core role present, only known roles, a repo override can't add a role, and every role that writes outside `.factory/` denies the change-controlled paths. `effective_policy` merges a repo's overrides (allow replaces, deny adds). Tests: class `ManifestPolicy`; the test engineer's FR-6 test now checks the manifest policy.
+- **SKILL.md.** Step 5 no longer writes level or policy files to `factory/state`; step 7 fills the policy placeholders; re-runs leave the manifest's level and policy alone.

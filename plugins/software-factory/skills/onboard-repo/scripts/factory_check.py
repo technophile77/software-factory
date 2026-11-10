@@ -1135,7 +1135,89 @@ def validate_manifest(data, master=None):
                 errors.append(f"standards.{k} path must stay inside the config repo")
     else:
         errors.append("standards must be a mapping")
+    errors += validate_policy(data, agents)
     return errors
+
+
+# Files no agent may write without an approved hygiene item (S6.3).
+CHANGE_CONTROLLED = ["CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]
+POLICY_KEYS = {"write": {"allow", "deny"}, "commands": {"allow"}, "network": {"allow"}}
+
+
+def _check_role(where, rule, errors):
+    if not isinstance(rule, dict):
+        errors.append(f"{where} must be a mapping")
+        return
+    for key, value in rule.items():
+        if key not in POLICY_KEYS:
+            errors.append(f"{where}.{key} is not a policy key (write, commands, network)")
+            continue
+        if not isinstance(value, dict):
+            errors.append(f"{where}.{key} must be a mapping")
+            continue
+        for sub, items in value.items():
+            if sub not in POLICY_KEYS[key]:
+                errors.append(f"{where}.{key}.{sub} is not allowed")
+            elif not isinstance(items, list) or not all(isinstance(i, str) and i for i in items):
+                errors.append(f"{where}.{key}.{sub} must be a list of strings")
+
+
+def effective_policy(data, repo_name):
+    """Project roles with one repo's overrides: its allow lists replace the project's, deny lists add up."""
+    roles = json.loads(json.dumps(((data.get("policy") or {}).get("roles")) or {}))
+    repo = next((r for r in data.get("repos") or [] if isinstance(r, dict) and r.get("name") == repo_name), {})
+    for role, rule in (((repo.get("policy") or {}).get("roles")) or {}).items():
+        base = roles.setdefault(role, {})
+        for key, value in (rule or {}).items():
+            target = base.setdefault(key, {})
+            if "allow" in value:
+                target["allow"] = list(value["allow"])
+            if "deny" in value:
+                target["deny"] = sorted(set(target.get("deny", [])) | set(value["deny"]))
+    return roles
+
+
+def validate_policy(data, agents):
+    errors = []
+    policy = data.get("policy")
+    if policy is None:
+        return errors
+    if not isinstance(policy, dict) or not isinstance(policy.get("roles"), dict):
+        return ["policy.roles must be a mapping of role names"]
+    custom = {a.get("name") for a in ((data.get("agents") or {}).get("custom") or []) if isinstance(a, dict)}
+    known = set(agents) | set(CORE_AGENTS) | custom
+    for role in CORE_AGENTS:
+        if role not in policy["roles"]:
+            errors.append(f"policy.roles.{role} is missing, so that agent could not run")
+    for role, rule in policy["roles"].items():
+        if role not in known:
+            errors.append(f"policy.roles.{role} is not a known agent")
+        _check_role(f"policy.roles.{role}", rule, errors)
+    for i, repo in enumerate(data.get("repos") or []):
+        if not isinstance(repo, dict) or repo.get("policy") is None:
+            continue
+        roles = repo["policy"].get("roles") if isinstance(repo["policy"], dict) else None
+        if not isinstance(roles, dict):
+            errors.append(f"repos[{i}].policy.roles must be a mapping")
+            continue
+        for role, rule in roles.items():
+            if role not in policy["roles"]:
+                errors.append(f"repos[{i}].policy.roles.{role} is not in the project policy")
+            _check_role(f"repos[{i}].policy.roles.{role}", rule, errors)
+    if errors:
+        return errors
+    # Any role that can write outside the factory's own records must be denied change-controlled files.
+    for repo in data.get("repos") or [None]:
+        name = repo.get("name") if isinstance(repo, dict) else None
+        for role, rule in effective_policy(data, name).items():
+            allow = (rule.get("write") or {}).get("allow") or []
+            deny = set((rule.get("write") or {}).get("deny") or [])
+            if any(not a.startswith(".factory/") for a in allow):
+                missing = [c for c in CHANGE_CONTROLLED if c not in deny]
+                if missing:
+                    where = f"repo {name}" if name else "the project"
+                    errors.append(f"policy for {role} in {where} must deny writes to {', '.join(missing)}")
+    return sorted(set(errors))
 
 
 # ---------------------------------------------------------------------------

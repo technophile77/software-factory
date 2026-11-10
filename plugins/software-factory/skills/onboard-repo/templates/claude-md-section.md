@@ -11,8 +11,8 @@ The factory's rules apply here as written in that version:
 - The owner decides requirements, architecture, interfaces, assumptions and
   security; agents prepare options and a recommendation, then ask.
 - Change-controlled files need an approved Configuration hygiene item for
-  every edit: this section, `.github/workflows/`, and everything on the
-  `factory/state` branch under `.factory/policy/`.
+  every edit: this section, `.claude/`, `.github/`, and the project
+  manifest (including its role policy) in the config repo.
 - Security criteria: the factory's `docs/security-standards.md`.
   Testing bars: `docs/testing-strategy.md`. Gate bars: `docs/maturity-levels.md`.
 - This repo's maturity level is recorded in the project manifest,
