@@ -22,6 +22,8 @@ ADR and a feature spec.
 6. The manifest records each repo's current maturity, but not the level the
    owner wants it to reach.
 7. Plan usage that resets on a schedule is lost if unused before the reset.
+8. Nothing says how a project is paid for: a subscription plan with usage
+   windows, or pay-per-token, and whether it may spill over into paid usage.
 
 ## What already limits the factory
 
@@ -107,6 +109,38 @@ master standards stays a hygiene item.
 Pay-as-you-go API billing doesn't reset, so this only applies to plan
 limits.
 
+### Q8. Billing mode and overflow (Product)
+
+**Recommended:** each project declares its billing mode under
+`settings.budget` in `factory-project.yaml` (master config gives the
+default):
+
+```yaml
+settings:
+  budget:
+    mode: subscription        # subscription | tokens
+    # subscription: a plan such as Claude Max. Limits are usage windows that
+    # reset; the look-ahead (Q3) plans against the time left in the window.
+    # tokens: pay per token (API). Limits are dollar caps; nothing resets.
+    caps: { daily_usd: 20, weekly_usd: 100, monthly_usd: 300 }   # tokens mode
+    overflow:
+      enabled: false          # off by default
+      source: credits         # credits (purchased usage) | api_key
+      max_usd: 50             # per month; required when enabled
+    use_before_reset: false   # Q7; subscription mode only
+```
+
+- **Overflow** lets work continue past the subscription limit by using
+  purchased credits or a pay-per-token API key, only when enabled, and never
+  beyond `max_usd`. When overflow is off, work pauses at the limit and
+  resumes when the window resets (Q2).
+- Overflow spending is reported in the extension, and the owner is notified
+  when 80% of `max_usd` is used.
+- Any API key is a secret: stored outside Git, never in the manifest or
+  logs (S3.1), and scoped to the factory (S8.2).
+- Turning overflow on or raising a cap is an owner change to the manifest.
+  Agents can't change it (S8.5).
+
 ## Security notes
 
 - Pause and resume are owner actions only. The control channel is local
@@ -118,7 +152,7 @@ limits.
 
 ## Recommendation
 
-A for Q1 to Q3, Q6 and Q7, and the recommended Q4 and Q5. Build it as one
+A for Q1 to Q3, Q6 and Q7, and the recommended Q4, Q5 and Q8. Build it as one
 feature (engine run control, authorization checks and budgets, plus the
 extension's Factory view). The spec interview starts after these decisions.
 Q5's onboarding change needs a matching amendment to F-003 (FR-13, FR-15:
