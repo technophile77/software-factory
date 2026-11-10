@@ -3,7 +3,7 @@
 - **Id:** F-005
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 3
+- **Spec version:** 4
 
 ## 1. Objective and business purpose
 The requirements analyst runs inside the engine, but the owner has no way to
@@ -128,7 +128,7 @@ open and the owner's to answer:
 | Id | Open question | Category | Status |
 |---|---|---|---|
 | OQ-1 | Should approved assumptions also go to the inbox? **Answered: no.** The engine-written, append-only interview transcript is the record of the owner's approval (SR-11). The analyst's AGENT.md must stop requiring an inbox item for interview-approved assumptions (hygiene change). | Product | Answered (owner, 2026-11-10) |
-| OQ-2 | Web reach. **Answered: any site.** Open: how hidden prompts in web pages are handled (Gate 1 #7 grades unmitigated open fetching Critical, which blocks at every level). | Security | Partly answered (owner, 2026-11-10) |
+| OQ-2 | Web reach and hidden prompts. **Answered:** any site; hidden content stripped, pages read by an isolated web reader, every address logged; the residual leak through search wording is an accepted risk (SR-6, SR-17). | Security | Answered (owner, 2026-11-10, decision card) |
 | OQ-3 | Escalation before F-006 exists? **Answered:** escalation is simply not available until F-006 is built. The analyst offers only its own more-information and deferral. | Product | Answered (owner, 2026-11-10) |
 | OQ-4 | Analyst permission widenings in section 10 (web tools, shared skills, reads outside its worktree, advisor escalation once F-006 exists). **Answered: all approved.** | Security | Answered (owner, 2026-11-10) |
 
@@ -140,7 +140,8 @@ open and the owner's to answer:
 | SR-3 | The skill never answers, picks an option, approves an assumption, or rewrites text on the owner's behalf. Every reply is the owner's own words from that session. | Owner, 2026-11-10 | Proposed |
 | SR-4 | The transcript stays on `factory/state`. The skill and script write nothing of their own to disk and log no answer text (Claude Code's own session history is outside the skill's control and is noted to the owner). Before each `factory/state` commit the engine runs the secrets scan on transcript text and blocks the commit on a hit, filing a Security item; the skill tells the owner not to paste secrets. | Analyst; Gate 1 #6 (S3.1–S3.3) | Proposed |
 | SR-5 | **Accepted risk (owner, 2026-11-10):** at Rapid prototype, agents run as the owner's OS user and could reach the socket and answer in the owner's place. Role policy will deny every role reads of `engine.json` (SR-14), and the engine refuses connections from processes it started, but these are guard rails, not a boundary. Must be fixed before Alpha by running agents as a separate OS user or sandbox (F-003 Gate 2 item R2-1), or by a per-session presence check (Touch ID, Windows Hello, hardware key). | Owner decision card | Accepted risk |
-| SR-6 | The analyst's web access is read-only, sends no project content or secrets in queries beyond the question's topic, records every outgoing URL and query in the transcript, and needs a Security decision changing its role policy network rule. Its reach (any site or an allow list) is OQ-2; Gate 1 #7 recommends an allow list and grades open fetching Critical. | Analyst; Gate 1 #7 (S6.1, S3.2, S8.1) | Owner decision |
+| SR-6 | The analyst may reach any site (owner, 2026-11-10), read-only. It sends only search terms and addresses, never pages of project content, and every outgoing address and search is recorded in the transcript. It never reads a fetched page itself; it gets the isolated reader's summary (SR-17), marked untrusted. **Accepted risk (owner, 2026-11-10):** injected text could still steer the analyst to put project details into a search; the transcript log makes that visible afterwards. | Analyst; Gate 1 #7 (S6.1, S3.2, S8.1); owner decision card | Accepted risk |
+| SR-17 | Web pages are fetched and read by an isolated web reader: no project files, no tools besides fetching the one address it was given, and no network beyond it. Before the reader sees a page, the engine strips HTML comments, script and style, hidden and invisible elements, zero-width and bidi characters, and metadata. The reader returns a plain-text summary with its source address; the analyst and the skill treat it as data (SR-2). | Owner decision card, 2026-11-10 (S6.1, S8.1) | Proposed |
 | SR-7 | Windows: the script accepts only local `\\.\pipe\` paths, opens with `SECURITY_SQOS_PRESENT \| SECURITY_IDENTIFICATION`, and checks the server's SID is the owner's. The engine creates the pipe with `FILE_FLAG_FIRST_PIPE_INSTANCE`, an unguessable name, and an owner-only ACL. | Gate 1 #2 (S1.4, S8.4, S2.3) | Proposed |
 | SR-8 | The engine creates the Unix socket with mode 0600 in an owner-only directory and accepts only peers with the owner's uid (SID on Windows). This is part of Engine control channel v1.1. | Gate 1 #3 (S2.1–S2.3) | Proposed |
 | SR-9 | No owner text, engine text or id is ever placed on a command line. The skill passes requests to the script as JSON on stdin; feature and item ids must match `^[A-Za-z0-9_-]{1,64}$` or the script stops. | Gate 1 #4 (S1.3, S1.2) | Proposed |
@@ -181,7 +182,7 @@ open and the owner's to answer:
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit (none)
-- [ ] Blocking decisions resolved (OQ-2 hidden-prompt handling; channel v1.1 and role policy change need recording)
+- [ ] Blocking decisions resolved (contract changes to record: Engine control channel v1.1, Role policy for the analyst, the web reader and the `engine.json` deny)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -189,3 +190,4 @@ open and the owner's to answer:
 | 1 | 2026-11-10 | Draft from the owner interview (scope interview-only, new and existing features, answer / more information / defer, assumptions approved in the interview, web and shared skills for context, advisor as F-006, deferred list, accepted socket risk) | — |
 | 2 | 2026-11-10 | Security Gate 1 findings folded in (SR-1, SR-4, SR-6 tightened; SR-7 to SR-16 added; OQ-4 added; channel v1.1 gains access control, reply ids and revisions) | — |
 | 3 | 2026-11-10 | Owner answers: OQ-1 transcript is the record, OQ-3 no escalation before F-006, OQ-4 all widenings approved, OQ-2 any site | Owner, 2026-11-10 (thread) |
+| 4 | 2026-11-10 | OQ-2: web via isolated reader with stripping and logging, residual risk accepted (SR-6, SR-17) | Owner, 2026-11-10 (decision card) |
