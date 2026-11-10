@@ -1,9 +1,9 @@
 # Feature: Model and effort tuning per agent
 
 - **Id:** F-002
-- **Status:** Draft (requirements interview; A-11 and A-12 await the owner)
+- **Status:** Draft (all assumptions approved; Gate 1 security review next)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 9
+- **Spec version:** 10
 
 ## 1. Objective and business purpose
 Run each agent on the cheapest model and lowest effort level that still does
@@ -154,8 +154,8 @@ agent up to a stronger model or higher effort is always the owner's call.
 | A-8 | **Formats (Interfaces).** Additive: Project manifest v1.1, Agent report v1.1, new Run review v1.0, Tuning metrics v1.0 and Calibration result v1.0 (§ 10). | Owner, 2026-11-10 | Approved |
 | A-9 | **How outputs are compared (Product).** use an objective check wherever the role has one: developer, the feature's final acceptance tests pass on the new code; test engineer, the new suite passes on the accepted code and fails on the bugs found during that run; security reviewer, every finding in the accepted report is found at the same severity; judge, same verdict and every Blocking finding; orchestrator, same root cause and next step. For the analyst, whose output is prose, a grader at a fixed top rung scores the new spec against the accepted one on a rubric (every requirement, criterion and assumption covered); its cost counts toward calibration. | Owner, 2026-11-10 (PR #8 review) | Approved |
 | A-10 | **When transcripts replace master tasks (Product).** per role, once at least 5 transcripts are selected, and at least one of them is a run where that role's first attempt failed, so the set tests the hard cases too. Until then, master tasks at the derived tier fill the gap. | Owner, 2026-11-10 (PR #8 review) | Approved |
-| A-11 | **Project evaluator agent (Product + Architecture).** A seventh agent role, `project-evaluator`. (a) It reviews the completed project spec and proposes the complexity preset (FR-19). (b) It also rates the complexity of each feature before stage 5 and predicts the rung each role will need (FR-20). Its predictions are scored against the rungs the run review shows were actually needed. (c) Once it proves reliable (A-12), the orchestrator may use its advice per task, but only to run a role on a cheaper rung than the approved one; going above the approved rung still needs the owner. It is advisory throughout and runs on its own rung, calibrated on specs and features of known complexity. Adding a role amends spec § 2 (six agents) and needs `agents/project-evaluator/AGENT.md` and a role policy entry, each through a hygiene item. | Owner, 2026-11-10 (PR #8 review: per-task extension); scope to confirm | Pending |
-| A-12 | **When the evaluator counts as reliable (Product).** ★ Recommended: its predicted rung matches the rung actually needed, or errs one rung high, in at least 80% of the last 20 features, and never predicts lower than needed for the security reviewer or validation judge. Below that bar its advice is recorded but not used; it is re-checked in every run review. | Owner | Pending |
+| A-11 | **Project evaluator agent (Product + Architecture).** A seventh agent role, `project-evaluator`. (a) It reviews the completed project spec and proposes the complexity preset (FR-19). (b) It also rates the complexity of each feature before stage 5 and predicts the rung each role will need (FR-20). Its predictions are scored against the rungs the run review shows were actually needed. (c) Once it proves reliable (A-12), the orchestrator may use its advice per task, but only to run a role on a cheaper rung than the approved one; going above the approved rung still needs the owner. It is advisory throughout and runs on its own rung, calibrated on specs and features of known complexity. Adding a role amends spec § 2 (six agents) and needs `agents/project-evaluator/AGENT.md` and a role policy entry, each through a hygiene item. | Owner, 2026-11-10 (PR #8 review; decision card) | Approved |
+| A-12 | **When the evaluator counts as reliable (Product).** Its predicted rung matches the rung actually needed, or errs one rung high, in at least 90% of the last 30 features, and it never predicts lower than needed for the security reviewer or validation judge. Below that bar its advice is recorded but not used; it is re-checked in every run review. | Owner, 2026-11-10 (decision card: stricter bar) | Approved |
 
 ### Master calibration tasks per role (shape, not content)
 | Role | Task | Automatic check |
@@ -177,7 +177,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | SR-5 | Before a transcript is selected, it is scanned for secrets and personal data; a transcript that has any is not selected. | Analyst (S2) | Proposed |
 | SR-6 | Transcript lists and master tasks are untrusted input and are validated before use; a replay's initial context is the recorded one, unchanged. | Analyst (S1) | Proposed |
 
-Gate 1 security review follows once A-11 and A-12 are decided.
+Gate 1 security review is next.
 
 ## 10. Interface requirements
 All changes are additive (A-8):
@@ -204,8 +204,8 @@ All changes are additive (A-8):
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit and approved (A-11, A-12 pending)
-- [ ] Blocking decisions resolved (those two; Gate 1 not yet run)
+- [x] Assumptions explicit and approved (A-1 to A-12)
+- [ ] Blocking decisions resolved (Gate 1 not yet run)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -219,3 +219,4 @@ All changes are additive (A-8):
 | 7 | 2026-11-10 | A-9 approved | Owner, 2026-11-10 |
 | 8 | 2026-11-10 | A-10 approved | Owner, 2026-11-10 |
 | 9 | 2026-11-10 | Evaluator extended to per-task complexity advice for the orchestrator once reliable (A-11 b, c; FR-20, FR-21; A-12 added) | — |
+| 10 | 2026-11-10 | A-11 approved; A-12 approved with the stricter bar (90% of last 30) | Owner, 2026-11-10 |
