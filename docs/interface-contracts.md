@@ -178,11 +178,14 @@ Each role has five sections: `tools` (the agent's built-in tools: `Read`,
 `Grep`, `Glob`, `Edit`, `Write`, `Bash`, `WebFetch`, `WebSearch`), `read`,
 `write`, `commands` (programs `Bash` may run) and `network`. Every role must
 list at least one tool and one read glob, and must deny reading secret files:
-`**/.env`, `**/.env.*`, `**/.envrc`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`, `**/*.jks`, `**/*.keystore`, `**/id_rsa*`, `**/id_dsa*`, `**/id_ecdsa*`, `**/id_ed25519*`, `**/.npmrc`, `**/.pypirc`, `**/.netrc`, `**/.git-credentials`, `**/*.tfvars`, `**/credentials*.json`.
+`**/.env`, `**/.env.*`, `**/.envrc`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`, `**/*.jks`, `**/*.keystore`, `**/id_rsa*`, `**/id_dsa*`, `**/id_ecdsa*`, `**/id_ed25519*`, `**/.npmrc`, `**/.pypirc`, `**/.netrc`, `**/.git-credentials`, `**/*.tfvars`, `**/credentials*.json`, `**/*.tfstate`, `**/*.tfstate.*`, `**/.aws/credentials`, `**/.docker/config.json`, `**/*.ppk`, `**/kubeconfig`, `**/.kube/config`.
 Every core role must be present, and every role that may write outside
-`.factory/` must deny the change-controlled paths: `CLAUDE.md`, `**/CLAUDE.md`, `CLAUDE.local.md`, `**/CLAUDE.local.md`, `.claude/**`, `.mcp.json`, `.github/**`, `.gitignore`, `.gitattributes`, `.husky/**`, `.pre-commit-config.yaml`, `lefthook.yml`, `osv-scanner.toml`, `agents/**`, `skills/**`, `plugins/**`, `.claude-plugin/**`, `workflows/**`. Globs are relative to the worktree: no absolute paths, `\`, or segments
-that can match `..`. `commands` may not name a shell or interpreter, since
-arguments are not restricted. A repo override may not add tools.
+`.factory/` must deny the change-controlled paths: `CLAUDE.md`, `**/CLAUDE.md`, `CLAUDE.local.md`, `**/CLAUDE.local.md`, `.claude/**`, `.mcp.json`, `.github/**`, `.gitignore`, `.gitattributes`, `.husky/**`, `.pre-commit-config.yaml`, `lefthook.yml`, `osv-scanner.toml`, `agents/**`, `skills/**`, `plugins/**`, `.claude-plugin/**`, `workflows/**`, `**/.claude/**`, `.envrc`, `**/.envrc`, `.git`, `.git/**`, `.gitmodules`, `.vscode/**`, `.devcontainer/**`. Globs are relative to the worktree: no absolute paths, `\`, or segments
+that can match `..`; brace expansion, negated classes (`[!`, `[^`) and
+extglobs are refused because glob dialects read them differently.
+`commands` may not name a shell, interpreter or command wrapper. That is a
+guard rail, not the boundary: build and test tools run repo code by design,
+so arguments are not restricted. A repo override may not add tools.
 
 ```yaml
 policy:
