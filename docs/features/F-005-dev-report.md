@@ -13,7 +13,7 @@
 | `plugins/software-factory/skills/spec-interview/SKILL.md` | New skill: relay rules (SR-2, SR-3, SR-9, SR-10), the client call pattern, keeping the session token between calls, new-feature and existing-feature flows, takeover only after the owner's yes, the reply loop, waiting on research with `wait_s`, retry after a dropped connection, closing the session |
 | `plugins/software-factory/skills/spec-interview/scripts/interview_client.py` | New client, Python 3.10+ standard library only. Subcommands `status`, `start`, `list`, `open`, `next`, `reply`, `state`, `close`; request as one JSON object on stdin, result as one JSON object on stdout. One connection per run; the session is the engine's token |
 | `plugins/software-factory/skills/spec-interview/tests/fake_engine.py` | Fake engine: channel v1.1 with H-0025 on a Unix socket: sessions by token with the per-feature lock and takeover, revisions, the five error codes, reply ids recorded once, each deferred item once per session, `interview.next` waiting up to `wait_s` for research, and switches to drop, stall, interleave notifications or send oversized or broken answers |
-| `plugins/software-factory/skills/spec-interview/tests/test_interview_client.py` | 78 developer tests (after fix round 2) |
+| `plugins/software-factory/skills/spec-interview/tests/test_interview_client.py` | 86 developer tests (after fix round 3) |
 | `plugins/software-factory/skills/onboard-repo/scripts/factory_check.py` | Fix round 1: `network.allow` host validation; project-level policy checked on its own |
 | `plugins/software-factory/.claude-plugin/plugin.json` | Version 0.2.0; description mentions the interview |
 | `.claude-plugin/marketplace.json` | Plugin description mentions the interview |
@@ -46,9 +46,9 @@ AC-7 and AC-8 (readiness gate and the spec's assumptions table) are engine and a
 
 ## Tests run
 
-After fix round 2, on each of `python3.11`, `python3.12` and `python3.13`:
+After fix round 3, on each of `python3.11`, `python3.12` and `python3.13`:
 
-- spec-interview, both suites (`python3 -m unittest discover -s plugins/software-factory/skills/spec-interview/tests`): 220 run, all pass (78 developer tests; the rest are the test engineer's as of e5064bc).
+- spec-interview, both suites: 228 run, all pass (86 developer tests; the rest are the test engineer's). The full run found one SKILL.md wording check (`Retest1SkillText.test_sr2_show_engine_text_only_through_display`) failing after the m1 rewording. SKILL.md was corrected, and the SKILL.md text tests (`Retest1SkillText`, `AC12SkillText`, `SkillText`) were re-run and pass. No code changed after the full run.
 - onboard-repo, both suites: 266 run, 265 pass, 1 skipped (Python 3.10 not installed).
 - `python3 scripts/check_docs.py`: passes.
 
@@ -88,6 +88,20 @@ Tests are in `test_interview_client.py` class `FixRound2`.
 
 **Known Lows kept open** (orchestrator's decision): R1-3 (a quote shorter than 8 characters, wrapped differently, can still pass the redaction), #3 (raw cleaned engine fields stay in the output because the independent tests require them; SKILL.md tells the session to show only `display`), and #9 (Windows server check by pipe PID, no Windows `engine.json` owner check, Windows code never run). Info notes still open: IP literals and single-label host names pass the `network.allow` check; the contract should say the engine writes the pid of the process that listens on the socket, since the client refuses any other pid.
 
+## Fix round 3 (validation report)
+
+Input: `F-005-validation.md` (b4b5184). The contract, spec and docs items (M1, M2, the contract half of M3, M4, m11–m14) are the orchestrator's and were not touched. Tests are in `test_interview_client.py` classes `FixRound3` and `PipeTransport`.
+
+| Item | Fix | Test |
+|---|---|---|
+| M5: the Windows pipe transport would deadlock | Rewritten without the reader thread. Windows runs only one I/O at a time on a synchronous handle, so a thread blocked in `ReadFile` stalled every write. Now everything runs on one thread: `recv` calls `PeekNamedPipe` and reads only the bytes already waiting, polling every 20 ms until the deadline. A broken pipe reads as a closed connection. The Win32 calls (`CreateFileW` with `SECURITY_SQOS_PRESENT \| SECURITY_IDENTIFICATION`, the server SID check, `PeekNamedPipe`, `ReadFile`, `WriteFile`, `CloseHandle`) sit in a separate class, `_Win32Pipe`, so the transport logic can be tested with a stand-in | `PipeTransport` (6): two calls in one run, an answer split across reads, a silent engine timing out without blocking, a broken pipe, a server that isn't the owner (refused, handle closed, nothing written), open failure and bad names. The stand-in fails the test if a read is attempted with nothing waiting |
+| M3 (code part) | The owner-only check stays. A group- or world-writable `.factory` or `engine.json` now gets its own code, `group_writable`, and a message that says exactly that and gives the fix (`chmod go-w <path>`). A file or folder owned by someone else gets `not_owner`. The `.factory` check now runs after the worktree check, so a real `factory/state` worktree is never described as the wrong worktree. SKILL.md step 1 says the owner runs the `chmod` | `test_m3_*`, `FixRound1.test_gate2_8_*` (updated to the new code) |
+| m1: misleading text about the error display | The `ERROR_NAMES` comment and SKILL.md's Errors rule now match the code: the skill decides from `error.name` or `error.code`, and the owner sees only `display`. For a channel error that is the client's sentence for the code plus the engine's message fenced; for a client error it is the client's message | text |
+| m2: over-long SKILL.md lines | Rewrapped | — |
+| m8 | U+16FE4 KHITAN SMALL SCRIPT FILLER added to the invisible-character list. `clean()` is still a deny list for marks in visible categories. Dropping every `Mn` with combining class 0 would also strip real vowel signs (Devanagari, for example), so that rule wasn't used | `FixRound1.test_gate2_1_*` (list unchanged otherwise) |
+
+**Windows has still never run.** `_Win32Pipe` (the ctypes calls) has not been executed anywhere. Only the transport logic above it is tested, with the Win32 calls replaced. Before any Windows owner uses the skill, someone must run `SR07` and a status/reply round trip on Windows and record that as SR-7's test. Gate 2 #9 is unchanged: the server is identified by the pipe's server pid, and `engine.json` gets no owner check on Windows.
+
 ## Spec deviations
 
 None.
@@ -109,7 +123,7 @@ The owner approved H-0025 (2026-11-10), amending Engine control channel v1.1. Th
 
 ## Not done or not tested
 
-- **Windows (SR-7).** `_PipeTransport` is written but never run: no Windows machine here. Only the pipe-name check is tested. It is isolated in one class; Gate 2 and the test engineer should treat it as untested.
+- **Windows (SR-7).** Never run: there is no Windows machine here. After fix round 3 the transport logic (`_PipeTransport`) is tested with the Win32 calls replaced; the ctypes layer (`_Win32Pipe`) is untested. Gate 2 and the test engineer should treat Windows as unrun.
 - **macOS peer check.** The `LOCAL_PEERCRED` path is written from the xucred layout but only Linux was run.
 - **End to end.** There is no engine (ADR 0001); everything ran against the fake engine.
 - **AskUserQuestion behavior** (picker limits, free text) is described in SKILL.md and was not exercised; the skill text itself is the owner-facing part to review.

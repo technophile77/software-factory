@@ -690,7 +690,7 @@ class FixRound1(Base):
         path = os.path.join(self.repo, ".factory", "engine.json")
         os.chmod(path, 0o666)
         code, out = self.call("status")
-        self.assertEqual((code, out["error"]["code"]), (2, "bad_engine_file"))
+        self.assertEqual((code, out["error"]["code"]), (2, "group_writable"))
         os.chmod(path, 0o644)
         fifo = os.path.join(self.repo, "fifo")
         os.mkfifo(fifo)
@@ -700,8 +700,7 @@ class FixRound1(Base):
     def test_gate2_8_factory_folder_others_can_write(self):
         os.chmod(os.path.join(self.repo, ".factory"), 0o777)
         code, out = self.call("status")
-        self.assertEqual(code, 2)
-        self.assertIn("others can write", out["error"]["message"])
+        self.assertEqual((code, out["error"]["code"]), (2, "group_writable"))
 
     def test_gate2_8_git_error_is_not_read_as_untracked(self):
         real = ic.git_rc
@@ -750,6 +749,140 @@ class FixRound2(Base):
         with mock.patch.object(ic, "TIMEOUT", 1.0):
             code, out = self.call("status")
         self.assertIn("within 1 second.", out["error"]["message"])
+
+
+class FixRound3(Base):
+    """Validation M3 (plain refusal for umask 002) and M5 (pipe transport)."""
+
+    def test_m3_umask_002_modes_get_their_own_error_and_the_fix(self):
+        factory = os.path.join(self.repo, ".factory")
+        os.chmod(factory, 0o775)
+        code, out = self.call("status")
+        self.assertEqual((code, out["error"]["code"]), (2, "group_writable"))
+        self.assertIn(f"chmod go-w {factory}", out["display"])
+        self.assertNotIn("factory/state worktree", out["display"])
+        os.chmod(factory, 0o755)
+        engine_json = os.path.join(factory, "engine.json")
+        os.chmod(engine_json, 0o664)
+        code, out = self.call("status")
+        self.assertEqual(out["error"]["code"], "group_writable")
+        self.assertIn(f"chmod go-w {engine_json}", out["display"])
+        os.chmod(engine_json, 0o644)
+        self.assertEqual(self.call("status")[0], 0)
+        self.assertEqual(self.engine.methods(), ["engine.status"])
+
+    def test_m3_foreign_owner_still_refused(self):
+        with mock.patch.object(ic, "_euid", return_value=os.geteuid() + 1):
+            code, out = self.call("status")
+        self.assertEqual((code, out["error"]["code"]), (2, "not_owner"))
+
+
+class FakePipeApi:
+    """Stands in for _Win32Pipe. Like a synchronous Windows pipe handle, it
+    allows one I/O at a time: a read that would block while nothing is
+    waiting fails the test, which is the M5 deadlock."""
+
+    def __init__(self, engine=None, owner=True, opens=True):
+        self.engine, self.owner, self.opens = engine or (lambda line: None), owner, opens
+        self.inbox, self.broken, self.closed, self.written = b"", False, False, []
+
+    def open(self, path):
+        return 7 if self.opens else None
+
+    def server_is_owner(self, handle):
+        return self.owner
+
+    def available(self, handle):
+        return None if self.broken and not self.inbox else len(self.inbox)
+
+    def read(self, handle, n):
+        assert self.inbox, "ReadFile with nothing waiting would block a synchronous handle"
+        chunk, self.inbox = self.inbox[:n], self.inbox[n:]
+        return chunk
+
+    def write(self, handle, data):
+        if self.broken:
+            return None
+        self.written.append(data)
+        answer = self.engine(json.loads(data))
+        if answer is not None:
+            self.inbox += json.dumps(answer).encode() + b"\n"
+        return len(data)
+
+    def close(self, handle):
+        self.closed = True
+
+
+class PipeTransport(unittest.TestCase):
+    """M5: the Windows transport's logic with the Win32 calls replaced. The
+    real _Win32Pipe has never run: there is no Windows machine here."""
+
+    PIPE = "\\\\.\\pipe\\factory-3f2a9c"
+
+    @staticmethod
+    def echo(msg):
+        return {"jsonrpc": "2.0", "id": msg["id"], "result": {"method": msg["method"]}}
+
+    def test_two_calls_in_one_run_do_not_deadlock(self):
+        api = FakePipeApi(self.echo)
+        ch = ic.Channel(ic._PipeTransport(self.PIPE, api=api))
+        self.assertEqual(ch.call("interview.state", {})["method"], "interview.state")
+        self.assertEqual(ch.call("interview.reply", {})["method"], "interview.reply")
+        self.assertEqual(len(api.written), 2)
+
+    def test_reply_split_across_reads(self):
+        api = FakePipeApi()
+        t = ic._PipeTransport(self.PIPE, api=api)
+        api.inbox = b'{"jsonrpc":"2.0","id":1,' 
+        ch = ic.Channel(t)
+        ch.next_id = 1
+
+        def finish(msg):
+            api.inbox += b'"result":{"ok":true}}\n'
+        api.engine = finish
+        self.assertEqual(ch.call("engine.status"), {"ok": True})
+
+    def test_silent_engine_times_out_without_blocking(self):
+        api = FakePipeApi()
+        with mock.patch.object(ic, "TIMEOUT", 0.2):
+            ch = ic.Channel(ic._PipeTransport(self.PIPE, api=api))
+            start = time.monotonic()
+            with self.assertRaises(ic.ChannelError) as e:
+                ch.call("engine.status")
+        self.assertEqual(e.exception.code, "timeout")
+        self.assertLess(time.monotonic() - start, 2)
+
+    def test_broken_pipe_is_a_lost_connection(self):
+        api = FakePipeApi()
+        ch = ic.Channel(ic._PipeTransport(self.PIPE, api=api))
+        api.broken = True
+        with self.assertRaises(ic.ChannelError) as e:
+            ch.call("engine.status")
+        self.assertEqual(e.exception.code, "connection_lost")
+        api.broken = False
+
+        def drop(msg):
+            api.broken = True
+        api.engine = drop
+        with self.assertRaises(ic.ChannelError) as e:
+            ch.call("engine.status")
+        self.assertEqual((e.exception.code, e.exception.sent), ("connection_lost", True))
+
+    def test_server_not_the_owner_is_refused_and_closed(self):
+        api = FakePipeApi(owner=False)
+        with self.assertRaises(ic.Refused) as e:
+            ic._PipeTransport(self.PIPE, api=api)
+        self.assertEqual(e.exception.code, "peer_not_owner")
+        self.assertTrue(api.closed)
+        self.assertEqual(api.written, [])
+
+    def test_open_failure_and_bad_names(self):
+        with self.assertRaises(ic.ChannelError) as e:
+            ic._PipeTransport(self.PIPE, api=FakePipeApi(opens=False))
+        self.assertEqual(e.exception.code, "engine_unreachable")
+        for bad in ("\\\\host\\pipe\\x", "\\\\.\\pipe\\x\n"):
+            with self.assertRaises(ic.Refused):
+                ic._PipeTransport(bad, api=FakePipeApi())
 
 
 class SkillText(unittest.TestCase):

@@ -33,14 +33,12 @@ from __future__ import annotations
 
 import json
 import os
-import queue
 import re
 import socket
 import stat
 import struct
 import subprocess
 import sys
-import threading
 import time
 import unicodedata
 import uuid
@@ -63,7 +61,8 @@ RUN_LIMIT = 150.0
 # Left over after the engine's wait, for the answer to arrive.
 WAIT_MARGIN = 15
 MAX_WAIT = 600                     # the engine's own cap on wait_s
-# Channel v1.1 error codes; the skill acts on the name, the owner sees both.
+# Channel v1.1 error codes. The skill acts on the name; the owner sees only
+# `display`, which has the client's sentence for the code instead.
 ERROR_NAMES = {-32001: "busy", -32002: "stale", -32003: "unknown", -32004: "session_expired",
                -32005: "kind_not_allowed"}
 # What the owner is told, in the client's words; the engine's own message is
@@ -123,7 +122,7 @@ _DROP_CATEGORIES = {"Cc", "Cf", "Co", "Cn", "Cs", "Zl", "Zp"}
 # Invisible characters in visible categories. Variation selectors can encode
 # arbitrary bytes the owner never sees but the model reads (Gate 2 #1).
 _INVISIBLE = re.compile("[\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180d\u180f\u2800\u3164\uffa0"
-                        "\ufe00-\ufe0f\U000e0100-\U000e01ef]")
+                        "\ufe00-\ufe0f\U00016fe4\U000e0100-\U000e01ef]")
 
 
 def clean(text, single_line=False):
@@ -210,15 +209,13 @@ def find_engine_file(cwd):
         raise Refused("not_state_worktree", f"{fail}; .factory is a symbolic link.")
     if not os.path.isdir(factory):
         raise Refused("not_state_worktree", f"{fail}; .factory does not exist. Is the repo onboarded?")
-    if os.name != "nt":
-        fst = os.lstat(factory)
-        # Someone else who can write here could swap engine.json after the checks.
-        if fst.st_uid != _euid() or fst.st_mode & 0o022:
-            raise Refused("not_state_worktree", f"{fail}; .factory is not owned by you or others can write to it.")
     real = os.path.realpath(factory)
     state = [e for e in entries[1:] if e.get("branch") == STATE_BRANCH]
     if not any(os.path.realpath(e["worktree"]) == real for e in state):
         raise Refused("not_state_worktree", f"{fail}; .factory is not that worktree.")
+    if os.name != "nt":
+        # Someone else who can write here could swap engine.json after the checks.
+        _require_owner_only(os.lstat(factory), factory, ".factory")
     path = os.path.join(factory, "engine.json")
     try:
         st = os.lstat(path)
@@ -240,6 +237,16 @@ def find_engine_file(cwd):
     return path
 
 
+def _require_owner_only(st, path, name):
+    if st.st_uid != _euid():
+        raise Refused("not_owner", f"{name} is not owned by you, so the engine address in it can't be trusted.")
+    if st.st_mode & 0o022:
+        # Common with umask 002, so the owner gets the cause and the fix, not
+        # a generic "not the factory/state worktree" (validation M3).
+        raise Refused("group_writable", f"{name} can be written by your group or other users, so the engine "
+                      f"address in it can't be trusted. Run `chmod go-w {path}` and try again.")
+
+
 def read_engine_address(path):
     """(channel path, engine pid). The checks run on the opened descriptor, so
     a file swapped in after find_engine_file's checks is caught too; with
@@ -253,8 +260,8 @@ def read_engine_address(path):
         st = os.fstat(f.fileno())
         if not stat.S_ISREG(st.st_mode) or st.st_size > MAX_ENGINE_JSON:
             raise Refused("bad_engine_file", "engine.json is not a small regular file.")
-        if os.name != "nt" and (st.st_uid != _euid() or st.st_mode & 0o022):
-            raise Refused("bad_engine_file", "engine.json is not owned by you or others can write to it.")
+        if os.name != "nt":
+            _require_owner_only(st, path, "engine.json")
         try:
             raw = f.read(MAX_ENGINE_JSON + 1)
             data = json.loads(raw.decode("utf-8"))
@@ -374,19 +381,18 @@ class _SocketTransport:
         self.sock.close()
 
 
-class _PipeTransport:
-    """Windows named pipe (SR-7). Not exercised by the tests, which run on
-    Unix; it is kept to the checks the spec names and nothing else."""
+class _Win32Pipe:
+    """The few Win32 calls the pipe transport needs, through ctypes. Kept
+    apart so the transport's logic can be tested with a stand-in on Unix;
+    this class itself has never run (no Windows machine)."""
 
-    def __init__(self, path):
+    def __init__(self):
         import ctypes
-        import msvcrt
         from ctypes import wintypes
 
-        if not PIPE_RE.fullmatch(path):
-            raise Refused("unsafe_pipe", "The engine address is not a local \\\\.\\pipe\\ name.")
-        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        adv = ctypes.WinDLL("advapi32", use_last_error=True)
+        self.ctypes, self.wt = ctypes, wintypes
+        k32 = self.k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        adv = self.adv = ctypes.WinDLL("advapi32", use_last_error=True)
         k32.CreateFileW.restype = wintypes.HANDLE
         k32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
                                     wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
@@ -395,79 +401,123 @@ class _PipeTransport:
         k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
         k32.GetCurrentProcess.restype = wintypes.HANDLE
         k32.CloseHandle.argtypes = [wintypes.HANDLE]
+        k32.PeekNamedPipe.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p,
+                                      ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
+        k32.ReadFile.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+                                 ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
+        k32.WriteFile.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+                                  ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
         adv.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
         adv.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
                                             ctypes.POINTER(wintypes.DWORD)]
         adv.EqualSid.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
 
+    def open(self, path):
         # Identification level stops a squatting server from impersonating
-        # the owner with the owner's own handle.
+        # the owner with the owner's own handle (SR-7).
         generic_rw, open_existing = 0xC0000000, 3
         sqos_identification = 0x00100000 | 0x00010000
-        handle = k32.CreateFileW(path, generic_rw, 0, None, open_existing, sqos_identification, None)
-        if handle in (None, wintypes.HANDLE(-1).value):
-            raise ChannelError("engine_unreachable", "The engine isn't running or can't be reached.")
+        handle = self.k32.CreateFileW(path, generic_rw, 0, None, open_existing, sqos_identification, None)
+        return None if handle in (None, self.wt.HANDLE(-1).value) else handle
 
-        def token_user(process):
-            token = wintypes.HANDLE()
-            if not adv.OpenProcessToken(process, 0x0008, ctypes.byref(token)):
+    def _token_user(self, process):
+        ctypes, wt = self.ctypes, self.wt
+        token = wt.HANDLE()
+        if not self.adv.OpenProcessToken(process, 0x0008, ctypes.byref(token)):
+            return None
+        try:
+            size = wt.DWORD()
+            self.adv.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
+            buf = ctypes.create_string_buffer(size.value)
+            if not self.adv.GetTokenInformation(token, 1, buf, size, ctypes.byref(size)):
                 return None
-            try:
-                size = wintypes.DWORD()
-                adv.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
-                buf = ctypes.create_string_buffer(size.value)
-                if not adv.GetTokenInformation(token, 1, buf, size, ctypes.byref(size)):
-                    return None
-                return buf  # TOKEN_USER starts with the SID pointer
-            finally:
-                k32.CloseHandle(token)
+            return buf  # TOKEN_USER starts with the SID pointer
+        finally:
+            self.k32.CloseHandle(token)
 
-        pid = wintypes.ULONG()
-        same = False
-        if k32.GetNamedPipeServerProcessId(handle, ctypes.byref(pid)):
-            server = k32.OpenProcess(0x1000, False, pid.value)
-            if server:
-                theirs, mine = token_user(server), token_user(k32.GetCurrentProcess())
-                k32.CloseHandle(server)
-                if theirs is not None and mine is not None:
-                    sid = ctypes.POINTER(ctypes.c_void_p)
-                    same = bool(adv.EqualSid(ctypes.cast(theirs, sid)[0], ctypes.cast(mine, sid)[0]))
-        if not same:
-            k32.CloseHandle(handle)
+    def server_is_owner(self, handle):
+        ctypes, wt = self.ctypes, self.wt
+        pid = wt.ULONG()
+        if not self.k32.GetNamedPipeServerProcessId(handle, ctypes.byref(pid)):
+            return False
+        server = self.k32.OpenProcess(0x1000, False, pid.value)
+        if not server:
+            return False
+        try:
+            theirs, mine = self._token_user(server), self._token_user(self.k32.GetCurrentProcess())
+        finally:
+            self.k32.CloseHandle(server)
+        if theirs is None or mine is None:
+            return False
+        sid = ctypes.POINTER(ctypes.c_void_p)
+        return bool(self.adv.EqualSid(ctypes.cast(theirs, sid)[0], ctypes.cast(mine, sid)[0]))
+
+    def available(self, handle):
+        """Bytes waiting to be read, or None once the pipe is broken."""
+        avail = self.wt.DWORD()
+        if not self.k32.PeekNamedPipe(handle, None, 0, None, self.ctypes.byref(avail), None):
+            return None
+        return avail.value
+
+    def read(self, handle, n):
+        buf = self.ctypes.create_string_buffer(n)
+        got = self.wt.DWORD()
+        if not self.k32.ReadFile(handle, buf, n, self.ctypes.byref(got), None):
+            return None
+        return buf.raw[:got.value]
+
+    def write(self, handle, data):
+        done = self.wt.DWORD()
+        if not self.k32.WriteFile(handle, data, len(data), self.ctypes.byref(done), None):
+            return None
+        return done.value
+
+    def close(self, handle):
+        self.k32.CloseHandle(handle)
+
+
+class _PipeTransport:
+    """Windows named pipe (SR-7). The handle is synchronous, and Windows runs
+    only one I/O at a time on such a handle, so a reader blocked in ReadFile
+    would stall every write (validation M5). Reads therefore happen only when
+    PeekNamedPipe says bytes are waiting, never blocking past the deadline,
+    and everything runs on one thread."""
+
+    POLL_S = 0.02
+
+    def __init__(self, path, api=None):
+        if not PIPE_RE.fullmatch(path):
+            raise Refused("unsafe_pipe", "The engine address is not a local \\\\.\\pipe\\ name.")
+        self.api = api or _Win32Pipe()
+        self.handle = self.api.open(path)
+        if self.handle is None:
+            raise ChannelError("engine_unreachable", "The engine isn't running or can't be reached.")
+        if not self.api.server_is_owner(self.handle):
+            self.api.close(self.handle)
             raise Refused("peer_not_owner", "The process behind the engine pipe is not running as you.")
-        self.fd = msvcrt.open_osfhandle(handle, os.O_RDWR | getattr(os, "O_BINARY", 0))
-        # Pipe reads can't time out on their own; a reader thread lets them.
-        self.chunks = queue.Queue()
-        threading.Thread(target=self._reader, daemon=True).start()
-
-    def _reader(self):
-        while True:
-            try:
-                chunk = os.read(self.fd, 65536)
-            except OSError:
-                chunk = b""
-            self.chunks.put(chunk)
-            if not chunk:
-                return
 
     def send(self, data):
-        try:
-            while data:
-                data = data[os.write(self.fd, data):]
-        except OSError:
-            raise ChannelError("connection_lost", "The engine closed the connection.") from None
+        while data:
+            n = self.api.write(self.handle, data)
+            if not n:
+                raise ChannelError("connection_lost", "The engine closed the connection.")
+            data = data[n:]
 
     def recv(self, timeout):
-        try:
-            return self.chunks.get(timeout=max(timeout, 0.001))
-        except queue.Empty:
-            raise TimeoutError from None
+        deadline = time.monotonic() + max(timeout, 0.001)
+        while True:
+            avail = self.api.available(self.handle)
+            if avail is None:
+                return b""
+            if avail:
+                chunk = self.api.read(self.handle, min(avail, 65536))
+                return chunk or b""
+            if time.monotonic() >= deadline:
+                raise TimeoutError
+            time.sleep(self.POLL_S)
 
     def close(self):
-        try:
-            os.close(self.fd)
-        except OSError:
-            pass
+        self.api.close(self.handle)
 
 
 def connect(address, pid=None):
