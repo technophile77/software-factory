@@ -14,8 +14,8 @@ role policy moved into the manifest. Role policy v2.1 (same day, H-0008): each
 role lists its tools and what it may read; secret files are denied to every role.
 Its tightening after the F-003 security re-reviews (longer protected and secret
 lists, no shells as commands, no globs leaving the worktree) approved by the
-owner 2026-11-10 (decision card). Proposed for F-005, awaiting the owner:
-Engine control channel v1.1 (H-0022) and Role policy v2.2 (H-0023).
+owner 2026-11-10 (decision card). Engine control channel v1.1 (H-0022) and Role policy v2.2 (H-0023) for F-005
+approved by the owner 2026-11-10 (decision card, as drafted).
 
 ## Contract entry format
 
@@ -143,8 +143,8 @@ engine fills them; agents do not.
 
 ## Engine control channel — v1.1
 
-- Status: Proposed (v1.1, H-0022, F-005); v1.0 Approved
-- Owner decision: follows ADR 0003; v1.1 awaits the owner's approval
+- Status: Approved
+- Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -211,10 +211,10 @@ Interview rules (v1.1):
 
 ## Role policy — v2.2
 
-- Status: Proposed (v2.2, H-0023, F-005); v2.1 Approved
+- Status: Approved
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
-  2026-11-10 (F-005 OQ-2, OQ-4), exact text awaiting approval
+  2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card)
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
   Security decision. v2.0 moved the policy from `.factory/policy/roles.yaml`
