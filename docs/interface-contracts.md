@@ -144,7 +144,9 @@ engine fills them; agents do not.
 ## Engine control channel — v1.1
 
 - Status: Approved
-- Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005)
+- Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
+  H-0025 (sessions by token, framing, `engine.json` format, error codes) awaits
+  the owner's approval
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -157,7 +159,10 @@ the inbox.
 
 **Transport:** JSON-RPC 2.0 over a local named pipe (Windows) or Unix domain
 socket (macOS/Linux), path written to `.factory/engine.json` when the engine
-starts. Not reachable from the network. `engine.json` is never committed.
+starts. Not reachable from the network. `engine.json` is never committed;
+from v1.1 it is `{ "version": "1.1", "path": "<socket or pipe path>", "pid": <int> }`.
+Framing (v1.1): one JSON-RPC message per line, UTF-8, ending in `\n`, at most
+1 MiB.
 
 **Access (v1.1):** the engine creates the Unix socket with mode 0600 inside
 an owner-only directory, and accepts only peers running as the owner's uid.
@@ -178,10 +183,11 @@ Rapid prototype; that risk is accepted by the owner until Alpha (F-005 SR-5).
 | `engine.shutdown` | none | `{ ok: true }` after agents reach a safe stop |
 | `feature.start` | `{ request: string }` | `{ feature: id }` (assigns the requirements analyst) |
 | `interview.list` | none | `{ features: [{ id, title, open, deferred, pending_assumptions }] }` (v1.1) |
-| `interview.next` | `{ feature }` | `{ item: Item \| null }`, deferred items first; takes the feature's session lock (v1.1) |
-| `interview.reply` | `{ feature, item, revision, reply_id, kind, text }` | `{ status, next?: Item }` (v1.1) |
+| `interview.open` | `{ feature, takeover?: bool }` | `{ session, started_at }`, takes the feature's session lock (v1.1) |
+| `interview.next` | `{ session, wait_s?: int }` | `{ item: Item \| null }`, deferred items first; waits up to `wait_s` (at most 600) for research to finish (v1.1) |
+| `interview.reply` | `{ session, item, revision, reply_id, kind, text }` | `{ status, next?: Item }` (v1.1) |
 | `interview.state` | `{ feature, item }` | `{ status, revision, recorded_at? }` (v1.1) |
-| `interview.close` | `{ feature }` | `{ ok: true }`, releases the session lock (v1.1) |
+| `interview.close` | `{ session }` | `{ ok: true }`, releases the session lock (v1.1) |
 
 `Item` (v1.1) is `{ id, revision, kind: "question" | "assumption", text, why,
 suggested?, options?: [string], findings?: [{ text, source }], status }`.
@@ -192,20 +198,30 @@ only to assumption items, and the others only to questions. `text` is the
 owner's words, unchanged; the engine records it as written.
 
 Interview rules (v1.1):
-- One session per feature: the lock belongs to the connection that called
-  `interview.next`, and other connections get error `busy` with the time the
-  session started. The lock is released when its connection closes, on
-  `interview.close`, or after 30 minutes idle.
+- One session per feature. The lock belongs to the session token returned by
+  `interview.open` (128 random bits, hex), not to a connection, so a client
+  may use a new connection per call. Another `interview.open` gets error
+  `busy` with `started_at`; with `takeover: true` it ends the old session
+  instead, and the skill asks the owner before sending that. The lock is
+  released on `interview.close` or after 30 minutes without a call. The token
+  coordinates clients; it is not a credential, since any process that can
+  connect could open a session (F-005 SR-5).
+- Within a session each deferred item is returned once, before new items;
+  the engine tracks what it has shown per session.
 - A reply naming a revision other than the item's current one gets error
   `stale`. A repeated `reply_id` returns the first result and changes nothing.
 - Only the engine writes the transcript, under `.factory/interviews/<feature>/`
   on `factory/state`, append-only. Before committing it the engine runs the
   secrets scan and blocks the commit on a hit.
-- Ids match `^[A-Za-z0-9_-]{1,64}$`. Errors carry `code` and `message`;
-  clients don't show `data`.
+- Ids match `^[A-Za-z0-9_-]{1,64}$`; `revision` is a non-negative integer.
+  Errors carry `code` and `message`; clients don't show `data`. Codes:
+  -32001 `busy`, -32002 `stale`, -32003 unknown feature or item, -32004
+  unknown or expired session, -32005 reply kind not allowed for the item.
+
 **Notifications** (engine to client): `feature.stageChanged`,
 `inbox.itemFiled`, `agent.started`, `agent.finished`, and from v1.1
-`interview.itemReady { feature, item }` when `more_info` research finishes.
+`interview.itemReady { feature, item: id }` when `more_info` research finishes,
+for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
