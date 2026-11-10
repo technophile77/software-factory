@@ -28,8 +28,13 @@ could get past a deny. An owner action in an inbox item was a plain
 ## Implications
 - **Security:** commands an agent runs are confined to its role's file and
   network rules by the OS. Approvals can't be forged by an agent that can't
-  use the owner's signing key. Both hold only while agents can't act as the
-  owner's OS user (proposal 0016, F-005 SR-5).
+  use the owner's signing key. Agents run as the owner's OS user (ADR 0014,
+  F-005 SR-5), so the sandbox, not a separate account, keeps the owner's
+  signing key, credentials and engine socket out of their reach (H-0052,
+  draft awaiting owner approval). There is no native-Windows case: agent
+  sessions run only inside WSL2, and if the sandbox can't start, no agent
+  session starts. The engine and the inbox extension run as the owner
+  outside the sandbox.
 - **Known limits:** a secret already committed can be read through git
   objects, so committed-secret scanning stays; the sandbox's network filter
   trusts host names, so allowed hosts stay narrow; build and test tools

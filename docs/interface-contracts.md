@@ -298,7 +298,18 @@ its `network` list. It sets `failIfUnavailable: true` and
 `allowUnsandboxedCommands: false`, lists no `excludedCommands`, and loads
 only the settings it generates, never a repo's `.claude/` settings, hooks
 or MCP servers. If the sandbox can't start, the session doesn't start. On
-Windows, agent sessions run inside WSL2. `commands` may not name a shell,
+Windows, agent sessions run inside WSL2, never natively. **Owner
+credentials (H-0052, draft awaiting owner approval):** agents run as the
+owner's OS user (ADR 0014), so whatever the role's lists say, the sandbox
+also denies every session reading the engine's socket directory and
+`.factory/engine.json`, the owner's Claude Code data (`~/.claude/**`), SSH
+keys (`~/.ssh/**`), GnuPG (`~/.gnupg/**`), the GitHub CLI's config
+(`~/.config/gh/**`) and Git credential stores (`~/.git-credentials`,
+`~/.config/git/credentials`), allows no Unix socket (so neither the engine
+socket nor `SSH_AUTH_SOCK` is reachable) and no macOS Mach lookup beyond the
+sandbox's defaults, and passes no `SSH_AUTH_SOCK`, `GH_TOKEN`, `GITHUB_TOKEN`
+or `GIT_ASKPASS` into the session. File tools can't reach these either,
+since every path outside the worktree is refused. `commands` may not name a shell,
 interpreter or command wrapper. That is a guard rail; the sandbox is the
 boundary. Build and test tools run repo code by design, so arguments are
 not restricted. A repo override may not add tools.
