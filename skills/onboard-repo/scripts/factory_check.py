@@ -800,12 +800,12 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
     if github_protection is not None:
         protection_status, detail = _protection(github_protection)
         if protection_status != "ok":
-            gaps.append(gap("github:branch-protection", "`main` is not protected as ADR 0006 requires", "ADR 0006; ADR 0008",
+            gaps.append(gap("github:branch-protection", "The default branch is not protected as ADR 0006 requires", "ADR 0006; ADR 0008",
                             "github", "rapid-prototype",
-                            "Protect `main`: require the owner's approving review and the level's CI checks.",
+                            "Protect the default branch: require the owner's approving review and the level's CI checks.",
                             "owner-step", [ev(detail=detail)]))
     else:
-        gaps.append(gap("github:branch-protection", "Branch protection on `main` not checked", "ADR 0006; ADR 0008", "github",
+        gaps.append(gap("github:branch-protection", "Branch protection on the default branch not checked", "ADR 0006; ADR 0008", "github",
                         "rapid-prototype", "Sign in to `gh` and re-run, or check it in the repo's settings.", "owner-step",
                         [ev(detail="no GitHub data given")]))
 

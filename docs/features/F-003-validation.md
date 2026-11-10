@@ -181,3 +181,95 @@ There is no test engineer run report, no developer completion report, and no orc
 3. Raise these with the owner: the `maturity.yaml` format (Interfaces), the default `roles.yaml` and change-controlled set (Security), AC-10 versus S4.1 for non-npm audit tools, and the two step-7 questions in M8.
 
 Before Alpha, at most 3 Major findings are allowed. M1 to M4 and M9 are detection and robustness fixes that should come first.
+
+---
+
+## Re-validation (2026-11-10)
+
+- **Commit:** `875d295` (`claude/project-thread-g2huhl`, diff `origin/main...HEAD`, `origin/main` = `6c3fdca`)
+- **Inputs:** `F-003-dev-report.md` (two fix rounds), `F-003-security-gate2.md` (with its "Re-review after fixes" section), `F-003-test-report.md` (test engineer), `tests/test_acceptance.py`
+- **Maturity level:** Rapid prototype
+- **Verdict:** **NEEDS HUMAN REVIEW**
+  - B1 is fixed and there are no Blocking findings. Every FR, AC and SR line is Met except the two below, so no line is Not met.
+  - Two lines are **Needs owner**. FR-6 waits on the M6 questions, which are on the owner's decision card and not yet answered. AC-10 has a spec deviation the developer declared (M7), which the owner hasn't accepted.
+  - If the owner approves the M6 items as proposed and accepts the M7 deviation (or amends AC-10), this becomes **PASS** with no further code change. Rapid prototype allows any number of logged Majors, and 1 Major remains (M6).
+
+### My own run
+
+| Step | Result |
+|---|---|
+| `python3 -m unittest discover -s skills/onboard-repo/tests` | **160 run, 160 passed**, 0 failed, 0 skipped. Property seeds this run: acceptance 352840173 / 2379770016; developer 2199296433 / 3292709202 / 2236190835 / 2877869817 |
+| `git diff 1890675 875d295` | Only `test_acceptance.py` (+3 tests) and `F-003-test-report.md` changed, so the test engineer's run on `1890675` covers the product code at HEAD. Their 160 of 160 matches my run |
+| My original probes p1 to p4, re-run | All now behave correctly (see the table below) |
+| New probes on Gate 2 re-review residuals (`/tmp/claude-0/judge/r1`) | A one-line flow-style workflow and a JSON-form workflow both get `action-unpinned` gaps, and the JSON one also gets `workflow-write-all`. An AWS-format key in a `uses:` ref is redacted to `[redacted aws-access-key]` and appears in neither the JSON nor the Markdown. `echo don't # npm audit secret-scan acceptance` no longer counts as an audit, secret scan or acceptance job. An indented `ref: x#onboard:<key>` in an item body no longer stops the Security item from being filed |
+| 50,000-case fuzz (seed 12345) of `parse_yaml` and `scan_workflow` | No exception other than `YamlError` |
+| Coverage | The test engineer reports 93.7% line coverage on `1890675`, each test traced in its own process; I accept the figure. The bar at Rapid prototype is "Reported" |
+| `git status` | Clean apart from this report |
+
+### Status of earlier findings
+
+| # | Was | Now | Evidence |
+|---|---|---|---|
+| B1 | Blocking | **Fixed** | `factory_check.py:656-666`: one gap per workflow and action, with every use listed as evidence. Probe p2 now produces one `action-unpinned:.github/workflows/ci.yml:actions/checkout` gap with two evidence lines. Tests: `ReviewRegressions.test_b1_same_action_in_two_jobs`; `AC03ActionPinning` (5 tests) |
+| M1 | Major | **Fixed** | Comments are stripped before CI and audit matching (`code_of`, `:637-641,708,729`), and only crons that run at least weekly count (`weekly_or_more`). With the filled template (probe p1), every commented-out job and `cve-audit-missing` is now reported. Tests: `test_m1_commented_jobs_do_not_count`, `test_m1_monthly_cron_is_not_weekly`, `AC05LockAndAudit` |
+| M2 | Major | **Fixed** | Every tracked file is scanned; `VENDORED` folders affect only stack and test detection (`:37-40,337,355-357`). Skipped files are listed in `skipped_files`. Probe p3 now gets `secret:aws-access-key:build/deploy.sh:1`. Test: `test_m2_secrets_in_vendored_folders_are_scanned` |
+| M3 | Major | **Fixed** | A test file must be a code file outside `docs/`, and `features/` and `spec/` folders no longer count (`:626-631,760-766`). Probe p3 now gets `tests:unit`, `tests:acceptance` and `tool:test-framework` gaps. Found tests are listed in `test_files_found`. Test: `test_m3_docs_and_feature_folders_are_not_tests` |
+| M4 | Major | **Fixed** | Both gaps now carry evidence (`:781-783,795-796`). No gap in probes p1 to p4 has empty evidence. Tests: `test_m4_every_gap_has_evidence`; `AC07Schema` checks non-empty evidence with an independent validator |
+| M5 | Major | **Fixed** | Developer report and test engineer report are present. The 101 acceptance tests were written from the spec by the test engineer, and every AC has a mapped test or a stated inspection (`F-003-test-report.md`, criteria map). Gate 2 and its re-review are present. A small residual is logged as m19 |
+| M6 | Major | **Open, Needs owner** | `templates/maturity.yaml:1-3` (the format is proposed, and SKILL step 5 tells the agent to say so), `templates/roles.yaml` (default role policy), and `claude-md-section.md:13-15` (change-controlled set). All are on the owner's decision card, still pending. The dev report lists them as "Not done (needs the owner)" |
+| M7 | Major | **Needs owner** (declared deviation) | `SKILL.md:110-114`; dev report, "Spec deviations". The `cve-audit-missing` gap stays visible until the tool decision is made (`AC10GeneratedWorkflow`). That is correct behaviour, but it departs from AC-10's wording, so the owner should accept it or amend AC-10. I no longer count it as a Major defect; only the line status remains |
+| M8 | Major | **Fixed** | `SKILL.md:38-40`: owner values are never changed to make a check pass. `:161-163`: a validation error in an owner-set value goes to the owner. `:156-157`: an existing config repo is committed to directly, per A-2 |
+| M9 | Major | **Fixed** (Minor residual: m20) | `SKILL.md:57-59` (default branch), `:63-65` (`factory/state` only on the remote), `:66-67` (no commits), `:124-125` (partly onboarded `.factory/`), `:154-155` (repo already in another project's manifest). Tests: `EdgeCases` (8), `AC01Detection` (no commits; default branch not `main`) |
+| m1 | Minor | Fixed | `plan-items --level` (`:1168-1169`); `EdgeCases.test_fr8_tool_items_only_up_to_the_chosen_level` |
+| m2 | Minor | Open | The item link ref `onboarding/<date>-assessment.json#onboard:<key>` still doesn't resolve in the F-001 extension (`:1205`) |
+| m3 | Minor | Open | Commit prefix `onboarding:` versus ADR 0009's "item or feature id" (`SKILL.md:134`) |
+| m4 | Minor | Fixed | S8.3 is now met by the workflow or by every job declaring permissions, and `write-all` and `pull_request_target` are flagged. Probe p4. The evidence line is still always 1 for the workflow-level gap (trivial) |
+| m5 | Minor | Partly fixed | `_protection` now requires stale-review dismissal, last-push approval and strict checks. It still doesn't check the required checks against the level's jobs, and the gap titles still say `` `main` `` (`:803,808`) |
+| m6 | Minor | Open | Untracked secrets are still titled "committed" |
+| m7 | Minor | Open | A Go module with no dependencies still gets `lock-missing:go` |
+| m8 | Minor | Open | `created_by: orchestrator` on items the skill files |
+| m9 | Minor | Fixed | Comments are now stripped before matching, so the comment at `:481-482` no longer hides a fail-open |
+| m10 | Minor | Open (accepted by design) | The recommendation can't rise above Rapid prototype. The test report's O3 also notes this for the owner |
+| m11 | Minor | Open | Step 5 still describes only first-time setup; two runs on the same date overwrite `<date>-assessment.*` |
+| m12 | Minor | Fixed | `SKILL.md:192-193` |
+| m13 | Minor | Fixed | `SKILL.md:195-206`: machine account with the Write role, 90-day expiry, and the ADR 0009 scope gap told to the owner. This also answers Gate 2 re-review High #1 and #12 as that review asked |
+| m14 | Minor | Open | `python3` and `core.hooksPath=/dev/null` (`SKILL.md:19-20,47`) on Windows are untested. The test report states that Windows and macOS were not run |
+| m15 | Minor | Open | Change control: the dev report says merging PR #9 approves `skills/onboard-repo/**`. Gate 2 #23 still asks for hygiene items in the PR, as F-001 did. The orchestrator should make the PR body name them |
+| m16 | Minor | Fixed | `run_git` disables fsmonitor and hooks (`:305-307`); `test_sr2_*` |
+| m17 | Minor | Open | The CLAUDE.md section names the rule documents but doesn't give links at the pinned version |
+| m18 | Minor | Fixed | 93.7% line coverage reported, with the uncovered lines explained (test report) |
+
+### New findings
+
+| # | Grade | Location | Finding |
+|---|---|---|---|
+| m19 | Minor | `docs/features/F-003-test-report.md:5,17`; DoD 6 | The test report's header still says the 3 added tests are "uncommitted". They are committed in `875d295`, and the code is unchanged since `1890675`, so the result stands. There is no separate orchestrator review note (DoD 6). |
+| m20 | Minor | `templates/ci-workflow.yml:8`; `factory_check.py:803,808` | The CI template still hardcodes `push: branches: [main]`. Step 1.2 says to use the real default branch "wherever these steps say default branch", but the template isn't called out. |
+| m21 | Minor | `factory_check.py` `weekly_or_more` | A cron that runs more often than weekly but restricts the day of month (for example `0 0 */2 * *`) is reported as not weekly. This errs toward reporting a gap. |
+
+### Checklist changes since the first report
+
+| Line | First report | Now |
+|---|---|---|
+| FR-2 | Not met | **Met**. Code `factory_check.py:612-812`. Tests: the developer's `ReviewRegressions` and `SecondReviewRegressions`; the acceptance classes `AC02Permissions`, `AC03ActionPinning`, `AC04Secrets`, `AC05LockAndAudit`, `AC06CiJobs`, `AC07Schema`, `EdgeCases` |
+| FR-6 | Needs owner | **Needs owner** (M6; the decision card is pending) |
+| AC-1 to AC-9, AC-11 to AC-13, AC-15 | Met (developer tests) | **Met**, now with independent acceptance tests (test report map) |
+| AC-10 | Needs owner | **Needs owner** (M7, declared deviation). Met for npm (`AC10GeneratedWorkflow`) |
+| AC-14, AC-16 (agent side), AC-17 (calibration) | Met by inspection | **Met by inspection**, confirmed by the test engineer. AC-14 now has explicit wording at `SKILL.md:192-193` |
+| Security | Met | **Met**. Gate 2 re-review passes at Rapid prototype. Its High (#1 and #12, the token on the owner's admin account) is resolved by `SKILL.md:195-206`, which puts the token on a machine account with the Write role. Gate 2 hasn't re-read that last change; that is not required at this level, but it should be confirmed before Alpha. Gate 2's remaining items are Low and recorded as known issues |
+| Comments | Met | **Met**. The new comments explain why (`:37-40`, `:305`, `weekly_or_more`, `_protection`'s "Without these…", `ENV_SECRET`). None are redundant or misleading |
+| Architecture / Interfaces | Met | **Met**. No diff to `interface-contracts.md` or ADRs. Items keep Inbox item v1.0. The roles template has the six core roles and stricter deny lists (Role policy v1.0: tightening is non-breaking) |
+
+### Counts (re-validation)
+
+- Blocking: 0 (B1 fixed).
+- Major: 1 open (M6, waiting on the owner). Fixed: M1 to M5, M8, M9. M7 is now a line status (Needs owner) rather than a defect.
+- Minor: 14 open (m2, m3, m5, m6, m7, m8, m10, m11, m14, m15, m17, m19, m20, m21). m10 is accepted by design, and m21 errs toward reporting a gap. Fixed: m1, m4, m9, m12, m13, m16, m18.
+- Lines: 0 Not met, 2 Needs owner (FR-6, AC-10).
+
+### What would make this PASS
+
+1. The owner answers the M6 card: the `maturity.yaml` format (Interfaces), the default `roles.yaml` (Security), and the CLAUDE.md change-controlled list.
+2. The owner accepts the AC-10 deviation for non-npm audit tools, or amends AC-10 (M7).
+
+No code change is needed for PASS at Rapid prototype. Before Alpha: Gate 2's open Low items, m2, m5 and m20, and a Windows run (m14).

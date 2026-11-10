@@ -6,7 +6,7 @@ name: factory-ci
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [<DEFAULT_BRANCH>]
   # Weekly, so a CVE published after a merge is still found (S4.4).
   schedule:
     - cron: "0 6 * * 1"
