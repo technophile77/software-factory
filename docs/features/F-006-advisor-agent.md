@@ -154,13 +154,13 @@ Interview answers (owner):
 - F-003 Gate 2 R2-1 OS sandbox (owner decision pending), for the shell only.
 
 ## 8. Assumptions
-Proposed for the owner to approve or reject in the interview.
+Proposed in the interview and approved by the owner (2026-11-10).
 
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | Advisor calls count against the ADR 0012 project budget like any agent run. When a call would exceed the remaining budget, the approval prompt says so; the owner may still approve it. | Interview | Pending |
-| A-2 | A failed or timed-out advisor call is reported to the owner and never retried without a new approval. | Interview | Pending |
-| A-3 | The advisor's reads are the analyst's approved read paths (F-005 OQ-4), with no other features' interview transcripts beyond what the engine supplies. | Interview | Pending |
+| A-1 | Advisor calls count against the ADR 0012 project budget like any agent run. When a call would exceed the remaining budget, the approval prompt says so; the owner may still approve it. | Owner, 2026-11-10 (thread card) | Approved |
+| A-2 | A failed or timed-out advisor call is reported to the owner and never retried without a new approval. | Owner, 2026-11-10 (thread card) | Approved |
+| A-3 | The advisor's reads are the analyst's approved read paths (F-005 OQ-4), with no other features' interview transcripts beyond what the engine supplies. | Owner, 2026-11-10 (thread card) | Approved |
 
 ## 9. Security considerations
 _Gate 1 runs next._
