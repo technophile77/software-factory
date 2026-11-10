@@ -15,6 +15,6 @@ The factory's rules apply here as written in that version:
   `factory/state` branch under `.factory/policy/`.
 - Security criteria: the factory's `docs/security-standards.md`.
   Testing bars: `docs/testing-strategy.md`. Gate bars: `docs/maturity-levels.md`.
-- This repo's maturity level is recorded in `.factory/maturity.yaml` on the
-  `factory/state` branch.
+- This repo's maturity level is recorded in the project manifest,
+  `factory-project.yaml` in the config repo above.
 <!-- software-factory:end -->

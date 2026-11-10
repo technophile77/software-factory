@@ -144,8 +144,6 @@ as a worktree at `.factory/`. If `.factory/` is already there (partly
 onboarded), keep what it has and add only what is missing. Commit:
 
 - `onboarding/<date>-assessment.json` and `.md` (from step 2).
-- `maturity.yaml` from the template, once the level decision is approved.
-  Its format is proposed, not yet a contract; say so to the owner.
 - `policy/roles.yaml` from `templates/roles.yaml`, filled per stack. A
   placeholder you can't fill becomes an empty list, never a guess.
 - Empty `inbox/decision/`, `inbox/testing/`, `inbox/hygiene/` (with `.gitkeep`).
@@ -172,6 +170,8 @@ item's `history` (`by: owner`) per the Inbox item v1.0 contract.
 
 - If the repo is already listed in another project's manifest, stop and
   ask the owner which project it belongs to.
+- The repo's entry under `repos` carries the level the owner approved in
+  step 3; the manifest is the only record of repo and project levels.
 - Existing project: clone its config repo, add the repo under `repos`, and
   commit directly (A-2) after the owner's yes.
 - New project: ask the owner before creating a private
@@ -243,10 +243,11 @@ open owner steps. Point to the assessment for the rest.
 
 ## Re-running on an onboarded repo
 
-A repo is onboarded when `factory/state` has `maturity.yaml`. A re-run only
+A repo is onboarded when the project manifest lists it. A re-run only
 assesses and reports; it never lowers or replaces what is there (FR-11):
 
-- **Level:** read it from `maturity.yaml` and pass it as `--level`. Don't
+- **Level:** read it from the repo's `maturity` in `factory-project.yaml`
+  and pass it as `--level`. Don't
   ask the owner again or file a new starting-level decision.
 - **CI workflow:** never regenerate `factory-ci.yml`. If jobs are missing
   for the current level, add only those, in the onboarding PR, and leave
