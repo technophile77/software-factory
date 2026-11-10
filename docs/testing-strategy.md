@@ -84,6 +84,21 @@ the owner on 2026-11-08 (open decision 6, `proposals/0006-retry-limits.md`).
 - These numbers live in factory config and change only through the
   configuration hygiene process.
 
+### Which role a failure counts against
+
+The run review (F-002) attributes each failure to a role, so repeated
+problems can lead to a model or effort change for that role.
+
+| Root cause or event | Counts against |
+|---|---|
+| Product code | Software developer |
+| Test code | Test engineer |
+| Spec found wrong or incomplete; readiness gate sent back | Requirements analyst |
+| A security finding at Gate 2, in CI, or after merge that Gate 1 should have required | Security reviewer |
+| Judge verdict overturned by the owner, or a defect found after a PASS that the checklist covers | Validation judge |
+| Misclassified root cause, or an incomplete run accepted | Orchestrator |
+| Environment, infrastructure, dependency, flaky | No role |
+
 ## Continuous integration
 
 CI (GitHub Actions) re-runs the required jobs for the repo's maturity level
