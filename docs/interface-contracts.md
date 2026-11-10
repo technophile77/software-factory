@@ -9,6 +9,8 @@ every dependent component together.
 Engine control channel, and Role policy (PR #2, 2026-11-08), and Project
 manifest (PR #3, 2026-11-09). Role policy v2.0 and Project manifest v1.1
 approved 2026-11-10 (H-0008): the role policy moved into the manifest.
+Role policy v2.1 (same day, H-0008): each role lists its tools and what it
+may read; secret files are denied to every role.
 
 ## Contract entry format
 
@@ -157,19 +159,27 @@ starts. Not reachable from the network.
 
 ---
 
-## Role policy — v2.0
+## Role policy — v2.1
 
 - Status: Approved
-- Owner decision: follows ADR 0004; v2.0 by the owner, 2026-11-10 (H-0008)
+- Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10 (H-0008)
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
   Security decision. v2.0 moved the policy from `.factory/policy/roles.yaml`
   in each repo into the project manifest; the rule format is unchanged.
+  v2.1 added `tools` and `read`. No manifest used v2.0, so making them
+  required broke nothing.
 
 **Location:** the `policy:` key of the project manifest (change-controlled),
 with optional per-repo overrides under `repos[].policy`. Effective policy
 for a repo: the project's roles, where a repo override's `allow` lists
 replace the project's and its `deny` lists are added to the project's.
+Each role has five sections: `tools` (the agent's built-in tools: `Read`,
+`Grep`, `Glob`, `Edit`, `Write`, `Bash`, `WebFetch`, `WebSearch`), `read`,
+`write`, `commands` (programs `Bash` may run) and `network`. Every role must
+list at least one tool and one read glob, and must deny reading secret files:
+`**/.env`, `**/.env.*`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`,
+`**/id_rsa*`, `**/id_ecdsa*`, `**/id_ed25519*`.
 Every core role must be present, and every role that may write outside
 `.factory/` must deny `CLAUDE.md`, `.claude/**`, `.github/**`, `agents/**`,
 `skills/**` and `workflows/**`.
@@ -178,7 +188,12 @@ Every core role must be present, and every role that may write outside
 policy:
   roles:
     software-developer:
-      write:                     # globs relative to the worktree root
+      tools:
+        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
+      read:                      # globs relative to the worktree root
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
+      write:
         allow: ["src/**", "docs/**"]
         deny: ["tests/acceptance/**", "CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]
       commands:                  # exact program names; arguments not restricted
@@ -186,6 +201,11 @@ policy:
       network:
         allow: ["registry.npmjs.org"]
     security-reviewer:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Write"]   # no Edit, no shell
+      read:
+        allow: ["**"]
+        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
       write:
         allow: [".factory/runs/**/security-reviewer-*.json"]
       commands:
@@ -202,8 +222,8 @@ repos:
             deny: ["app/generated/**"]   # added to the project's deny list
 ```
 
-Rules: deny wins over allow; anything not allowed is denied; a role missing
-from the policy may not run.
+Rules: deny wins over allow; anything not allowed is denied (a missing
+section allows nothing); a role missing from the policy may not run.
 
 ---
 
