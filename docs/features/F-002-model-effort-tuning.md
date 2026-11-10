@@ -1,7 +1,7 @@
 # Feature: Model and effort tuning per agent
 
 - **Id:** F-002
-- **Status:** In review (readiness gate passed; awaiting owner approval of spec v11)
+- **Status:** Approved (owner merged PR #8, 2026-11-10); implementation waits for the engine
 - **Requested by / date:** Alex, 2026-11-10
 - **Spec version:** 11
 
@@ -228,4 +228,4 @@ All changes are additive (A-8):
 | 8 | 2026-11-10 | A-10 approved | Owner, 2026-11-10 |
 | 9 | 2026-11-10 | Evaluator extended to per-task complexity advice for the orchestrator once reliable (A-11 b, c; FR-20, FR-21; A-12 added) | — |
 | 10 | 2026-11-10 | A-11 approved; A-12 approved with the stricter bar (90% of last 30) | Owner, 2026-11-10 |
-| 11 | 2026-11-10 | Gate 1 security review: SR-2 tightened, SR-7 to SR-10 added, abuse cases added; readiness gate passed | Pending owner approval |
+| 11 | 2026-11-10 | Gate 1 security review: SR-2 tightened, SR-7 to SR-10 added, abuse cases added; readiness gate passed | Owner, 2026-11-10 (PR #8 merged) |
