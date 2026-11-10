@@ -143,8 +143,12 @@ open it after the owner's yes (see the rules).
 ### 5. Set up `factory/state` (ADR 0009)
 
 If the branch doesn't exist, create it as an orphan branch and check it out
-as a worktree at `.factory/`. If `.factory/` is already there (partly
-onboarded), keep what it has and add only what is missing. Commit:
+as a worktree at `.factory/`. If `.factory/` is already there, use it only
+if `git worktree list` shows it as the `factory/state` worktree (partly
+onboarded): keep what it has and add only what is missing. A `.factory/`
+the repo itself tracks is a gap (`factory:dir-in-repo`), never a source of
+records; `plan-items` refuses an inbox outside the `factory/state`
+worktree. Commit:
 
 - `onboarding/<date>-assessment.json` and `.md` (from step 2).
 - Empty `inbox/decision/`, `inbox/testing/`, `inbox/hygiene/` (with `.gitkeep`).

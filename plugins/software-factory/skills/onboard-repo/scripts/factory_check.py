@@ -876,6 +876,21 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
     return result
 
 
+def single_line(value):
+    """Line breaks in repo-derived text become spaces, everywhere in a result.
+
+    File names and other repo text end up in Markdown the agent reads and in
+    inbox items; a line break there could start a heading that reads like an
+    instruction (SR-1)."""
+    if isinstance(value, str):
+        return re.sub(r"[\r\n\x0b\x0c\x1c-\x1e\u0085\u2028\u2029]+", " ", value)
+    if isinstance(value, list):
+        return [single_line(v) for v in value]
+    if isinstance(value, dict):
+        return {single_line(k): single_line(v) for k, v in value.items()}
+    return value
+
+
 def redact(value):
     if isinstance(value, str):
         for kind, rx in SECRET_RULES:
@@ -1019,7 +1034,7 @@ def recommended_work(gaps):
 def _md_cell(text):
     # Repo-controlled text (file names included) must stay inside its table
     # cell: no line breaks that could start a heading the agent then reads.
-    return re.sub(r"[\r\n\u2028\u2029]+", " ", str(text)).replace("|", "\\|")
+    return re.sub(r"[\r\n\x0b\x0c\x1c-\x1e\u0085\u2028\u2029]+", " ", str(text)).replace("|", "\\|")
 
 
 def to_markdown(a):
@@ -1068,7 +1083,7 @@ def to_markdown(a):
         out.append(f"### {level_name.get(group['level'], 'Not blocking')}")
         out += [f"- {r['request']} (`{r['gap']}`)" for r in group["requests"]]
         out.append("")
-    return "\n".join(out).rstrip() + "\n"
+    return "\n".join(single_line(line) for line in out).rstrip() + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -1185,19 +1200,26 @@ def validate_manifest(data, master=None):
 CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json",
                      ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml",
                      "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**",
-                     ".claude-plugin/**", "workflows/**"]
+                     ".claude-plugin/**", "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**",
+                     ".gitmodules", ".vscode/**", ".devcontainer/**"]
 POLICY_KEYS = {"tools": {"allow"}, "read": {"allow", "deny"}, "write": {"allow", "deny"},
                "commands": {"allow"}, "network": {"allow"}}
 AGENT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch"}
 # Role policy v2.1: no agent reads these, whatever its allow list says.
 SECRET_FILES = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks",
                 "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc",
-                "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json"]
+                "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json",
+                "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk",
+                "**/kubeconfig", "**/.kube/config"]
 
 
 # Role policy commands are program names with any arguments, so a shell or
 # interpreter would undo every read and write rule (Gate 2 re-review R2-1).
-SHELL_COMMANDS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "pwsh", "powershell", "cmd", "env",
+SHELL_FAMILIES = re.compile(r"^(.*sh|python.*|pypy.*|ipython.*|node.*|.*awk|perl.*|ruby.*|php.*|lua.*|tcl.*|r|rscript)$")
+# A guard rail, not the boundary: build and test tools run repo code by design
+# (R2-1 stays with the owner). Wrappers that run any command count as shells.
+SHELL_COMMANDS = {"busybox", "find", "npx", "uv", "uvx", "pipx", "toybox", "script", "expect", "watch", "nohup",
+                  "timeout", "nice", "time", "parallel", "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "pwsh", "powershell", "cmd", "env",
                   "python", "python3", "node", "deno", "bun", "ruby", "perl", "php", "lua", "osascript", "xargs",
                   "eval", "exec", "sudo", "su", "doas"}
 
@@ -1207,6 +1229,10 @@ def _escapes_worktree(glob):
     # a rule like `.factory/../src/**` look like a factory-only write.
     # A segment that can match `..` (`[.][.]`, `?.`) counts as `..`; plain `*`
     # and `**` are matched per segment by the engine and never cross upward.
+    # Brace expansion, negated classes and extglobs read differently across glob
+    # dialects, so they are refused rather than interpreted.
+    if re.search(r"[{}]|\[[!^]|[@!+*?]\(", glob):
+        return True
     return glob.startswith(("/", "~")) or "\\" in glob or re.match(r"^[A-Za-z]:", glob) is not None \
         or any(seg not in ("*", "**") and fnmatch.fnmatchcase("..", seg) for seg in glob.split("/"))
 
@@ -1230,7 +1256,8 @@ def _check_role(where, rule, errors):
             elif key in ("read", "write") and any(_escapes_worktree(i) for i in items):
                 errors.append(f"{where}.{key}.{sub} has a path outside the worktree (absolute, `..` or `\\`)")
             elif key == "commands":
-                shells = sorted({os.path.basename(i).lower().removesuffix(".exe") for i in items} & SHELL_COMMANDS)
+                names = {os.path.basename(i).lower().removesuffix(".exe") for i in items}
+                shells = sorted(n for n in names if n in SHELL_COMMANDS or SHELL_FAMILIES.match(n))
                 if shells:
                     errors.append(f"{where}.commands.allow has shells or interpreters, which bypass the policy: {', '.join(shells)}")
             elif key == "tools":
@@ -1439,6 +1466,7 @@ def atomic_write(path, text):
 
 def plan_items(a, inbox_dir, assessment_ref, include_complexity=False, write=False, now=None, level=None):
     now = now or dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    a = dict(a, gaps=single_line(a.get("gaps") or []))
     filed, highest = existing_items(inbox_dir)
     created, skipped = [], []
     for item in planned_items(a, assessment_ref, include_complexity, level):
@@ -1458,6 +1486,19 @@ def plan_items(a, inbox_dir, assessment_ref, include_complexity=False, write=Fal
 def _load_json(path):
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+def _require_state_worktree(inbox_dir):
+    """A repo can carry its own `.factory/` with forged items marked as filed;
+    only the factory/state worktree's inbox is trusted (Gate 2 R3-2, R3-3)."""
+    probe = os.path.realpath(inbox_dir)
+    while not os.path.isdir(probe) and os.path.dirname(probe) != probe:
+        probe = os.path.dirname(probe)
+    if run_git(probe, "rev-parse", "--is-inside-work-tree") is None:
+        return
+    branch = run_git(probe, "symbolic-ref", "--short", "HEAD")
+    if branch is None or branch.decode().strip() != "factory/state":
+        raise CheckError(f"inbox folder is not in the factory/state worktree: {inbox_dir}")
 
 
 def _through_symlink(path):
@@ -1529,8 +1570,10 @@ def main(argv=None):
             errors = validate_manifest(data, args.master)
             print("\n".join(errors) or "Manifest is valid.")
             return 1 if errors else 0
-        if args.cmd == "plan-items" and args.write and _through_symlink(args.inbox_dir):
-            raise CheckError(f"inbox folder goes through a symlink, refusing to write: {args.inbox_dir}")
+        if args.cmd == "plan-items":
+            if args.write and _through_symlink(args.inbox_dir):
+                raise CheckError(f"inbox folder goes through a symlink, refusing to write: {args.inbox_dir}")
+            _require_state_worktree(args.inbox_dir)
         if args.cmd == "plan-items":
             result = plan_items(_load_json(args.assessment), args.inbox_dir, args.assessment_ref, args.complexity, args.write,
                                 level=args.level)

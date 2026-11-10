@@ -126,3 +126,17 @@ Left for the owner: R2-1 (sandbox and git), R2-2 (enforcement-time normalization
 | M15: test file names could break out of the Markdown table | One cell sanitizer for every table: line breaks become spaces, `\|` escaped, backticks in paths replaced | `test_m15_test_file_names_cannot_break_out_of_the_table` |
 | m26: symlinked system folders (macOS `/tmp`) refused | Only folders from the working folder down count | `test_m26_symlinked_folders_above_the_working_folder_are_fine` |
 
+## Fixes after the test engineer's run on ee6be85 and Gate 2 re-review 3
+
+Tests in class `ThirdGateRegressions` unless noted.
+
+| Finding | Fix |
+|---|---|
+| F4, F5, R3-1: repo names broke Markdown outside tables and in inbox items | Every Markdown line of the assessment and every gap used for inbox items has all line separators folded to spaces; the JSON keeps names exactly (test engineer's SR01 tests) |
+| R3-2, R3-3: a repo-tracked `.factory/` could mark items as filed or redirect writes | `plan-items` refuses an inbox inside a git work tree unless it is on `factory/state`; SKILL.md step 5 uses `.factory/` only when `git worktree list` shows it as the `factory/state` worktree |
+| R3-4: shell list too short | Whole families refused (`*sh`, `python*`, `node*`, `*awk`, ...) plus wrappers (`find`, `npx`, `busybox`, `timeout`, ...); the contract calls it a guard rail, not the boundary |
+| R3-5: glob dialects | Brace expansion, `[!`/`[^` classes and extglobs refused in read and write globs |
+| R3-6, R3-7: lists | Change-controlled adds nested `.claude/`, `.envrc`, `.git`, `.gitmodules`, `.vscode/`, `.devcontainer/`; secret files add `*.tfstate`, `.aws/credentials`, `.docker/config.json`, `*.ppk`, kubeconfig |
+
+Not done: per-repo protected paths (R3-6, so the factory repo can add `scripts/**` and `docs/**`) and listing `osv-scanner.toml` ignores in the assessment; both are new features for the owner to prioritize.
+
