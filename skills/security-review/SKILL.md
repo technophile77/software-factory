@@ -10,7 +10,7 @@ use it as written. Do not restate or extend the criteria here, so the
 developer and the security reviewer always apply the same rules.
 
 ## When the developer uses this
-Before finishing each meaningful change, check it against S1 to S7. Fix what
+Before finishing each meaningful change, check it against S1 to S8. Fix what
 you can. Anything you cannot fix, or that needs a decision, goes in your
 completion report.
 

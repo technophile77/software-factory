@@ -6,7 +6,17 @@ criteria anywhere else; link here.
 
 **Status:** criteria S1 to S7 are a draft for review. Severity levels and
 blocking rules were approved by the owner on 2026-11-08 (open decision 7,
-`proposals/0007-security-severity.md`).
+`proposals/0007-security-severity.md`). The least-privilege principle and S8
+were set by the owner on 2026-11-10 (H-0004), and so were the rules for
+external components in S4 (H-0005).
+
+## Design principle: least privilege
+
+Security design follows the Principle of Least Privilege. Every agent,
+process, credential, CI job and component gets only the access its task
+needs, for only as long as it needs it. Anything not granted is denied. S8
+turns this into checkable criteria; S2.2 and S6.2 apply it to actions and
+agents.
 
 ## Criteria
 
@@ -28,10 +38,15 @@ Each finding cites the criterion id it fails.
 - S3.2 Sensitive data is identified in the feature spec and handled per its stated requirements.
 - S3.3 Logs do not contain credentials, tokens, or personal data beyond what the spec allows.
 
-### S4 Dependencies
-- S4.1 New dependencies are approved (Architecture decision) before use.
+### S4 Dependencies and external components
+External components (libraries, packages, GitHub Actions, tools, container
+images, and outside services) are untrusted until reviewed, and stay
+untrusted at run time.
+- S4.1 A new external library or component gets a security review before it is approved (Architecture decision) for use. The review covers its source and maintainers, known CVEs and their fixes, install scripts, the permissions it needs, and what it pulls in. The review is recorded with the decision.
 - S4.2 No dependency with a known exploitable vulnerability in the used code path.
 - S4.3 Versions are pinned or locked.
+- S4.4 Every external library, direct and transitive, including development tools, is checked against CVE entries: at the security review, in CI on every change, and before each promotion. A CVE found later is a finding, graded by the Severity table.
+- S4.5 Data from an external component is input: it is validated at the boundary (S1.1), and the component runs with only the access it needs (S8).
 
 ### S5 Error handling
 - S5.1 Errors fail closed.
@@ -44,6 +59,13 @@ Each finding cites the criterion id it fails.
 
 ### S7 Spec compliance
 - S7.1 Every security requirement in the approved feature spec is implemented and has a test or a stated reason it cannot be tested.
+
+### S8 Least privilege
+- S8.1 Each agent, process and component has only the permissions its task needs. Access is granted explicitly, never inherited by default.
+- S8.2 Credentials and tokens are scoped to the narrowest resource and operation (one repo, read-only unless writing is needed) and expire or are revoked when no longer needed.
+- S8.3 CI jobs declare their permissions explicitly, at the minimum needed, and get secrets only if they use them.
+- S8.4 Processes run as an ordinary user, never elevated, and touch only the files and network endpoints they need.
+- S8.5 A feature that adds or widens a permission states it in its spec, with the reason. Widening a permission is a Security decision for the owner.
 
 ## Severity
 
@@ -73,12 +95,14 @@ promotion to the next level.
 ## Gate 1 (requirements) checklist
 
 - Does the feature touch input, auth, secrets, sensitive data, dependencies, or external systems?
+- What permissions does it need (files, network, tokens, CI, agent tools)? Is each one the minimum (S8)?
+- Does it add or upgrade an external library or component? Has it had a security review and a CVE check (S4.1, S4.4)?
 - For each, is there a requirement that covers it?
 - What are the abuse cases? Are they in the edge cases?
 - What needs the owner's decision? File it as Security.
 
 ## Gate 2 (implementation) checklist
 
-- Review the diff against S1 to S7.
+- Review the diff against S1 to S8.
 - Confirm each spec security requirement (S7.1).
 - Report findings with criterion id, severity, location, explanation, and suggested fix.
