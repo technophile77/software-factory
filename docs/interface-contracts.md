@@ -12,6 +12,9 @@ manifest (PR #3, 2026-11-09). Agent report v1.1 and three tuning contracts
 Role policy v2.0 and Project manifest v1.1 approved 2026-11-10 (H-0008): the
 role policy moved into the manifest. Role policy v2.1 (same day, H-0008): each
 role lists its tools and what it may read; secret files are denied to every role.
+Its tightening after the F-003 security re-reviews (longer protected and secret
+lists, no shells as commands, no globs leaving the worktree) approved by the
+owner 2026-11-10 (decision card).
 
 ## Contract entry format
 
