@@ -285,3 +285,73 @@ Both also fail on `8dd0d19` and `c553230` (run from `git archive` with this test
 
 - **O9:** in gap tables, a backtick in a repo name is kept inside the gap id's code span (for example `` `secret:aws-access-key:kB … `y …` ``), so the span closes early. The row and its cells stay intact, so this changes only formatting within one cell, not the document's structure. The test inventory replaces backticks; the gap ids don't.
 - **O8 still stands:** CLAUDE.md now lists `plugins/` as change-controlled, and my test file lives there. My edits are uncommitted F-003 feature work. The orchestrator should confirm the feature's approval covers them before committing.
+
+## Run on c4e8fb6
+
+- **Commit tested:** **`c4e8fb6`** (branch `claude/project-thread-g2huhl`), with my test edits uncommitted on top (only `tests/test_acceptance.py` differs from `c4e8fb6`). Since my run on `ee6be85`, the product changed in `scripts/factory_check.py`, `templates/factory-project.yaml` and `SKILL.md` (step 5), and the Role policy v2.1 contract was amended (`794c830`). Hashes (first 12 hex characters of the SHA-256): `factory_check.py` 3bbe7ca8ac7f, `factory-project.yaml` f87b36363366, `SKILL.md` bf112e779db9; `ci-workflow.yml` c254e5e991f7 is unchanged.
+- **Environment:** Linux, Python 3.11.18, 3.12.3 and 3.13.18 (`/usr/bin`), git 2.43.0. No Python 3.10 is installed.
+- **Command, per interpreter:** `cd plugins/software-factory/skills/onboard-repo && python3.X -m unittest discover -s tests`
+
+| Interpreter | Run | Passed | Failed | Skipped | Acceptance (158) | Developer (92) |
+|---|---|---|---|---|---|---|
+| Python 3.11.18 | 250 | 247 | 2 | 1 | 155 pass, 2 fail, 1 skip | all pass |
+| Python 3.12.3 | 250 | 247 | 2 | 1 | 155 pass, 2 fail, 1 skip | all pass |
+| Python 3.13.18 | 250 | 247 | 2 | 1 | 155 pass, 2 fail, 1 skip | all pass |
+
+The same 2 tests fail on every interpreter (26 failing subtests in each run). Both are product failures in new or extended tests. F4 and F5 are fixed: all three `SR01RepoTextInMarkdown` tests pass. `test_factory_only_writer_given_outside_write_must_add_denies`, which failed on `c4e8fb6` with my `ee6be85` lists, passes now that the test uses the amended list.
+
+### Test changes
+
+Updated to the amended contract (Role policy v2.1, `794c830`):
+
+- `SECRET_GLOBS`: added `**/*.tfstate`, `**/*.tfstate.*`, `**/.aws/credentials`, `**/.docker/config.json`, `**/*.ppk`, `**/kubeconfig`, `**/.kube/config`. Every test that uses the list (template check, effective policy, each glob required for each role) now covers them.
+- `CHANGE_CONTROLLED`: added `**/.claude/**`, `.envrc`, `**/.envrc`, `.git`, `.git/**`, `.gitmodules`, `.vscode/**`, `.devcontainer/**`. This is what fixes `test_factory_only_writer_given_outside_write_must_add_denies`.
+- `test_commands_may_not_name_a_shell_or_interpreter`: the contract now says "a shell, interpreter or command wrapper" and names no list. The test uses names that are one of the three by any reading: shells (`ash`, `ksh`, `mksh`, `rbash`, `fish`, `csh`, `tcsh`, `busybox` and the earlier ones), versioned and renamed interpreters (`python3.12`, `python3.10`, `pypy3`, `nodejs`, `deno`, `php`, `lua`, `tclsh`, `awk`, `gawk`, `irb`, `cscript`, `wscript`), other spellings (`Python3`, `BASH`, `/bin/sh`, `/usr/bin/bash`, `bash.exe`, `pwsh.exe`), and wrappers whose man page says they run a given command (`env`, `/usr/bin/env`, `xargs`, `sudo`, `doas`, `nohup`, `timeout`, `nice`, `stdbuf`, `setsid`, `ionice`, `taskset`, `flock`, `chroot`, `runuser`, `unbuffer`). Each is tried in the project policy and in a repo override. The control now also accepts `npm`, `git`, `go`, `cargo`, `make`, `mvn`, `gradle`, `pytest` and `tox` ("build and test tools run repo code by design").
+
+New tests:
+
+- **`FR07RolePolicy.test_dialect_specific_globs_rejected`** (Role policy v2.1: braces, `[!`, `[^` and extglobs are refused). 14 globs (`{src,lib}/**`, a lone `}`, `[!x]/**`, `[^x]/**`, `@(`, `+(`, `!(`, `?(`, `*(` forms, and the reviewer's `.factory/{..,x}/…` and `.factory/[^x][^x]/CLAUDE.md`) in each of read/write allow/deny, plus the two `.factory/` ones as an orchestrator write and in a repo override. Control: `src/[abc]*.py`, `lib/?/**`, `docs/*.md` are accepted. Passes.
+- **`FR07RolePolicy.test_role_policy_lists_match_the_contract_text`:** reads `docs/interface-contracts.md` and checks that the test's two lists equal the contract's, in order, so the next amendment shows up as a failure instead of a silently stale test. Skips if the skill is copied out of the factory repo. Passes.
+- **`FactoryStateInbox`** (FR-6, FR-8, SR-4/S1.4, spec section 6 "partly onboarded"; SKILL.md step 5: `.factory/` is used only if `git worktree list` shows it as the `factory/state` worktree, and `plan-items` refuses an inbox inside a git work tree unless that work tree is on `factory/state`). A refusal means a non-zero exit with a message on stderr, no traceback, no file written, and no plan that lists existing items as already filed; I check the dry run and `--write`.
+  - `test_inbox_in_the_factory_state_worktree_is_used`: a real `factory/state` worktree at `.factory/`; items are written there and show only in that worktree's status, never in the code branch's; a second run from the repo root with the relative path SKILL.md uses files nothing new. Passes.
+  - `test_inbox_outside_any_work_tree_is_allowed`: control. Passes.
+  - `test_tracked_factory_folder_is_not_a_source_of_records`: the R3-2 reproduction. The repo tracks `.factory/inbox/decision/` holding items for its own gaps (including the Critical secret). `assess` raises `factory:dir-in-repo`, and `plan-items` refuses that inbox by absolute and relative path. Passes.
+  - `test_untracked_factory_folder_on_the_code_branch_is_refused`, `test_inbox_anywhere_in_the_code_work_tree_is_refused` (`inbox/`, `docs/inbox/decision/`), `test_worktree_on_another_branch_is_refused` (a worktree at `.factory/` on branch `not-state`). Pass.
+  - `test_symlinked_factory_folder_refused_from_any_working_directory`: the R3-3 reproduction, a tracked `.factory -> ../outside` link. **Fails (F6).**
+  - `test_skill_step5_uses_factory_folder_only_as_the_state_worktree`: SKILL.md step 5 names `git worktree list`, says a tracked `.factory/` is the `factory:dir-in-repo` gap and never a source of records, and says `plan-items` refuses. Passes.
+
+### Failures
+
+| # | Test | Spec | Expected | Actual | Cause |
+|---|---|---|---|---|---|
+| F6 | `FactoryStateInbox.test_symlinked_factory_folder_refused_from_any_working_directory` | SR-4 (S1.4, no following links out of the repo), FR-8, SKILL.md step 5 ("`plan-items` refuses an inbox outside the `factory/state` worktree") | The repo's tracked `.factory -> ../outside` link is not the `factory/state` worktree, so `plan-items` refuses `<repo>/.factory/inbox/decision` from any working directory, in a dry run and with `--write` | **From another folder, absolute path:** dry run exits 0 with a plan; `--write` exits 0 and writes D-0001 to D-0008 into `../outside/inbox/decision`, outside the repo. **From the repo root, absolute path:** `--write` is refused, but the dry run exits 0 and reads the folder behind the link (it would list items there as already filed). The relative path from the repo root is refused (`error: inbox folder goes through a symlink, refusing to write`). | Product. R3-3 is not fixed: the symlink check still depends on the current folder, and the new work-tree rule passes because the link's target is in no work tree. The rule as stated ("inside a git work tree unless …") doesn't cover a path that leaves the repo through a link; SKILL.md's wording ("outside the `factory/state` worktree") does |
+| F7 | `FR07RolePolicy.test_commands_may_not_name_a_shell_or_interpreter` (11 names, each in the project policy and a repo override: 22 subtests) | Role policy v2.1 (`794c830`): "`commands` may not name a shell, interpreter or command wrapper" | Each name is rejected | `validate-manifest` prints `Manifest is valid.` for the wrappers `stdbuf`, `setsid`, `ionice`, `taskset`, `flock`, `chroot`, `runuser`, `unbuffer` and the interpreters `irb` (Ruby), `cscript` and `wscript` (Windows Script Host). All other names in the list, including `python3.12`, `pypy3`, `nodejs`, `busybox`, `awk`, `env`, `xargs`, `nohup`, `timeout`, `nice`, `sudo` and the path-qualified and `.exe` forms, are rejected | Product. The contract calls this a guard rail, not the boundary, so these are Low by the reviewer's scale; but the contract rule is unconditional, and `stdbuf -o0 bash` or `setsid bash` gets a shell past it. If the owner means a fixed list instead, the contract should name it, and I'll test that list |
+
+Neither is a regression: both tests are new or extended in this run, and the same behaviour was reported by the security reviewer as R3-3 and R3-4 on `ee6be85`.
+
+### Criteria-to-test map changes
+
+| Criterion | Change | Result |
+|---|---|---|
+| AC-11 (FR-7), Role policy v2.1 contract | `FR07RolePolicy` now 17 tests: lists updated to `794c830`; added dialect globs and the list-matches-contract check; shell/interpreter test extended to wrappers and families | 16 pass; the command test fails (F7) |
+| FR-6, FR-8, SR-4, section 6 "partly onboarded" (new row) | `FactoryStateInbox` (8) | 7 pass; the symlinked `.factory` test fails (F6) |
+| SR-1 with FR-3, FR-14 | `SR01RepoTextInMarkdown` (3), unchanged | All pass now (F4, F5 fixed) |
+
+### Not run, and why
+
+- **Python 3.10:** not installed; `test_fr12_checker_runs_on_python_3_10` skips and says so (the run's one skip). The oldest interpreter that ran is 3.11.
+- Everything else is as in "Run on ee6be85": no Windows or macOS (so the `.exe` command names are checked only as manifest text, and `SR01RepoTextInMarkdown` ran on Linux only), AC-20 from the local checkout only, no real GitHub, no scanner downloads. Coverage was not re-measured.
+
+### Seeds (property tests, `c4e8fb6`)
+
+| Interpreter | acceptance random repos / secret values | developer manifests / secret / workflow scanner / YAML reader |
+|---|---|---|
+| 3.11 | 2692119351 / 950156070 | 338904809 / 1424223997 / 3943553110 / 897499007 |
+| 3.12 | 576133472 / 3078420148 | 25792736 / 63908395 / 1294369658 / 2400843493 |
+| 3.13 | 701094494 / 1071211274 | 2245292874 / 2974390747 / 2510002233 / 4182558769 |
+
+### Observations (not failures)
+
+- **O10:** SKILL.md step 5 says `plan-items` "refuses an inbox outside the `factory/state` worktree", but the stated rule, and the product, allow an inbox that is in no git work tree at all (my control test and the existing tests use such folders). The two wordings should agree; the narrower one is what's tested here, plus the link case in F6.
+- **O11:** these names also validate, but I didn't put them in the test because whether they are a "command wrapper" is arguable: `bunx` and `pnpx` (while `npx` is rejected), `strace`, `gdb`, `zsh5`. A list in the contract would settle it.
+- **O9 and O8 still stand.**

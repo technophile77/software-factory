@@ -1065,16 +1065,34 @@ class AC11Manifest(Base):
 CORE_ROLES = ["orchestrator", "requirements-analyst", "software-developer", "test-engineer",
               "security-reviewer", "validation-judge"]
 CONTRACT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch"}
-# Copied from interface-contracts.md, Role policy v2.1 (as amended by H-0008, 538177f).
+# Copied from interface-contracts.md, Role policy v2.1 (as amended by H-0008, 794c830).
 SECRET_GLOBS = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks",
                 "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc",
-                "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json"]
+                "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json",
+                "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk",
+                "**/kubeconfig", "**/.kube/config"]
 CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json",
                      ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml",
                      "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**",
-                     "workflows/**"]
-SHELLS_AND_INTERPRETERS = ["sh", "bash", "zsh", "dash", "pwsh", "powershell", "cmd", "python", "python3", "node",
-                           "perl", "ruby", "env", "xargs"]
+                     "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**", ".gitmodules",
+                     ".vscode/**", ".devcontainer/**"]
+# "commands may not name a shell, interpreter or command wrapper": the contract names no list, so these are
+# members that are one of the three by any reading, including versioned and path-qualified spellings.
+SHELLS_AND_INTERPRETERS = ["sh", "bash", "zsh", "dash", "ash", "ksh", "mksh", "rbash", "fish", "csh", "tcsh",
+                           "pwsh", "powershell", "cmd", "busybox",
+                           "python", "python3", "python3.12", "python3.10", "pypy3", "node", "nodejs", "deno",
+                           "perl", "ruby", "irb", "php", "lua", "tclsh", "awk", "gawk", "cscript", "wscript",
+                           "Python3", "BASH",
+                           "/bin/sh", "/usr/bin/bash", "bash.exe", "pwsh.exe"]
+# Each of these runs another program named in its arguments (its man page: "run COMMAND ...").
+COMMAND_WRAPPERS = ["env", "/usr/bin/env", "xargs", "sudo", "doas", "nohup", "timeout", "nice", "stdbuf", "setsid",
+                    "ionice", "taskset", "flock", "chroot", "runuser", "unbuffer"]
+# The contract keeps build and test tools: "build and test tools run repo code by design".
+BUILD_AND_TEST_TOOLS = ["npm", "git", "go", "cargo", "make", "mvn", "gradle", "pytest", "tox"]
+# Glob syntax the contract refuses because "glob dialects read them differently".
+DIALECT_GLOBS = ["{src,lib}/**", "src/{a,b}.py", ".factory/{..,x}/.github/workflows/x.yml", "src/}x",
+                 "[!x]/**", "src/[!.]*.py", "[^x]/**", ".factory/[^x][^x]/CLAUDE.md",
+                 "@(src|lib)/**", "+(src)/**", "!(test)/**", "?(src)/**", "*(src)/**", "src/**/!(x).py"]
 # Roles whose template write rules reach outside .factory/ (directly or through the repo override).
 WRITERS_OUTSIDE_FACTORY = ["requirements-analyst", "software-developer", "test-engineer"]
 OUTSIDE_WORKTREE = ["../**", "../../etc/**", "src/../../**", ".factory/../src/**", "/etc/**", "/**",
@@ -1234,7 +1252,7 @@ class FR07RolePolicy(Base):
                 self.assertRejected(data, name)
 
     def test_commands_may_not_name_a_shell_or_interpreter(self):
-        for cmd in SHELLS_AND_INTERPRETERS:
+        for cmd in SHELLS_AND_INTERPRETERS + COMMAND_WRAPPERS:
             with self.subTest(command=cmd, where="project"):
                 data = self.manifest()
                 data["policy"]["roles"]["orchestrator"]["commands"]["allow"].append(cmd)
@@ -1244,8 +1262,42 @@ class FR07RolePolicy(Base):
                 data["repos"][0]["policy"]["roles"]["software-developer"]["commands"]["allow"].append(cmd)
                 self.assertRejected(data, f"repo command {cmd}")
         data = self.manifest()
-        data["repos"][0]["policy"]["roles"]["software-developer"]["commands"]["allow"] += ["go", "cargo", "make"]
-        self.assertAccepted(data, "ordinary build tools")
+        data["repos"][0]["policy"]["roles"]["software-developer"]["commands"]["allow"] += BUILD_AND_TEST_TOOLS
+        self.assertAccepted(data, "ordinary build and test tools")
+
+    def test_dialect_specific_globs_rejected(self):
+        # Role policy v2.1 (794c830): brace expansion, negated classes and extglobs are refused in every list.
+        for section, key in (("read", "allow"), ("read", "deny"), ("write", "allow"), ("write", "deny")):
+            for glob in DIALECT_GLOBS:
+                with self.subTest(section=f"{section}.{key}", glob=glob):
+                    data = self.manifest()
+                    rules = data["policy"]["roles"]["software-developer"][section]
+                    rules[key] = rules.get(key, []) + [glob]
+                    self.assertRejected(data, f"{section}.{key} {glob}")
+        for glob in (".factory/{..,x}/.github/workflows/x.yml", ".factory/[^x][^x]/CLAUDE.md"):
+            with self.subTest(where="factory-only writer", glob=glob):
+                data = self.manifest()
+                data["policy"]["roles"]["orchestrator"]["write"]["allow"].append(glob)
+                self.assertRejected(data, f"orchestrator writes {glob}")
+            with self.subTest(where="repo override", glob=glob):
+                data = self.manifest()
+                data["repos"][0]["policy"]["roles"]["software-developer"]["write"] = {"allow": [glob]}
+                self.assertRejected(data, f"repo override writes {glob}")
+        # Control: plain character classes, ? and * are not on the refused list.
+        data = self.manifest()
+        data["policy"]["roles"]["software-developer"]["write"]["allow"] += ["src/[abc]*.py", "lib/?/**", "docs/*.md"]
+        self.assertAccepted(data, "globs every dialect reads the same way")
+
+    def test_role_policy_lists_match_the_contract_text(self):
+        # The lists above are copied by hand; check them against the contract so a later amendment shows up here.
+        if MASTER is None:
+            self.skipTest("skill copied out of the factory repo; interface-contracts.md is not here")
+        text = read(os.path.join(MASTER, "docs", "interface-contracts.md"))
+        section = re.search(r"(?ms)^## Role policy .*?(?=^## )", text).group(0)
+        secret = re.search(r"deny reading secret files:\s*(.*?)\.\n", section, re.S).group(1)
+        changes = re.search(r"deny the change-controlled paths:\s*(.*?)\. Globs", section, re.S).group(1)
+        self.assertEqual(re.findall(r"`([^`]+)`", secret), SECRET_GLOBS)
+        self.assertEqual(re.findall(r"`([^`]+)`", changes), CHANGE_CONTROLLED)
 
     def test_repo_override_cannot_widen_tools(self):
         # Role policy v2.1: loosening a rule needs a Security decision, which a manifest can't carry here.
@@ -1924,6 +1976,129 @@ class EdgeCases(Base):
         blob = json.dumps(a["gaps"])
         for stale in ("maturity.yaml", "roles.yaml", ".factory/policy"):
             self.assertNotIn(stale, blob)
+
+
+# ---------------------------------------------------------------------------
+# FR-6, FR-8, SR-4 (S1.4): plan-items writes only into the factory/state worktree.
+# SKILL.md step 5 (c4e8fb6): a .factory/ that is not the factory/state worktree is never a source of
+# records, and plan-items refuses an inbox inside a git work tree unless that work tree is on factory/state.
+# ---------------------------------------------------------------------------
+
+class FactoryStateInbox(Base):
+    def state_repo(self, files=None, worktree_branch="factory/state"):
+        """A committed repo on main with an orphan factory/state branch checked out as a worktree at .factory/."""
+        root = self.repo(files or {"s.py": AWS_KEY + "\n", "README.md": "x\n"}, commit=True)
+        git(root, "checkout", "-q", "--orphan", "factory/state")
+        git(root, "rm", "-rqf", "--cached", ".")
+        for box in ("decision", "testing", "hygiene"):
+            write(root, f"inbox/{box}/.gitkeep", "")
+        git(root, "add", "inbox")
+        git(root, "commit", "-q", "-m", "state")
+        git(root, "clean", "-fdq")
+        git(root, "checkout", "-q", "-f", "main")
+        if worktree_branch == "factory/state":
+            git(root, "worktree", "add", "-q", ".factory", "factory/state")
+        else:
+            git(root, "worktree", "add", "-q", "-b", worktree_branch, ".factory", "main")
+            os.makedirs(os.path.join(root, ".factory", "inbox", "decision"), exist_ok=True)
+        return root
+
+    def plan(self, a, inbox, *flags, cwd=None):
+        args = ["plan-items", a["_json_path"], "--inbox-dir", inbox, "--assessment-ref", "x.json", *flags]
+        if cwd:
+            return cli_subprocess(*args, cwd=cwd)
+        return cli(*args)
+
+    def assertRefused(self, a, inbox, watch, cwd=None):
+        before = sorted(os.listdir(watch)) if os.path.isdir(watch) else []
+        for flags in ((), ("--write",)):
+            with self.subTest(flags=flags):
+                code, out, err = self.plan(a, inbox, *flags, cwd=cwd)
+                self.assertNotEqual(code, 0, f"accepted {inbox} {flags}: {out}")
+                self.assertNotIn("Traceback", err)
+                self.assertNotIn("already_filed", out, "trusted records from outside factory/state")
+                self.assertTrue(err.strip(), "refused without saying why")
+        self.assertEqual(sorted(os.listdir(watch)) if os.path.isdir(watch) else [], before, "wrote anyway")
+
+    def test_inbox_in_the_factory_state_worktree_is_used(self):
+        root = self.state_repo()
+        a = self.assess(root)
+        inbox = os.path.join(root, ".factory", "inbox", "decision")
+        code, out, err = self.plan(a, inbox, "--write")
+        self.assertEqual(code, 0, err)
+        created = json.loads(out)["created"]
+        self.assertTrue(any(c["category"] == "Security" for c in created))
+        self.assertEqual(sorted(f for f in os.listdir(inbox) if f.endswith(".md")),
+                         sorted(f"{c['id']}.md" for c in created))
+        self.assertEqual(git(root, "status", "--porcelain").splitlines(), ["?? .factory/"],
+                         "items leaked into the code branch")
+        self.assertIn("D-0001.md", git(os.path.join(root, ".factory"), "status", "--porcelain"))
+        # SKILL.md step 6 runs it from the repo root with the relative path; a second run files nothing new.
+        code, out, err = self.plan(a, os.path.join(".factory", "inbox", "decision"), "--write", cwd=root)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["created"], [])
+
+    def test_inbox_outside_any_work_tree_is_allowed(self):
+        a = self.assess(self.repo({"s.py": AWS_KEY + "\n"}, commit=True))
+        inbox = os.path.join(self.tmp(), "plain", "decision")
+        code, out, err = self.plan(a, inbox, "--write", cwd=self.tmp())
+        self.assertEqual(code, 0, err)
+        self.assertTrue(json.loads(out)["created"])
+
+    def test_tracked_factory_folder_is_not_a_source_of_records(self):
+        # R3-2: a repo that tracks .factory/inbox/ with items for its own gaps must not hide them from the owner.
+        root = self.repo({"s.py": AWS_KEY + "\n", "README.md": "x\n"}, commit=True)
+        first = self.assess(root)
+        planted = os.path.join(root, ".factory", "inbox", "decision")
+        scratch = os.path.join(self.tmp(), "scratch")
+        self.assertEqual(self.plan(first, scratch, "--write")[0], 0)
+        shutil.copytree(scratch, planted)
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "plant")
+        a = self.assess(root)
+        self.assertIn("factory:dir-in-repo", ids(a))
+        self.assertRefused(a, planted, planted)
+        self.assertRefused(a, os.path.join(".factory", "inbox", "decision"), planted, cwd=root)
+
+    def test_untracked_factory_folder_on_the_code_branch_is_refused(self):
+        root = self.repo({"s.py": AWS_KEY + "\n"}, commit=True)
+        inbox = os.path.join(root, ".factory", "inbox", "decision")
+        os.makedirs(inbox)
+        self.assertRefused(self.assess(root), inbox, inbox)
+
+    def test_inbox_anywhere_in_the_code_work_tree_is_refused(self):
+        root = self.repo({"s.py": AWS_KEY + "\n"}, commit=True)
+        a = self.assess(root)
+        for rel in ("inbox", os.path.join("docs", "inbox", "decision")):
+            with self.subTest(inbox=rel):
+                self.assertRefused(a, os.path.join(root, rel), os.path.join(root, rel))
+
+    def test_worktree_on_another_branch_is_refused(self):
+        root = self.state_repo(worktree_branch="not-state")
+        inbox = os.path.join(root, ".factory", "inbox", "decision")
+        self.assertRefused(self.assess(root), inbox, inbox)
+
+    def test_symlinked_factory_folder_refused_from_any_working_directory(self):
+        # R3-3: a tracked .factory -> ../outside link, with the absolute inbox path given from another folder.
+        for label in ("another folder", "repo root"):
+            with self.subTest(cwd=label):
+                root = self.repo({"s.py": AWS_KEY + "\n"})
+                outside = os.path.join(os.path.dirname(root), "outside")
+                watch = os.path.join(outside, "inbox", "decision")
+                os.makedirs(watch)
+                os.symlink("../outside", os.path.join(root, ".factory"))
+                git(root, "add", "-A")
+                git(root, "commit", "-q", "-m", "link")
+                a = self.assess(root)
+                inbox = os.path.join(root, ".factory", "inbox", "decision")
+                self.assertRefused(a, inbox, watch, cwd=self.tmp() if label == "another folder" else root)
+
+    def test_skill_step5_uses_factory_folder_only_as_the_state_worktree(self):
+        text = read(os.path.join(SKILL, "SKILL.md"))
+        step = re.search(r"(?ms)^### \d+\. Set up `factory/state`.*?(?=^### )", text).group(0)
+        self.assertIn("git worktree list", step)
+        self.assertRegex(step, r"(?s)tracks.*factory:dir-in-repo.*never a source")
+        self.assertRegex(step, r"(?s)plan-items.{0,40}refuses")
 
 
 # ---------------------------------------------------------------------------
