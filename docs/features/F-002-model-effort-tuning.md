@@ -1,9 +1,9 @@
 # Feature: Model and effort tuning per agent
 
 - **Id:** F-002
-- **Status:** Draft (requirements interview; A-1 method, A-9 and A-10 await the owner)
+- **Status:** Draft (requirements interview; A-9 and A-10 await the owner)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 3
+- **Spec version:** 4
 
 ## 1. Objective and business purpose
 Run each agent on the cheapest model and lowest effort level that still does
@@ -43,7 +43,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 ## 3. Functional requirements
 | Id | Requirement |
 |---|---|
-| FR-1 | Factory config defines a model/effort ladder: a list of rungs, each a model and an effort level, ordered by cost (A-1). It also holds each model's published per-token prices, with the date and source. |
+| FR-1 | Factory config defines a model/effort ladder: a list of rungs, each a model and an effort level. Their order is not configured; it comes from measured cost per task (FR-18, A-1). Config also holds each model's per-token prices, used only to turn measured tokens into dollars. |
 | FR-2 | The project manifest can set a rung per agent role (`settings.agents.<role>`). A role with no setting uses the master default. |
 | FR-3 | The engine runs each agent with its role's resolved model and effort, and records both in the agent report with token use, cost (tokens × the configured prices), and duration. |
 | FR-4 | The master factory ships a calibration suite per role: graded tasks at three complexity tiers (simple, moderate, complex), each with a pass/fail check. These are used for initial calibration and while a project has too few transcripts (A-10). |
@@ -60,6 +60,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | FR-15 | Every applied change to a role's rung is a commit with the hygiene item id, so it can be traced and rolled back. |
 | FR-16 | Derived complexity: the tier whose master calibration tasks best match the rungs the roles currently need (median role rung mapped to a tier), recorded in each run review and in history. It does not edit the manifest preset. |
 | FR-17 | Run reviews and per-role history (last 20 runs) are readable by the owner as plain files on `factory/state`. |
+| FR-18 | Effort metrics are built from measurement: every calibration trial, replay, and real agent run adds its tokens, cost, duration and pass/fail to a per-project record for its role and rung (`.factory/tuning/metrics.json`). The ladder order for a role is recomputed from these as median cost per passing task. A rung with no measurements is marked unmeasured, and the review shows how many samples each figure rests on. |
 
 ### Failure attribution
 | Root cause (testing-strategy.md) or event | Attributed to |
@@ -107,8 +108,10 @@ agent up to a stronger model or higher effort is always the owner's call.
   an agent run on it fails as "environment" and files a Testing item.
 - No rung passes calibration: file a Testing item for the role with every
   score, and propose no setting.
-- Published prices change: the next calibration re-orders the ladder from the
-  new prices and measured tokens; current settings stay until an item is approved.
+- Prices change: past dollar figures are recomputed from the stored token
+  counts; the ladder may re-order, but current settings stay until an item is approved.
+- Measured order disagrees with model price (a stronger model at low effort
+  is cheaper per task than a weaker one at high effort): the measured order wins.
 - A selected transcript's commit no longer exists or its dependencies can't
   install: the task is skipped, reported, and proposed for removal.
 - A feature run with no attributed failures still counts as a clean run.
@@ -133,14 +136,14 @@ agent up to a stronger model or higher effort is always the owner's call.
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | **Ladder order (Product).** Rungs are ordered by cost. Owner: by Anthropic's published per-token rates. Prices only exist per model; effort has no price of its own, it changes how many tokens a task uses. So the order is cost per task = published rate × tokens measured in calibration. Until measured, the order is by model rate, then effort low → max. Seed rates (Anthropic API, input / output per million tokens, as of 2026-11-03): Haiku 5.5 $0.10 / $0.50, Sonnet 5.5 $2 / $10, Opus 5.5 $4 / $20, Fable 5.2 $8 / $40. | Owner, 2026-11-10 (order by cost); method pending confirmation | Approved in principle |
+| A-1 | **Ladder order (Product).** Rungs are ordered by measured cost per passing task, per role and per project, built up over time from calibration, replays and real runs (FR-18), not from published figures. Per-token prices only convert measured tokens to dollars (Anthropic API rates on 2026-11-03, input / output per million tokens: Haiku 5.5 $0.10 / $0.50, Sonnet 5.5 $2 / $10, Opus 5.5 $4 / $20, Fable 5.2 $8 / $40). Before anything is measured, initial calibration tries rungs by model price, then effort low → max, and the order is corrected as measurements arrive. | Owner, 2026-11-10 | Approved |
 | A-2 | **Calibration pass bar (Product).** Each task runs 5 trials. A rung passes if at least 90% of trials pass, and, for the security reviewer and validation judge, no planted or recorded Critical or High defect is missed in any trial. | Owner, 2026-11-10 | Approved |
 | A-3 | **Floors for gate agents (Security).** The security reviewer and validation judge never run below Sonnet/medium, whatever calibration finds. | Owner, 2026-11-10 | Approved |
 | A-4 | **Approval for every change (Product).** Spec § 6 stands: step-ups and step-downs are both hygiene items; move-downs are grouped into one low-priority item per review. | Owner, 2026-11-10 | Approved |
 | A-5 | **Triggers (Product).** Step up: a role is attributed failures in 3 of its last 5 runs, or causes a Testing inbox escalation in 2 of its last 5. Step down: 10 consecutive runs with no attributed failure and first-try pass, then a passing replay of the project's own transcripts at the cheaper rung (owner, 2026-11-10). | Owner, 2026-11-10 | Approved |
 | A-6 | **Complexity (Product).** The manifest's `complexity` is a preset set at onboarding and used only for initial calibration. After the project starts, complexity is derived from the rungs the agents actually need and reported in run reviews. | Owner, 2026-11-10 | Approved |
 | A-7 | **Calibration tasks (Architecture).** Master tasks in the master repo at `calibration/<role>/<tier>/`. A project's tests are selected transcripts of its own runs, listed in its config repo at `calibration/transcripts.yaml`; the transcripts themselves stay where transcripts are kept today (outside Git). Results and history on `factory/state` at `.factory/tuning/`. Logic is an engine module. | Owner, 2026-11-10 | Approved |
-| A-8 | **Formats (Interfaces).** Additive: Project manifest v1.1, Agent report v1.1, new Run review v1.0 and Calibration result v1.0 (§ 10). | Owner, 2026-11-10 | Approved |
+| A-8 | **Formats (Interfaces).** Additive: Project manifest v1.1, Agent report v1.1, new Run review v1.0, Tuning metrics v1.0 and Calibration result v1.0 (§ 10). | Owner, 2026-11-10 | Approved |
 | A-9 | **How outputs are compared (Product).** ★ Recommended: use an objective check wherever the role has one: developer, the feature's final acceptance tests pass on the new code; test engineer, the new suite passes on the accepted code and fails on the bugs found during that run; security reviewer, every finding in the accepted report is found at the same severity; judge, same verdict and every Blocking finding; orchestrator, same root cause and next step. For the analyst, whose output is prose, a grader at a fixed top rung scores the new spec against the accepted one on a rubric (every requirement, criterion and assumption covered); its cost counts toward calibration. | Owner | Pending |
 | A-10 | **When transcripts replace master tasks (Product).** ★ Recommended: per role, once at least 5 transcripts are selected, and at least one of them is a run where that role's first attempt failed, so the set tests the hard cases too. Until then, master tasks at the derived tier fill the gap. | Owner | Pending |
 
@@ -164,7 +167,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | SR-5 | Before a transcript is selected, it is scanned for secrets and personal data; a transcript that has any is not selected. | Analyst (S2) | Proposed |
 | SR-6 | Transcript lists and master tasks are untrusted input and are validated before use; a replay's initial context is the recorded one, unchanged. | Analyst (S1) | Proposed |
 
-Gate 1 security review follows once A-1, A-9 and A-10 are decided.
+Gate 1 security review follows once A-9 and A-10 are decided.
 
 ## 10. Interface requirements
 All changes are additive (A-8):
@@ -179,6 +182,9 @@ All changes are additive (A-8):
   role: `rung`, `runs`, `first_try_pass`, `fix_cycles`, `reruns`,
   `attributed_failures` (cause, stage, report ref), `usage`, and
   `suggestions_filed` (item ids).
+- **Tuning metrics v1.0 (new):** `.factory/tuning/metrics.json`, per role
+  per rung: samples, passes, median and p90 tokens, cost and duration per
+  task, last updated, and the resulting ladder order.
 - **Calibration result v1.0 (new):** `.factory/tuning/calibration/<date>.json`
   with source (master tier or transcripts), ladder and price versions, and per
   role per rung: trials, passes, score, tokens, cost, and the proposed rung.
@@ -188,8 +194,8 @@ All changes are additive (A-8):
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit and approved (A-1 method, A-9, A-10 pending)
-- [ ] Blocking decisions resolved (those three; Gate 1 not yet run)
+- [ ] Assumptions explicit and approved (A-9, A-10 pending)
+- [ ] Blocking decisions resolved (those two; Gate 1 not yet run)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -197,3 +203,4 @@ All changes are additive (A-8):
 | 1 | 2026-11-10 | Draft | — |
 | 2 | 2026-11-10 | Owner answers: ladder ordered by cost, grouped move-downs, complexity preset then derived, project transcripts as tests; A-2, A-3, A-5, A-8 approved as proposed; A-9, A-10 added | Owner, 2026-11-10 (A-1 to A-8) |
 | 3 | 2026-11-10 | Move-downs tested only by replaying the project's own transcripts | Owner, 2026-11-10 |
+| 4 | 2026-11-10 | Ladder order and effort metrics built from measurement over time, not published data (A-1 approved) | Owner, 2026-11-10 |
