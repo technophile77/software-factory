@@ -1,9 +1,9 @@
 # Feature: Model and effort tuning per agent
 
 - **Id:** F-002
-- **Status:** Draft (requirements interview; A-9, A-10 and A-11 await the owner)
+- **Status:** Draft (requirements interview; A-10 and A-11 await the owner)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 6
+- **Spec version:** 7
 
 ## 1. Objective and business purpose
 Run each agent on the cheapest model and lowest effort level that still does
@@ -148,7 +148,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | A-6 | **Complexity (Product).** The manifest's `complexity` is a preset set at onboarding and used only for initial calibration. After the project starts, complexity is derived from the rungs the agents actually need and reported in run reviews. | Owner, 2026-11-10 | Approved |
 | A-7 | **Calibration tasks (Architecture).** Master tasks in the master repo at `calibration/<role>/<tier>/`. A project's tests are selected transcripts of its own runs, listed in its config repo at `calibration/transcripts.yaml`; the transcripts themselves stay where transcripts are kept today (outside Git). Results, metrics and history on the project config repo's `factory/state` branch at `.factory/tuning/` (one record per project, per ADR 0009/0010), with each sample tagged with the member repo it ran in. Nothing project-specific is stored in the master factory repo. Logic is an engine module. | Owner, 2026-11-10 | Approved |
 | A-8 | **Formats (Interfaces).** Additive: Project manifest v1.1, Agent report v1.1, new Run review v1.0, Tuning metrics v1.0 and Calibration result v1.0 (§ 10). | Owner, 2026-11-10 | Approved |
-| A-9 | **How outputs are compared (Product).** ★ Recommended: use an objective check wherever the role has one: developer, the feature's final acceptance tests pass on the new code; test engineer, the new suite passes on the accepted code and fails on the bugs found during that run; security reviewer, every finding in the accepted report is found at the same severity; judge, same verdict and every Blocking finding; orchestrator, same root cause and next step. For the analyst, whose output is prose, a grader at a fixed top rung scores the new spec against the accepted one on a rubric (every requirement, criterion and assumption covered); its cost counts toward calibration. | Owner | Pending |
+| A-9 | **How outputs are compared (Product).** use an objective check wherever the role has one: developer, the feature's final acceptance tests pass on the new code; test engineer, the new suite passes on the accepted code and fails on the bugs found during that run; security reviewer, every finding in the accepted report is found at the same severity; judge, same verdict and every Blocking finding; orchestrator, same root cause and next step. For the analyst, whose output is prose, a grader at a fixed top rung scores the new spec against the accepted one on a rubric (every requirement, criterion and assumption covered); its cost counts toward calibration. | Owner, 2026-11-10 (PR #8 review) | Approved |
 | A-10 | **When transcripts replace master tasks (Product).** ★ Recommended: per role, once at least 5 transcripts are selected, and at least one of them is a run where that role's first attempt failed, so the set tests the hard cases too. Until then, master tasks at the derived tier fill the gap. | Owner | Pending |
 | A-11 | **Project evaluator agent (Product + Architecture).** A seventh agent role, `project-evaluator`, reviews the completed project spec and proposes the complexity preset (FR-19), replacing the owner's guess at onboarding. It is advisory: the owner approves, and calibration still finds the rungs. It runs on its own rung, calibrated on specs of known complexity. Adding a role amends spec § 2 (six agents) and needs a new `agents/project-evaluator/AGENT.md` and role policy entry, each through a hygiene item. | Owner raised 2026-11-10; scope to confirm | Pending |
 
@@ -172,7 +172,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | SR-5 | Before a transcript is selected, it is scanned for secrets and personal data; a transcript that has any is not selected. | Analyst (S2) | Proposed |
 | SR-6 | Transcript lists and master tasks are untrusted input and are validated before use; a replay's initial context is the recorded one, unchanged. | Analyst (S1) | Proposed |
 
-Gate 1 security review follows once A-9, A-10 and A-11 are decided.
+Gate 1 security review follows once A-10 and A-11 are decided.
 
 ## 10. Interface requirements
 All changes are additive (A-8):
@@ -199,7 +199,7 @@ All changes are additive (A-8):
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit and approved (A-9, A-10, A-11 pending)
+- [ ] Assumptions explicit and approved (A-10, A-11 pending)
 - [ ] Blocking decisions resolved (those two; Gate 1 not yet run)
 
 ## 12. Change log
@@ -211,3 +211,4 @@ All changes are additive (A-8):
 | 4 | 2026-11-10 | Ladder order and effort metrics built from measurement over time, not published data (A-1 approved) | Owner, 2026-11-10 |
 | 5 | 2026-11-10 | Clarified: tuning data lives in the project config repo, samples tagged by member repo | Follows ADR 0009/0010 |
 | 6 | 2026-11-10 | Project evaluator agent proposes the complexity preset (A-11); F-004 parked | — |
+| 7 | 2026-11-10 | A-9 approved | Owner, 2026-11-10 |
