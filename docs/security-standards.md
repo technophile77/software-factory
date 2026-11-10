@@ -7,7 +7,8 @@ criteria anywhere else; link here.
 **Status:** criteria S1 to S7 are a draft for review. Severity levels and
 blocking rules were approved by the owner on 2026-11-08 (open decision 7,
 `proposals/0007-security-severity.md`). The least-privilege principle and S8
-were set by the owner on 2026-11-10 (H-0004).
+were set by the owner on 2026-11-10 (H-0004), and so were the rules for
+external components in S4 (H-0005).
 
 ## Design principle: least privilege
 
@@ -37,10 +38,15 @@ Each finding cites the criterion id it fails.
 - S3.2 Sensitive data is identified in the feature spec and handled per its stated requirements.
 - S3.3 Logs do not contain credentials, tokens, or personal data beyond what the spec allows.
 
-### S4 Dependencies
-- S4.1 New dependencies are approved (Architecture decision) before use.
+### S4 Dependencies and external components
+External components (libraries, packages, GitHub Actions, tools, container
+images, and outside services) are untrusted until reviewed, and stay
+untrusted at run time.
+- S4.1 A new external library or component gets a security review before it is approved (Architecture decision) for use. The review covers its source and maintainers, known CVEs and their fixes, install scripts, the permissions it needs, and what it pulls in. The review is recorded with the decision.
 - S4.2 No dependency with a known exploitable vulnerability in the used code path.
 - S4.3 Versions are pinned or locked.
+- S4.4 Every external library, direct and transitive, including development tools, is checked against CVE entries: at the security review, in CI on every change, and before each promotion. A CVE found later is a finding, graded by the Severity table.
+- S4.5 Data from an external component is input: it is validated at the boundary (S1.1), and the component runs with only the access it needs (S8).
 
 ### S5 Error handling
 - S5.1 Errors fail closed.
@@ -90,6 +96,7 @@ promotion to the next level.
 
 - Does the feature touch input, auth, secrets, sensitive data, dependencies, or external systems?
 - What permissions does it need (files, network, tokens, CI, agent tools)? Is each one the minimum (S8)?
+- Does it add or upgrade an external library or component? Has it had a security review and a CVE check (S4.1, S4.4)?
 - For each, is there a requirement that covers it?
 - What are the abuse cases? Are they in the edge cases?
 - What needs the owner's decision? File it as Security.
