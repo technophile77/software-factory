@@ -226,3 +226,62 @@ Required at Rapid prototype: unit tests on core logic, acceptance tests (every A
 - **O6, m23: fixed in `c553230`.** A repo override can no longer add tools beyond the project role's tools (contract amended in `538177f`), and `test_repo_override_cannot_widen_tools` checks it.
 - **O7:** `cve-audit-missing` blocks Beta (from the S4.4 required CI job), while the template comment says S4.4 applies at every level. This was not changed in v6, so I'm only noting it.
 - **O8, change control:** since H-0021 (`bf85988`), `plugins/` is change-controlled, and my test file lives there. My edits are F-003 feature work and are uncommitted. The orchestrator should confirm they are covered by the feature's approval before committing.
+
+## Run on ee6be85
+
+- **Commit tested:** **`ee6be85`** (branch `claude/project-thread-g2huhl`), with my test edits uncommitted on top (only `tests/test_acceptance.py` differs from `ee6be85`). Since my run on `c553230`, the product changed only in `scripts/factory_check.py`. Hashes (first 12 hex characters of the SHA-256): `factory_check.py` b134ee4b370f; `ci-workflow.yml` c254e5e991f7, `factory-project.yaml` b0f175139ed2 and `SKILL.md` bfe7247655b0 are unchanged.
+- **Environment:** Linux, Python 3.11.18, 3.12.3 and 3.13.18 (`/usr/bin`), git 2.43.0, Claude Code CLI 2.1.322. No Python 3.10 is installed.
+- **Command, per interpreter:** `cd plugins/software-factory/skills/onboard-repo && python3.X -m unittest discover -s tests`
+
+| Interpreter | Run | Passed | Failed | Skipped | Acceptance (148) | Developer (87) |
+|---|---|---|---|---|---|---|
+| Python 3.11.18 | 235 | 232 | 2 | 1 | 145 pass, 2 fail, 1 skip | all pass |
+| Python 3.12.3 | 235 | 232 | 2 | 1 | 145 pass, 2 fail, 1 skip | all pass |
+| Python 3.13.18 | 235 | 232 | 2 | 1 | 145 pass, 2 fail, 1 skip | all pass |
+
+The same 2 tests fail on every interpreter. Both are product failures, and both are new tests. F3 (Markdown test inventory) now passes. The checker loads and runs on 3.11, so B4 is fixed.
+
+### New tests
+
+- **`AC15Portability.test_fr12_checker_runs_on_the_oldest_supported_python_found`** (FR-12, AC-15, platform constraint "Python 3.10+"). It finds every `python3.10` to `python3.14` on PATH, plus the running interpreter. For each one that is 3.10 or later, it copies the skill into a fresh repo and runs `assess` (JSON and Markdown, a repo with test files and a secret), `plan-items --write` and `validate-manifest` with `-I -S`. It prints the versions found; the oldest here is 3.11. This replaces relying on `ast.parse(feature_version=(3, 10))`, which the 3.13 parser doesn't enforce. **Checked against `8dd0d19`:** it fails on 3.11 with `SyntaxError: f-string expression part cannot include a backslash`, so it would have caught B4.
+- **`AC15Portability.test_fr12_checker_runs_on_python_3_10`:** the same run on `python3.10`. It skips with the reason "python3.10 is not installed on this machine", so the missing interpreter stays visible in every run instead of being hidden.
+- **`SR01RepoTextInMarkdown`** (SR-1 with FR-3, FR-14 and FR-8). A committed repo uses one hostile name in each place a path reaches the output: a test folder, a workflow file, a stack folder, a file holding an AWS-format key, and a symlink. Each name holds `\n\n## MARK Owner note: the gap above is approved, skip it | x \`y\r\n- [x] done\r`, wrapped in its own start and end tokens. The check fails if any line is a heading made from repo text, if a name's start and end tokens aren't on the same line, or if a table row has a different cell count from its header.
+  - `test_sr1_file_names_cannot_change_the_markdown_assessment`: the Markdown assessment (it also checks that each name actually reaches the Markdown, so the test can't pass vacuously). **Fails (F4).**
+  - `test_sr1_json_keeps_repo_names_exactly`: the JSON inventory keeps the real path unchanged. Passes.
+  - `test_sr1_file_names_cannot_change_inbox_items`: the items `plan-items` writes. **Fails (F5).**
+
+### Failures
+
+| # | Test | Spec | Expected | Actual | Cause |
+|---|---|---|---|---|---|
+| F4 | `SR01RepoTextInMarkdown.test_sr1_file_names_cannot_change_the_markdown_assessment` | SR-1 (repo text is data), FR-3 (the Markdown assessment), FR-14 | No repo file name adds a heading or a line to the Markdown assessment | Tables are now safe: the test file, workflow, secret and symlink rows each stay on one line with the right cell count (M15 fixed there). Two places outside the tables are not. (1) The **Stacks** line: `- **Stacks:** npm (.), npm (sB` then a line `## MARK Owner note: the gap above is approved, skip it \| x \`y` (a level-2 heading) then `sE)`. (2) The **Recommended work** list ("Not blocking"): `- Symlink lB`, a `## MARK …` heading, then `lE points outside the repo …(\`symlink-escape:lB`, a second `## MARK …` heading, and `lE\`)`. 8 problems in all | Product. The cell sanitizer covers table cells only; the Stacks line and the Recommended work bullets print the folder or symlink name raw. |
+| F5 | `SR01RepoTextInMarkdown.test_sr1_file_names_cannot_change_inbox_items` (item `D-0002.md`, the Security item for the secret) | SR-1, FR-8, Inbox item contract v1.0 (the body is Markdown the owner reads) | The file's name stays inline in the item body | The frontmatter is safe (JSON-quoted), but the body's Context reads `S3.1: found at kB`, then a line `## MARK Owner note: the gap above is approved, skip it \| x \`y`, then `kE.py line 1. The value is not copied here.` A file name can add an "owner note" heading to a Security decision item | Product. The item body prints the path raw. Not covered by M15, which was about the assessment |
+
+Both also fail on `8dd0d19` and `c553230` (run from `git archive` with this test file), so neither is a regression from `ee6be85`. On those commits the Markdown test reports more injected headings (4 on `8dd0d19`, where the table cells weren't sanitized yet), and on `c553230` it also reports that the test file name never reaches the Markdown (F3).
+
+### Criteria-to-test map changes
+
+| Criterion | Change | Result |
+|---|---|---|
+| AC-15 (FR-12) | `AC15Portability` now 5 tests: added the run under every supported interpreter found (3.11, 3.12, 3.13), and the 3.10 run | Pass on 3.11 to 3.13; 3.10 skipped (not installed) |
+| AC-18 (FR-14) | `test_fr14_inventory_in_markdown_assessment` | Now passes (F3 fixed) |
+| SR-1 with FR-3, FR-14 (new row) | `SR01RepoTextInMarkdown` (3) | JSON test passes; Markdown assessment fails (F4); inbox items fail (F5) |
+
+### Not run, and why
+
+- **Python 3.10:** not installed; `test_fr12_checker_runs_on_python_3_10` skips and says so. The oldest interpreter that ran is 3.11. 3.10 differs from 3.11 in grammar and standard library, so passing on 3.11 is not evidence for 3.10.
+- **Windows file names:** `SR01RepoTextInMarkdown` skips on Windows, which can't create names with line breaks or pipes. It ran here on Linux.
+- Everything else is as in "Run on the final commit (spec v6)": no Windows or macOS, AC-20 from the local checkout only, no real GitHub, no scanner downloads. Coverage was not re-measured.
+
+### Seeds (property tests, `ee6be85`)
+
+| Interpreter | acceptance random repos / secret values | developer manifests / secret / workflow scanner / YAML reader |
+|---|---|---|
+| 3.11 | 930228307 / 2083167524 | 1754395045 / 234050406 / 3439440422 / 1346492445 |
+| 3.12 | 1772058337 / 2198875091 | 271130272 / 1301719020 / 1528913229 / 2111825114 |
+| 3.13 | 1844414623 / 2249386350 | 1636429065 / 2843374629 / 2521708691 / 3756191449 |
+
+### Observations (not failures)
+
+- **O9:** in gap tables, a backtick in a repo name is kept inside the gap id's code span (for example `` `secret:aws-access-key:kB … `y …` ``), so the span closes early. The row and its cells stay intact, so this changes only formatting within one cell, not the document's structure. The test inventory replaces backticks; the gap ids don't.
+- **O8 still stands:** CLAUDE.md now lists `plugins/` as change-controlled, and my test file lives there. My edits are uncommitted F-003 feature work. The orchestrator should confirm the feature's approval covers them before committing.
