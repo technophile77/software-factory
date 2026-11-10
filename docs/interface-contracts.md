@@ -309,7 +309,7 @@ Unicode NFC normalization. Deny globs match case-insensitively on every
 filesystem; allow globs match case-sensitively. A path counts as allowed
 only if an allow glob matches and no deny glob does.
 **Container per agent session (H-0045 and H-0052, owner, 2026-11-10;
-wording draft awaiting owner approval).** The engine runs every agent
+wording approved by decision card).** The engine runs every agent
 session, the agent process included, in its own container, so the agent's
 tools, hooks and everything they start stay inside it. Agents would
 otherwise run as the owner's OS user (ADR 0014), so the container is what

@@ -3,7 +3,7 @@
 **Status:** all decided by the owner on 2026-11-10 (decision cards). R2-1:
 first option A, then changed to option B, a container per agent session,
 once agents were to keep running as the owner (ADR 0014); the container
-wording (H-0045 with H-0052) awaits the owner's approval of its text.
+wording (H-0045 with H-0052) approved by the owner as drafted (card).
 R2-2 A, R2-4 A, H-0048 and H-0049 approved as drafted. Recorded as ADR 0015
 and in the Role policy and Inbox item contracts.
 

@@ -20,7 +20,7 @@
     "chosen_level": {"type": ["string", "null"]},
     "blocking_now": {"type": "array", "items": {"type": "string"}},
     "github": {"type": "object", "required": ["branch_protection"],
-      "properties": {"branch_protection": {"enum": ["ok", "missing", "incomplete", "unknown"]}}},
+      "properties": {"branch_protection": {"enum": ["ok", "missing", "incomplete", "unknown", "unenforceable"]}}},
     "gaps": {"type": "array", "items": {
       "type": "object",
       "required": ["id", "title", "rule", "category", "blocks_level", "evidence", "fix", "resolution"],

@@ -239,6 +239,13 @@ admin.
 Admins stay exempt so the owner can still merge PRs they authored, since
 GitHub doesn't let anyone approve their own PR.
 
+If the assessment's branch protection is `unenforceable`, the repo is
+private on a GitHub plan that stores branch rules without enforcing them
+(H-0070). Applying the rules changes nothing, so don't; tell the owner the
+factory's token could push to the default branch, and that the fix is to
+make the repo public or move it to a plan that enforces protection on
+private repos. That choice is the owner's Security decision.
+
 If the owner declines, change nothing; the `github:branch-protection` gap
 stays open in the assessment and goes in your report as an open step.
 
