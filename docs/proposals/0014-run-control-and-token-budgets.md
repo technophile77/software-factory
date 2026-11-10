@@ -1,4 +1,4 @@
-# Proposal 0014: Project pause, resumable runs, and token budgets
+# Proposal 0014: Project control, resumable runs, and token budgets
 
 **Status:** proposed, for the owner's decision. Raised by the owner on
 2026-11-10. Not a decision until the owner chooses; the outcome becomes an
@@ -14,6 +14,14 @@ ADR and a feature spec.
    Today an interrupted agent run would simply fail.
 3. Nothing stops the engine from launching a session that the remaining
    budget can't finish.
+4. Nothing requires the owner's go-ahead before the factory starts work on a
+   newly onboarded project. F-003 onboarding starts a test baseline and
+   F-002 calibration as soon as the engine runs.
+5. The engine doesn't check that the repos it works on are ones the owner
+   authorized.
+6. The manifest records each repo's current maturity, but not the level the
+   owner wants it to reach.
+7. Plan usage that resets on a schedule is lost if unused before the reset.
 
 ## What already limits the factory
 
@@ -59,6 +67,46 @@ the whole factory in master config, and optionally per project under
 non-breaking). The engine also respects the provider's own rate and usage
 limits when it can read them, and uses whichever limit is lower.
 
+### Q5. Authorization safeguards (Security)
+
+**Recommended**, all together:
+- **New projects start Paused.** Onboarding prepares everything, but no
+  agent session runs until the owner activates the project in the
+  extension (Q1). Activation is recorded with who and when.
+- **Three-way repo check.** At startup and before every session, the engine
+  works on a repo only if it is (a) listed in an activated project's
+  `factory-project.yaml`, (b) reachable with the factory token, and (c)
+  owned by, or shared with, an account on the owner's allow list in master
+  config. A mismatch stops that project and files a Security item. A repo the
+  token can reach but no manifest lists is reported, so the token can be
+  narrowed (S8.2).
+- **Work starts only from the owner.** A feature starts only from the owner's
+  request (control channel, or an approved inbox item). Agents can suggest
+  work but can't start it. Already true for merges: protected `main` needs
+  the owner's review (ADR 0006).
+
+### Q6. Target maturity (Product)
+
+| Option | How |
+|---|---|
+| **A. `target_maturity` per repo in the manifest (recommended)** | The owner sets the target. The orchestrator plans work toward it (using the onboarding Recommended work list) and proposes the promotion when the evidence is met. `maturity` itself changes only through an approved promotion, so editing it by hand to skip evidence is refused by the engine |
+| B. No target; the owner requests each promotion | Simpler; the factory doesn't plan ahead |
+
+Security standards per project need no new mechanism: the manifest's
+`standards.security` file can only add rules to the master standards, and
+the blocking severities already rise with the maturity level. Changing the
+master standards stays a hygiene item.
+
+### Q7. Using budget before a reset (Product)
+
+| Option | How |
+|---|---|
+| **A. Opt-in "use before reset" (recommended)** | When a plan's usage window is about to reset with budget left, the engine starts queued work that the owner already approved and that its estimate says will finish before the reset: approved features, test baselines, context hygiene reviews. It never starts unapproved work to spend tokens. Off by default; set per project in `settings.budget` |
+| B. No | Budget left at a reset is lost |
+
+Pay-as-you-go API billing doesn't reset, so this only applies to plan
+limits.
+
 ## Security notes
 
 - Pause and resume are owner actions only. The control channel is local
@@ -70,6 +118,8 @@ limits when it can read them, and uses whichever limit is lower.
 
 ## Recommendation
 
-A for Q1 to Q3, and the recommended Q4. Build it as one feature (engine
-run control and budgets, plus the extension's Factory view). The spec
-interview starts after these decisions.
+A for Q1 to Q3, Q6 and Q7, and the recommended Q4 and Q5. Build it as one
+feature (engine run control, authorization checks and budgets, plus the
+extension's Factory view). The spec interview starts after these decisions.
+Q5's onboarding change needs a matching amendment to F-003 (FR-13, FR-15:
+calibration and test baseline wait for activation).
