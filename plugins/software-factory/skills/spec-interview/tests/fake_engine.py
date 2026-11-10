@@ -1,5 +1,6 @@
 """A fake engine for the client's developer tests: Engine control channel
-v1.2 (v1.1 with H-0025, plus H-0063's advisor items) over a Unix socket, one
+v1.2 (v1.1 with H-0025, plus H-0063's advisor items as amended by H-0075)
+over a Unix socket, one
 JSON-RPC 2.0 message per line.
 
 It keeps just enough state to exercise the client: sessions by token with
@@ -254,7 +255,8 @@ class FakeEngine:
         with self.lock:
             call = f"A-{len(self.advisor_calls) + 1:04d}"
             self.advisor_calls.append((call, question["id"]))
-            question.setdefault("advice", []).append({"call": call, "status": "running"})
+            question.setdefault("advice", []).append({"call": call, "status": "running",
+                                                      "revision": question["revision"]})
         if self.advice_after is not None:
             threading.Timer(self.advice_after, self.finish_call, (call,)).start()
 
@@ -265,8 +267,9 @@ class FakeEngine:
                 for it in f["items"]:
                     for a in it.get("advice", []):
                         if a["call"] == call:
+                            asked = a.get("revision")
                             a.clear()
-                            a.update({"call": call, **copy.deepcopy(result or self.advice_result)})
+                            a.update({"call": call, "revision": asked, **copy.deepcopy(result or self.advice_result)})
 
     def _research_done(self, it):
         with self.lock:

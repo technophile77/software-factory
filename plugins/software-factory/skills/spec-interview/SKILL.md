@@ -103,12 +103,12 @@ it to the owner or put it anywhere else.
 
 | Sub | stdin | Result |
 |---|---|---|
-| `status` | `{}` | engine reachable |
+| `status` | `{}` | engine reachable, `advisor` |
 | `start` | `{"request": "<owner's text>"}` | `feature` |
 | `list` | `{}` | `features`, `display` |
-| `open` | `{"feature": "<id>"}` (+ `"takeover": true` only after the owner's yes) | `session`, `started_at` |
+| `open` | `{"feature": "<id>"}` (+ `"takeover": true` only after the owner's yes) | `session`, `started_at`, `advisor` |
 | `next` | `{"session": "<token>", "wait_s": 60}` | `item` (or null), `display`, `waiting`?, `advice_running`? |
-| `reply` | `{"session", "feature", "item", "revision", "status", "kind", "text", "wait_s": 60}` (+ `reply_id` on a retry) | `status`, `next`, `display`, `reply_id`, `waiting`?, `advice_running`? or `already_recorded` |
+| `reply` | `{"session", "feature", "item", "revision", "status", "kind", "text", "wait_s": 60}` (+ `reply_id` on a retry) | `status`, `next`, `display`, `reply_id`, `waiting`?, `advice_running`?, `advisor_started`? or `already_recorded` |
 | `state` | `{"feature": "<id>", "item": "<id>"}` | `status`, `revision` |
 | `close` | `{"session": "<token>"}` | `closed` |
 
@@ -119,6 +119,11 @@ owner was shown, copied from the script's last output. `kind` is one of
 `decline_advisor` (advisor proposals). An item's `kind` in the output is
 `question`, `assumption` or `advisor_proposal`. `wait_s` (0 to 600) is how
 long the engine may wait for the analyst's research before answering; use 60.
+It never waits for an advisor call.
+
+`advisor` is true when the engine speaks channel v1.2 or later, which has
+the advisor. With an older engine the script refuses the three advisor
+reply kinds before sending anything (`advisor_unsupported`).
 
 **Run every `CLIENT` command with a Bash timeout of 180000 ms.** The script
 stops itself within 150 seconds, whatever `wait_s` says, so it always gets
@@ -147,7 +152,8 @@ feature request".
 
 ### 3. Open the feature
 
-Run `CLIENT open` with the feature id and keep the `session` it returns.
+Run `CLIENT open` with the feature id and keep the `session` and
+`advisor` it returns.
 
 If the error is `busy`, another session holds the feature. Show the owner
 its `display`, which says when that session started, and ask with AskUserQuestion: "Take over that
@@ -167,7 +173,8 @@ text always allowed ("Other") at each step:
 
 1. **What to do.**
    - Question: "Answer", "More information" and "Defer", plus "Ask the
-     advisor" on every question.
+     advisor" on every question if `open` returned `advisor: true`. If it
+     returned false, the engine has no advisor: don't offer it.
    - Assumption: "Approve" and "Reject". The picked label is the reply
      text. Free text: ask whether they approve or reject, then send their
      words.
@@ -175,9 +182,12 @@ text always allowed ("Other") at each step:
      the display names, with its reason. "Approve the advisor call" and
      "Decline". Approving starts one advisor call on the strongest model,
      which counts against the project budget; declining starts nothing and
-     leaves the question as it was. Send `approve_advisor` or
-     `decline_advisor` with the picked label as the text. Free text: ask
-     whether they approve or decline, then send their words.
+     leaves the question as it was. The `display` shows the call's limits
+     and, if the engine says so, that it would go over budget; that is the
+     owner's prompt, so there is no extra confirmation step. Send
+     `approve_advisor` or `decline_advisor` with the picked label as the
+     text. Free text: ask whether they approve or decline, then send their
+     words.
 2. **The answer** (questions, after "Answer"):
    - The question has up to four options: put them in the picker, each
      label copied character for character from the item's options. A
@@ -199,17 +209,22 @@ text always allowed ("Other") at each step:
 
 **Advice on a question.** A question's `display` shows each advisor call
 after the question: its advice fenced and labelled as the advisor's, the
-web queries the engine recorded for it, or that the call is still running
-or failed. Show it with the rest of the `display`, never on its own or in
-your words. The owner still answers, asks for more information, asks the
-advisor again or defers, as with any question; the advice never picks an
-answer.
+revision it was asked about, the hash check, the web queries the engine
+recorded for it (or that they were not reported by the engine), or that the
+call is still running or failed, with the engine's reason. It also shows
+the limits and any over-budget warning for a new call, beside the "Ask the
+advisor" choice; there is no extra confirmation step. Show it with the
+rest of the `display`, never on its own or in your words. The owner still
+answers, asks for more information, asks the advisor again or defers, as
+with any question; the advice never picks an answer.
 
 Send it with `CLIENT reply`, then show the result:
 
 - `next` is the next item: go back to the start of this step.
 - `next` is null and no `waiting`: the interview has nothing more for now.
   Run `CLIENT close`, say so, and offer step 2 again.
+- `advisor_started` is true: the call started. Tell the owner, even when
+  `next` is a different item; its advice will appear with that question.
 - `advice_running` is true: the advisor is still working on that
   question. Tell the owner; they can reply to the question now or later.
   To see whether the advice has arrived, run `CLIENT next` with the
@@ -226,6 +241,8 @@ Send it with `CLIENT reply`, then show the result:
   step 3; nothing answered is lost.
 - Error `kind_not_allowed`: the reply kind doesn't fit the item. Ask the
   owner again.
+- Error `advisor_unsupported`: the engine has no advisor. Show the
+  `display` and carry on without it.
 
 ### If a reply fails
 
@@ -233,6 +250,14 @@ If `reply` fails with `connection_lost` or `timeout`, the reply may already
 be recorded. Tell the owner. If a `reply` command ends with no JSON output
 at all (killed or crashed), you have no `reply_id`: run `CLIENT state` for
 the item, show the owner what it says, and ask before sending anything.
+`ask_advisor` is different: it leaves the question's status and revision
+as they were, so `state` can't show whether it went through. For a lost
+`ask_advisor`, run `CLIENT next` instead and look in that question's
+`display` for an advisor call that wasn't there before (running, done or
+failed). If there is one, the request went through: tell the owner, and
+never send `ask_advisor` again for it. If `next` shows another item or no
+new call, tell the owner you can't tell whether it was sent, and ask
+before sending anything.
 Only if the owner asks to try again, run the same `CLIENT reply` with the
 `reply_id` from the failed output added. The
 script asks the engine for the item's state first; if `already_recorded`
