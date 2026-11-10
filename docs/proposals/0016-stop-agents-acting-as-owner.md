@@ -177,10 +177,10 @@ engine socket or `engine.json`.
 
 | Id | Change | State |
 |---|---|---|
-| H-0050 | ADR 0014 recording option B | Drafted, awaiting owner approval |
-| H-0051 | Engine control channel v1.2: pending sessions, `interview.awaitApproval`, error codes | Drafted, awaiting owner approval |
+| H-0050 | ADR 0014 recording option B | Approved by the owner, 2026-11-10 (decision card) |
+| H-0051 | Engine control channel v1.2: pending sessions, `interview.awaitApproval`, error codes | Approved by the owner, 2026-11-10 (decision card) |
 | H-0052 | Agents can't reach the engine socket, `engine.json`, the owner's Claude Code history or credentials | Covered by ADR 0015's container per agent session (PR #20), awaiting owner approval |
-| H-0053 | F-005 spec SR-5: decided, residual risk recorded | Drafted, awaiting owner approval |
+| H-0053 | F-005 spec SR-5: decided, residual risk recorded | Approved by the owner, 2026-11-10 (decision card) |
 | H-0054 | Reserved for option C if the owner adds it later | Not used |
 
 ## Owner decision (2026-11-10)

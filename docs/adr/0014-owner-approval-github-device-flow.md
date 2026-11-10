@@ -60,9 +60,8 @@ device sign-in before the engine accepts any reply in it.
   the owner approves the wrong code. The one-session-per-feature lock and the
   owner comparing the code shown in the skill guard against this.
 - **Availability:** interviews need GitHub to be reachable.
-- **Not decided here:** whether `feature.start` and other owner-authority
-  channel methods also need an approved session. That is a separate owner
-  question.
+- **Scope:** only interview sessions need approval. The owner chose not to
+  gate `feature.start` (decision card, 2026-11-10).
 
 ## Consequences
 - Engine control channel v1.2 (H-0051): pending sessions, the approval

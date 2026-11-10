@@ -153,13 +153,13 @@ proposing role, and lists the new ids in its own report's `items_filed`.
 
 ## Engine control channel — v1.2
 
-- Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0051)
+- Status: Approved
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
   H-0025 (sessions by token, framing, `engine.json` format, error codes)
   approved by the owner, 2026-11-10 (decision card); amendment H-0026
   (`busy` data, listener pid, file modes) approved by the owner, 2026-11-10
-  (decision card); v1.2 adds owner approval of interview sessions through
-  GitHub (ADR 0014, F-005 SR-5)
+  (decision card); v1.2 (H-0051, owner approval of interview sessions through
+  GitHub, ADR 0014) approved by the owner, 2026-11-10 (decision card)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
