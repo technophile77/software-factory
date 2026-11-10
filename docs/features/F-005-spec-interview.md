@@ -3,7 +3,7 @@
 - **Id:** F-005
 - **Status:** Approved (readiness gate passed 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 8
+- **Spec version:** 9
 
 ## 1. Objective and business purpose
 The requirements analyst runs inside the engine, but the owner has no way to
@@ -151,7 +151,7 @@ open and the owner's to answer:
 | SR-13 | The lock is released when its connection closes or after 30 minutes idle, and the owner can take over a held lock after confirming in the skill. | Gate 1 #11 (S5.1) | Accepted |
 | SR-14 | Role policy denies every role reads of `.factory/engine.json`; the engine refuses channel connections from agent processes it started. | Gate 1 #13 (S6.2, S8.1) | Accepted |
 | SR-15 | `more_info` research counts against the project budget (ADR 0012) and stops at a per-question cap, telling the owner. The script limits responses to 1 MiB and times out after 60 s per call, plus the `wait_s` it asks `interview.next` to wait for research (channel v1.1, H-0025). | Gate 1 #12 (S5.1, S1.1) | Accepted |
-| SR-16 | The script shows JSON-RPC errors by code and message only, never the `data` field, and never echoes the owner's reply text in an error. | Gate 1 #14 (S5.2, S3.1) | Accepted |
+| SR-16 | The script shows JSON-RPC errors by code and message only, never the `data` field except a well-formed `busy` `data.started_at` (H-0026), and never echoes the owner's reply text in an error. | Gate 1 #14 (S5.2, S3.1) | Accepted |
 
 ## 10. Interface requirements
 Approved by the owner as drafted, 2026-11-10 (decision card):
@@ -191,3 +191,4 @@ Approved by the owner as drafted, 2026-11-10 (decision card):
 | 6 | 2026-11-10 | Channel v1.1 amended by H-0025: sessions by token (`interview.open`, takeover, `wait_s`), line framing, `engine.json` format, error codes. FR-11 and SR-12/SR-13 now read against the session token, not the connection | Owner, 2026-11-10 (decision card) |
 | 7 | 2026-11-10 | Wording only, to match approved channel v1.1 (FR-1, SR-15); no requirement changed | — (wording) |
 | 8 | 2026-11-10 | H-0026 (channel details) and H-0027 (readiness-gate interview rules, web reader in the role docs) approved; AC-7 and AC-8 tests move to the engine feature | Owner, 2026-11-10 (decision card) |
+| 9 | 2026-11-10 | Wording only: SR-16 names the `busy` exception H-0026 approved | — (wording) |

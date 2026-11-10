@@ -185,3 +185,115 @@ None.
 2. **Owner, M4.** Approve a hygiene edit adding the interview rules (FR-8, FR-9, SR-11) to the readiness gate in `development-workflow.md` and the orchestrator's AGENT.md. Accept, as a Product call, that the AC-7 and AC-8 tests move to the engine feature.
 3. **Not needed for PASS, but before any Windows use:** the developer fixes M5, and someone runs the Windows path once.
 4. Before the PR: the orchestrator review note (m5).
+
+---
+
+## Re-validation 1 (c4fa227)
+
+- **Commit:** `c4fa227` (`claude/project-thread-g2huhl`). Since the first report:
+  - `b4b5184`: the first report.
+  - `6e0105a`: spec v7, wording only (FR-1, SR-15).
+  - `4ddf49b` and `cb75499`: drafts of H-0026 and H-0027.
+  - `5f20e1b`: developer fix round 3.
+  - `c4fa227`: owner approval of H-0026 and H-0027, and spec v8.
+- **Spec:** v8. **Maturity level:** Rapid prototype.
+- **Verdict:** **PASS**
+  - Every checklist line is Met. There are no Blocking findings and no open Major findings.
+  - The two Needs owner lines are closed by the owner's decisions H-0026 and H-0027. M1 to M4 are resolved.
+  - M5 is resolved in the transport logic. The Win32 layer has still never run, which I carry as a known issue (n5).
+  - 0 Major and 17 Minor findings are open, all logged. Nothing here needs the owner.
+
+### My own run
+
+Product hashes (first 12 hex characters of SHA-256): `interview_client.py` d72003289a54, spec-interview `SKILL.md` 7c295360f856, onboard-repo `SKILL.md` 4ca85476c65a, `factory_check.py` 2d1307d71879 (unchanged).
+
+| Step | Result |
+|---|---|
+| spec-interview, both suites, on Python 3.11.18, 3.12.3 and 3.13.18 | **228 run, 228 passed** on each: the test engineer's 142 (file unchanged since `e5064bc`) and the developer's 86 |
+| onboard-repo, both suites, on 3.11, 3.12 and 3.13 | **266 run, 265 passed, 1 skipped** on each (no python3.10 installed) |
+| `ast.parse(..., feature_version=(3, 10))` on the client | Parses |
+| `python3 scripts/check_docs.py` | "All docs checks passed.", exit 0, before and after this section |
+| Probe p4 again (umask 002) | `.factory` 0775 gives `group_writable` with "Run `chmod go-w <repo>/.factory`". After that, `engine.json` 0664 gives `group_writable` naming the file. After both fixes it connects. The cause and the fix are now plain |
+| Probes p1, p1b, p2, p3 again | Unchanged. All now match the contract as amended by H-0026 |
+| Probe p5 (U+16FE4) | Removed |
+
+**Is the test engineer's run on `bc1af15` still enough?** Yes, for the acceptance criteria, as before.
+- `5f20e1b` changes three things in the product: the `.factory` and `engine.json` mode refusals (now with their own codes and run after the worktree check), the Windows pipe transport, and comment and SKILL.md wording.
+- On Linux, which is where the acceptance criteria run, the only behavior change is the refusal code and wording. The test engineer's unchanged file passes on all three Pythons in my run, including `Retest1SkillText`, which caught the first rewording of SKILL.md during the developer's run.
+- The pipe transport can't run here for anyone.
+- I log the missing confirming run as n4.
+
+**Gate 2 and `5f20e1b`.** The pipe rewrite moves the security checks without changing them. `PIPE_RE.fullmatch`, the `SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION` open and the server SID comparison are the same calls, now in `_Win32Pipe.open` and `server_is_owner`. Only the I/O changed. The mode checks are unchanged in substance: the same `0o022` and owner tests, with a new code and message. Nothing loosens, so at Rapid prototype I don't require a Gate 2 re-review. Gate 2 should look at `_PipeTransport` together with the first Windows run (n5).
+
+### Evidence checklist (changes only; every other line is as in the first report and still Met)
+
+| Line | Status | Evidence |
+|---|---|---|
+| FR-8, FR-9 (gate side) | Met | H-0027: `docs/development-workflow.md:29-33` (open or deferred questions, pending assumptions, transcript match for approved assumptions); `agents/orchestrator/AGENT.md:16-20`. Owner approval in `c4fa227` |
+| AC-7, AC-8 | Met by owner decision (tests move to the engine feature) | Spec v8 (`F-005-spec-interview.md:79-80`, change log v8): "Tested with the engine feature, where the readiness gate runs (owner, 2026-11-10)". The engine feature must carry these tests |
+| FR-11, SR-16 | Met | `busy` `data.started_at` is now in the contract (H-0026, `interface-contracts.md:223-225`). SR-16's own wording in the spec still says "never the `data` field" (n2) |
+| SR-1 | Met | Owner-only modes and the listener pid are in the contract (H-0026, `interface-contracts.md:165-169`). `_require_owner_only` `interview_client.py:240-247`; `FixRound3.test_m3_*`, `FixRound1.test_gate2_8_*` |
+| SR-7 | Met by reading; transport logic tested; Win32 layer **never run** (n5) | `_Win32Pipe` `:384-476`, `_PipeTransport` `:479-520`; `PipeTransport` (6), whose stand-in fails if a read would block a synchronous handle |
+| Interface contracts | Met | Contract tests pass (`ContractChannel`). The three behaviors in M1 to M3 are now in Engine control channel v1.1 (H-0026), approved in `c4fa227`. The draft `4ddf49b` and the approval differ only in the approval line. The client matches the amended text. One small leniency: n1 |
+| Documentation | Met | H-0027: web reader in `docs/agent-responsibilities.md:3,16` and `docs/architecture.md:13-15`. onboard-repo `SKILL.md:152-154` (`chmod go-w .factory`, H-0026). The dev report has a fix-round-3 section. `check_docs.py` passes |
+| Code quality | Met, with findings | The single-threaded pipe transport is simpler than the reader thread it replaces. Findings: n3, n6 |
+| Comments | Met | m1 fixed (`interview_client.py:64-65`, `SKILL.md:54-60`). New comments say why (`:244-245`, `_PipeTransport` docstring `:480-484`, `_Win32Pipe` docstring `:385-387`) and are accurate |
+| Constraints (spec §5) | Met on Linux; macOS and Windows unverified (m9, n5) | As before |
+
+### Status of earlier findings
+
+| # | Now | Evidence |
+|---|---|---|
+| M1 | **Resolved** | H-0026 puts `busy` `data.started_at` in the contract. The code is unchanged and matches it |
+| M2 | **Resolved** | H-0026: `pid` is the listening process. The code is unchanged and matches it |
+| M3 | **Resolved** | H-0026: `engine.json` 0600, and `.factory` not group- or world-writable. onboard-repo runs `chmod go-w .factory`. The client refuses with `group_writable` and gives the fix (probe p4). Residual: n3 |
+| M4 | **Resolved** | H-0027 gate rules (see the checklist); AC-7 and AC-8 move to the engine feature (spec v8) |
+| M5 | **Resolved in logic**; never run, carried as n5 | No reader thread; `recv` reads only what `PeekNamedPipe` reports, polling until the deadline. `PipeTransport.test_two_calls_in_one_run_do_not_deadlock` |
+| m1 | Resolved | See Comments |
+| m2 | Resolved | SKILL.md rewrapped. Step 1 (`SKILL.md:113-115`) and step 3 (`:133`) still have lines of about 90 characters. Cosmetic, not re-logged |
+| m3 | Open, carried | The test report's coverage claim and the missing coverage.py tool decision are unchanged. `PipeTransport` now does exercise `_PipeTransport`, but not `_Win32Pipe` |
+| m4 | Superseded by n4 | |
+| m5 | Open | Still no `F-005-orchestrator-review.md` (DoD 6). Needed before the PR, not for this verdict |
+| m6, m7 | Open, carried as known Lows | Gate 2 #3 (raw cleaned fields) and R1-3 (short-quote redaction) |
+| m8 | Resolved | U+16FE4 added (probe p5). Keeping a deny list is now a reasoned choice: a broad `Mn` rule would strip real vowel signs, as my first-report probe showed (839 visible marks) |
+| m9 | Open, carried | macOS peer check untested |
+| m10 | Open (optional) | More than four options are still typed, not picked |
+| m11 | Open, carried | IP literals and single labels in `network.allow`; exact host matching not stated in the contract |
+| m12 | Resolved | H-0027 |
+| m13 | Resolved | Spec v7 |
+| m14 | Open | SR-17 wording vs the web reader's search permission |
+| m15 | Open, carried | Owner's `GIT_*` environment |
+
+### New findings
+
+#### Blocking
+
+None.
+
+#### Major
+
+None.
+
+#### Minor (logged; never block)
+
+| # | Location | Finding |
+|---|---|---|
+| n1 | `interview_client.py:48` (`TIMESTAMP_RE`), used at `:600-607` | H-0026 says `busy` `data.started_at` is "ISO 8601, UTC". The client also accepts a `+hh:mm` or `-hh:mm` offset. That is harmless because the format is still fully checked, but it is looser than the contract. Accept only `Z`, or leave it as is and record the leniency. |
+| n2 | `F-005-spec-interview.md:154` (SR-16) | SR-16 still says "never the `data` field". H-0026 allows `data.started_at` on `busy`, and the v8 change log doesn't touch SR-16. This is wording for the next spec revision, as was done for m13. |
+| n3 | `interview_client.py:240-247` | The `chmod go-w {path}` hint puts the path in a code span unquoted. A repo path with a space (common on macOS: `~/My Projects/…`) gives a command that fails or acts on the wrong path if copied as is. The path is also not run through `clean()` before it reaches `display`. It is the owner's own path, so the risk is small. Quote it with `shlex.quote`. |
+| n4 | `F-005-test-report.md` | The test engineer's last run is on `bc1af15`, two product commits back. I accept my run of their unchanged file for the ACs (see above). A one-line confirming run on `c4fa227` would close DoD 5 cleanly before the PR. |
+| n5 | `interview_client.py:384-476` (`_Win32Pipe`); Gate 2 #9 | Known issue, carried from M5. The ctypes layer (`CreateFileW`, the SID check, `PeekNamedPipe`, `ReadFile`, `WriteFile`) has never run anywhere. Gate 2 #9 is unchanged: the server is identified by pid, and there is no `engine.json` owner check on Windows. Before any Windows owner uses the skill, run `SR07` and a status/reply round trip on Windows, record it as SR-7's test, and have Gate 2 look at the transport then. Counts against promotion to Alpha. |
+| n6 | `interview_client.py:499-504` (`_PipeTransport.send`) | `WriteFile` on the synchronous handle has no deadline. If the engine stops reading while the pipe buffer is full, `send` blocks past `RUN_LIMIT` until Bash kills the run at 180 s with no JSON. SKILL.md's "no JSON output" path (`:189-193`) covers the outcome, so this is availability only. The socket transport has a send timeout. |
+
+### Counts (re-validation 1)
+
+- Blocking: 0.
+- Major: 0 open. M1 to M5 are resolved, and M5's residual is carried as n5.
+- Minor: 17 open: m3, m5, m6, m7, m9, m10, m11, m14, m15, and n1 to n6. Of these, m6, m7, m9, m11, m15 and n5 are known issues carried forward from Gate 2 and the first report. Resolved: m1, m2, m8, m12, m13 (and m4, superseded by n4).
+- Lines: 0 Not met, 0 Needs owner.
+
+### Before the PR (not needed for PASS)
+
+1. The orchestrator writes the review note (m5, DoD 6).
+2. Optional: the test engineer confirms on `c4fa227` (n4).
+3. Before any Windows use, run the Windows path once and have Gate 2 look at it (n5). Before Alpha, address the carried Lows: m6, m7 and Gate 2 #9.
