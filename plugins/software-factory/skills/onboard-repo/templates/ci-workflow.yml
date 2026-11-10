@@ -45,15 +45,16 @@ jobs:
         with:
           persist-credentials: false
       # npm: npm audit ships with npm and covers dev dependencies. Drop for other stacks.
-      - run: npm audit --audit-level=high
-      # Python, Go and Rust: reads lock files only, never runs project code.
+      - run: npm audit                # any advisory fails, as with OSV-Scanner
+      # Python, Go and Rust: lock files only (no resolving, no Go toolchain run);
+      # govulncheck adds Go call analysis from Beta.
       # Any finding fails; an accepted one goes in osv-scanner.toml with a reason
       # and an expiry, as a Security decision. Drop for npm-only repos.
       - run: |
           curl -fsSL -o osv-scanner "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
           echo "${OSV_SCANNER_SHA256}  osv-scanner" | sha256sum --check --strict
           chmod +x osv-scanner
-          ./osv-scanner scan source --recursive .
+          ./osv-scanner scan source --recursive --no-resolve --no-call-analysis=go .
   # Beta and above, Go repos (owner, 2026-11-10): govulncheck reports which
   # vulnerable functions the code actually calls, which a lock-file scan can't.
   # go install checks the pinned version against the Go checksum database.
@@ -66,6 +67,7 @@ jobs:
   #     - uses: actions/setup-go@<SHA> # <tag>
   #       with:
   #         go-version-file: go.mod
+  #         cache: false           # no caches restored from earlier runs
   #     - run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
   #     - run: govulncheck ./...
   # Beta and above, Rust repos (owner, 2026-11-10): cargo-audit also fails on

@@ -57,10 +57,10 @@ policy:
         allow: ["Read", "Grep", "Glob", "Edit", "Write"]
       read:
         allow: ["**"]
-        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]   # secret files (Role policy v2.1)
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json"]   # secret files (Role policy v2.1)
       write:
         allow: ["docs/features/**"]
-        deny: ["CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]
+        deny: ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json", ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml", "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**", "workflows/**"]
       commands:
         allow: []
       network:
@@ -70,10 +70,10 @@ policy:
         allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
       read:
         allow: ["**"]
-        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json"]
       write:
         allow: []
-        deny: ["docs/features/**", "CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]
+        deny: ["docs/features/**", "CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json", ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml", "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**", "workflows/**"]
       commands:
         allow: []
       network:
@@ -83,10 +83,10 @@ policy:
         allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
       read:
         allow: ["**"]
-        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json"]
       write:
         allow: []
-        deny: ["CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]
+        deny: ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json", ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml", "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**", "workflows/**"]
       commands:
         allow: []
       network:
@@ -96,7 +96,7 @@ policy:
         allow: ["Read", "Grep", "Glob", "Write"]
       read:
         allow: ["**"]
-        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json"]
       write:
         allow: [".factory/runs/**/security-reviewer-*.json"]
       commands:
@@ -108,7 +108,7 @@ policy:
         allow: ["Read", "Grep", "Glob", "Write", "Bash"]
       read:
         allow: ["**"]
-        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json"]
       write:
         allow: [".factory/runs/**/validation-judge-*.json"]
       commands:
@@ -120,7 +120,7 @@ policy:
         allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
       read:
         allow: ["**"]
-        deny: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
+        deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json"]
       write:
         allow: [".factory/inbox/**", ".factory/runs/**"]
       commands:

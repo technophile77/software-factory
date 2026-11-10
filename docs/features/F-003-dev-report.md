@@ -94,3 +94,21 @@ Tests in class `SecondReviewRegressions`; the test engineer's two failing accept
 | M11: README install command used a nonexistent option | README now matches SKILL.md: `/plugin marketplace add`, then `/plugin install software-factory@software-factory` | inspection |
 | M13: `..` and absolute paths in policy globs | Read and write globs that leave the worktree (absolute, `~`, drive letter, `..`, `\`) are rejected | `ManifestPolicy.test_globs_cannot_leave_the_worktree` |
 
+## Fixes after Gate 2 re-review 2
+
+Tests in class `SecondGateRegressions` unless noted.
+
+| Finding | Fix |
+|---|---|
+| R2-1 (High): any role with Bash can bypass its rules through a shell, interpreter or git | Interim: commands may not name a shell or interpreter. The rest (git's own escape hatches, OS sandbox) is an owner Security decision. |
+| R2-2: globs like `.factory/[.][.]/x` | A segment that can match `..` counts as leaving the worktree. Path normalization, case folding and symlink resolution at enforcement time are engine requirements, for the owner. |
+| R2-3, R2-12: change-controlled and secret lists incomplete | Both lists extended (nested and local CLAUDE.md, `.mcp.json`, hook configs, `.gitignore`, `.gitattributes`, `osv-scanner.toml`, `plugins/**`; `.npmrc`, `.netrc`, `.git-credentials`, keystores and more); template and contract match |
+| R2-5: tracked `.factory/` content trusted | Tracked files there are scanned and raise a High `factory:dir-in-repo` gap; `plan-items --write` refuses a symlinked inbox; SKILL.md uses `engine.json` only from the `factory/state` worktree |
+| R2-6: OSV-Scanner resolved manifests and ran Go call analysis | `--no-resolve --no-call-analysis=go`; S4.1 review corrected |
+| R2-7: `npm audit --audit-level=high` | Any advisory fails |
+| R2-9: unquoted `${CLAUDE_SKILL_DIR}` | Quoted (inspection) |
+| R2-11: repo override could add tools | Rejected |
+| R2-13: setup-go cache | `cache: false` (inspection) |
+
+Left for the owner: R2-1 (sandbox and git), R2-2 (enforcement-time normalization), R2-4 (owner approvals the orchestrator could forge on `factory/state`), R2-8 (plugin version not checked against `factory.version`), R2-10 (machine account can approve the owner's PRs; CODEOWNERS).
+

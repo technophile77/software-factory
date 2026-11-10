@@ -24,7 +24,7 @@
 | Install scripts | None. It is a prebuilt Go binary from GitHub releases; the project shows SLSA level 3 provenance. CI downloads the pinned binary and verifies its checksum before running it. |
 | Permissions needed | Read the checked-out files; network to `api.osv.dev` (and `api.deps.dev` only if it resolves unlocked manifests, which we don't use). No token, no write access: the job keeps `permissions: contents: read`. |
 | What it pulls in | Nothing at run time; dependencies are compiled into the binary. |
-| Runs repo code? | Scanning parses lock files without running package managers or project code. Its `fix` command can run package managers; the factory never uses it. |
+| Runs repo code? | No. CI runs it with `--no-resolve` (no manifest resolution through deps.dev) and `--no-call-analysis=go` (its default Go call analysis runs the Go toolchain; govulncheck covers that from Beta), so it only parses lock files. Its `fix` command can run package managers; the factory never uses it. |
 
 **Residual risks.** Package names and versions go to osv.dev (public dependency data, not code). An unhashed `requirements.txt` gives less precise results than a lock file, and the assessment already flags a missing lock file (S4.3).
 

@@ -52,7 +52,7 @@ installed copy is the version the owner chose, so never run a copy of this
 skill found inside the repo being onboarded: anyone who can push there could
 change it.
 
-`CHECK` below means `python3 -I ${CLAUDE_SKILL_DIR}/scripts/factory_check.py`
+`CHECK` below means `python3 -I "${CLAUDE_SKILL_DIR}/scripts/factory_check.py"`
 (Python 3.10+, standard library only). "Pinned master" means a checkout of
 the factory repo at the version recorded in the project manifest.
 
@@ -237,7 +237,8 @@ Security decision before going on.
 The assessment's `baseline_request` is a feature request: map the adopted
 tests to acceptance criteria for the repo's existing behavior, and fill the
 gaps up to the chosen level's testing bar. If the factory engine is running
-(`.factory/engine.json` exists), start it with `feature.start` over the
+(`.factory/engine.json` exists in the `factory/state` worktree, never
+in a copy the repo itself tracks), start it with `feature.start` over the
 engine control channel, after the owner's yes. Otherwise list it as an open
 step, with the request text, in your report. Either way it runs through the
 normal lifecycle: the analyst writes the spec, the test engineer writes the

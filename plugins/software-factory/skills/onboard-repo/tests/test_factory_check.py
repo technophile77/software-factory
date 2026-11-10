@@ -66,7 +66,7 @@ jobs:
       - uses: actions/checkout@{SHA} # v4
       - run: npm ci
       - run: npm run build
-      - run: npm audit --audit-level=high
+      - run: npm audit
       - run: npm test
 """
 
@@ -176,7 +176,7 @@ class SecurityChecks(Base):
         self.assertFalse({"cve-audit-missing", "cve-audit-not-weekly"} & ids(a))
 
     def test_audit_skipping_dev_dependencies(self):
-        wf = GOOD_WORKFLOW.replace("npm audit --audit-level=high", "npm audit --omit=dev")
+        wf = GOOD_WORKFLOW.replace("npm audit", "npm audit --omit=dev")
         a = self.assess({".github/workflows/ci.yml": wf})
         self.assertIn("cve-audit-dev-excluded:.github/workflows/ci.yml", ids(a))
 
@@ -611,7 +611,7 @@ class TestAdoption(Base):
 class ManifestPolicy(Base):
     """Owner decision 2026-11-10: the role policy lives in the manifest (Role policy v2.0, manifest v1.1)."""
 
-    CC = '["CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]'
+    CC = json.dumps(fc.CHANGE_CONTROLLED)
 
     @staticmethod
     def access(tools='["Read", "Grep", "Glob"]', read_deny=None):
@@ -798,7 +798,7 @@ class StackAudits(Base):
     """From Beta, Go and Rust repos run their own scanner next to OSV-Scanner (owner, 2026-11-10)."""
 
     def wf(self, run):
-        return GOOD_WORKFLOW.replace("npm audit --audit-level=high", run)
+        return GOOD_WORKFLOW.replace("npm audit", run)
 
     def test_go_and_rust_without_their_scanner_block_beta(self):
         a = self.assess({"go.mod": "module x\n", "go.sum": "", "Cargo.toml": "[package]\n", "Cargo.lock": "",
@@ -833,3 +833,51 @@ class StackAudits(Base):
         for download, binary in (("-o osv-scanner ", "./osv-scanner scan"), ("-o cargo-audit.tgz", "tar xzf cargo-audit.tgz")):
             self.assertLess(text.index(download), text.index("sha256sum --check", text.index(download)))
             self.assertLess(text.index("sha256sum --check", text.index(download)), text.index(binary))
+
+
+class SecondGateRegressions(Base):
+    """Gate 2 re-review 2 (1890675..543c9ae)."""
+
+    mp = ManifestPolicy()
+
+    def test_r2_1_shells_and_interpreters_are_not_commands(self):
+        text = self.mp.manifest().replace('allow: ["npm"]', 'allow: ["npm", "/bin/bash", "python3"]')
+        errs = fc.validate_manifest(fc.parse_yaml(text))
+        self.assertTrue(any("bypass the policy: bash, python3" in e for e in errs), errs)
+
+    def test_r2_2_globs_that_can_match_dotdot(self):
+        for glob in (".factory/[.][.]/CLAUDE.md", ".factory/?./CLAUDE.md", ".factory/.?/x"):
+            with self.subTest(glob=glob):
+                self.assertTrue(fc._escapes_worktree(glob))
+        for glob in (".factory/**", "src/*.py", "docs/?.md"):
+            with self.subTest(glob=glob):
+                self.assertFalse(fc._escapes_worktree(glob))
+
+    def test_r2_3_and_r2_12_lists_cover_reported_paths(self):
+        for path in ("**/CLAUDE.md", ".mcp.json", ".gitignore", "osv-scanner.toml", "plugins/**"):
+            self.assertIn(path, fc.CHANGE_CONTROLLED)
+        for path in ("**/.npmrc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/id_dsa*"):
+            self.assertIn(path, fc.SECRET_FILES)
+
+    def test_r2_5_tracked_factory_content_is_scanned_and_reported(self):
+        root = self.repo({"package.json": "{}", ".factory/x.py": "k = 'AKIA" + "ABCDEFGHIJKLMNOP'\n"})
+        subprocess.run(["git", "-C", root, "add", "-A"], check=True)
+        a = fc.assess(root)
+        self.assertIn("factory:dir-in-repo", ids(a))
+        self.assertTrue(any(i.startswith("secret:") for i in ids(a)), ids(a))
+
+    def test_r2_5_symlinked_inbox_is_refused(self):
+        outside = tempfile.mkdtemp()
+        root = tempfile.mkdtemp()
+        os.symlink(outside, os.path.join(root, "inbox"))
+        a_path = os.path.join(root, "a.json")
+        with open(a_path, "w") as f:
+            json.dump({"gaps": [], "recommended_level": {"level": "rapid-prototype"}}, f)
+        rc = fc.main(["plan-items", a_path, "--inbox-dir", os.path.join(root, "inbox"), "--assessment-ref", "x", "--write"])
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(os.listdir(outside), [])
+
+    def test_r2_11_repo_override_cannot_add_tools(self):
+        override = "    policy:\n      roles:\n        software-developer:\n          tools:\n            allow: [\"WebFetch\"]\n"
+        errs = self.mp.errors(self.mp.manifest(repo_policy=override))
+        self.assertTrue(any("adds WebFetch" in e for e in errs), errs)

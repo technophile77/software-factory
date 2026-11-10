@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fnmatch
 import json
 import os
 import re
@@ -331,10 +332,14 @@ class Repo:
                         candidates.append(os.path.relpath(os.path.join(dirpath, d), self.root))
                 for f in filenames:
                     candidates.append(os.path.relpath(os.path.join(dirpath, f), self.root))
+        cached = run_git(self.root, "ls-files", "-z", "--cached", "--", ".factory") if out is not None else None
+        tracked = {p for p in (cached or b"").decode("utf-8", "replace").split("\0") if p}
         files = []
         for rel in sorted(set(candidates)):
             rel = rel.replace(os.sep, "/")
-            if rel.split("/")[0] in (".git", ".factory"):
+            # The factory/state worktree at .factory is skipped, but anything the
+            # repo itself tracks there is repo content and is scanned like the rest.
+            if rel.split("/")[0] == ".git" or (rel.split("/")[0] == ".factory" and rel not in tracked):
                 continue
             full = os.path.join(self.root, rel)
             if os.path.islink(full):
@@ -704,6 +709,12 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
                                     "S3.1", "security", SEVERITY_BLOCKS["critical"],
                                     "Revoke and rotate the credential, then remove it from the file and from Git history.",
                                     "decision", [ev(rel, n, kind)], "critical"))
+    in_repo = [f for f in repo.files + repo.symlinks if f == ".factory" or f.startswith(".factory/")]
+    if in_repo:
+        gaps.append(gap("factory:dir-in-repo", "`.factory/` is part of the repo's own files", "ADR 0009; S1.4", "security",
+                        "rapid-prototype", "Remove it from the branch: `.factory/` is the git-ignored factory/state worktree, "
+                        "and the factory won't trust records the repo itself carries.", "onboarding-pr",
+                        [ev(f) for f in in_repo[:20]], "high"))
     for link in repo.symlinks:
         gaps.append(gap(f"symlink-escape:{link}", f"Symlink {link} points outside the repo", "S1.4", "security", None,
                         "Remove the link or point it inside the repo; the checker does not follow it.", "feature-request",
@@ -1156,20 +1167,33 @@ def validate_manifest(data, master=None):
 
 
 # Files no agent may write without an approved hygiene item (S6.3).
-CHANGE_CONTROLLED = ["CLAUDE.md", ".claude/**", ".github/**", "agents/**", "skills/**", "workflows/**"]
+CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json",
+                     ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml",
+                     "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**",
+                     ".claude-plugin/**", "workflows/**"]
 POLICY_KEYS = {"tools": {"allow"}, "read": {"allow", "deny"}, "write": {"allow", "deny"},
                "commands": {"allow"}, "network": {"allow"}}
 AGENT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch"}
 # Role policy v2.1: no agent reads these, whatever its allow list says.
-SECRET_FILES = ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx",
-                "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
+SECRET_FILES = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks",
+                "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc",
+                "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json"]
+
+
+# Role policy commands are program names with any arguments, so a shell or
+# interpreter would undo every read and write rule (Gate 2 re-review R2-1).
+SHELL_COMMANDS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "pwsh", "powershell", "cmd", "env",
+                  "python", "python3", "node", "deno", "bun", "ruby", "perl", "php", "lua", "osascript", "xargs",
+                  "eval", "exec", "sudo", "su", "doas"}
 
 
 def _escapes_worktree(glob):
     # Globs are relative to the worktree root; `..` or an absolute path would let
     # a rule like `.factory/../src/**` look like a factory-only write.
+    # A segment that can match `..` (`[.][.]`, `?.`) counts as `..`; plain `*`
+    # and `**` are matched per segment by the engine and never cross upward.
     return glob.startswith(("/", "~")) or "\\" in glob or re.match(r"^[A-Za-z]:", glob) is not None \
-        or ".." in glob.split("/")
+        or any(seg not in ("*", "**") and fnmatch.fnmatchcase("..", seg) for seg in glob.split("/"))
 
 
 def _check_role(where, rule, errors):
@@ -1190,6 +1214,10 @@ def _check_role(where, rule, errors):
                 errors.append(f"{where}.{key}.{sub} must be a list of strings")
             elif key in ("read", "write") and any(_escapes_worktree(i) for i in items):
                 errors.append(f"{where}.{key}.{sub} has a path outside the worktree (absolute, `..` or `\\`)")
+            elif key == "commands":
+                shells = sorted({os.path.basename(i).lower().removesuffix(".exe") for i in items} & SHELL_COMMANDS)
+                if shells:
+                    errors.append(f"{where}.commands.allow has shells or interpreters, which bypass the policy: {', '.join(shells)}")
             elif key == "tools":
                 unknown = sorted(set(items) - AGENT_TOOLS)
                 if unknown:
@@ -1237,6 +1265,12 @@ def validate_policy(data, agents):
         for role, rule in roles.items():
             if role not in policy["roles"]:
                 errors.append(f"repos[{i}].policy.roles.{role} is not in the project policy")
+            else:
+                base = set(((policy["roles"][role] or {}).get("tools") or {}).get("allow") or [])
+                wider = sorted(set((((rule or {}).get("tools") or {}).get("allow")) or []) - base)
+                if wider:
+                    errors.append(f"repos[{i}].policy.roles.{role}.tools adds {', '.join(wider)}; "
+                                  "widening a role is a Security decision made in the project policy")
             _check_role(f"repos[{i}].policy.roles.{role}", rule, errors)
     if errors:
         return errors
@@ -1463,6 +1497,9 @@ def main(argv=None):
             errors = validate_manifest(data, args.master)
             print("\n".join(errors) or "Manifest is valid.")
             return 1 if errors else 0
+        if args.cmd == "plan-items" and args.write and \
+                os.path.realpath(args.inbox_dir) != os.path.abspath(args.inbox_dir):
+            raise CheckError(f"inbox folder goes through a symlink, refusing to write: {args.inbox_dir}")
         if args.cmd == "plan-items":
             result = plan_items(_load_json(args.assessment), args.inbox_dir, args.assessment_ref, args.complexity, args.write,
                                 level=args.level)
