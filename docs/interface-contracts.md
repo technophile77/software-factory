@@ -89,7 +89,10 @@ Body sections by inbox (headings are fixed so the extension can render them):
 **Owner actions** append to `history` with `by: owner` and one of
 `approved`, `rejected`, `changes_requested`, `research_requested`,
 `deferred`, `restored`, plus an optional `note`. Each action is one commit
-whose message starts with the item id.
+whose message starts with the item id. From ADR 0015 (H-0047, owner, 2026-11-10) the
+commit must be signed with one of the owner's SSH signing keys as listed on
+GitHub; the engine ignores an owner action whose commit is not, and files a
+Security alert for it.
 
 ---
 
@@ -293,11 +296,53 @@ must deny reading secret files and, from v2.2, the engine's channel file:
 `**/.env`, `**/.env.*`, `**/.envrc`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`, `**/*.jks`, `**/*.keystore`, `**/id_rsa*`, `**/id_dsa*`, `**/id_ecdsa*`, `**/id_ed25519*`, `**/.npmrc`, `**/.pypirc`, `**/.netrc`, `**/.git-credentials`, `**/*.tfvars`, `**/credentials*.json`, `**/*.tfstate`, `**/*.tfstate.*`, `**/.aws/credentials`, `**/.docker/config.json`, `**/*.ppk`, `**/kubeconfig`, `**/.kube/config`, `.factory/engine.json`, `**/.factory/engine.json`.
 Every core role must be present, and every role that may write outside
 `.factory/` must deny the change-controlled paths: `CLAUDE.md`, `**/CLAUDE.md`, `CLAUDE.local.md`, `**/CLAUDE.local.md`, `.claude/**`, `.mcp.json`, `.github/**`, `.gitignore`, `.gitattributes`, `.husky/**`, `.pre-commit-config.yaml`, `lefthook.yml`, `osv-scanner.toml`, `agents/**`, `skills/**`, `plugins/**`, `.claude-plugin/**`, `workflows/**`, `**/.claude/**`, `.envrc`, `**/.envrc`, `.git`, `.git/**`, `.gitmodules`, `.vscode/**`, `.devcontainer/**`. Globs are relative to the worktree: no absolute paths, `\`, or segments
-that can match `..`; brace expansion, negated classes (`[!`, `[^`) and
-extglobs are refused because glob dialects read them differently.
-`commands` may not name a shell, interpreter or command wrapper. That is a
-guard rail, not the boundary: build and test tools run repo code by design,
-so arguments are not restricted. A repo override may not add tools.
+that can match `..`. **Glob dialect and matching (H-0046, owner,
+2026-11-10):** a glob is literal segments separated by `/`, where `*`
+matches any characters within one segment (dot files included) and `**`
+matches zero or more whole segments. `?`, bracket classes, braces and
+extglobs are refused, because glob libraries read them differently. Before
+matching a path, the engine resolves it to its real path, following every
+symbolic link (a path that doesn't exist yet resolves through its nearest
+existing parent), refuses it if the result is outside the worktree, and
+matches the result relative to the worktree with `/` separators, after
+Unicode NFC normalization. Deny globs match case-insensitively on every
+filesystem; allow globs match case-sensitively. A path counts as allowed
+only if an allow glob matches and no deny glob does.
+**Container per agent session (H-0045 and H-0052, owner, 2026-11-10;
+wording draft awaiting owner approval).** The engine runs every agent
+session, the agent process included, in its own container, so the agent's
+tools, hooks and everything they start stay inside it. Agents would
+otherwise run as the owner's OS user (ADR 0014), so the container is what
+keeps the owner's machine out of reach:
+- **Mounts:** only the session's worktree (read-only for a role with no
+  `write` allow outside `.factory/`) and per-project cache volumes for
+  build tools. Never the owner's home folder, the engine's socket or
+  `.factory/engine.json`, the container runtime's socket, or any other
+  host path.
+- **No owner credentials:** none are copied, mounted or passed in. The
+  only secret inside is the session's model token; a role that needs
+  GitHub gets the factory's machine-account token, never the owner's.
+- **Image:** built per project from a base image pinned by digest plus the
+  project's approved toolchain (S4.1); the agent runs as a non-root user,
+  with a read-only root filesystem apart from the worktree, the cache
+  volumes and a temp folder, all capabilities dropped, no new privileges,
+  and CPU, memory and process limits.
+- **Network:** the container reaches only the model API and the role's
+  `network` hosts, through an egress proxy the engine runs; nothing else.
+- **Write rules:** inside the worktree the container can't tell one path
+  from another, so when a session ends the engine compares its branch with
+  where it started. A changed path that the role's `write` rules don't
+  allow (deny wins) rejects the whole session's changes and files a
+  Security alert. A fresh worktree holds only tracked files, so untracked
+  secret files never reach a container; committed ones are reported by
+  the onboarding assessment.
+- **Fail closed:** if the container runtime is missing or a container
+  can't start with these settings, no agent session starts. On Windows
+  this needs Docker Desktop with the WSL2 back end.
+`commands` may not name a shell,
+interpreter or command wrapper. That is a guard rail; the container is the
+boundary. Build and test tools run repo code by design, so arguments are
+not restricted. A repo override may not add tools.
 `network.allow` lists host names. From v2.2 the single entry `"*"` means any
 host, and is allowed only for a role whose tools are `WebFetch` and
 `WebSearch` alone, so open web content never reaches an agent that can see

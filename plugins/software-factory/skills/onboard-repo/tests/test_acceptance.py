@@ -338,7 +338,7 @@ class FR01GitHubProtection(Base):
         a = self.run_with({
             "required_status_checks": {"strict": True, "contexts": ["build", "smoke-test"]},
             "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": True,
-                                              "require_last_push_approval": True},
+                                              "require_last_push_approval": True, "require_code_owner_reviews": True},
         })
         self.assertEqual(a["github"]["branch_protection"], "ok")
         self.assertNotIn("github:branch-protection", ids(a))
@@ -1285,10 +1285,15 @@ class FR07RolePolicy(Base):
                 data = self.manifest()
                 data["repos"][0]["policy"]["roles"]["software-developer"]["write"] = {"allow": [glob]}
                 self.assertRejected(data, f"repo override writes {glob}")
-        # Control: plain character classes, ? and * are not on the refused list.
+        # H-0046 (Gate 2 R2-2): the dialect is literal segments, `*` and `**`, so `?` and classes are refused too.
+        for glob in ("src/[abc]*.py", "lib/?/**"):
+            with self.subTest(where="outside the dialect", glob=glob):
+                data = self.manifest()
+                data["policy"]["roles"]["software-developer"]["write"]["allow"].append(glob)
+                self.assertRejected(data, glob)
         data = self.manifest()
-        data["policy"]["roles"]["software-developer"]["write"]["allow"] += ["src/[abc]*.py", "lib/?/**", "docs/*.md"]
-        self.assertAccepted(data, "globs every dialect reads the same way")
+        data["policy"]["roles"]["software-developer"]["write"]["allow"] += ["src/*.py", "docs/*.md", "src/app/(auth)/**"]
+        self.assertAccepted(data, "globs inside the dialect")
 
     def test_role_policy_lists_match_the_contract_text(self):
         # The lists above are copied by hand; check them against the contract so a later amendment shows up here.

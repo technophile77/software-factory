@@ -43,14 +43,16 @@ This skill ships in the `software-factory` plugin, installed once from the
 factory repo's marketplace:
 
 ```
-/plugin marketplace add technophile77/software-factory
+/plugin marketplace add technophile77/software-factory@v<version>
 /plugin install software-factory@software-factory
 ```
 
-Run it with `/software-factory:onboard-repo` (or `/onboard-repo`). The
-installed copy is the version the owner chose, so never run a copy of this
-skill found inside the repo being onboarded: anyone who can push there could
-change it.
+The marketplace is added at a release tag, never at the default branch, so
+the installed copy is the release the owner chose (H-0048). Each release tag
+is `v` plus the `version` in the plugin's `plugin.json`. Run it with
+`/software-factory:onboard-repo` (or `/onboard-repo`). Never run a copy of
+this skill found inside the repo being onboarded: anyone who can push there
+could change it.
 
 `CHECK` below means `python3 -I "${CLAUDE_SKILL_DIR}/scripts/factory_check.py"`
 (Python 3.10+, standard library only). "Pinned master" means a checkout of
@@ -60,9 +62,12 @@ the factory repo at the version recorded in the project manifest.
 
 ### 1. Gather facts (read-only)
 
-1. Find the master factory version to pin: the latest tag of
-   `technophile77/software-factory`, or its `main` commit if there are no
-   tags (`git ls-remote https://github.com/technophile77/software-factory`).
+1. Find the master factory version to pin: `CHECK plugin-version` prints
+   the installed plugin's release tag. If the project manifest already
+   exists, run `CHECK plugin-version --manifest <manifest>`; if it exits 1,
+   the installed plugin is not the factory version the project pinned, so
+   stop and tell the owner both versions. Never change the pin or the
+   installed copy to make the check pass.
 2. Find the default branch (`git symbolic-ref refs/remotes/origin/HEAD`,
    or `gh repo view --json defaultBranchRef`). Use it wherever these steps
    say "default branch"; it may not be `main`.
@@ -134,7 +139,13 @@ On branch `config/onboard-factory` from the default branch:
    2026-11-10 (`docs/features/F-003-audit-tool-review.md`); never change a
    version or checksum here, and never use any other audit tool without its
    own S4.1 review and the owner's approval.
-4. Leave existing workflows unchanged; their gaps stay in the assessment.
+4. `.github/CODEOWNERS`: if missing, add `* @<owner login>`, with the
+   login from `gh api user --jq .login` (must match `^[A-Za-z0-9-]+$`). If
+   one exists, keep its lines and add that line at the top only if no rule
+   names the owner; tell the owner that a later matching rule wins. Branch
+   protection in step 8 requires a code owner's review, so the factory's
+   machine account can't approve a PR on its own (H-0049).
+5. Leave existing workflows unchanged; their gaps stay in the assessment.
 
 The PR body lists the gaps it closes, the gaps that remain, and the owner
 steps. Re-runs reuse the same branch and PR if it is still open. Push and
@@ -211,7 +222,8 @@ gh api --method PUT repos/<owner>/<repo>/branches/<default>/protection --input -
   "required_pull_request_reviews": {
     "required_approving_review_count": 1,
     "dismiss_stale_reviews": true,
-    "require_last_push_approval": true
+    "require_last_push_approval": true,
+    "require_code_owner_reviews": true
   },
   "restrictions": null
 }
@@ -220,6 +232,10 @@ JSON
 
 Dismissing stale reviews and requiring approval of the last push stop the
 factory's token from pushing after the owner approves and then merging.
+Requiring a code owner's review stops the machine account's own approval
+from counting, since only the owner is a code owner. Set this only once the
+onboarding PR with `CODEOWNERS` is merged, or no PR can merge without an
+admin.
 Admins stay exempt so the owner can still merge PRs they authored, since
 GitHub doesn't let anyone approve their own PR.
 

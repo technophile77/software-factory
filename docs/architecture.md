@@ -38,7 +38,7 @@ How each box is built is decided in ADRs:
 | Orchestration | ADR 0001: TypeScript workflow engine; one Claude Agent SDK session per agent; gates enforced in code |
 | Inbox store | ADR 0002: one file per item under `.factory/inbox/`, in Git |
 | VS Code extension | ADR 0003: engine is a separate local process; extension is the UI (tree views + detail webview) |
-| Agent isolation and permissions | ADR 0004: Git worktree per agent; per-role write/command/network policy |
+| Agent isolation and permissions | ADR 0004: Git worktree per agent; per-role write/command/network policy. ADR 0015: container per agent session, one path-matching rule, SSH-signed owner actions |
 | Branching | ADR 0005: `feature/F-nnn-name` + `feature/F-nnn/<agent>`, squash merge |
 | PR integration | ADR 0006: dedicated fine-grained token; `main` protected, owner review required |
 | Concurrency | ADR 0007: unlimited, with rebase-and-retest after each merge |
