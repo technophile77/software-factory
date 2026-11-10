@@ -18,8 +18,9 @@ owner approves a change.
 3. **Change-controlled files need explicit approval for every edit**, including
    typo fixes. See `docs/decision-management.md` § Configuration hygiene.
    Change-controlled files are: this file, everything under `agents/`,
-   `skills/`, `workflows/`, `.github/workflows/`, `scripts/`, `docs/` (except files under `docs/features/` that
-   an in-progress feature owns), and any factory configuration.
+   `skills/`, `plugins/`, `.claude-plugin/`, `workflows/`, `.github/workflows/`,
+   `scripts/`, `docs/` (except files under `docs/features/` that an
+   in-progress feature owns), and any factory configuration.
 4. **Do not assume open design items.** `docs/open-decisions.md` lists what is
    still undecided. If work depends on one, raise it; do not pick an answer.
 5. **Only five decision categories exist:** Product, Architecture, Interfaces,
