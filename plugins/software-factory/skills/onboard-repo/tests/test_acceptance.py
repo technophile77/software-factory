@@ -1064,13 +1064,14 @@ class AC11Manifest(Base):
 
 CORE_ROLES = ["orchestrator", "requirements-analyst", "software-developer", "test-engineer",
               "security-reviewer", "validation-judge"]
-CONTRACT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch"}
-# Copied from interface-contracts.md, Role policy v2.1 (as amended by H-0008, 794c830).
+CONTRACT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill"}
+SUPPORT_ROLES = ["web-reader"]
+# Copied from interface-contracts.md, Role policy v2.2 (H-0023).
 SECRET_GLOBS = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks",
                 "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc",
                 "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json",
                 "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk",
-                "**/kubeconfig", "**/.kube/config"]
+                "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
 CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json",
                      ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml",
                      "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**",
@@ -1142,12 +1143,13 @@ class FR07RolePolicy(Base):
 
     def test_template_policy_meets_role_policy_v21(self):
         roles = self.manifest()["policy"]["roles"]
-        self.assertEqual(sorted(roles), sorted(CORE_ROLES))
+        self.assertEqual(sorted(roles), sorted(CORE_ROLES + SUPPORT_ROLES))
         for role, rules in roles.items():
             with self.subTest(role=role):
                 self.assertTrue(rules["tools"]["allow"])
                 self.assertLessEqual(set(rules["tools"]["allow"]), CONTRACT_TOOLS)
-                self.assertTrue(rules["read"]["allow"])
+                if role not in SUPPORT_ROLES:
+                    self.assertTrue(rules["read"]["allow"])
                 self.assertLessEqual(set(SECRET_GLOBS), set(rules["read"]["deny"]))
                 for section in ("tools", "read", "write", "commands", "network"):
                     self.assertIn(section, rules)
@@ -1294,7 +1296,7 @@ class FR07RolePolicy(Base):
             self.skipTest("skill copied out of the factory repo; interface-contracts.md is not here")
         text = read(os.path.join(MASTER, "docs", "interface-contracts.md"))
         section = re.search(r"(?ms)^## Role policy .*?(?=^## )", text).group(0)
-        secret = re.search(r"deny reading secret files:\s*(.*?)\.\n", section, re.S).group(1)
+        secret = re.search(r"deny reading secret files[^:]*:\s*(.*?)\.\n", section, re.S).group(1)
         changes = re.search(r"deny the change-controlled paths:\s*(.*?)\. Globs", section, re.S).group(1)
         self.assertEqual(re.findall(r"`([^`]+)`", secret), SECRET_GLOBS)
         self.assertEqual(re.findall(r"`([^`]+)`", changes), CHANGE_CONTROLLED)
@@ -1358,6 +1360,46 @@ def frontmatter(text):
     if not m:
         raise AssertionError("no frontmatter")
     return m.group(1), text[m.end():]
+
+
+class RolePolicyV22(Base):
+    """H-0023: the open web reaches only a role with no file tools, and nobody reads the channel file."""
+    manifest = FR07RolePolicy.manifest
+    validate = FR07RolePolicy.validate
+    assertRejected = FR07RolePolicy.assertRejected
+    assertAccepted = FR07RolePolicy.assertAccepted
+
+    def test_any_host_only_for_a_role_without_file_tools(self):
+        for tool in ("Read", "Grep", "Glob", "Edit", "Write", "Bash", "Skill"):
+            with self.subTest(tool=tool):
+                data = self.manifest()
+                data["policy"]["roles"]["web-reader"]["tools"]["allow"].append(tool)
+                data["policy"]["roles"]["web-reader"]["read"]["allow"] = ["docs/**"]
+                self.assertRejected(data, f"web-reader with {tool} and any host")
+        data = self.manifest()
+        data["policy"]["roles"]["requirements-analyst"]["network"]["allow"] = ["*"]
+        self.assertRejected(data, "analyst with any host")
+
+    def test_web_reader_needs_no_read_glob(self):
+        data = self.manifest()
+        self.assertEqual(data["policy"]["roles"]["web-reader"]["read"]["allow"], [])
+        self.assertAccepted(data, "web-reader without reads")
+        data["policy"]["roles"]["security-reviewer"]["read"]["allow"] = []
+        self.assertRejected(data, "a role with file tools and no reads")
+
+    def test_every_role_denied_the_channel_file(self):
+        for role in CORE_ROLES + SUPPORT_ROLES:
+            with self.subTest(role=role):
+                data = self.manifest()
+                deny = data["policy"]["roles"][role]["read"]["deny"]
+                deny.remove(".factory/engine.json")
+                self.assertRejected(data, f"{role} may read engine.json")
+
+    def test_analyst_has_skill_and_no_web(self):
+        rules = self.manifest()["policy"]["roles"]["requirements-analyst"]
+        self.assertIn("Skill", rules["tools"]["allow"])
+        self.assertFalse({"WebFetch", "WebSearch"} & set(rules["tools"]["allow"]))
+        self.assertEqual(rules["network"]["allow"], [])
 
 
 class AC12Items(Base):

@@ -154,27 +154,23 @@ open and the owner's to answer:
 | SR-16 | The script shows JSON-RPC errors by code and message only, never the `data` field, and never echoes the owner's reply text in an error. | Gate 1 #14 (S5.2, S3.1) | Proposed |
 
 ## 10. Interface requirements
-- **Engine control channel v1.0 → v1.1** (adding methods, non-breaking):
-
-  | Method | Params | Result |
-  |---|---|---|
-  | `interview.list` | none | `{ features: [{ id, title, open, deferred, pending_assumptions }] }` |
-  | `interview.next` | `{ feature }` | `{ item: { id, kind: "question" \| "assumption", text, why, suggested?, options?, findings?: [{ text, source }], status } \| null }` |
-  | `interview.reply` | `{ feature, item, revision, reply_id, kind, text }` | `{ status, next? }` |
-  | `interview.state` | `{ feature, item }` | `{ status, recorded_at? }` |
-  | `interview.close` | `{ feature }` | `{ ok: true }` (ends the session lock) |
-
-  Items returned by `interview.next` also carry `revision`.
-  Notification: `interview.itemReady` when `more_info` research finishes.
-  v1.1 also adds access control to the whole channel: owner-only socket or
-  pipe and peer identity check (SR-7, SR-8).
-  Needs an Interfaces decision in the inbox.
-- **Role policy** (Security decision): every role denied reads of
-  `.factory/engine.json` (SR-14), and the widenings FR-7 needs for the
-  requirements analyst (Gate 1 #8, owner decision): a `network` rule for web
-  access (SR-6, OQ-2), web tools, use of shared skills (Role policy v2.1 has
-  no skill tool), read access outside its worktree including other features'
-  interview transcripts, and escalation to the advisor (F-006).
+Drafted on this branch for the owner's approval:
+- **H-0022, Engine control channel v1.1** (Interfaces, non-breaking): the
+  `interview.list`, `interview.next`, `interview.reply`, `interview.state`
+  and `interview.close` methods, the `Item` shape with revisions, reply ids,
+  the per-feature session lock, the `interview.itemReady` notification, and
+  owner-only access on both ends (SR-7, SR-8, SR-10 to SR-13).
+- **H-0023, Role policy v2.2** (Security, loosening approved in substance as
+  OQ-2 and OQ-4): the `Skill` tool for the requirements analyst; the optional
+  `web-reader` role with `WebFetch` and `WebSearch` only, no reads, and any
+  host (`"*"`), which the validator allows only for a role with no file tools
+  (SR-17); every role denied `.factory/engine.json` (SR-14). Other features'
+  specs and transcripts and advisor escalation are engine-mediated, so no new
+  read globs. Checker, template and tests updated with it.
+- **H-0024, agent files:** the requirements analyst's AGENT.md (answer, more
+  information or defer; assumptions approved in the interview with the
+  transcript as record; web only through the web reader; no escalation
+  before F-006) and a new `agents/web-reader/AGENT.md`.
 
 ## 11. Readiness gate
 - [x] Clear objective
@@ -182,7 +178,7 @@ open and the owner's to answer:
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit (none)
-- [ ] Blocking decisions resolved (contract changes to record: Engine control channel v1.1, Role policy for the analyst, the web reader and the `engine.json` deny)
+- [ ] Blocking decisions resolved (owner approval of H-0022, H-0023, H-0024 as drafted)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
