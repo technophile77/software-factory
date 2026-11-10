@@ -86,3 +86,11 @@ Tests in class `SecondReviewRegressions`; the test engineer's two failing accept
 
 - **Read and tool rules.** Each role in the manifest template now has `tools` (built-in agent tools) and `read` (allow the worktree, deny secret files). Reviewers get no Edit; the security reviewer and the requirements analyst get no shell. Role policy v2.1 in `docs/interface-contracts.md` (H-0008, amended).
 - **Checker.** `validate-manifest` requires every role to list tools, allow some reads and deny the secret-file globs, and rejects unknown tools. A repo override can't drop the secret denies (deny lists only add up). Tests: four new in `ManifestPolicy`.
+
+## Fixes after re-validation 2
+
+| Finding | Fix | Test |
+|---|---|---|
+| M11: README install command used a nonexistent option | README now matches SKILL.md: `/plugin marketplace add`, then `/plugin install software-factory@software-factory` | inspection |
+| M13: `..` and absolute paths in policy globs | Read and write globs that leave the worktree (absolute, `~`, drive letter, `..`, `\`) are rejected | `ManifestPolicy.test_globs_cannot_leave_the_worktree` |
+

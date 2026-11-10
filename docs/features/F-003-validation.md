@@ -273,3 +273,136 @@ Before Alpha, at most 3 Major findings are allowed. M1 to M4 and M9 are detectio
 2. The owner accepts the AC-10 deviation for non-npm audit tools, or amends AC-10 (M7).
 
 No code change is needed for PASS at Rapid prototype. Before Alpha: Gate 2's open Low items, m2, m5 and m20, and a Windows run (m14).
+
+---
+
+## Re-validation 2 (final commit, spec v6)
+
+- **Commit:** `5382f0a` (`claude/project-thread-g2huhl`, diff `origin/main...HEAD`, `origin/main` = `29bedf8`)
+- **Spec:** v6 (FR-1 to FR-15, AC-1 to AC-21, SR-1 to SR-8)
+- **Owner decisions since the last report (all 2026-11-10):** plugin distribution (A-1, FR-12, AC-20); test adoption and baseline feature (FR-14, FR-15, AC-18, AC-19); one project file (H-0008: Role policy v2.1, Project manifest v1.1); OSV-Scanner for Python, Go and Rust, plus govulncheck and cargo-audit from Beta (spec v5, AC-21); CLAUDE.md section approved; default role policy in `templates/factory-project.yaml` approved; H-0020 (test tools by fit). These resolve M6 and M7, the two owner items from the last report.
+- **Maturity level:** Rapid prototype
+- **Verdict:** **FAIL**
+  - The owner items are resolved, and my own probes found no defect in the product code that would block at this level.
+  - It fails on evidence. Since the test engineer's run (`1890675`, spec v2) and Gate 2 (`1890675`), ten commits have changed the product. They add FR-14, FR-15, the policy validator, the stack-audit checks, a CI template that downloads and runs binaries, and the plugin move. No test engineer run exists on the final commit (DoD 5). AC-18 to AC-21 have no independent test at all. Gate 2 has not reviewed any of this code (DoD 7). The developer also rewrote some of the test engineer's assertions (M10).
+  - Route (development-workflow "Going backwards", stage 8 FAIL): to the **test engineer** for a run on the final commit against spec v6, and to the **security reviewer** for a Gate 2 re-review of `1890675..5382f0a`. If both come back clean, this should become PASS without a code change. M13 is worth fixing in the same round.
+
+### My own run
+
+| Step | Result |
+|---|---|
+| `cd plugins/software-factory/skills/onboard-repo && python3 -m unittest discover -s tests` (Python 3.13.18) | **178 run, 178 passed**, 0 failed, 0 skipped |
+| `python3 scripts/check_docs.py` (repo root) | "All docs checks passed", exit 0 |
+| `claude plugin validate .` and `claude plugin validate plugins/software-factory` (Claude Code 2.1.322) | Both pass |
+| Install into a scratch `HOME`: `claude plugin marketplace add <repo>`, then `claude plugin install software-factory@software-factory` | Installed and enabled. `skills/onboard-repo/SKILL.md` is present in the plugin cache (AC-20) |
+| `README.md:21` install command, `/plugin install software-factory --marketplace …` | `claude plugin install --help` has no `--marketplace` option. The working form is the one in `SKILL.md:46-47` (M11) |
+| Probe p1: a Go and Rust repo whose only CI is the filled template (Beta jobs still commented out), `--level beta` | `stack-audit:go` and `stack-audit:rust` are reported, and `cve-audit-*` is not. Commented-out scanners don't count, and OSV-Scanner satisfies S4.4 |
+| Probe p2: AC-18 inventory (unit, e2e, integration and property folders, plus a fast-check file), `--level alpha` | Types: unit, acceptance (e2e), integration, stochastic, stochastic. `baseline_request` names the counts and the "alpha testing bar". `git status` is unchanged. Exception: `tests/test_integration_api.py` is typed unit (m22) |
+| Probe p3: manifest policy edge cases (in-process `validate_manifest`) | Accepted without error: a repo override that gives `security-reviewer` `Bash` and `WebFetch`; a write allow `.factory/../src/**` with no change-controlled denies (M13); a read allow `../**` |
+
+### Evidence checklist
+
+#### Functional requirements
+
+| Id | Status | Evidence |
+|---|---|---|
+| FR-1 | Met | Unchanged since the last report, apart from the default-branch wording (`factory_check.py:819-824`). `AC01Detection`, `FR01GitHubProtection`, both passing |
+| FR-2 | Met | The earlier checks still pass. New: the `stack-audit:go` and `stack-audit:rust` gaps block Beta (`factory_check.py:400-405,738-747`). Tests: `StackAudits.*`; probe p1 |
+| FR-3 | Met | Unchanged; `AC07Schema` passes. The schema adds `test_inventory` and `baseline_request` (`assessment.schema.json`) |
+| FR-4 | Met | Unchanged (`AC08Level`). m10 still stands |
+| FR-5 | Met | `SKILL.md:106-141`. The template uses `<DEFAULT_BRANCH>` (`ci-workflow.yml:9`), and the CLAUDE.md section is owner-approved. `AC09ExtendNotReplace`, `AC10GeneratedWorkflow` |
+| FR-6 | Met | M6 is resolved. Level and policy live only in the manifest (`SKILL.md:143-152,174-182`). `EdgeCases` (state branch), `test_fr6_manifest_policy_…` |
+| FR-7 | Met (see M13) | `validate_policy` and `effective_policy` (`factory_check.py:1156-1252`). Tests: `ManifestPolicy` (11 tests, including the secret-file read denies, tools listed and known, and a repo override that can't drop denies), `AC11Manifest` |
+| FR-8 | Met | Unchanged (`AC12Items`) |
+| FR-9 | Met | Unchanged |
+| FR-10 | Met (by inspection) | `SKILL.md:194-233` |
+| FR-11 | Met | `AC13Idempotence`. Re-run rules: `SKILL.md:252-275` (by inspection) |
+| FR-12 | Met | `.claude-plugin/marketplace.json`, `plugins/software-factory/.claude-plugin/plugin.json`. Validation and install were checked in my run. Standard library only: `AC15Portability` |
+| FR-13 | Met (by inspection) | `SKILL.md:100-104,191-192`; `AC17Complexity` |
+| FR-14 | Met (code and inspection; no independent test) | `classify_test` and `test_inventory` (`factory_check.py:967-984`); wiring in `SKILL.md:108-114`. Developer test `TestAdoption.test_inventory_classifies_existing_tests`; probe p2 |
+| FR-15 | Met (code and inspection; no independent test) | `baseline_request` (`factory_check.py:987-994`); `SKILL.md:235-244`. Developer test `TestAdoption.test_baseline_request_names_level_and_counts` |
+
+#### Acceptance criteria
+
+The required evidence is "a passing test id from the test engineer's run on the final commit". That run doesn't exist (B2). For criteria whose tests the test engineer wrote and nobody has changed, I accept my own run of those tests on `5382f0a` as interim evidence, as the last report did. I don't accept it where the test engineer never wrote a test, or where the developer changed the test engineer's assertions.
+
+| Id | Status | Evidence |
+|---|---|---|
+| AC-1 to AC-9, AC-12 to AC-17 | Met (the test engineer's unchanged tests, passing in my run on `5382f0a`) | Classes as mapped in `F-003-test-report.md` |
+| AC-10 | **Not met** (no independent evidence) | The test engineer's AC-10 assertions were rewritten by the developer for spec v5 (`test_acceptance.py:764-782`, M10). The new assertions pass and look right to me, but the test engineer hasn't confirmed them |
+| AC-11 | **Not met** (no independent evidence) | The test engineer's fill helper and FR-6 test were rewritten by the developer for spec v4 (`test_acceptance.py:795-797,1334-1344`, M10). `AC11Manifest` passes |
+| AC-18 | **Not met** (no independent test) | Only the developer's `TestAdoption.test_inventory_classifies_existing_tests` and my probe p2 cover it. Both pass |
+| AC-19 | **Not met** (no independent test) | Only the developer's `TestAdoption.test_baseline_request_names_level_and_counts` covers it. It passes |
+| AC-20 | **Not met** (no independent test) | It passes in my own run (validate and install), but no test engineer run exists |
+| AC-21 | **Not met** (no independent test) | Only the developer's `StackAudits` (4 tests) and my probe p1 cover it. Both pass |
+
+#### Security requirements
+
+| Id | Status | Evidence |
+|---|---|---|
+| SR-1 to SR-8 | Met (code unchanged in these paths; tests pass) | As in the last report. The new code adds no process calls (`test_sr6_*` passes) |
+| SR-5 (template) | Met by inspection and tests | Every downloaded scanner is version-pinned and checked with `sha256sum --check --strict` before it runs (`ci-workflow.yml:40-56,77-89`). govulncheck is installed with `go install …@v1.9.0` and checked against the Go checksum database. `contents: read` and `persist-credentials: false` are kept. Not yet reviewed by Gate 2 (B3) |
+
+#### Other lines
+
+| Area | Status | Evidence |
+|---|---|---|
+| Architecture / ADRs | Met | ADR 0004 (the policy is enforced by the engine and kept in the manifest by H-0008), 0006, 0008, 0009 and 0010 are followed. No ADR diff. m3 is still open |
+| Interface contracts | Met (see m24) | Role policy v2.1 and Project manifest v1.1 are owner-approved (H-0008, `interface-contracts.md:10-13,162-245`). The checker and template match the contract: the five sections, the secret-file globs (`factory_check.py:1166-1167`), the change-controlled denies (`:1159`), and the allow-replaces/deny-adds merge (`:1190-1202`). Contract-shape tests: `ManifestPolicy`, `AC11Manifest`, `AC12Items` |
+| Code quality, readability, maintainability | Met, with findings | The new code is small and readable. Findings: M13, m22, m23 |
+| Comments | Met (see m24) | The new comments explain why (`factory_check.py:400-405,738-740,1158,1165`, `ci-workflow.yml:36-39,57-59,71-74`). Outdated: `test_factory_check.py:612` docstring ("Role policy v2.0"); test headers `test_acceptance.py:1,7` and `test_factory_check.py:3` (old path; acceptance says "spec v2") |
+| Test tools | Not applied to F-003 | H-0020 postdates F-003's start, and the orchestrator says it applies to later features. That scope isn't written in `testing-strategy.md` or the H-0020 commit (m25). There is no tool choice table. Since the test engineer has to re-run anyway (B2), adding one is cheap: unittest (stdlib), stdlib `trace` for line coverage only, and hand-rolled property tests |
+| Documentation | Met, with findings | `interface-contracts.md`, `maturity-levels.md`, `testing-strategy.md` and `README.md` are updated, and `check_docs.py` passes. The README install command is wrong (M11). Stale references are listed in m24 |
+| Security | **Not met** | Both gate reports are present and Gate 2 has no blocking finding, but Gate 2 (`F-003-security-gate2.md:3-5`, re-review at `:68`) covers `skills/onboard-repo/` at `1890675`, spec v2. The security-relevant changes since then are unreviewed (B3) |
+
+### Status of earlier findings
+
+| # | Now | Evidence |
+|---|---|---|
+| M6 | **Resolved** by owner decisions | `maturity.yaml` and `roles.yaml` are removed. The default policy and the CLAUDE.md section are approved (`F-003-dev-report.md:58-61`) |
+| M7 | **Resolved** | Spec v5 withdrew the deviation. OSV-Scanner fills the audit (`ci-workflow.yml:47-56`); `test_ac10_python_repo_audited_by_template` |
+| m17 | Closed | The owner approved the CLAUDE.md section as it is |
+| m20 | Fixed | `ci-workflow.yml:9` `<DEFAULT_BRANCH>`; gap titles say "default branch" (`factory_check.py:819,824`) |
+| m15 | Superseded by M12 | |
+| m19 | Superseded by B2 | |
+| m2, m3, m5, m6, m7, m8, m10, m11, m14, m21 | Open, unchanged | For example, the commit prefix is still `onboarding:` (`SKILL.md:152`) and items still say `created_by: orchestrator` (`factory_check.py:1357`) |
+
+### Findings
+
+#### Blocking
+
+| # | Location | Finding |
+|---|---|---|
+| B2 | `docs/features/F-003-test-report.md:3-7`; DoD 5 | There is no test engineer run on the final commit. The report covers spec v2 at `1890675`, at the old `skills/onboard-repo/` path, with 160 tests. Since then the checker gained about 150 lines, SKILL.md was largely rewritten, and three templates were added or replaced. AC-18, AC-19, AC-20 and AC-21 have no independent test, and AC-10 and AC-11 rest on assertions the developer rewrote (M10). The coverage figure (93.7%) is stale too. Fix: the test engineer writes tests for AC-18 to AC-21 from spec v6, confirms or replaces the developer's edits to AC-10 and AC-11, and reports a run on the final commit with coverage. |
+| B3 | `docs/features/F-003-security-gate2.md:3-5,68`; DoD 7 | Gate 2 has not reviewed `1890675..5382f0a`. Changes it hasn't seen include: a CI template that downloads and runs third-party binaries (and the cargo-audit SHA-256 taken by hand, with no published checksum); the default role policy and its validator (M13); plugin distribution, where the owner runs code from the marketplace with their `gh` login; and the step 8 machine-account text, which the last report already said Gate 2 should re-read. Fix: a Gate 2 re-review of that range. |
+
+#### Major (allowed at Rapid prototype; logged)
+
+| # | Location | Finding |
+|---|---|---|
+| M10 | `plugins/.../tests/test_acceptance.py:764-782,795-797,1334-1344`; `F-003-dev-report.md:80-85` | The developer edited the test engineer's acceptance tests: AC-10 assertions, the AC-11 fill helper, the FR-6 test and the master path. The edits follow the spec changes and don't weaken the checks, but `testing-strategy.md` ("a test that seems wrong goes to the orchestrator") and the test engineer's independence mean the test engineer should own them. Part of B2's fix. |
+| M11 | `README.md:21` | The README's install command (`/plugin install software-factory --marketplace technophile77/software-factory`) uses an option that doesn't exist, and it skips adding the marketplace. It is the only install instruction in the factory repo. `SKILL.md:46-47` has the working form. |
+| M12 | `CLAUDE.md:20-24` (rule 3) | Moving the skill from `skills/` to `plugins/software-factory/skills/` took it out of the change-controlled list. Neither `plugins/` nor `.claude-plugin/` is named, although this code runs in the owner's session with their `gh` login. Changing CLAUDE.md is the owner's call (hygiene item). Until then, treat `plugins/**` and `.claude-plugin/**` as factory configuration. |
+| M13 | `plugins/.../scripts/factory_check.py:1248` | The FR-7 rule "change-controlled paths denied to every role that writes outside `.factory/`" relies on a plain `startswith(".factory/")`. A write allow such as `.factory/../src/**` passes as factory-only, so no denies are required (probe p3). `read`/`write` globs with `..` are accepted in general. The rule fails open on a crafted policy. Fix: reject `..` segments and absolute paths in policy globs. |
+
+#### Minor (logged; never block)
+
+| # | Location | Finding |
+|---|---|---|
+| m22 | `factory_check.py:973`, `:395,977` | `tests/test_integration_api.py` is typed unit: the integration pattern needs a folder or an `integration_test` suffix. Any test file that contains the word "hypothesis" or "rapid" counts as stochastic. |
+| m23 | `factory_check.py:1190-1202` | Following the contract, a repo override's `tools.allow` replaces the project's, so a repo can give the security reviewer `Bash` and `WebFetch` and still validate (probe p3). The contract says loosening needs a Security decision, but nothing checks for one; only SKILL.md (`:180-182`) tells the agent not to. For Gate 2 to weigh. |
+| m24 | `docs/interface-contracts.md:243`; `test_factory_check.py:3,612`; `test_acceptance.py:1,7`; `F-003-dev-report.md:70,75`; `F-003-orchestrator-review.md:3` | Stale text: `policy` is called "Role policy v2.0" in the manifest contract. The test headers give the old run path. The dev report says re-runs read `maturity.yaml`, which is gone. The orchestrator review is for spec v2. |
+| m25 | `docs/testing-strategy.md` § Test tools | H-0020 doesn't say which features it applies to. The "only features started after it" scope I was given is recorded nowhere. |
+
+### Counts (re-validation 2)
+
+- Blocking: 2 (B2, B3). Both are missing evidence, not product defects.
+- Major: 4 open (M10 to M13). M6 and M7 are resolved.
+- Minor: 14 open (m2, m3, m5, m6, m7, m8, m10, m11, m14, m21, m22, m23, m24, m25).
+- Lines: 7 Not met (AC-10, AC-11, AC-18, AC-19, AC-20, AC-21, Security); 0 Needs owner.
+
+### To reach PASS at Rapid prototype
+
+1. Test engineer: write tests for AC-18 to AC-21 from spec v6, take over or replace the developer's edits to AC-10 and AC-11, and report a run on the final commit with coverage. Adding the tool choice table is recommended.
+2. Security reviewer: re-review `1890675..5382f0a` at Gate 2.
+3. Recommended in the same round, though not required for PASS: fix M11 (README) and M13 (`..` in policy globs). Raise M12 with the owner as a hygiene item.

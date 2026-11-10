@@ -1165,6 +1165,13 @@ SECRET_FILES = ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/
                 "**/id_rsa*", "**/id_ecdsa*", "**/id_ed25519*"]
 
 
+def _escapes_worktree(glob):
+    # Globs are relative to the worktree root; `..` or an absolute path would let
+    # a rule like `.factory/../src/**` look like a factory-only write.
+    return glob.startswith(("/", "~")) or "\\" in glob or re.match(r"^[A-Za-z]:", glob) is not None \
+        or ".." in glob.split("/")
+
+
 def _check_role(where, rule, errors):
     if not isinstance(rule, dict):
         errors.append(f"{where} must be a mapping")
@@ -1181,6 +1188,8 @@ def _check_role(where, rule, errors):
                 errors.append(f"{where}.{key}.{sub} is not allowed")
             elif not isinstance(items, list) or not all(isinstance(i, str) and i for i in items):
                 errors.append(f"{where}.{key}.{sub} must be a list of strings")
+            elif key in ("read", "write") and any(_escapes_worktree(i) for i in items):
+                errors.append(f"{where}.{key}.{sub} has a path outside the worktree (absolute, `..` or `\\`)")
             elif key == "tools":
                 unknown = sorted(set(items) - AGENT_TOOLS)
                 if unknown:

@@ -691,6 +691,13 @@ class ManifestPolicy(Base):
         self.assertNotIn("Edit", roles["validation-judge"]["tools"]["allow"])
         self.assertNotIn("Bash", roles["requirements-analyst"]["tools"]["allow"])
 
+    def test_globs_cannot_leave_the_worktree(self):
+        # Validation M13: `.factory/../src/**` must not pass as a factory-only write.
+        for glob in (".factory/../src/**", "/etc/**", "~/x", "C:/x", "a\\\\b", "../x"):
+            with self.subTest(glob=glob):
+                errs = self.errors(self.manifest(dev_deny=self.CC).replace('allow: ["src/**"]', f'allow: [{json.dumps(glob)}]'))
+                self.assertTrue(any("outside the worktree" in e for e in errs), errs)
+
     def test_policy_is_optional(self):
         text = self.manifest().split("policy:")[0]
         self.assertEqual(self.errors(text), [])
