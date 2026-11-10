@@ -1,7 +1,7 @@
 # Proposal 0014: Project control, resumable runs, and token budgets
 
-**Status:** Q1 to Q4 decided by the owner on 2026-11-10 (see "Owner
-decisions" at the end); Q5 to Q8 still open.
+**Status:** Q1 to Q5, Q7 and Q8 decided by the owner on 2026-11-10 (see
+"Owner decisions" at the end); Q6 still open.
 Originally proposed for the owner's decision. Raised by the owner on
 2026-11-10. Not a decision until the owner chooses; the outcome becomes an
 ADR and a feature spec.
@@ -168,3 +168,15 @@ calibration and test baseline wait for activation).
 | Q2 | **Checkpoint and resume, with commits made by the engine, not the agent.** A hook on every file edit in an agent's worktree (the Agent SDK's post-tool hook on edit and write tools) triggers an automatic commit to the agent's branch, so lost work is at most one edit. On resume the engine resumes the same session; if it can't, it starts a new session from the last commit with a summary of the interrupted run's transcript saying what is already done. Squash merge (ADR 0005) keeps these commits out of `main`. |
 | Q3 | **A: estimate, admit, reserve.** The fixed starting defaults are replaced by measured values as soon as there is run data. |
 | Q4 | **Subscription mode:** the budget is the plan's own usage windows. **Pay-per-token mode:** the owner sets the limits manually. (Aligns with Q8's `mode` setting.) |
+| Q5 | **Agreed, with a clarification:** activating a project is the on switch. Once a project is enabled, the factory runs every session needed to finish its queued work, through the whole lifecycle, with no approval per run. The owner still decides inbox items and makes every merge (ADR 0006). "Work starts only from the owner" means a new feature enters a project's queue only from the owner's request or the owner's approval of a suggestion; agents can suggest features but can't queue them. |
+| Q7 | **Yes, opt-in, disabled by default.** Feasibility (checked against Claude docs, 2026-11-10): subscription usage windows are visible only through the SDK's `rate_limit_event` (status, `resetsAt`, `utilization`), the experimental `SDKUsageReport` (`rate_limits.limits[]` with `percent` and `resets_at`, plus `extra_usage`), and Claude Code's statusline data. These are enough to build it, but the usage report is marked experimental, so the feature must switch itself off when the data is missing. |
+| Q8 | **Calibrated defaults per Claude plan level** (for example Pro, Max 5x, Max 20x), used when there's data for that plan, measured as window utilization per run. Until then, the conservative defaults apply. |
+
+**Open point for the owner (raised with Q7/Q8):** Claude Code's legal and
+compliance page says subscription (OAuth) login is meant for ordinary
+individual use, and that developers building products or services on the
+Agent SDK should use API keys. Before relying on subscription mode for the
+engine, the owner should confirm this use fits the plan's terms. Also,
+`ANTHROPIC_API_KEY`, when set, takes priority over a subscription login, so
+the engine must make the billing mode explicit and refuse to start if the
+credentials don't match the project's `mode`.
