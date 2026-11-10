@@ -7,7 +7,8 @@ every dependent component together.
 
 **Status:** five contracts approved by the owner: Inbox item, Agent report,
 Engine control channel, and Role policy (PR #2, 2026-11-08), and Project
-manifest (PR #3, 2026-11-09).
+manifest (PR #3, 2026-11-09). Agent report v1.1 and three tuning contracts
+(Run review, Tuning metrics, Calibration result) approved 2026-11-10 (F-002 A-8, H-0013).
 
 ## Contract entry format
 
@@ -83,10 +84,10 @@ whose message starts with the item id.
 
 ---
 
-## Agent report — v1.0
+## Agent report — v1.1
 
 - Status: Approved
-- Owner decision: follows ADR 0001
+- Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8)
 - Used by: engine, every agent, validation judge (as evidence)
 - Compatibility: as for inbox items.
 
@@ -114,6 +115,11 @@ referenced by path or URL.
 `outcome` is one of `complete`, `blocked` (waiting on an inbox item),
 `failed` (could not do the work), or `partial` (with the reason in `summary`).
 
+**Optional envelope fields (v1.1):** `model`, `effort`, `rung`,
+`usage` (`input_tokens`, `output_tokens`, `cost_usd`, `duration_s`), and
+`transcript_ref` (where the run's transcript is kept, outside Git). The
+engine fills them; agents do not.
+
 **Role-specific `body`:**
 
 | Role | Required fields |
@@ -124,6 +130,7 @@ referenced by path or URL.
 | security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks) |
 | validation-judge | `verdict` (PASS, FAIL, NEEDS_HUMAN_REVIEW), `checklist` (area, status, evidence), `findings` (grade, location, explanation) |
 | orchestrator | `gate`, `checks` (name, passed, evidence) |
+| project-evaluator | `scope` (project or feature), `complexity` (simple, moderate, complex), `predictions` (role → rung, reason) |
 
 ---
 
@@ -207,3 +214,105 @@ Optional: `description`, `skills`, `agents`, `standards`, `settings`, `notes`.
 **Protected defaults:** `security-review` and the six core agents may never
 be excluded; overriding one requires a linked, approved Security decision
 and may only add rules.
+
+---
+
+## Run review — v1.0
+
+- Status: Approved
+- Owner decision: F-002 A-8
+- Used by: orchestrator (writes), engine (reads triggers), owner
+- Compatibility: as for inbox items.
+
+**Location:** `.factory/runs/<feature>/review.json`, written once a feature's
+run ends. Only the engine and orchestrator write it (F-002 SR-8).
+
+```json
+{
+  "schema": "run-review/1.0",
+  "feature": "F-012",
+  "outcome": "pr_opened",
+  "derived_complexity": "moderate",
+  "evaluator": { "predicted": { "software-developer": 3 }, "correct": true },
+  "transcripts_proposed": [{ "role": "test-engineer", "ref": "<transcript ref>", "action": "add" }],
+  "roles": [{
+    "role": "software-developer",
+    "rung": 3,
+    "runs": 2,
+    "first_try_pass": false,
+    "fix_cycles": 1,
+    "reruns": 0,
+    "attributed_failures": [{ "cause": "product_code", "stage": "orchestrator_review", "report": "<path>" }],
+    "usage": { "input_tokens": 0, "output_tokens": 0, "cost_usd": 0, "duration_s": 0 },
+    "suggestions_filed": ["H-0042"]
+  }]
+}
+```
+
+`outcome` is `pr_opened` or `stopped` (the run ended at an inbox item).
+
+---
+
+## Tuning metrics — v1.0
+
+- Status: Approved
+- Owner decision: F-002 A-1, A-8
+- Used by: engine (writes; orders the ladder), orchestrator and owner (read)
+- Compatibility: as for inbox items.
+
+**Location:** `.factory/tuning/metrics.json` on the project config repo's
+`factory/state` branch. Only the engine writes it.
+
+```json
+{
+  "schema": "tuning-metrics/1.0",
+  "updated_at": "2026-11-10T00:00:00Z",
+  "prices": { "source": "<url>", "as_of": "2026-11-03" },
+  "roles": {
+    "software-developer": {
+      "ladder_order": [1, 3, 2, 4],
+      "rungs": {
+        "3": {
+          "samples": 12, "passes": 11,
+          "tokens": { "median": 0, "p90": 0 },
+          "cost_usd": { "median": 0, "p90": 0 },
+          "duration_s": { "median": 0, "p90": 0 },
+          "by_repo": { "shop-api": { "samples": 7, "passes": 7 } }
+        }
+      }
+    }
+  }
+}
+```
+
+A rung with no samples is left out of `rungs` and listed last, in seed
+order, in `ladder_order`.
+
+---
+
+## Calibration result — v1.0
+
+- Status: Approved
+- Owner decision: F-002 A-8
+- Used by: engine (writes), orchestrator (files the hygiene item), owner
+- Compatibility: as for inbox items.
+
+**Location:** `.factory/tuning/calibration/<timestamp>.json` on the project
+config repo's `factory/state` branch.
+
+```json
+{
+  "schema": "calibration-result/1.0",
+  "reason": "initial | owner_request | step_down_check",
+  "source": "master:moderate | transcripts",
+  "ladder_version": "<factory tag>",
+  "estimated_cost_usd": 0,
+  "actual_cost_usd": 0,
+  "stopped_at_cap": false,
+  "roles": [{
+    "role": "test-engineer",
+    "tried": [{ "rung": 1, "trials": 5, "passes": 3, "tokens": 0, "cost_usd": 0, "passed": false }],
+    "proposed_rung": 2
+  }]
+}
+```
