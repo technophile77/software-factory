@@ -1,9 +1,9 @@
 # Feature: Advisor agent for hard questions
 
 - **Id:** F-006
-- **Status:** In review (all owner decisions made; hygiene items H-0060 to H-0064 to approve before the readiness gate)
+- **Status:** Approved (readiness gate passed 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10 (split out of F-005)
-- **Spec version:** 4
+- **Spec version:** 5
 
 ## 1. Objective and business purpose
 Some questions the factory puts to the owner are hard and cross-cutting, and
@@ -184,7 +184,7 @@ Security decisions; the rest are accepted Gate 1 requirements.
 | SR-12 | An over-budget approval (A-1) stays within ADR 0012's `max_usd` cap and billing-mode check. | Gate 1 #12 | Accepted |
 
 ## 10. Interface requirements
-Each needs owner approval through a hygiene item (ids H-0060 to H-0064):
+All approved by the owner as drafted, 2026-11-10 (decision card):
 - **H-0060** `agents/advisor/AGENT.md`, and an advisor entry in the shared
   agent lists (`docs/agent-responsibilities.md`, `docs/architecture.md`,
   spec section 2 as a support role 2.9).
@@ -213,12 +213,12 @@ Each needs owner approval through a hygiene item (ids H-0060 to H-0064):
 | Q9 | What context does the caller give the advisor? | Product | Answered: question and options, no recommendation (owner, 2026-11-10) |
 
 ## 12. Readiness gate
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+- [x] Clear objective
+- [x] Expected behavior defined
+- [x] Acceptance criteria testable
+- [x] Constraints documented
+- [x] Assumptions explicit
+- [x] Blocking decisions resolved (approved, not deferred)
 
 ## 13. Change log
 | Version | Date | Change | Approved by |
@@ -227,3 +227,4 @@ Each needs owner approval through a hygiene item (ids H-0060 to H-0064):
 | 2 | 2026-11-10 | Full draft from interview answers Q1 to Q9; assumptions A-1 to A-3 proposed | Owner answers Q1-Q9 (thread) |
 | 3 | 2026-11-10 | Gate 1 folded in as SR-1..SR-12; FR-4, FR-9, AC-10, AC-11 reworded, AC-12 added; A-1..A-3 approved | Owner (A-1..A-3 card) |
 | 4 | 2026-11-10 | Owner approved SR-1, SR-3, SR-7 (A-3 narrowed to the current feature's transcript) and SR-9 (FR-7 shell becomes its own Security decision) | Owner, 2026-11-10 (card) |
+| 5 | 2026-11-10 | Hygiene items H-0060 to H-0064 approved as drafted; readiness gate passed (all Q answered, A-1..A-3 and SR decisions approved, nothing deferred) | Owner, 2026-11-10 (card) |

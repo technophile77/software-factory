@@ -15,9 +15,9 @@ role lists its tools and what it may read; secret files are denied to every role
 Its tightening after the F-003 security re-reviews (longer protected and secret
 lists, no shells as commands, no globs leaving the worktree) approved by the
 owner 2026-11-10 (decision card). Engine control channel v1.1 (H-0022) and Role policy v2.2 (H-0023) for F-005
-approved by the owner 2026-11-10 (decision card, as drafted). Proposed for
-F-006, awaiting the owner: Inbox item v1.1 (H-0062), Engine control channel
-v1.2 (H-0063), Role policy v2.3 (H-0061).
+approved by the owner 2026-11-10 (decision card, as drafted). Inbox item v1.1
+(H-0062), Engine control channel v1.2 (H-0063) and Role policy v2.3 (H-0061)
+for F-006 approved by the owner 2026-11-10 (decision card, as drafted).
 
 ## Contract entry format
 
@@ -34,8 +34,8 @@ v1.2 (H-0063), Role policy v2.3 (H-0061).
 
 ## Inbox item — v1.1
 
-- Status: Approved (v1.0); v1.1 Proposed (H-0062, F-006)
-- Owner decision: follows ADR 0002; v1.1 awaiting the owner (H-0062)
+- Status: Approved
+- Owner decision: follows ADR 0002; v1.1 by the owner, 2026-11-10 (H-0062, F-006, decision card)
 - Used by: engine, all agents that file items, VS Code extension
 - Compatibility: adding an optional field is non-breaking; renaming,
   removing, or changing the meaning of a field is breaking (major version).
@@ -167,12 +167,12 @@ engine fills them; agents do not.
 
 ## Engine control channel — v1.2
 
-- Status: Approved (v1.1); v1.2 Proposed (H-0063, F-006)
+- Status: Approved
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
   H-0025 (sessions by token, framing, `engine.json` format, error codes)
   approved by the owner, 2026-11-10 (decision card); amendment H-0026
   (`busy` data, listener pid, file modes) approved by the owner, 2026-11-10
-  (decision card); v1.2 awaiting the owner (H-0063)
+  (decision card); v1.2 approved by the owner, 2026-11-10 (H-0063, F-006, decision card)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -271,12 +271,12 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ## Role policy — v2.3
 
-- Status: Approved (v2.2); v2.3 Proposed (H-0061, F-006)
+- Status: Approved
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
   the advisor policy and request rule approved in substance by the owner,
-  2026-11-10 (F-006 SR-7, card); v2.3 awaiting the owner (H-0061)
+  2026-11-10 (F-006 SR-7, card); v2.3 approved by the owner, 2026-11-10 (H-0061, decision card)
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
   Security decision. v2.0 moved the policy from `.factory/policy/roles.yaml`
