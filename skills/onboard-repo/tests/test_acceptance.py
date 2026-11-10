@@ -1293,6 +1293,40 @@ class EdgeCases(Base):
         self.assertIn("tests:unit", seen)
         self.assertIn("## Recommended work", a["_md"])
 
+    def test_fr1_found_test_files_and_skipped_files_are_named(self):
+        # FR-1 "detect ... its test folders"; section 6 "skips ... and says so".
+        a = self.assess(self.repo({"pyproject.toml": "", "uv.lock": "", "tests/test_core.py": "import unittest\n",
+                                   "big.txt": "x" * 1_100_000, "img.bin": b"\0\1"}))
+        self.assertIn("tests/test_core.py", a["test_files_found"])
+        self.assertEqual(sorted(a["skipped_files"]), ["big.txt", "img.bin"])
+        self.assertSchemaValid(a)
+
+    def test_fr4_lowercase_readme_counts_as_purpose(self):
+        for name in ("readme.md", "Readme.rst", "README"):
+            with self.subTest(name=name):
+                self.assertNotIn("docs:purpose", ids(self.assess(self.repo({name: "What this is.\n"}))))
+        self.assertIn("docs:purpose", ids(self.assess(self.repo({"docs/README.md": "x\n"}))))
+
+    def test_fr8_tool_items_only_up_to_the_chosen_level(self):
+        a = self.assess(self.repo({"pyproject.toml": "", "uv.lock": ""}))
+        for level, wanted, unwanted in (("rapid-prototype", {"tool:test-framework", "tool:coverage"},
+                                         {"tool:property-testing", "tool:fuzzing", "tool:mutation"}),
+                                        ("alpha", {"tool:coverage", "tool:property-testing"},
+                                         {"tool:fuzzing", "tool:mutation"})):
+            with self.subTest(level=level):
+                code, out, err = cli("plan-items", a["_json_path"], "--inbox-dir", os.path.join(self.tmp(), "d"),
+                                     "--assessment-ref", "x.json", "--level", level)
+                self.assertEqual(code, 0, err)
+                keys = {c["key"] for c in json.loads(out)["created"]}
+                self.assertLessEqual(wanted, keys)
+                self.assertFalse(keys & unwanted, keys & unwanted)
+                self.assertIn("maturity-start", keys)
+        # Security items are filed whatever the level.
+        a = self.assess(self.repo({"k.txt": AWS_KEY + "\n"}))
+        code, out, _ = cli("plan-items", a["_json_path"], "--inbox-dir", os.path.join(self.tmp(), "d"),
+                           "--assessment-ref", "x.json", "--level", "rapid-prototype")
+        self.assertTrue(any(c["category"] == "Security" for c in json.loads(out)["created"]))
+
     def test_fr6_roles_template_covers_every_core_role_with_deny_on_policy(self):
         text = read(os.path.join(TEMPLATES, "roles.yaml"))
         self.assertRegex(text, r"(?m)^schema: role-policy/1\.0$")
