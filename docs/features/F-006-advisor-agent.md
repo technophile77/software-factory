@@ -224,5 +224,5 @@ Each needs owner approval through a hygiene item (ids H-0060 to H-0064):
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-10 | Skeleton with what the F-005 interview already decided | — |
-| 3 | 2026-11-10 | Gate 1 folded in as SR-1..SR-12; FR-4, FR-9, AC-10, AC-11 reworded, AC-12 added; A-1..A-3 approved | Owner (A-1..A-3 card) |
 | 2 | 2026-11-10 | Full draft from interview answers Q1 to Q9; assumptions A-1 to A-3 proposed | Owner answers Q1-Q9 (thread) |
+| 3 | 2026-11-10 | Gate 1 folded in as SR-1..SR-12; FR-4, FR-9, AC-10, AC-11 reworded, AC-12 added; A-1..A-3 approved | Owner (A-1..A-3 card) |
