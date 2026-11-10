@@ -3,7 +3,7 @@
 - **Id:** F-005
 - **Status:** Approved (readiness gate passed 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 6
+- **Spec version:** 7
 
 ## 1. Objective and business purpose
 The requirements analyst runs inside the engine, but the owner has no way to
@@ -53,7 +53,7 @@ goes to the one inbox, labeled by category.
 ## 3. Functional requirements
 | Id | Requirement |
 |---|---|
-| FR-1 | The `software-factory` plugin ships a `spec-interview` skill and a client script. The script talks JSON-RPC 2.0 to the engine over the transport in Engine control channel v1.0 and uses only the language's standard library. |
+| FR-1 | The `software-factory` plugin ships a `spec-interview` skill and a client script. The script talks JSON-RPC 2.0 to the engine over the transport in Engine control channel v1.1 and uses only the language's standard library. |
 | FR-2 | The script reads the channel address only from `.factory/engine.json` in the `factory/state` linked worktree, checked with `git worktree list` the same way `onboard-repo` does. Any other location stops the run with a message to the owner. |
 | FR-3 | New feature requests use the existing `feature.start` method. The owner's text is sent as written. |
 | FR-4 | The skill can list every feature with an interview waiting, with counts of open and deferred questions and pending assumptions (`interview.list`). |
@@ -150,7 +150,7 @@ open and the owner's to answer:
 | SR-12 | Each reply carries a client-generated reply id and the item revision; the engine records a reply id once and ignores repeats. The session lock is bound to the connection; replies from any other connection are rejected. | Gate 1 #10 (S1.1, S5.1) | Accepted |
 | SR-13 | The lock is released when its connection closes or after 30 minutes idle, and the owner can take over a held lock after confirming in the skill. | Gate 1 #11 (S5.1) | Accepted |
 | SR-14 | Role policy denies every role reads of `.factory/engine.json`; the engine refuses channel connections from agent processes it started. | Gate 1 #13 (S6.2, S8.1) | Accepted |
-| SR-15 | `more_info` research counts against the project budget (ADR 0012) and stops at a per-question cap, telling the owner. The script limits responses to 1 MiB and times out after 60 s per call, except while waiting for `interview.itemReady`. | Gate 1 #12 (S5.1, S1.1) | Accepted |
+| SR-15 | `more_info` research counts against the project budget (ADR 0012) and stops at a per-question cap, telling the owner. The script limits responses to 1 MiB and times out after 60 s per call, plus the `wait_s` it asks `interview.next` to wait for research (channel v1.1, H-0025). | Gate 1 #12 (S5.1, S1.1) | Accepted |
 | SR-16 | The script shows JSON-RPC errors by code and message only, never the `data` field, and never echoes the owner's reply text in an error. | Gate 1 #14 (S5.2, S3.1) | Accepted |
 
 ## 10. Interface requirements
@@ -189,3 +189,4 @@ Approved by the owner as drafted, 2026-11-10 (decision card):
 | 4 | 2026-11-10 | OQ-2: web via isolated reader with stripping and logging, residual risk accepted (SR-6, SR-17) | Owner, 2026-11-10 (decision card) |
 | 5 | 2026-11-10 | H-0022 (channel v1.1), H-0023 (Role policy v2.2), H-0024 (agent files) approved; readiness gate passed | Owner, 2026-11-10 (decision card) |
 | 6 | 2026-11-10 | Channel v1.1 amended by H-0025: sessions by token (`interview.open`, takeover, `wait_s`), line framing, `engine.json` format, error codes. FR-11 and SR-12/SR-13 now read against the session token, not the connection | Owner, 2026-11-10 (decision card) |
+| 7 | 2026-11-10 | Wording only, to match approved channel v1.1 (FR-1, SR-15); no requirement changed | — (wording) |
