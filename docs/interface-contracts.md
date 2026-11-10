@@ -458,11 +458,12 @@ section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.1
+## Project manifest — v1.2
 
-- Status: Approved
+- Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
-  adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008)
+  adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
+  `complexity` and `settings.agents` (F-002 A-6, A-8)
 - Used by: engine (resolves effective config), owner (edits it), VS Code extension (later)
 - Compatibility: adding an optional key is non-breaking; renaming or removing one is breaking.
 
@@ -472,8 +473,13 @@ Full format, validation rules, and an example are in
 (`factory-project/1.0`), `name`, `factory.version`, `repos`, `maturity`.
 Optional: `description`, `skills`, `agents`, `standards`, `settings`, `notes`,
 `policy` (Role policy v2.0). Each entry of `repos` may carry `policy`
-overrides. The manifest is the only record of repo and project maturity
-levels. `schema` stays `factory-project/1.0`: v1.1 only adds optional keys.
+overrides. From v1.2, optional `complexity` (`simple`, `moderate`, `complex`:
+the preset used only for initial calibration) and
+`settings.agents.<role>.rung` (the role's approved rung of the master
+ladder; the engine refuses a rung that doesn't exist in the pinned factory
+version or is below the role's floor). Both change only through hygiene
+items (F-002). The manifest is the only record of repo and project maturity
+levels. `schema` stays `factory-project/1.0`: v1.1 and v1.2 only add optional keys.
 
 **Protected defaults:** `security-review` and the six core agents (orchestrator,
 requirements-analyst, software-developer, test-engineer, security-reviewer,
