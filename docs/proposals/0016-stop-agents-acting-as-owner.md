@@ -1,9 +1,9 @@
 # Proposal 0016: Stop agents answering in the owner's place
 
-**Status:** proposed for the owner's decision. Raised as F-005 SR-5, an
-accepted risk that must be closed before Alpha. Not a decision until the
-owner chooses; the outcome becomes an ADR and contract changes (hygiene ids
-H-0050 to H-0054).
+**Status:** decided by the owner on 2026-11-10: option B, approval through
+GitHub on the owner's phone for each interview session (decision card).
+Recorded as ADR 0014. Raised as F-005 SR-5, an accepted risk that must be
+closed before Alpha. Follow-on changes use hygiene ids H-0050 to H-0054.
 
 Category: Security (with Architecture and Interfaces consequences).
 
@@ -173,12 +173,20 @@ or E alone, an agent running as the owner could read that key.
 3. Should C be added now as a second layer, or kept on file for Beta
    (recommended)?
 
-## Follow-on changes once decided (hygiene ids reserved)
+## Follow-on changes (hygiene ids)
 
-| Id | Change |
-|---|---|
-| H-0050 | ADR 0014 recording the choice; ADR 0004 amended on the OS-permissions point |
-| H-0051 | Engine control channel: SR-5 text replaced with the account boundary; agent sessions run as the agent account |
-| H-0052 | Role policy: the agent account name and what it may hold (factory token only) |
-| H-0053 | F-005 spec SR-5 status, and onboarding (F-003) creates and checks the account |
-| H-0054 | Reserved for C if the owner adds it |
+| Id | Change | State |
+|---|---|---|
+| H-0050 | ADR 0014 recording option B | Drafted, awaiting owner approval |
+| H-0051 | Engine control channel v1.2: pending sessions, `interview.awaitApproval`, error codes | Drafted, awaiting owner approval |
+| H-0052 | Sandbox rules deny agents the engine socket, `engine.json` and the owner's Claude Code history | Asked of ADR 0015 (proposal 0017), which owns the sandbox rules |
+| H-0053 | F-005 spec SR-5: decided, residual risk recorded | Drafted, awaiting owner approval |
+| H-0054 | Reserved for option C if the owner adds it later | Not used |
+
+## Owner decision (2026-11-10)
+
+The owner chose **B**, approval through GitHub on the phone for each
+interview session, over the recommended A. As the decision card stated, the
+residual risk is recorded: an agent running as the owner could still reuse a
+session the owner has approved. ADR 0014 records the design and the
+measures that narrow that window. A, C, D and E were not chosen.
