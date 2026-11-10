@@ -43,6 +43,9 @@ Interview answers (owner):
   F-003 Gate 2 item R2-1 (throwaway copy of the code, no network, no
   secrets, no access to the real repo). The advisor ships without a shell
   and gains it once that sandbox is decided and built.
+- Q6 (2026-11-10): every advisor call needs the owner's OK. Agents can only
+  propose a call (with their reason, per Q3); it runs when the owner
+  approves it. The owner's own requests need no further approval.
 
 ## 2. Expected behavior
 _To be written from the interview._
@@ -90,7 +93,8 @@ policy entry and shared agent-list edits, each through a hygiene item
 | Q3 | Who decides a question goes to the advisor? | Product | Answered: caller with reason, or the owner (owner, 2026-11-10) |
 | Q4 | What can the advisor read and use? | Security | Answered: analyst's sources read only, plus shell in a sandbox (owner, 2026-11-10) |
 | Q5 | What sandbox does the advisor's shell run in? | Security | Answered: the R2-1 sandbox; shell added once it exists (owner, 2026-11-10) |
-| Q6 | What limits the advisor's spend? | Product | Open |
+| Q6 | What limits the advisor's spend? | Product | Answered: owner's OK for every call (owner, 2026-11-10) |
+| Q7 | How does the orchestrator's request for an advisor call reach the owner? | Product | Open |
 
 ## 12. Readiness gate
 - [ ] Clear objective
