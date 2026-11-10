@@ -82,6 +82,8 @@ didn't find.
 
 ### 3. Agree the starting level and complexity with the owner
 
+On an onboarded repo, skip this step (see "Re-running").
+
 - **Starting level:** show the owner the recommended level and the evidence
   table from the assessment. The promotion criteria are still draft, so say
   so. The owner picks; their pick is recorded as the approved decision in
@@ -211,8 +213,26 @@ Tell the owner, briefly: the starting level, the onboarding PR link, how
 many gaps block the chosen level, the decisions waiting for them, and the
 open owner steps. Point to the assessment for the rest.
 
-## Re-running
+## Re-running on an onboarded repo
 
-Running again is safe. The assessment lists gaps closed and opened since the
-last one; `plan-items` skips filed decisions; the PR branch is reused; files
-already compliant are left alone.
+A repo is onboarded when `factory/state` has `maturity.yaml`. A re-run only
+assesses and reports; it never lowers or replaces what is there (FR-11):
+
+- **Level:** read it from `maturity.yaml` and pass it as `--level`. Don't
+  ask the owner again or file a new starting-level decision.
+- **CI workflow:** never regenerate `factory-ci.yml`. If jobs are missing
+  for the current level, add only those, in the onboarding PR, and leave
+  every existing job, trigger and permission as it is.
+- **CLAUDE.md:** replace the marked section only when the pinned factory
+  version changed, through the onboarding PR.
+- **Branch protection:** if the checker reports `ok`, change nothing. If it
+  reports `incomplete`, read the current settings and add only what is
+  missing (merge into the existing required checks and review rules);
+  never remove a check or loosen a rule, and show the owner the merged
+  payload before applying it.
+- **Manifest and role policy:** leave them alone; changes to them go
+  through a hygiene item.
+- **Decisions:** `plan-items` skips anything already filed.
+
+The new dated assessment on `factory/state` lists the gaps closed and opened
+since the last one.
