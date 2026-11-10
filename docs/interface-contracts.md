@@ -172,7 +172,10 @@ engine fills them; agents do not.
   H-0025 (sessions by token, framing, `engine.json` format, error codes)
   approved by the owner, 2026-11-10 (decision card); amendment H-0026
   (`busy` data, listener pid, file modes) approved by the owner, 2026-11-10
-  (decision card); v1.2 approved by the owner, 2026-11-10 (H-0063, F-006, decision card)
+  (decision card); v1.2 approved by the owner, 2026-11-10 (H-0063, F-006, decision card);
+  amendment H-0075 (advisor fields stated exactly, call limits, budget
+  flag, advice revision and hash; F-006 Gate 2 #2, validation M1, M2)
+  awaiting the owner
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -238,6 +241,41 @@ starts at most one advisor call; a call runs only from one of these replies.
 Clients send them only from the owner's own choice in the picker, never
 from text in an item (F-006 SR-3, SR-5). `text` is the
 owner's words, unchanged; the engine records it as written.
+
+Advisor fields, stated exactly (v1.2, amendment H-0075). All the fields
+it adds are optional and written only by the engine, so v1.2 clients and
+engines stay valid:
+- An `advisor_proposal` carries only `id, revision, kind, about, text, why,
+  status`, plus `advisor_call` below; never `suggested`, `options`,
+  `findings` or `advice`. `about` appears only on proposals. `advice`
+  appears only on questions. Clients refuse an item that breaks this.
+- An `advice` entry is `{ call, status, revision?, text?, reason?,
+  web_queries?, sha256? }`. `text` is present, and not blank, only when
+  `status` is `done`; a `running` call has no output yet and a `failed`
+  call's output was rejected (F-006 FR-8, AC-9). `reason` appears only on
+  `failed`: one line the engine writes (for example "output did not have
+  the four sections", "time limit reached"), never the advisor's output.
+  `revision` is the question's revision the call was asked about (spec
+  section 6). `web_queries` is the engine's log of the call's web searches
+  and addresses: `[]` means none were sent; a missing field means the
+  engine did not report them. `sha256` is the lowercase hex SHA-256 of the
+  UTF-8 bytes of the stored advice file (`.factory/advice/<call>.md`),
+  which is `text` exactly; clients compare it with `text` and tell the
+  owner on a mismatch (F-006 SR-4).
+- A question and an `advisor_proposal` may carry `advisor_call: { limits:
+  { turns, tokens, time_s, web_calls }, over_budget }`: the fixed per-call
+  limits (non-negative integers) a new call on that question would run
+  under, and whether it would go past the remaining project budget (F-006
+  SR-8, A-1). Clients show them beside the "Ask the advisor" choice and
+  the proposal, so the owner sees them before choosing; there is no extra
+  confirmation step. An over-budget call still stays within ADR 0012's
+  `max_usd` cap and billing-mode check (F-006 SR-12).
+- A reply to an `advisor_proposal` that is no longer `open` gets `stale`
+  (-32002), even at its current revision, so one proposal starts at most
+  one call.
+- `wait_s` on `interview.next` waits only for research (`researching`). It
+  does not wait for a `running` advisor call: the question stays open, and
+  clients call `interview.next` again when the owner asks.
 
 Interview rules (v1.1):
 - One session per feature. The lock belongs to the session token returned by
