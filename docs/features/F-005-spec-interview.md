@@ -3,7 +3,7 @@
 - **Id:** F-005
 - **Status:** Approved (readiness gate passed 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 5
+- **Spec version:** 6
 
 ## 1. Objective and business purpose
 The requirements analyst runs inside the engine, but the owner has no way to
@@ -188,3 +188,4 @@ Approved by the owner as drafted, 2026-11-10 (decision card):
 | 3 | 2026-11-10 | Owner answers: OQ-1 transcript is the record, OQ-3 no escalation before F-006, OQ-4 all widenings approved, OQ-2 any site | Owner, 2026-11-10 (thread) |
 | 4 | 2026-11-10 | OQ-2: web via isolated reader with stripping and logging, residual risk accepted (SR-6, SR-17) | Owner, 2026-11-10 (decision card) |
 | 5 | 2026-11-10 | H-0022 (channel v1.1), H-0023 (Role policy v2.2), H-0024 (agent files) approved; readiness gate passed | Owner, 2026-11-10 (decision card) |
+| 6 | 2026-11-10 | Channel v1.1 amended by H-0025: sessions by token (`interview.open`, takeover, `wait_s`), line framing, `engine.json` format, error codes. FR-11 and SR-12/SR-13 now read against the session token, not the connection | Owner, 2026-11-10 (decision card) |
