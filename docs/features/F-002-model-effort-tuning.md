@@ -3,7 +3,7 @@
 - **Id:** F-002
 - **Status:** Draft (requirements interview; A-1 method, A-9 and A-10 await the owner)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 2
+- **Spec version:** 3
 
 ## 1. Objective and business purpose
 Run each agent on the cheapest model and lowest effort level that still does
@@ -32,8 +32,9 @@ agent up to a stronger model or higher effort is always the owner's call.
 5. **Suggestions.** The run review compares each role's recent history with
    the triggers in A-5. If a role keeps failing, it files a hygiene item
    proposing one rung up, with the evidence. If a role has passed cleanly for
-   a long stretch, it re-runs the role's calibration at the next cheaper rung
-   and, if that passes, proposes it. Move-down proposals from one review are
+   a long stretch, it first tests the cheaper rung by replaying the project's
+   own selected transcripts for that role, and proposes the move only if they
+   pass. Move-down proposals from one review are
    grouped into one item. Nothing changes until the owner approves.
 6. **Complexity follows the evidence.** After the project starts, its
    complexity is no longer the preset: it is derived from the rungs the
@@ -54,7 +55,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | FR-10 | After every feature run the orchestrator writes a run review (`.factory/runs/<feature>/review.json`) with per-role results, attributed failures, and the project's derived complexity. |
 | FR-11 | Failures are attributed to a role by the orchestrator's existing root-cause classes (attribution table below). Environment, infrastructure, and dependency failures are attributed to no role. |
 | FR-12 | When a role meets the step-up trigger (A-5), the run review files a hygiene item proposing exactly one rung up, with the run ids and failures as evidence. |
-| FR-13 | When a role meets the step-down trigger (A-5), the engine first re-runs that role's calibration at the next cheaper rung; only if it passes is a move down proposed. All move-downs from one review go in one grouped hygiene item, low priority. |
+| FR-13 | When a role meets the step-down trigger (A-5), the engine first replays the project's selected transcripts for that role at the next cheaper rung, against the A-2 pass bar; only if they pass is a move down proposed, with the replay results attached. Master tasks are never used for this test; a role with no selected transcripts gets no move-down proposal, and the review says so. All move-downs from one review go in one grouped hygiene item, low priority. |
 | FR-14 | No suggestion is filed while an earlier one for the same role is still open. |
 | FR-15 | Every applied change to a role's rung is a commit with the hygiene item id, so it can be traced and rolled back. |
 | FR-16 | Derived complexity: the tier whose master calibration tasks best match the rungs the roles currently need (median role rung mapped to a tier), recorded in each run review and in history. It does not edit the manifest preset. |
@@ -85,7 +86,8 @@ agent up to a stronger model or higher effort is always the owner's call.
 | AC-9 | Given a failure classified "product code", then the review attributes it to software-developer; given "environment", then to no role. | FR-11 |
 | AC-10 | Given a role meeting the step-up trigger, then exactly one hygiene item is filed proposing one rung up, linking the runs that triggered it; no setting changes. | FR-12 |
 | AC-11 | Given two roles meeting the step-down trigger in one review, and both pass at the cheaper rung, then one grouped hygiene item proposes both moves. | FR-13 |
-| AC-12 | Given a role meeting the step-down trigger whose cheaper rung fails calibration, then no move is proposed for it and the review records why. | FR-13 |
+| AC-12 | Given a role meeting the step-down trigger whose cheaper rung fails the transcript replay, then no move is proposed for it and the review records why. | FR-13 |
+| AC-17 | Given a role meeting the step-down trigger with no selected transcripts, then no move is proposed, no master task is run for it, and the review says a transcript is needed. | FR-13 |
 | AC-13 | Given an open suggestion for a role, when the trigger is met again, then no second item is filed. | FR-14 |
 | AC-14 | Given an approved suggestion, then the manifest change is one commit whose message starts with the item id. | FR-15 |
 | AC-15 | Given a role already on the top rung that meets the step-up trigger, then the item says so and recommends investigating the role's instructions instead. | FR-12 |
@@ -135,7 +137,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | A-2 | **Calibration pass bar (Product).** Each task runs 5 trials. A rung passes if at least 90% of trials pass, and, for the security reviewer and validation judge, no planted or recorded Critical or High defect is missed in any trial. | Owner, 2026-11-10 | Approved |
 | A-3 | **Floors for gate agents (Security).** The security reviewer and validation judge never run below Sonnet/medium, whatever calibration finds. | Owner, 2026-11-10 | Approved |
 | A-4 | **Approval for every change (Product).** Spec § 6 stands: step-ups and step-downs are both hygiene items; move-downs are grouped into one low-priority item per review. | Owner, 2026-11-10 | Approved |
-| A-5 | **Triggers (Product).** Step up: a role is attributed failures in 3 of its last 5 runs, or causes a Testing inbox escalation in 2 of its last 5. Step down: 10 consecutive runs with no attributed failure and first-try pass, then a calibration check at the cheaper rung. | Owner, 2026-11-10 | Approved |
+| A-5 | **Triggers (Product).** Step up: a role is attributed failures in 3 of its last 5 runs, or causes a Testing inbox escalation in 2 of its last 5. Step down: 10 consecutive runs with no attributed failure and first-try pass, then a passing replay of the project's own transcripts at the cheaper rung (owner, 2026-11-10). | Owner, 2026-11-10 | Approved |
 | A-6 | **Complexity (Product).** The manifest's `complexity` is a preset set at onboarding and used only for initial calibration. After the project starts, complexity is derived from the rungs the agents actually need and reported in run reviews. | Owner, 2026-11-10 | Approved |
 | A-7 | **Calibration tasks (Architecture).** Master tasks in the master repo at `calibration/<role>/<tier>/`. A project's tests are selected transcripts of its own runs, listed in its config repo at `calibration/transcripts.yaml`; the transcripts themselves stay where transcripts are kept today (outside Git). Results and history on `factory/state` at `.factory/tuning/`. Logic is an engine module. | Owner, 2026-11-10 | Approved |
 | A-8 | **Formats (Interfaces).** Additive: Project manifest v1.1, Agent report v1.1, new Run review v1.0 and Calibration result v1.0 (§ 10). | Owner, 2026-11-10 | Approved |
@@ -194,3 +196,4 @@ All changes are additive (A-8):
 |---|---|---|---|
 | 1 | 2026-11-10 | Draft | — |
 | 2 | 2026-11-10 | Owner answers: ladder ordered by cost, grouped move-downs, complexity preset then derived, project transcripts as tests; A-2, A-3, A-5, A-8 approved as proposed; A-9, A-10 added | Owner, 2026-11-10 (A-1 to A-8) |
+| 3 | 2026-11-10 | Move-downs tested only by replaying the project's own transcripts | Owner, 2026-11-10 |
