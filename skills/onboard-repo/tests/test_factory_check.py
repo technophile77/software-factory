@@ -425,11 +425,123 @@ class Portability(Base):
         self.assertIn("factory:state-branch", ids(a))
 
 
+class ReviewRegressions(Base):
+    """One test per finding fixed from Gate 2 and validation (testing-strategy.md, Regression)."""
+
+    def test_b1_same_action_in_two_jobs(self):
+        wf = ("permissions: {}\non: push\njobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n"
+              "  b:\n    steps:\n      - uses: actions/checkout@v4\n")
+        a = self.assess({".github/workflows/ci.yml": wf})
+        g = gap_by(a, "action-unpinned:.github/workflows/ci.yml:actions/checkout")
+        self.assertEqual([e["line"] for e in g["evidence"]], [6, 9])
+
+    def test_m1_commented_jobs_do_not_count(self):
+        template = read(os.path.join(SKILL, "templates", "ci-workflow.yml"))
+        a = self.assess({"package.json": "{}", ".github/workflows/factory-ci.yml": template})
+        for job in ("secret-scan", "acceptance-tests", "contract-tests", "integration-tests", "performance-tests"):
+            self.assertIn(f"ci-job:{job}", ids(a))
+        self.assertIn("cve-audit-missing", ids(a))
+
+    def test_m1_monthly_cron_is_not_weekly(self):
+        wf = GOOD_WORKFLOW.replace('"0 6 * * 1"', '"0 6 1 * *"')
+        self.assertIn("cve-audit-not-weekly", ids(self.assess({".github/workflows/ci.yml": wf})))
+        wf = GOOD_WORKFLOW.replace('"0 6 * * 1"', "'0 0 * * *'")
+        self.assertNotIn("cve-audit-not-weekly", ids(self.assess({".github/workflows/ci.yml": wf})))
+
+    def test_gate2_hidden_uses_and_risky_triggers(self):
+        wf = ("on: [pull_request_target]\npermissions: write-all\njobs:\n  a:\n    steps:\n"
+              "      - {uses: evil/act@main}\n      - \"uses\": other/act@v1\n")
+        a = self.assess({".github/workflows/ci.yml": wf})
+        self.assertIn("action-unpinned:.github/workflows/ci.yml:evil/act", ids(a))
+        self.assertIn("action-unpinned:.github/workflows/ci.yml:other/act", ids(a))
+        self.assertIn("workflow-write-all:.github/workflows/ci.yml", ids(a))
+        self.assertEqual(gap_by(a, "workflow-pr-target:.github/workflows/ci.yml")["severity"], "high")
+
+    def test_docker_actions_need_a_digest(self):
+        self.assertFalse(fc.action_pinned("docker://alpine:3"))
+        self.assertTrue(fc.action_pinned("docker://alpine@sha256:" + "b" * 64))
+
+    def test_m2_secrets_in_vendored_folders_are_scanned(self):
+        a = self.assess({"build/out.js": f"k='{FAKE_AWS}'\n", "build/package.json": "{}", "vendor/x/go.mod": "module x"})
+        self.assertIn("secret:aws-access-key:build/out.js:1", ids(a))
+        self.assertEqual(a["stacks"], [])
+
+    def test_gate2_more_secret_types(self):
+        npm = "npm_" + "a1B2" * 9
+        a = self.assess({".env": "DB_PASSWORD=hunter22secret\nDEBUG=1\n", ".env.example": "DB_PASSWORD=changeme123\n",
+                         "ci.sh": f"echo {npm}\n"})
+        self.assertIn("secret:env-secret:.env:1", ids(a))
+        self.assertFalse([i for i in ids(a) if ".env.example" in i])
+        self.assertIn("secret:npm-token:ci.sh:1", ids(a))
+        self.assertNotIn("hunter22secret", json.dumps(a))
+
+    def test_m3_docs_and_feature_folders_are_not_tests(self):
+        a = self.assess({"docs/spec/overview.md": "x", "src/features/cart.js": "x", "package.json": "{}"})
+        self.assertIn("tests:unit", ids(a))
+        self.assertIn("tests:acceptance", ids(a))
+
+    def test_m4_every_gap_has_evidence(self):
+        a = self.assess({"package.json": "{}"})
+        for g in a["gaps"]:
+            self.assertTrue(g["evidence"], g["id"])
+
+    def test_item_body_cannot_suppress_filing(self):
+        inbox = tempfile.mkdtemp()
+        self.roots.append(inbox)
+        a = self.assess({"src/k.py": f"K='{FAKE_AWS}'\n"})
+        key = "secret:aws-access-key:src/k.py:1"
+        with open(os.path.join(inbox, "D-0001.md"), "w") as f:
+            f.write(f"---\nid: D-0001\n---\n\nSee x#onboard:{key} and #onboard:maturity-start\n")
+        created = [c["key"] for c in fc.plan_items(a, inbox, "x", write=True)["created"]]
+        self.assertIn(key, created)
+        self.assertIn("maturity-start", created)
+
+    def test_sr2_repo_git_config_cannot_run_commands(self):
+        root = self.repo({"README.md": "x"})
+        marker = os.path.join(root, "pwned")
+        subprocess.run(["git", "-C", root, "config", "core.fsmonitor", f"touch {marker}; false"], check=True)
+        hook = os.path.join(root, ".git", "hooks", "post-checkout")
+        with open(hook, "w") as f:
+            f.write(f"#!/bin/sh\ntouch {marker}\n")
+        os.chmod(hook, 0o755)
+        with open(os.path.join(root, "package.json"), "w") as f:
+            f.write(json.dumps({"scripts": {"postinstall": f"touch {marker}", "test": f"touch {marker}"}}))
+        fc.assess(root)
+        self.assertFalse(os.path.exists(marker))
+
+    def test_sr6_no_shell_in_checker(self):
+        source = read(SCRIPT)
+        self.assertNotIn("shell=True", source)
+        self.assertNotIn("os.system", source)
+        self.assertNotIn("os.popen", source)
+        self.assertEqual(source.count("subprocess.run("), 1)  # only run_git, with an argument list
+
+    def test_bad_manifest_encoding_fails_closed(self):
+        root = self.repo({}, git=False)
+        path = os.path.join(root, "factory-project.yaml")
+        with open(path, "wb") as f:
+            f.write(b"name: \xff\xfe\n")
+        self.assertEqual(fc.main(["validate-manifest", path]), 2)
+        with open(path, "w") as f:
+            f.write("a:\n" + "".join(" " * (i + 1) + f"k{i}:\n" for i in range(3000)))
+        self.assertIn(fc.main(["validate-manifest", path]), (1, 2))
+
+
 class Protection(unittest.TestCase):
     def test_states(self):
         self.assertEqual(fc._protection({"message": "Branch not protected"})[0], "missing")
-        self.assertEqual(fc._protection({"required_pull_request_reviews": {"required_approving_review_count": 1},
-                                         "required_status_checks": {"contexts": ["build"]}})[0], "ok")
+        full = {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": True,
+                                                  "require_last_push_approval": True},
+                "required_status_checks": {"strict": True, "contexts": ["build"]}, "enforce_admins": {"enabled": True}}
+        self.assertEqual(fc._protection(full)[0], "ok")
+        # Gate 2 #1: a weaker rule would let the factory token push after approval and merge.
+        for key, value in (("dismiss_stale_reviews", False), ("require_last_push_approval", False)):
+            weak = json.loads(json.dumps(full))
+            weak["required_pull_request_reviews"][key] = value
+            self.assertEqual(fc._protection(weak)[0], "incomplete", key)
+        weak = json.loads(json.dumps(full))
+        weak["required_status_checks"]["strict"] = False
+        self.assertEqual(fc._protection(weak)[0], "incomplete")
         self.assertEqual(fc._protection({"required_status_checks": {"contexts": ["build"]}})[0], "incomplete")
         self.assertEqual(fc._protection("unreadable")[0], "unknown")
 

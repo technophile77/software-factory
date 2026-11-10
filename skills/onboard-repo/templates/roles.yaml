@@ -7,7 +7,7 @@ roles:
   requirements-analyst:
     write:
       allow: ["docs/features/**"]
-      deny: [".factory/policy/**", "CLAUDE.md", ".github/workflows/**"]
+      deny: [".factory/policy/**", "CLAUDE.md", ".claude/**", ".github/**", ".gitignore", "agents/**", "skills/**", "workflows/**"]
     commands:
       allow: []
     network:
@@ -15,7 +15,7 @@ roles:
   software-developer:
     write:
       allow: ["<SOURCE_GLOBS>", "docs/**"]
-      deny: ["<TEST_GLOBS>", "docs/features/**", ".factory/policy/**", "CLAUDE.md", ".github/workflows/**"]
+      deny: ["<TEST_GLOBS>", "docs/features/**", ".factory/policy/**", "CLAUDE.md", ".claude/**", ".github/**", ".gitignore", "agents/**", "skills/**", "workflows/**"]
     commands:
       allow: [<BUILD_COMMANDS>, "git"]
     network:
@@ -23,7 +23,7 @@ roles:
   test-engineer:
     write:
       allow: ["<TEST_GLOBS>"]
-      deny: [".factory/policy/**", "CLAUDE.md", ".github/workflows/**"]
+      deny: [".factory/policy/**", "CLAUDE.md", ".claude/**", ".github/**", ".gitignore", "agents/**", "skills/**", "workflows/**"]
     commands:
       allow: [<TEST_COMMANDS>]
     network:

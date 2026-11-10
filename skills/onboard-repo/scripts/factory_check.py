@@ -34,7 +34,10 @@ DEFAULT_SKILLS = ["security-review"]
 COMPLEXITY = ["simple", "moderate", "complex"]
 
 MAX_SCAN_BYTES = 1_000_000
-SKIP_DIRS = {".git", "node_modules", "vendor", ".venv", "venv", "dist", "build", "target", ".factory", "__pycache__"}
+# Walked only when the folder isn't a git repo; tracked files are always scanned.
+WALK_SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__", ".factory"}
+# Third-party or generated folders: scanned for secrets, ignored for stack and test detection.
+VENDORED = {"node_modules", "vendor", ".venv", "venv", "dist", "build", "target", "third_party"}
 
 
 class CheckError(Exception):
@@ -299,7 +302,9 @@ def parse_yaml(source):
 
 def run_git(root, *args):
     try:
-        proc = subprocess.run(["git", "-C", root, *args], capture_output=True, timeout=60, check=False)
+        # A repo's own .git/config could name commands for git to run; switch them off.
+        proc = subprocess.run(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C", root, *args],
+                              capture_output=True, timeout=60, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return None
     return proc.stdout if proc.returncode == 0 else None
@@ -320,7 +325,7 @@ class Repo:
         else:
             candidates = []
             for dirpath, dirnames, filenames in os.walk(self.root, followlinks=False):
-                dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+                dirnames[:] = [d for d in dirnames if d not in WALK_SKIP]
                 for d in list(dirnames):
                     if os.path.islink(os.path.join(dirpath, d)):
                         candidates.append(os.path.relpath(os.path.join(dirpath, d), self.root))
@@ -329,7 +334,7 @@ class Repo:
         files = []
         for rel in sorted(set(candidates)):
             rel = rel.replace(os.sep, "/")
-            if any(part in SKIP_DIRS for part in rel.split("/")[:-1]):
+            if rel.split("/")[0] in (".git", ".factory"):
                 continue
             full = os.path.join(self.root, rel)
             if os.path.islink(full):
@@ -347,6 +352,10 @@ class Repo:
             raise CheckError(f"path escapes repo: {rel}")
         return full
 
+    @property
+    def own_files(self):
+        return [f for f in self.files if not set(f.split("/")[:-1]) & VENDORED]
+
     def exists(self, rel):
         return rel in self.files
 
@@ -361,7 +370,7 @@ class Repo:
         return data.decode("utf-8", "replace")
 
     def basenames(self, *names):
-        return [f for f in self.files if f.rsplit("/", 1)[-1] in names]
+        return [f for f in self.own_files if f.rsplit("/", 1)[-1] in names]
 
 
 # ---------------------------------------------------------------------------
@@ -430,7 +439,12 @@ SECRET_RULES = [
     ("slack-token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b")),
     ("google-api-key", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b")),
     ("stripe-live-key", re.compile(r"\b[sr]k_live_[0-9A-Za-z]{20,}\b")),
+    ("npm-token", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b")),
+    ("gitlab-token", re.compile(r"\bglpat-[A-Za-z0-9_\-]{20,}\b")),
+    ("ai-api-key", re.compile(r"\bsk-(ant-|proj-)?[A-Za-z0-9_\-]{32,}\b")),
 ]
+# Only in .env-style files, where any non-empty value is likely real.
+ENV_SECRET = re.compile(r"^\s*(export\s+)?[A-Z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|PRIVATE_KEY)[A-Z0-9_]*\s*=\s*['\"]?[^\s'\"#$]{6,}")
 
 
 def detect_stacks(repo):
@@ -469,7 +483,8 @@ def _search(texts, patterns):
 # ---------------------------------------------------------------------------
 
 def scan_workflow(text):
-    info = {"top_permissions": None, "jobs": {}, "uses": [], "schedule": False, "on_push_or_pr": False}
+    info = {"top_permissions": None, "jobs": {}, "uses": [], "schedule": False, "on_push_or_pr": False,
+            "crons": []}
     lines = text.splitlines()
     in_jobs = False
     current_job = None
@@ -481,6 +496,10 @@ def scan_workflow(text):
             continue
         indent = len(line) - len(line.lstrip(" "))
         s = line.strip()
+        if re.search(r"\bpull_request_target\b", s):
+            info["pr_target"] = info.get("pr_target") or n
+        if re.match(r"permissions:\s*['\"]?write-all", s):
+            info["write_all"] = info.get("write_all") or n
         if indent == 0:
             in_jobs = s.startswith("jobs:")
             in_on = s.startswith(("on:", '"on":', "'on':", "true:"))
@@ -506,15 +525,25 @@ def scan_workflow(text):
                 job["text"].append(s)
                 if indent == job_indent + 2 and s.startswith("permissions:"):
                     job["permissions"] = n
-        m = re.match(r"-?\s*uses:\s*['\"]?([^'\"\s]+)", s)
-        if m:
+        for m in re.finditer(r"['\"]?\buses['\"]?\s*:\s*['\"]?([^'\"\s,}\]]+)", s):
             info["uses"].append((n, m.group(1)))
+        if re.match(r"-?\s*cron:\s*['\"]?(.+?)['\"]?$", s):
+            info["crons"].append(re.match(r"-?\s*cron:\s*['\"]?(.+?)['\"]?$", s).group(1))
+
     return info
 
 
+def weekly_or_more(cron):
+    fields = cron.split()
+    # Day of month and month must be open; any day-of-week then runs at least weekly.
+    return len(fields) == 5 and fields[2] == "*" and fields[3] == "*"
+
+
 def action_pinned(ref):
-    if ref.startswith(("./", "docker://")):
+    if ref.startswith("./"):
         return True
+    if ref.startswith("docker://"):
+        return "@sha256:" in ref
     _, _, version = ref.partition("@")
     return bool(re.fullmatch(r"[0-9a-f]{40}", version))
 
@@ -587,21 +616,26 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
                             [ev(s["manifest"], detail="expected one of: " + ", ".join(STACKS[s["name"]]["locks"]))], "medium"))
 
     # Text corpus for tool detection: manifests, config and test files, workflows.
-    corpus_names = [f for f in repo.files if re.search(
+    corpus_names = [f for f in repo.own_files if re.search(
         r"(^|/)(package\.json|pyproject\.toml|setup\.cfg|setup\.py|tox\.ini|requirements[^/]*\.txt|Pipfile|go\.mod|Cargo\.toml|\.coveragerc|"
         r"jest\.config\.[cm]?[jt]s|vitest\.config\.[cm]?[jt]s|\.nycrc(\.json)?|\.c8rc(\.json)?|stryker\.conf[^/]*|Makefile)$", f)
         or f.startswith(".github/workflows/")]
     corpus = [(f, text_of(f) or "") for f in corpus_names]
-    test_files = [f for f in repo.files if re.search(
-        r"(^|/)(tests?|__tests__|spec|test_[^/]*\.py|[^/]*_test\.(py|go)|[^/]*\.(test|spec)\.[cm]?[jt]sx?)($|/)", f)]
-    rust_sources = [f for f in repo.files if f.endswith(".rs")]
+    code_ext = r"\.(py|[cm]?[jt]sx?|go|rs|java|kt|cs|rb|php|swift|c|cc|cpp|feature)$"
+    own = [f for f in repo.own_files if not f.startswith("docs/")]
+    test_files = [f for f in own if re.search(code_ext, f) and re.search(
+        r"(^|/)(tests?|__tests__|test_[^/]*\.py|[^/]*_test\.(py|go)|[^/]*\.(test|spec)\.[cm]?[jt]sx?)($|/)", f)]
+    rust_sources = [f for f in own if f.endswith(".rs")]
     test_corpus = [(f, text_of(f) or "") for f in test_files[:400] + rust_sources[:200]]
 
     # Workflows
     workflows = [f for f in repo.files if re.match(r"\.github/workflows/[^/]+\.ya?ml$", f)]
     wf_infos = {}
+    code_of = {}
     for wf in workflows:
         text = text_of(wf)
+        if text is not None:
+            code_of[wf] = "\n".join(_strip_comment(l) for l in text.splitlines())
         if text is None:
             gaps.append(gap(f"workflow-unreadable:{wf}", f"Workflow {wf} could not be read", "S5.1 (F-003 SR-8)", "security",
                             SEVERITY_BLOCKS["medium"], "Make the workflow a readable text file under 1 MB so it can be checked.",
@@ -615,15 +649,26 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
                             SEVERITY_BLOCKS["medium"],
                             "Add `permissions: contents: read` at the top and grant more only to the jobs that need it.",
                             "onboarding-pr", [ev(wf, 1, "jobs without permissions: " + ", ".join(missing))], "medium"))
+        unpinned = {}
         for n, ref in info["uses"]:
-            if action_pinned(ref):
-                continue
-            owner = ref.split("/", 1)[0]
+            if not action_pinned(ref):
+                unpinned.setdefault(ref.partition("@")[0], []).append(ev(wf, n, ref))
+        for name, evidence in unpinned.items():
+            owner = name.split("/", 1)[0]
             sev = "low" if owner in ("actions", "github") else "medium"
-            gaps.append(gap(f"action-unpinned:{wf}:{ref.partition('@')[0]}", f"Action {ref} is not pinned to a commit SHA",
+            gaps.append(gap(f"action-unpinned:{wf}:{name}", f"Action {name} is not pinned to a commit SHA",
                             "S4.3", "security", SEVERITY_BLOCKS[sev],
                             "Pin to the full 40-character commit SHA of the release, with the tag in a comment.",
-                            "onboarding-pr", [ev(wf, n, ref)], sev))
+                            "onboarding-pr", evidence, sev))
+        if info.get("write_all"):
+            gaps.append(gap(f"workflow-write-all:{wf}", f"Workflow {wf} grants write-all permissions", "S8.3", "security",
+                            SEVERITY_BLOCKS["medium"], "Grant only the scopes each job needs.", "onboarding-pr",
+                            [ev(wf, info["write_all"])], "medium"))
+        if info.get("pr_target"):
+            gaps.append(gap(f"workflow-pr-target:{wf}", f"Workflow {wf} runs on pull_request_target", "S8.3; S6.1", "security",
+                            SEVERITY_BLOCKS["high"],
+                            "Use pull_request, or make sure the job never checks out or runs code from the PR.",
+                            "onboarding-pr", [ev(wf, info["pr_target"])], "high"))
 
     # Secrets: report file, line and type only, never the value (SR-3).
     secret_counts = {}
@@ -636,8 +681,10 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
         if text is None:
             skipped += 1
             continue
+        is_env = bool(re.search(r"(^|/)\.env(\.[^/]*)?$", rel)) and not rel.endswith((".example", ".sample", ".template"))
         for n, line in enumerate(text.splitlines(), 1):
-            for kind, rx in SECRET_RULES:
+            rules = SECRET_RULES + ([("env-secret", ENV_SECRET)] if is_env else [])
+            for kind, rx in rules:
                 if rx.search(line):
                     key = (rel, kind)
                     secret_counts[key] = secret_counts.get(key, 0) + 1
@@ -653,7 +700,7 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
     # Dependency audit (S4.4): present, covers dev dependencies, runs weekly.
     audit_wf = None
     for wf, info in wf_infos.items():
-        body = text_of(wf) or ""
+        body = code_of.get(wf, "")
         if any(re.search(p, body) for p in AUDIT_PATTERNS):
             audit_wf = wf
             if re.search(r"npm audit[^\n]*(--omit[= ]dev|--production|--only[= ]prod)", body):
@@ -665,7 +712,7 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
                         min_level("beta", SEVERITY_BLOCKS["medium"]),
                         "Add a CI step that checks every dependency, dev tools included, against CVE entries.",
                         "onboarding-pr", [ev(".github/workflows/", detail="no audit tool found")], "medium"))
-    elif not wf_infos[audit_wf]["schedule"]:
+    elif not any(weekly_or_more(c) for c in wf_infos[audit_wf]["crons"]):
         gaps.append(gap("cve-audit-not-weekly", "Dependency audit does not run on a schedule", "S4.4", "security",
                         min_level("beta", SEVERITY_BLOCKS["medium"]),
                         "Run the audit weekly too, so a CVE published after a merge is still found.",
@@ -673,9 +720,7 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
 
     # Required CI jobs by level (ADR 0008). Matched by keyword, so the
     # evidence says which keywords were looked for.
-    ci_text = "\n".join(text_of(w) or "" for w in workflows)
-    if not workflows:
-        ci_text = ""
+    ci_text = "\n".join(code_of.values())
     for job, first_level, patterns, resolution in CI_JOBS:
         if job == "dependency-audit":
             continue  # covered by the S4.4 gaps above
@@ -692,7 +737,7 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
         ("test-framework", "rapid-prototype", bool(has_framework or has_rust_tests)),
         ("coverage", "rapid-prototype", bool(_search(corpus, COVERAGE_TOOLS))),
         ("property-testing", "alpha", bool(_search(corpus + test_corpus, PROPERTY_TOOLS))),
-        ("fuzzing", "beta", bool(_search(corpus + test_corpus, FUZZ_TOOLS) or any(f.startswith("fuzz/") for f in repo.files))),
+        ("fuzzing", "beta", bool(_search(corpus + test_corpus, FUZZ_TOOLS) or any(f.startswith("fuzz/") for f in own))),
         ("mutation", "production-ready", bool(_search(corpus, MUTATION_TOOLS))),
     ]
     for tool, first_level, present in tool_checks:
@@ -705,12 +750,12 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
                         [ev(detail="candidates: " + (", ".join(candidates) or "depends on stack"))]))
 
     def has_tests(pattern):
-        return any(re.search(pattern, f, re.I) for f in repo.files)
+        return any(re.search(pattern, f, re.I) for f in own if re.search(code_ext, f))
 
     unit_present = bool(test_files) or bool(has_rust_tests)
     test_checks = [
         ("unit", "rapid-prototype", unit_present, "Unit tests on core logic"),
-        ("acceptance", "alpha", has_tests(r"(^|/)(acceptance|e2e|features)(/|\.)|\.feature$"), "A test for every acceptance criterion"),
+        ("acceptance", "alpha", has_tests(r"(^|/)(acceptance|e2e)(/|[._-])|\.feature$"), "A test for every acceptance criterion"),
         ("contract", "beta", has_tests(r"(^|/)contracts?(/|[._-]?tests?)|contract[._-]?test"), "Contract tests for every interface"),
         ("integration", "beta", has_tests(r"(^|/)integration(/|[._-])|integration[._-]?test"), "Integration tests"),
         ("performance", "release", has_tests(r"(^|/)(perf|performance|bench|benches|load)(/|[._-])|_bench|\.bench\."), "Performance or load tests against stated targets"),
@@ -725,7 +770,8 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
     readme = [f for f in repo.files if re.fullmatch(r"README(\.[A-Za-z]+)?", f)]
     if not readme:
         gaps.append(gap("docs:purpose", "No README stating the repo's purpose", "maturity-levels.md (→ Prototype: purpose written down)",
-                        "config", "rapid-prototype", "Add a README that says what the repo is for.", "feature-request"))
+                        "config", "rapid-prototype", "Add a README that says what the repo is for.", "feature-request",
+                        [ev(detail="no README file at the repo root")]))
     gitignore = text_of(".gitignore") if repo.exists(".gitignore") else ""
     if not re.search(r"^/?\.factory/?\s*$", gitignore or "", re.M):
         gaps.append(gap("factory:gitignore", "`.factory/` is not git-ignored", "ADR 0009", "config", "rapid-prototype",
@@ -738,7 +784,8 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
         run_git(repo.root, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/factory/state")
     if not state:
         gaps.append(gap("factory:state-branch", "No `factory/state` branch", "ADR 0009", "config", "rapid-prototype",
-                        "Create the branch and its `.factory/` records.", "onboarding-step"))
+                        "Create the branch and its `.factory/` records.", "onboarding-step",
+                        [ev(detail="no local or origin branch named factory/state")]))
 
     # Branch protection (ADR 0006): read from `gh api` output the skill saved.
     protection_status = "unknown"
@@ -799,8 +846,16 @@ def _protection(data):
     problems = []
     if not reviews or int(reviews.get("required_approving_review_count", 0) or 0) < 1:
         problems.append("no required approving review")
+    else:
+        # Without these, the factory token could push after the owner approves and then merge.
+        if not reviews.get("dismiss_stale_reviews"):
+            problems.append("stale reviews not dismissed")
+        if not reviews.get("require_last_push_approval"):
+            problems.append("last push not required to be approved")
     if not (checks.get("contexts") or checks.get("checks")):
         problems.append("no required status checks")
+    elif not checks.get("strict"):
+        problems.append("branches not required to be up to date")
     return ("ok", "") if not problems else ("incomplete", "; ".join(problems))
 
 
@@ -1045,7 +1100,7 @@ def existing_items(inbox_dir):
         highest = max(highest, int(m.group(2)))
         with open(os.path.join(inbox_dir, name), encoding="utf-8", errors="replace") as f:
             text = f.read()
-        for ref in re.findall(r"#onboard:([^\s\"']+)", text):
+        for ref in re.findall(r"^\s+ref:\s*\"?[^\n\"]*#onboard:([^\s\"']+)", text, re.M):
             filed[ref] = m.group(1)
     return filed, highest
 
@@ -1212,8 +1267,13 @@ def main(argv=None):
                 print(f"{len(result['gaps'])} gaps; recommended level {result['maturity']['recommended']}")
             return 0
         if args.cmd == "validate-manifest":
-            with open(args.manifest, encoding="utf-8") as f:
-                data = parse_yaml(f.read())
+            try:
+                with open(args.manifest, encoding="utf-8") as f:
+                    data = parse_yaml(f.read())
+            except UnicodeDecodeError as e:
+                raise CheckError("manifest is not UTF-8") from e
+            except RecursionError as e:
+                raise CheckError("manifest is nested too deeply") from e
             errors = validate_manifest(data, args.master)
             print("\n".join(errors) or "Manifest is valid.")
             return 1 if errors else 0
