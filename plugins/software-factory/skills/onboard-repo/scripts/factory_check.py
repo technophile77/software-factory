@@ -829,7 +829,13 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
     protection_status = "unknown"
     if github_protection is not None:
         protection_status, detail = _protection(github_protection)
-        if protection_status != "ok":
+        if protection_status == "unenforceable":
+            gaps.append(gap("github:branch-protection", "Branch rules can't be enforced on this private repository",
+                            "ADR 0006; ADR 0008", "github", "rapid-prototype",
+                            "Ask the owner to make the repository public or move it to a GitHub plan that enforces "
+                            "branch protection on private repositories; until then the factory's token could push "
+                            "to the default branch.", "owner-step", [ev(detail=detail)], severity="high"))
+        elif protection_status != "ok":
             gaps.append(gap("github:branch-protection", "The default branch is not protected as ADR 0006 requires", "ADR 0006; ADR 0008",
                             "github", "rapid-prototype",
                             "Protect the default branch: require the owner's approving review and the level's CI checks.",
@@ -912,6 +918,10 @@ def _protection(data):
     msg = str(data.get("message", ""))
     if "not protected" in msg.lower():
         return "missing", "branch not protected"
+    # A private repo on a free plan: GitHub stores rules but doesn't enforce
+    # them, so the factory's Write token could push to the default branch (H-0070).
+    if re.search(r"upgrade to github|make this repository public", msg, re.I):
+        return "unenforceable", "GitHub doesn't enforce branch rules on this private repository on its current plan"
     if msg:
         return "unknown", f"GitHub said: {msg[:80]}"
     reviews = data.get("required_pull_request_reviews") or {}

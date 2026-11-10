@@ -734,6 +734,23 @@ class Protection(unittest.TestCase):
         self.assertEqual(fc._protection("unreadable")[0], "unknown")
 
 
+class UnenforceableProtection(Base):
+    """H-0070: a private repo on a free plan stores branch rules but GitHub doesn't enforce them."""
+
+    def test_upgrade_message_is_unenforceable(self):
+        body = {"message": "Upgrade to GitHub Pro or make this repository public to enable this feature.",
+                "status": "403"}
+        self.assertEqual(fc._protection(body)[0], "unenforceable")
+        a = self.assess({"README.md": "x"}, github_protection=body)
+        self.assertEqual(a["github"]["branch_protection"], "unenforceable")
+        g = [g for g in a["gaps"] if g["id"] == "github:branch-protection"][0]
+        self.assertEqual(g.get("severity"), "high")
+        self.assertIn("private", g["title"])
+
+    def test_other_messages_stay_unknown(self):
+        self.assertEqual(fc._protection({"message": "Not Found"})[0], "unknown")
+
+
 class PluginVersion(unittest.TestCase):
     """H-0048 (Gate 2 R2-8): the skill stops unless it runs from the pinned release."""
 
