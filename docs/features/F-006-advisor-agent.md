@@ -29,6 +29,11 @@ Interview answers (owner):
   recommendation for a hard inbox decision. No other agent calls it.
 - Q2 (2026-11-10): always the strongest model at high effort (the top rung
   of the F-002 ladder). Not calibrated or tuned by F-002.
+- Q3 (2026-11-10): the caller (analyst or orchestrator) may escalate when
+  it judges a question is beyond it, stating its reason; the owner may also
+  ask for the advisor on any interview question. This adds an "ask the
+  advisor" choice to the F-005 interview skill. The owner always sees that
+  the advisor was used and why.
 
 ## 2. Expected behavior
 _To be written from the interview._
@@ -72,7 +77,8 @@ policy entry and shared agent-list edits, each through a hygiene item
 |---|---|---|---|
 | Q1 | Who can call the advisor? | Product | Answered: analyst and orchestrator (owner, 2026-11-10) |
 | Q2 | Which model does the advisor run on? | Product | Answered: always strongest, high effort (owner, 2026-11-10) |
-| Q3 | Who decides a question goes to the advisor? | Product | Open |
+| Q3 | Who decides a question goes to the advisor? | Product | Answered: caller with reason, or the owner (owner, 2026-11-10) |
+| Q4 | What can the advisor read and use? | Security | Open |
 
 ## 12. Readiness gate
 - [ ] Clear objective
