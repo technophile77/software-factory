@@ -63,3 +63,10 @@ Tests in class `SecondReviewRegressions`; the test engineer's two failing accept
 - `templates/maturity.yaml` proposes a new file format (`repo-maturity/1.0`); no contract defines `.factory/maturity.yaml` yet (Interfaces).
 - `templates/roles.yaml` becomes the default role policy for onboarded repos; the master has no default file (Security).
 - The CLAUDE.md section names which files are change-controlled in a managed repo (Product).
+
+## Spec v3 changes (owner decisions, 2026-11-10)
+
+- **Plugin.** The skill moved from `skills/onboard-repo/` to `plugins/software-factory/skills/onboard-repo/`; the factory repo is now a plugin marketplace (`.claude-plugin/marketplace.json`). `claude plugin validate` passes for both, and an install into a scratch home made the plugin available. SKILL.md finds its script through `${CLAUDE_SKILL_DIR}` and no longer trusts copies inside the onboarded repo. Report paths above refer to the old location.
+- **Test adoption.** The assessment has `test_inventory` (each test file and its type) and `baseline_request`; SKILL.md step 4 wires existing test commands into CI without editing tests, and new step 9 starts the baseline feature (engine `feature.start` after the owner's yes, else an open step). Tests: class `TestAdoption`.
+- **Re-runs.** A re-run reads the level from `maturity.yaml`, never regenerates `factory-ci.yml`, and only adds missing branch protection settings, never removing any.
+- The test engineer's `test_acceptance.py` located the master checkout by a fixed relative path; after the move it now walks up to the folder with `agents/` and `skills/`. No assertion changed.

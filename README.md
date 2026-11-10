@@ -12,3 +12,14 @@ the design items they depend on are still open
 
 Start with [`CLAUDE.md`](CLAUDE.md) and the
 [spec](docs/spec/software-factory-spec-v0.1.md).
+
+## Onboard a repository
+
+Install the factory's plugin once, then run it inside any repository:
+
+```
+/plugin install software-factory --marketplace technophile77/software-factory
+/software-factory:onboard-repo
+```
+
+See [`plugins/software-factory/skills/onboard-repo/SKILL.md`](plugins/software-factory/skills/onboard-repo/SKILL.md).

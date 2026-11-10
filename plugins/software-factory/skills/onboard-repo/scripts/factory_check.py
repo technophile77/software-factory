@@ -825,12 +825,14 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
         "files_skipped": skipped,
         "skipped_files": skipped_files[:200],
         "test_files_found": test_files[:50],
+        "test_inventory": test_inventory(test_files, dict(test_corpus))[:500],
         "chosen_level": level,
         "github": {"branch_protection": protection_status},
         "gaps": gaps,
         "maturity": recommend_level(gaps, readme),
         "complexity": suggest_complexity(repo, stacks),
         "recommended_work": recommended_work(gaps),
+        "baseline_request": baseline_request(os.path.basename(repo.root), test_files, dict(test_corpus), level),
     }
     if level:
         result["blocking_now"] = [g["id"] for g in gaps if g["blocks_level"] and LEVELS.index(g["blocks_level"]) <= LEVELS.index(level)]
@@ -944,6 +946,35 @@ def suggest_complexity(repo, stacks):
     preset = "simple" if n <= 50 and kinds <= 1 else "complex" if n > 500 or kinds >= 3 else "moderate"
     return {"suggested": preset, "source_files": n, "stacks": kinds,
             "rule": "simple: <=50 source files and one stack; complex: >500 files or 3+ stacks; otherwise moderate"}
+
+
+def classify_test(path, text):
+    p = path.lower()
+    if re.search(r"(^|/)(acceptance|e2e)(/|[._-])|\.feature$", p):
+        return "acceptance"
+    if re.search(r"(^|/)contracts?(/|[._-])|contract[._-]?test|pact", p):
+        return "contract"
+    if re.search(r"(^|/)integration(/|[._-])|integration[._-]?test", p):
+        return "integration"
+    if re.search(r"(^|/)(perf|performance|bench|benches|load)(/|[._-])|_bench|\.bench\.", p):
+        return "performance"
+    if any(re.search(pat, text or "", re.M) for pat in PROPERTY_TOOLS + FUZZ_TOOLS):
+        return "stochastic"
+    return "unit"
+
+
+def test_inventory(test_files, texts):
+    return [{"path": f, "type": classify_test(f, texts.get(f, ""))} for f in test_files]
+
+
+def baseline_request(repo_name, test_files, texts, level):
+    counts = {}
+    for item in test_inventory(test_files, texts):
+        counts[item["type"]] = counts.get(item["type"], 0) + 1
+    found = ", ".join(f"{n} {t}" for t, n in sorted(counts.items())) or "no tests"
+    return (f"Test baseline for {repo_name}: write acceptance criteria for the repo's existing behavior, map the "
+            f"adopted tests ({found}) to them, and add the missing tests to reach the "
+            f"{level or 'chosen'} testing bar in testing-strategy.md.")
 
 
 def recommended_work(gaps):

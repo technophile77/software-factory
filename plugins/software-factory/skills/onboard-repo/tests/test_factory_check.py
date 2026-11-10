@@ -580,6 +580,33 @@ class SecondReviewRegressions(Base):
         self.assertEqual(a["test_files_found"], ["tests/test_a.py"])
 
 
+class TestAdoption(Base):
+    """Owner decision 2026-11-10: adopt existing tests, then start a test baseline feature."""
+
+    def test_inventory_classifies_existing_tests(self):
+        a = self.assess({"package.json": "{}", "test/unit/a.test.js": "", "test/e2e/login.spec.js": "",
+                         "tests/integration/test_db.py": "", "tests/test_parse.py": "from hypothesis import given\n",
+                         "bench/sort_bench.go": "", "pkg/x_test.go": ""}, level="alpha")
+        types = {i["path"]: i["type"] for i in a["test_inventory"]}
+        self.assertEqual(types["test/unit/a.test.js"], "unit")
+        self.assertEqual(types["test/e2e/login.spec.js"], "acceptance")
+        self.assertEqual(types["tests/integration/test_db.py"], "integration")
+        self.assertEqual(types["tests/test_parse.py"], "stochastic")
+        self.assertEqual(types["pkg/x_test.go"], "unit")
+
+    def test_baseline_request_names_level_and_counts(self):
+        a = self.assess({"package.json": "{}", "test/a.test.js": "", "test/b.test.js": ""}, level="alpha")
+        self.assertIn("2 unit", a["baseline_request"])
+        self.assertIn("alpha testing bar", a["baseline_request"])
+        a = self.assess({"package.json": "{}"})
+        self.assertIn("no tests", a["baseline_request"])
+
+    def test_skill_never_edits_tests(self):
+        text = read(os.path.join(SKILL, "SKILL.md"))
+        self.assertIn("Tests stay where they are and are not edited", text)
+        self.assertIn("never writes or edits tests itself", text)
+
+
 class Protection(unittest.TestCase):
     def test_states(self):
         self.assertEqual(fc._protection({"message": "Branch not protected"})[0], "missing")

@@ -28,7 +28,10 @@ SKILL = os.path.dirname(HERE)
 SCRIPT = os.path.join(SKILL, "scripts", "factory_check.py")
 SCHEMA_PATH = os.path.join(SKILL, "schema", "assessment.schema.json")
 TEMPLATES = os.path.join(SKILL, "templates")
-MASTER = os.path.dirname(os.path.dirname(SKILL))
+# The master factory checkout: the nearest folder above the skill with agents/ and skills/.
+MASTER = SKILL
+while not (os.path.isdir(os.path.join(MASTER, "agents")) and os.path.isdir(os.path.join(MASTER, "skills"))):
+    MASTER = os.path.dirname(MASTER)
 
 _spec = importlib.util.spec_from_file_location("factory_check_acceptance", SCRIPT)
 fc = importlib.util.module_from_spec(_spec)

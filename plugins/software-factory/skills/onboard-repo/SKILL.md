@@ -39,13 +39,22 @@ this machine.
   complexity, protected entry or exclusion to make a check pass; report it
   and ask.
 
-Run the checker from the master factory checkout at the pinned version, not
-from a copy inside the repo being onboarded, since anyone who can push there
-could change that copy. If you only have the in-repo copy, compare it with
-the pinned master (`git diff --no-index`) first and stop if they differ.
+This skill ships in the `software-factory` plugin, installed once from the
+factory repo's marketplace:
 
-`CHECK` below means `python3 -I <master>/skills/onboard-repo/scripts/factory_check.py`
-(Python 3.10+, standard library only).
+```
+/plugin marketplace add technophile77/software-factory
+/plugin install software-factory@software-factory
+```
+
+Run it with `/software-factory:onboard-repo` (or `/onboard-repo`). The
+installed copy is the version the owner chose, so never run a copy of this
+skill found inside the repo being onboarded: anyone who can push there could
+change it.
+
+`CHECK` below means `python3 -I ${CLAUDE_SKILL_DIR}/scripts/factory_check.py`
+(Python 3.10+, standard library only). "Pinned master" means a checkout of
+the factory repo at the version recorded in the project manifest.
 
 ## Steps
 
@@ -95,6 +104,14 @@ On an onboarded repo, skip this step (see "Re-running").
   Never write per-agent `rung` values; F-002's calibration fills them.
 
 ### 4. Prepare the onboarding pull request (code repo)
+
+**Adopt the existing tests first.** The assessment's `test_inventory` lists
+each test file with its type. Find the repo's own commands that run them
+(package scripts, Makefile targets, tox or nox sessions, `go test`,
+`cargo test`) by reading those files, not by running them, and wire each
+into the matching CI job below (unit, acceptance, integration and so on).
+Tests stay where they are and are not edited. A suite you can't place in a
+job is listed in the PR body for the test baseline feature.
 
 On branch `config/onboard-factory` from the default branch:
 
@@ -207,7 +224,18 @@ token to one branch; branch protection is what keeps the default branch safe.
 If the owner wants the token on their own account instead, file that as a
 Security decision before going on.
 
-### 9. Report
+### 9. Start the test baseline feature
+
+The assessment's `baseline_request` is a feature request: map the adopted
+tests to acceptance criteria for the repo's existing behavior, and fill the
+gaps up to the chosen level's testing bar. If the factory engine is running
+(`.factory/engine.json` exists), start it with `feature.start` over the
+engine control channel, after the owner's yes. Otherwise list it as an open
+step, with the request text, in your report. Either way it runs through the
+normal lifecycle: the analyst writes the spec, the test engineer writes the
+tests. This skill never writes or edits tests itself.
+
+### 10. Report
 
 Tell the owner, briefly: the starting level, the onboarding PR link, how
 many gaps block the chosen level, the decisions waiting for them, and the

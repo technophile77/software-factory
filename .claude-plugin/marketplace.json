@@ -1,0 +1,12 @@
+{
+  "name": "software-factory",
+  "owner": {"name": "technophile77"},
+  "description": "Tools for running projects through the software factory.",
+  "plugins": [
+    {
+      "name": "software-factory",
+      "source": "./plugins/software-factory",
+      "description": "Onboard a repository into the software factory and check it against the factory's standards."
+    }
+  ]
+}
