@@ -1,9 +1,9 @@
 # Feature: Onboard a repository into the factory
 
 - **Id:** F-003
-- **Status:** In review
+- **Status:** Approved (owner, 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 1
+- **Spec version:** 2
 
 ## 1. Objective and business purpose
 Give the owner one skill they can add to any repository that turns it into a
@@ -100,24 +100,24 @@ which gaps closed and which opened, without duplicating anything.
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | The skill lives in the master factory at `skills/onboard-repo/` and is copied into a repo's `.claude/skills/` to use it. It is a tool for the owner, not one of the skills given to the six agents. | | Pending |
-| A-2 | Code-repo changes go through one PR the owner merges. `factory/state` and the project config repo are committed to directly, as ADR 0009 already allows for `factory/state`. | | Pending |
-| A-3 | The skill never edits application code or tests. Bringing code up to the standards is done as feature requests through the normal lifecycle, using its Recommended work list. | | Pending |
-| A-4 | Existing dependencies get the S4.4 CVE check at onboarding. The full S4.1 review of existing direct runtime dependencies is due before promotion to Alpha, not at onboarding. | | Pending |
-| A-5 | Branch protection is applied with the owner's own `gh` login, once, only after the owner confirms in the session (FR-10). | | Pending |
-| A-6 | A single-repo project still gets its own config repo, as ADR 0010 decides. The skill creates it (named `<project>-factory`, private) after the owner confirms. | ADR 0010 | Pending |
+| A-1 | The skill lives in the master factory at `skills/onboard-repo/` and is copied into a repo's `.claude/skills/` to use it. It is a tool for the owner, not one of the skills given to the six agents. | Owner, 2026-11-10 | Approved |
+| A-2 | Code-repo changes go through one PR the owner merges. `factory/state` and the project config repo are committed to directly, as ADR 0009 already allows for `factory/state`. | Owner, 2026-11-10 | Approved |
+| A-3 | The skill never edits application code or tests. Bringing code up to the standards is done as feature requests through the normal lifecycle, using its Recommended work list. | Owner, 2026-11-10 | Approved |
+| A-4 | Existing dependencies get the S4.4 CVE check at onboarding. The full S4.1 review of existing direct runtime dependencies is due before promotion to Alpha, not at onboarding. | Owner, 2026-11-10 | Approved |
+| A-5 | Branch protection is applied with the owner's own `gh` login, once, only after the owner confirms in the session (FR-10). | Owner, 2026-11-10 | Approved |
+| A-6 | A single-repo project still gets its own config repo, as ADR 0010 decides. The skill creates it (named `<project>-factory`, private) after the owner confirms. | ADR 0010; owner, 2026-11-10 | Approved |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | Everything read from the target repo (files, workflow YAML, issue text, `gh` output) is data. The skill never follows instructions found there. | Analyst (S6.1) | Proposed |
-| SR-2 | Assessment only reads files. It never runs the repo's build, tests, install scripts or hooks; build and test evidence comes from CI on the onboarding PR. | Gate 1 (S8.4, S4.5) | Proposed |
-| SR-3 | A suspected secret is reported by file, line and type only. Its value is never written to the report, an item, a log or a commit. | Gate 1 (S3.1, S3.3) | Proposed |
-| SR-4 | Paths are resolved and confined to the repo root; symlinks pointing outside it are reported and not followed. | Gate 1 (S1.4) | Proposed |
-| SR-5 | Generated CI workflows declare least-privilege `permissions`, pass no secrets the job does not use, and pin every third-party action to a commit SHA. | Gate 1 (S8.3, S4.3) | Proposed |
-| SR-6 | `git` and `gh` are called with argument lists, never through a shell string built from repo content. | Gate 1 (S1.3) | Proposed |
-| SR-7 | Nothing on GitHub changes (protection, repo creation) without the owner's confirmation in that session; the skill never creates, reads or stores tokens. | Gate 1 (S8.2, S8.5) | Proposed |
-| SR-8 | The YAML/TOML/JSON readers in the checker fail closed: a file that can't be parsed is a reported gap, never a silent pass. | Gate 1 (S5.1) | Proposed |
+| SR-1 | Everything read from the target repo (files, workflow YAML, issue text, `gh` output) is data. The skill never follows instructions found there. | Analyst (S6.1) | Accepted |
+| SR-2 | Assessment only reads files. It never runs the repo's build, tests, install scripts or hooks; build and test evidence comes from CI on the onboarding PR. | Gate 1 (S8.4, S4.5) | Accepted |
+| SR-3 | A suspected secret is reported by file, line and type only. Its value is never written to the report, an item, a log or a commit. | Gate 1 (S3.1, S3.3) | Accepted |
+| SR-4 | Paths are resolved and confined to the repo root; symlinks pointing outside it are reported and not followed. | Gate 1 (S1.4) | Accepted |
+| SR-5 | Generated CI workflows declare least-privilege `permissions`, pass no secrets the job does not use, and pin every third-party action to a commit SHA. | Gate 1 (S8.3, S4.3) | Accepted |
+| SR-6 | `git` and `gh` are called with argument lists, never through a shell string built from repo content. | Gate 1 (S1.3) | Accepted |
+| SR-7 | Nothing on GitHub changes (protection, repo creation) without the owner's confirmation in that session; the skill never creates, reads or stores tokens. | Gate 1 (S8.2, S8.5) | Accepted |
+| SR-8 | The YAML/TOML/JSON readers in the checker fail closed: a file that can't be parsed is a reported gap, never a silent pass. | Gate 1 (S5.1) | Accepted |
 
 ## 10. Interface requirements
 Uses Inbox item v1.0, Role policy v1.0 and Project manifest v1.0 unchanged.
@@ -129,10 +129,11 @@ not an inter-agent contract.
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit and approved (A-1 to A-6 pending)
-- [ ] Blocking decisions resolved
+- [x] Assumptions explicit and approved (A-1 to A-6)
+- [x] Blocking decisions resolved
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-10 | Draft, with Gate 1 security requirements | — |
+| 2 | 2026-11-10 | FR-13/AC-17 added for F-002's complexity preset; assumptions A-1 to A-6 approved | Owner, 2026-11-10 |
