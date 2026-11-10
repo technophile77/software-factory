@@ -1,7 +1,7 @@
 # Proposal 0014: Project control, resumable runs, and token budgets
 
-**Status:** Q1 to Q5, Q7 and Q8 decided by the owner on 2026-11-10 (see
-"Owner decisions" at the end); Q6 still open.
+**Status:** all eight questions decided by the owner on 2026-11-10 (see
+"Owner decisions" at the end). Recorded as ADR 0012.
 Originally proposed for the owner's decision. Raised by the owner on
 2026-11-10. Not a decision until the owner chooses; the outcome becomes an
 ADR and a feature spec.
@@ -169,10 +169,13 @@ calibration and test baseline wait for activation).
 | Q3 | **A: estimate, admit, reserve.** The fixed starting defaults are replaced by measured values as soon as there is run data. |
 | Q4 | **Subscription mode:** the budget is the plan's own usage windows. **Pay-per-token mode:** the owner sets the limits manually. (Aligns with Q8's `mode` setting.) |
 | Q5 | **Agreed, with a clarification:** activating a project is the on switch. Once a project is enabled, the factory runs every session needed to finish its queued work, through the whole lifecycle, with no approval per run. The owner still decides inbox items and makes every merge (ADR 0006). "Work starts only from the owner" means a new feature enters a project's queue only from the owner's request or the owner's approval of a suggestion; agents can suggest features but can't queue them. |
-| Q7 | **Yes, opt-in, disabled by default.** Feasibility (checked against Claude docs, 2026-11-10): subscription usage windows are visible only through the SDK's `rate_limit_event` (status, `resetsAt`, `utilization`), the experimental `SDKUsageReport` (`rate_limits.limits[]` with `percent` and `resets_at`, plus `extra_usage`), and Claude Code's statusline data. These are enough to build it, but the usage report is marked experimental, so the feature must switch itself off when the data is missing. |
+| Q6 | **A: optional `target_maturity` per repo.** The target never changes the bar a repo is tested against: gates and CI always use the repo's current `maturity`, which works as its floor and changes only through an approved promotion or demotion. The target only steers planning: the orchestrator queues gap work toward the next level and proposes the promotion when the evidence is met. No target means the factory never plans upward for that repo. |
+| Q7 | **Yes, opt-in, disabled by default.** The owner will trial it once turned on. Feasibility (checked against Claude docs, 2026-11-10): subscription usage windows are visible only through the SDK's `rate_limit_event` (status, `resetsAt`, `utilization`), the experimental `SDKUsageReport` (`rate_limits.limits[]` with `percent` and `resets_at`, plus `extra_usage`), and Claude Code's statusline data. These are enough to build it, but the usage report is marked experimental, so the feature must switch itself off when the data is missing. |
 | Q8 | **Calibrated defaults per Claude plan level** (for example Pro, Max 5x, Max 20x), used when there's data for that plan, measured as window utilization per run. Until then, the conservative defaults apply. |
 
-**Open point for the owner (raised with Q7/Q8):** Claude Code's legal and
+**Subscription terms (resolved):** the owner confirmed on 2026-11-10 that
+they use the factory as an individual, not as a product, so subscription
+mode is in scope. For the record, the note that prompted the question: Claude Code's legal and
 compliance page says subscription (OAuth) login is meant for ordinary
 individual use, and that developers building products or services on the
 Agent SDK should use API keys. Before relying on subscription mode for the

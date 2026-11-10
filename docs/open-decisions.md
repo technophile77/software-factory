@@ -20,7 +20,7 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 | 11 | Software maturity levels per repo and project (new requirement) | Product | Spec section 16 approved; criteria tables still draft ([maturity-levels.md](maturity-levels.md)) | — |
 | 13 | Project boundaries and manifest (new item) | Architecture | Decided | [0010](adr/0010-project-config-repo.md) |
 | 12 | Continuous integration (new item) | Architecture | Decided | [0008](adr/0008-ci-required-gate-by-maturity.md) |
-| 14 | Project control and authorization, resumable runs, token budgets (new item) | Architecture, Security | Open ([proposal 0014](proposals/0014-run-control-and-token-budgets.md)) | — |
+| 14 | Project control and authorization, resumable runs, token budgets (new item) | Architecture, Security | Decided | [0012](adr/0012-project-control-resumable-runs-budgets.md) |
 
 Numbers 1 to 10 match the spec's section 14 list. Later numbers are items added since.
 
