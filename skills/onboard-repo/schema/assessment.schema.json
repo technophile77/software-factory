@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Factory onboarding assessment",
+  "description": "Written by factory_check.py assess. Internal to the onboard-repo skill (F-003), not an inter-agent contract.",
+  "type": "object",
+  "required": ["schema", "generated_at", "repo", "commit", "stacks", "files_scanned", "files_skipped", "github", "gaps", "maturity", "complexity", "recommended_work"],
+  "properties": {
+    "schema": {"const": "onboarding-assessment/1.0"},
+    "generated_at": {"type": "string"},
+    "repo": {"type": "string"},
+    "commit": {"type": ["string", "null"]},
+    "stacks": {"type": "array", "items": {"type": "object", "required": ["name", "dir", "manifest", "locks"]}},
+    "files_scanned": {"type": "integer"},
+    "files_skipped": {"type": "integer"},
+    "chosen_level": {"type": ["string", "null"]},
+    "blocking_now": {"type": "array", "items": {"type": "string"}},
+    "github": {"type": "object", "required": ["branch_protection"],
+      "properties": {"branch_protection": {"enum": ["ok", "missing", "incomplete", "unknown"]}}},
+    "gaps": {"type": "array", "items": {
+      "type": "object",
+      "required": ["id", "title", "rule", "category", "blocks_level", "evidence", "fix", "resolution"],
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "rule": {"type": "string"},
+        "category": {"enum": ["security", "ci", "testing", "config", "github"]},
+        "severity": {"enum": ["critical", "high", "medium", "low"]},
+        "blocks_level": {"enum": ["rapid-prototype", "alpha", "beta", "release", "production-ready", null]},
+        "evidence": {"type": "array", "items": {"type": "object",
+          "properties": {"path": {"type": "string"}, "line": {"type": "integer"}, "detail": {"type": "string"}}}},
+        "fix": {"type": "string"},
+        "resolution": {"enum": ["onboarding-pr", "onboarding-step", "decision", "feature-request", "owner-step"]}
+      }
+    }},
+    "maturity": {"type": "object", "required": ["recommended", "criteria_status", "levels"]},
+    "complexity": {"type": "object", "required": ["suggested"]},
+    "recommended_work": {"type": "array"},
+    "since_previous": {"type": "object", "required": ["closed", "opened"]}
+  }
+}

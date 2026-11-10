@@ -1,0 +1,41 @@
+# Factory CI for <REPO_NAME> at <LEVEL> (ADR 0008). Change-controlled.
+# Jobs marked with a level are added when the repo reaches that level.
+# Every `uses:` is pinned to a full commit SHA with the tag in a comment (S4.3).
+name: factory-ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Weekly, so a CVE published after a merge is still found (S4.4).
+  schedule:
+    - cron: "0 6 * * 1"
+permissions:
+  contents: read
+jobs:
+  build:                         # rapid-prototype
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<SHA> # <tag>
+      # setup step for the stack, pinned the same way
+      - run: <INSTALL_FROM_LOCK>     # npm ci | pip install -r requirements.txt --require-hashes | go mod download | cargo fetch --locked
+      - run: <BUILD>
+  smoke-test:                    # rapid-prototype
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<SHA> # <tag>
+      - run: <INSTALL_FROM_LOCK>
+      - run: <SMOKE_TEST>            # the smallest command that proves the program starts
+  dependency-audit:              # S4.4 applies at every level; required check from beta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<SHA> # <tag>
+      - run: <AUDIT_ALL_DEPENDENCIES>  # npm audit --audit-level=high | pip-audit | govulncheck ./... | cargo audit
+  # unit-tests:                  # alpha
+  # acceptance-tests:            # alpha
+  # secret-scan:                 # alpha
+  # contract-tests:              # beta
+  # integration-tests:           # beta
+  # full-regression:             # release
+  # performance-tests:           # release
+  # coverage-report:             # release (reported from rapid-prototype)

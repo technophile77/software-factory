@@ -1,0 +1,29 @@
+schema: factory-project/1.0
+name: <project-name>
+description: <one line on what the project is>
+
+factory:
+  version: <tag or commit of the master factory>
+
+repos:
+  - name: <repo-name>
+    url: https://github.com/<owner>/<repo>
+    maturity: <level>
+maturity: <level>             # may not exceed the lowest repo's maturity
+
+# complexity: <simple | moderate | complex>   # F-002 preset; add only once F-002 is merged
+                                              # and the owner has approved the value
+
+skills:
+  custom: []
+  override: []
+  exclude: []
+
+agents:
+  custom: []
+  override: []
+
+standards: {}
+
+notes: |
+  <project-specific context every agent reads>

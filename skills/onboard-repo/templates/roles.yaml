@@ -1,0 +1,52 @@
+# Default role policy (Role policy v1.0), following the table approved with
+# ADR 0004. Change-controlled: edit only through a hygiene item.
+# <BUILD_COMMANDS>, <TEST_COMMANDS> and <REGISTRIES> are filled per stack at
+# onboarding; leave a list empty rather than guess.
+schema: role-policy/1.0
+roles:
+  requirements-analyst:
+    write:
+      allow: ["docs/features/**"]
+      deny: [".factory/policy/**", "CLAUDE.md", ".github/workflows/**"]
+    commands:
+      allow: []
+    network:
+      allow: []
+  software-developer:
+    write:
+      allow: ["<SOURCE_GLOBS>", "docs/**"]
+      deny: ["<TEST_GLOBS>", "docs/features/**", ".factory/policy/**", "CLAUDE.md", ".github/workflows/**"]
+    commands:
+      allow: [<BUILD_COMMANDS>, "git"]
+    network:
+      allow: [<REGISTRIES>]
+  test-engineer:
+    write:
+      allow: ["<TEST_GLOBS>"]
+      deny: [".factory/policy/**", "CLAUDE.md", ".github/workflows/**"]
+    commands:
+      allow: [<TEST_COMMANDS>]
+    network:
+      allow: [<REGISTRIES>]
+  security-reviewer:
+    write:
+      allow: [".factory/runs/**/security-reviewer-*.json"]
+    commands:
+      allow: []
+    network:
+      allow: []
+  validation-judge:
+    write:
+      allow: [".factory/runs/**/validation-judge-*.json"]
+    commands:
+      allow: [<TEST_COMMANDS>]
+    network:
+      allow: []
+  orchestrator:
+    write:
+      allow: [".factory/inbox/**", ".factory/runs/**"]
+      deny: [".factory/policy/**"]
+    commands:
+      allow: ["git", "gh"]
+    network:
+      allow: ["github.com", "api.github.com"]
