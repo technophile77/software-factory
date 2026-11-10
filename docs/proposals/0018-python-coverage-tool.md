@@ -3,7 +3,7 @@
 - **Raised:** 2026-11-10, by the test engineer (F-003) and the validation
   judge (F-003 m27, F-005 m3)
 - **Category:** Architecture (a new external tool; S4.1 review below)
-- **Status:** Open, awaiting the owner
+- **Status:** Decided: option A (ADR 0016), by the owner on 2026-11-10
 - **Scope:** the factory repo's own Python code: the plugin skills
   `onboard-repo` and `spec-interview` and their tests. Other projects choose
   their own tools (`testing-strategy.md`, Test tools). This does not approve
@@ -83,7 +83,7 @@ skills.
 
 If approved:
 
-1. The outcome is recorded as an ADR.
+1. The outcome is recorded as ADR 0016.
 2. Configuration hygiene item **H-0065** adds `requirements-test.txt` at the
    repo root, outside the shipped plugin folder:
    ```
