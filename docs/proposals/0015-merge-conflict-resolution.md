@@ -1,7 +1,7 @@
 # Proposal 0015: Merge conflict resolution
 
-**Status:** proposed, for the owner's decision. Raised by the owner on
-2026-11-10. Not a decision until the owner chooses.
+**Status:** decided by the owner on 2026-11-10 (PR #14 comment): Q1 A and
+Q2 approved. Recorded as ADR 0013.
 
 ## What is decided today
 
@@ -60,3 +60,20 @@ Who resolves, what reruns, and when it escalates, as in the table.
 
 A for Q1, and approve the process. The orchestrator AGENT.md, the workflow,
 and ADR 0007 are then amended through hygiene items (H-0031 onward).
+
+## Owner decisions and clarifications (2026-11-10)
+
+- **Q1:** A. Merge `main` into feature branches.
+- **Q2:** approved.
+- **Does the requirements analyst need an interactive session?** No. It
+  resolves a spec conflict from the two approved specs, non-interactively,
+  and may only combine them; it can't change an approved requirement. When
+  the two specs can't both hold, that is a Product decision for the owner,
+  which is the interactive step.
+- **Where do questions raised during a merge go?** Into the existing inboxes
+  under the five existing categories (no new "merge" category, CLAUDE.md
+  rule 5): Product for behavior, Interfaces for contracts, Architecture for
+  design, and the Testing inbox for a resolution that failed verification.
+  Each item's `links` names both features and the merge commit, and its
+  title starts with "Merge conflict:", so they're easy to find. While an item
+  is open, that feature waits at the merge; other features continue.
