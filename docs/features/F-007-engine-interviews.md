@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 22
+- **Spec version:** 23
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -201,7 +201,9 @@ expiry, and never enters a container.
 **Threat model (S9.7):** in the Gate 1 report.
 
 ## 10. Interface requirements
-- Engine control channel v1.3: implemented as approved; no change.
+- Engine control channel v1.3: implemented as approved, plus amendment
+  H-0084: error code -32008 `refused` for security refusals (owner,
+  decision card, 2026-11-11; applied).
 - The master repo ships only templates and placeholders; no owner's real
   values are ever committed to it (owner, 2026-11-11).
 
@@ -363,3 +365,4 @@ section 9.
 | 20 | 2026-11-11 | gitleaks review folded in (pin 8.30.1, blob-only scanning) | — (review) |
 | 21 | 2026-11-11 | OQ-4: five components approved with pins; readiness gate passed | Owner, 2026-11-11 (decision card); orchestrator (gate) |
 | 22 | 2026-11-11 | FR-4 clarified: the engine reports channel 1.2 until the advisor increment | Owner, 2026-11-11 (decision card) |
+| 23 | 2026-11-11 | H-0084: channel error code -32008 `refused` | Owner, 2026-11-11 (decision card) |
