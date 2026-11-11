@@ -1,0 +1,23 @@
+{
+  "name": "software-factory-engine",
+  "description": "The software factory engine (F-007, milestone 1).",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "./dist/engine.js",
+  "scripts": {
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=cjs --target=node22 --external:koffi --outfile=dist/engine.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "koffi": "3.3.6",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.1",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.2",
+    "vitest": "5.1.0"
+  }
+}

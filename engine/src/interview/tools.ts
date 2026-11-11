@@ -1,0 +1,190 @@
+import { AFTER_INTERVIEW_STAGE, ID_RE, TOOL_LIMITS as L } from "../constants";
+import { Logger } from "../log";
+import type { Change } from "../state/state-repo";
+import { SecretFound } from "../state/state-repo";
+import { FeatureInterview, InterviewError } from "./feature";
+import { Finding, ItemContent, WireItem } from "./model";
+import { Check, SpecPathRefused, readSpec, readinessChecks } from "./readiness";
+
+export type ToolErrorCode = "one_at_a_time" | "invalid" | "limit" | "unknown_item" | "wrong_status" | "unavailable";
+export type ToolResult<T = unknown> = { ok: true; result: T } | { ok: false; error: { code: ToolErrorCode; message: string } };
+
+class ToolError extends Error {
+  constructor(readonly code: ToolErrorCode, message: string) {
+    super(message);
+  }
+}
+
+const fail = (code: ToolErrorCode, message: string): never => {
+  throw new ToolError(code, message);
+};
+
+const chars = (s: string) => [...s].length;
+
+function obj(args: unknown, allowed: string[]): Record<string, unknown> {
+  if (!args || typeof args !== "object" || Array.isArray(args)) fail("invalid", "Arguments must be an object.");
+  const a = args as Record<string, unknown>;
+  for (const k of Object.keys(a)) if (!allowed.includes(k)) fail("invalid", `Unknown key ${JSON.stringify(k).slice(0, 80)}.`);
+  return a;
+}
+
+function str(v: unknown, name: string, max: number, required = true): string | undefined {
+  if (v === undefined && !required) return undefined;
+  if (typeof v !== "string" || (required && v.length === 0)) return fail("invalid", `${name} must be a non-empty string.`);
+  if (chars(v) > max) fail("invalid", `${name} is over ${max} characters.`);
+  return v;
+}
+
+function httpsUrl(v: unknown): string {
+  const s = str(v, "findings[].source", L.findingSource)!;
+  let u: URL;
+  try {
+    u = new URL(s);
+  } catch {
+    return fail("invalid", "findings[].source must be an https URL.");
+  }
+  if (u.protocol !== "https:" || /\s/.test(s)) fail("invalid", "findings[].source must be an https URL.");
+  return s;
+}
+
+/** Text fields are stored and shown exactly as written: checked, never rewritten (SR-3). */
+function itemContent(a: Record<string, unknown>, full: boolean): ItemContent {
+  const c: ItemContent = { text: str(a.text, "text", L.text)!, why: str(a.why, "why", L.why)! };
+  if (!full) return c;
+  // `suggested` has no limit of its own in the contract; it is a text field, so text's applies.
+  const suggested = str(a.suggested, "suggested", L.text, false);
+  if (suggested !== undefined) c.suggested = suggested;
+  if (a.options !== undefined) {
+    if (!Array.isArray(a.options) || a.options.length > L.options) fail("invalid", `options must be a list of at most ${L.options}.`);
+    c.options = (a.options as unknown[]).map((o) => str(o, "options[]", L.option)!);
+  }
+  if (a.findings !== undefined) {
+    if (!Array.isArray(a.findings) || a.findings.length > L.findings) fail("invalid", `findings must be a list of at most ${L.findings}.`);
+    c.findings = (a.findings as unknown[]).map((f): Finding => {
+      const fo = obj(f, ["text", "source"]);
+      return { text: str(fo.text, "findings[].text", L.findingText)!, source: httpsUrl(fo.source) };
+    });
+  }
+  return c;
+}
+
+function itemId(v: unknown): string {
+  if (typeof v !== "string" || !ID_RE.test(v)) fail("invalid", "item must be an id.");
+  return v as string;
+}
+
+export interface ToolContext {
+  feature: FeatureInterview;
+  /** The analyst's worktree, where interview_spec_ready reads the spec. */
+  worktree: string;
+  log: Logger;
+  /** Builds the agent report (FR-13) and returns it as a state change, committed with the result. */
+  reportFor(result: { specPath: string; specVersion: number; checks: Check[]; passed: boolean }): Promise<Change[]>;
+}
+
+export interface InterviewTools {
+  interview_ask(args: unknown): Promise<ToolResult<{ item: WireItem }>>;
+  interview_propose_assumption(args: unknown): Promise<ToolResult<{ item: WireItem }>>;
+  interview_revise(args: unknown): Promise<ToolResult<{ revision: number }>>;
+  research_web(args: unknown): Promise<ToolResult<{ summary: string; sources: string[] }>>;
+  interview_spec_ready(args: unknown): Promise<ToolResult<{ checks: Check[] }>>;
+}
+
+/**
+ * The analyst's tools as plain functions, bound to one feature: no tool takes
+ * a feature, and every item must be that feature's (Interview tools v1.0).
+ * The MCP server that exposes them to an agent session comes in milestone 2.
+ */
+export function createInterviewTools(ctx: ToolContext): InterviewTools {
+  const f = ctx.feature;
+
+  async function run<T>(name: string, body: () => Promise<T>): Promise<ToolResult<T>> {
+    try {
+      return { ok: true, result: await f.exclusive(body) };
+    } catch (e) {
+      if (e instanceof ToolError) return { ok: false, error: { code: e.code, message: e.message } };
+      if (e instanceof SecretFound) return { ok: false, error: { code: "invalid", message: "The secrets scan found a secret in the text; nothing was recorded." } };
+      if (e instanceof InterviewError && e.code === "tampered") return { ok: false, error: { code: "invalid", message: e.message } };
+      ctx.log.warn(`${f.id}: ${name} failed: ${(e as Error).message}`);
+      return { ok: false, error: { code: "invalid", message: "The engine couldn't record that; try again later." } };
+    }
+  }
+
+  async function capReached(cap: string, item?: string): Promise<never> {
+    // The owner is told on the engine console and in the transcript.
+    ctx.log.warn(`${f.id}: the analyst reached the ${cap} cap.`);
+    await f.append([{ type: "cap_reached", cap, ...(item ? { item } : {}) }], `cap ${cap}`).catch(() => undefined);
+    return fail("limit", `The ${cap} cap is reached; the owner has been told.`);
+  }
+
+  async function checkItemCap(): Promise<void> {
+    if (f.state.items.size >= L.itemsPerFeature) await capReached("items per feature");
+  }
+
+  return {
+    interview_ask: (args) =>
+      run("interview_ask", async () => {
+        const c = itemContent(obj(args, ["text", "why", "suggested", "options", "findings"]), true);
+        if (f.openQuestion()) fail("one_at_a_time", "An earlier question is still open.");
+        await checkItemCap();
+        return { item: await f.create("question", c) };
+      }),
+
+    interview_propose_assumption: (args) =>
+      run("interview_propose_assumption", async () => {
+        const c = itemContent(obj(args, ["text", "why"]), false);
+        await checkItemCap();
+        if (f.state.list("assumption").filter((a) => a.status === "open").length >= L.openAssumptions) {
+          await capReached("open assumptions");
+        }
+        return { item: await f.create("assumption", c) };
+      }),
+
+    interview_revise: (args) =>
+      run("interview_revise", async () => {
+        const a = obj(args, ["item", "text", "why", "suggested", "options", "findings"]);
+        const id = itemId(a.item);
+        const c = itemContent(a, true);
+        const item = f.state.items.get(id);
+        if (!item) return fail("unknown_item", "No such item in this feature.");
+        if (item.kind !== "question" || item.status !== "researching") {
+          fail("wrong_status", "Only a question the owner asked more information on can be revised.");
+        }
+        return { revision: await f.revise(id, c) };
+      }),
+
+    research_web: (args) =>
+      run("research_web", async () => {
+        const a = obj(args, ["query"]);
+        const q = str(a.query, "query", L.query)!;
+        if (/[\r\n\u2028\u2029]/.test(q)) fail("invalid", "query must be one line.");
+        // The web reader runs in its own container, which comes in milestone 2.
+        return fail("unavailable", "Web research isn't available in this engine version.");
+      }),
+
+    interview_spec_ready: (args) =>
+      run("interview_spec_ready", async () => {
+        const a = obj(args, ["spec_path", "spec_version"]);
+        if (typeof a.spec_path !== "string") fail("invalid", "spec_path must be a string.");
+        if (typeof a.spec_version !== "number" || !Number.isSafeInteger(a.spec_version) || a.spec_version < 0) {
+          fail("invalid", "spec_version must be a non-negative integer.");
+        }
+        let spec: string;
+        try {
+          spec = readSpec(ctx.worktree, f.id, a.spec_path as string);
+        } catch (e) {
+          if (e instanceof SpecPathRefused) return fail("invalid", e.message);
+          throw e;
+        }
+        const checks = readinessChecks({ spec, specVersion: a.spec_version as number, state: f.state, chainIntact: f.chainIntact });
+        const passed = checks.every((c) => c.passed);
+        // A transcript someone else changed can't take more entries; the failed check is the answer.
+        if (!f.chainIntact) return { checks };
+        const extra = await ctx.reportFor({ specPath: a.spec_path as string, specVersion: a.spec_version as number, checks, passed });
+        const bodies = [{ type: "spec_ready", spec_path: a.spec_path, spec_version: a.spec_version, passed, checks }];
+        if (passed) bodies.push({ type: "stage", stage: AFTER_INTERVIEW_STAGE } as never);
+        await f.append(bodies, passed ? "spec ready: interview checks pass" : "spec ready: interview checks fail", extra);
+        return { checks };
+      }),
+  };
+}
