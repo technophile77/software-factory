@@ -61,12 +61,17 @@ jobs:
           "$RUNNER_TEMP/osv-scanner" scan source --config engine/osv-scanner.toml
           -L engine/package-lock.json -L engine/docker/claude-code/package-lock.json
       # Built as the engine builds it, from the base image the engine pins.
+      # Skills are text files the engine adds per project, so an empty folder
+      # stands in for them; they add no packages to scan.
       - name: Build the agent image
         run: |
+          ctx="$RUNNER_TEMP/agent-context"
+          cp -R engine/docker "$ctx"
+          mkdir -p "$ctx/skills"
           digest=$(sed -n 's/^export const BASE_IMAGE_DIGEST = "\(sha256:[0-9a-f]\{64\}\)";$/\1/p' engine/src/docker/image.ts)
           tag=$(sed -n 's/^export const BASE_IMAGE = `\(node:[^@`]*\)@\${BASE_IMAGE_DIGEST}`;$/\1/p' engine/src/docker/image.ts)
           test -n "$digest" && test -n "$tag"
           docker buildx build --load --build-arg "BASE_IMAGE=$tag@$digest" \
-            --tag factory-agent:ci --file engine/docker/agent.Dockerfile engine/docker
+            --tag factory-agent:ci --file "$ctx/agent.Dockerfile" "$ctx"
       - name: Scan the agent image
         run: '"$RUNNER_TEMP/osv-scanner" scan image --config engine/osv-scanner.toml factory-agent:ci'
