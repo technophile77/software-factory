@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 24
+- **Spec version:** 25
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -284,7 +284,10 @@ it came from. `WebSearch` stays. A Role policy change (Interfaces, Security;
 G1 #20, owner decision 2026-11-11).
 
 
-### H-0085 (draft, awaiting approval): engine CI workflow
+### H-0085 (approved): engine CI workflow
+
+Approved by the owner 2026-11-11 (decision card, all three systems) and
+applied.
 
 A new `.github/workflows/engine.yml`, so the engine's checks run on every pull
 request that touches `engine/`. It follows `extension.yml`: read-only token,
@@ -378,3 +381,4 @@ section 9.
 | 22 | 2026-11-11 | FR-4 clarified: the engine reports channel 1.2 until the advisor increment | Owner, 2026-11-11 (decision card) |
 | 23 | 2026-11-11 | H-0084: channel error code -32008 `refused` | Owner, 2026-11-11 (decision card) |
 | 24 | 2026-11-11 | OQ-9 follow-up: test coverage by `@vitest/coverage-v8`, pinned, dev only | Owner, 2026-11-11 (decision card) |
+| 25 | 2026-11-11 | H-0085: engine CI workflow on Linux, macOS and Windows | Owner, 2026-11-11 (decision card) |
