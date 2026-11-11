@@ -178,7 +178,7 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
           if (e instanceof SpecPathRefused) return fail("invalid", e.message);
           throw e;
         }
-        const checks = readinessChecks({ spec, specVersion: a.spec_version as number, state: f.state, chainIntact: f.chainIntact });
+        const checks = readinessChecks({ spec, specVersion: a.spec_version as number, state: f.state, chainIntact: f.chainIntact && !f.remoteRefused });
         const passed = checks.every((c) => c.passed);
         // A transcript someone else changed can't take more entries; the failed check is the answer.
         if (!f.chainIntact) return { checks };

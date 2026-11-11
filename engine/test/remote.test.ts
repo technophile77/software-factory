@@ -111,7 +111,7 @@ describe("remote factory/state (GS-4: SR-1, SR-11)", () => {
 });
 
 describe("fetch (TR-11: SR-17 on fetch)", () => {
-  it("at start: an interview file the engine didn't write on the remote is refused, not adopted, and closes the feature", async () => {
+  it("at start: an interview file the engine didn't write on the remote is refused and not adopted; readiness fails, the interview goes on", async () => {
     const { w, srv, bare } = await remoteWorld();
     let e = await boot(w);
     const c = await RpcClient.connect(engineJson(w).path);
@@ -132,8 +132,15 @@ describe("fetch (TR-11: SR-17 on fetch)", () => {
     expect(git(w.config, "rev-parse", "refs/remotes/origin/factory/state")).toBe(forged);
     expect(git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", `interviews/${feature}`)).not.toContain("forged");
     const f = e.feature(feature)!;
-    expect(f.chainIntact).toBe(false);
+    expect(f.chainIntact).toBe(true);
+    expect(f.remoteRefused).toBe(true);
     expect(f.state.items.get("A-001")!.status).toBe("open");
+    const t2 = e.interviewTools(feature, w.worktree);
+    expect((await t2.interview_ask({ text: "Q?", why: "w" })).ok).toBe(true);
+    fs.mkdirSync(path.join(w.worktree, "docs", "features"), { recursive: true });
+    fs.writeFileSync(path.join(w.worktree, "docs", "features", `${feature}-x.md`), "- **Spec version:** 1\n");
+    const r = (await t2.interview_spec_ready({ spec_path: `docs/features/${feature}-x.md`, spec_version: 1 })) as { ok: true; result: { checks: Array<{ name: string; passed: boolean }> } };
+    expect(r.result.checks.find((x) => x.name === "transcript_intact")!.passed).toBe(false);
     // A second start doesn't file the same item again.
     await e.stop();
     engines = [];

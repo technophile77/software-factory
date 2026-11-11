@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { EngineHandle } from "../src/engine";
+import { REFUSED_MESSAGE } from "../src/constants";
 import { EngineRecord } from "../src/state/record";
 import { parseTranscript } from "../src/state/transcript";
 import { OTHER_ID, OWNER_ID, RpcClient, World, advanceSoon, approvedSession, engineJson, git, makeWorld, start } from "./helpers";
@@ -26,6 +27,16 @@ async function setup(w: World = makeWorld()) {
 
 function transcript(w: World, feature: string) {
   return parseTranscript(git(w.config, "show", `factory/state:interviews/${feature}/transcript.jsonl`) + "\n");
+}
+
+/** The refusal's only commit adds one Security item; nothing else on factory/state changed. Returns the item. */
+function onlyNewSecurityItem(w: World, before: string): string {
+  const changed = git(w.config, "diff-tree", "-r", "--name-only", "--no-commit-id", before, "factory/state").split("\n");
+  expect(changed).toHaveLength(1);
+  expect(changed[0]).toMatch(/^inbox\/decision\/D-\d+\.md$/);
+  const item = git(w.config, "show", `factory/state:${changed[0]}`);
+  expect(item).toMatch(/^category:\s*Security\s*$/m);
+  return item;
 }
 
 const err = (r: Record<string, unknown>) => (r.error as { code: number; message: string; data?: unknown }) ?? null;
@@ -70,8 +81,8 @@ describe("feature.start (FR-5)", () => {
     const { w, c } = await setup();
     const before = git(w.config, "rev-parse", "factory/state");
     const r = await c.call("feature.start", { request: "use FAKE-SECRET-123" });
-    expect(err(r)!.message).toMatch(/secret/);
-    expect(git(w.config, "rev-parse", "factory/state")).toBe(before);
+    expect(err(r)).toEqual({ code: -32008, message: REFUSED_MESSAGE });
+    expect(onlyNewSecurityItem(w, before)).toMatch(/rules: generic-api-key/);
   });
 });
 
@@ -252,12 +263,11 @@ describe("analyst and owner (FR-6, FR-10, AC-7, Interview tools v1.0)", () => {
     await e.interviewTools(feature, w.worktree).interview_ask({ text: "Q?", why: "w" });
     const session = await approvedSession(w, c, feature);
     const before = git(w.config, "rev-parse", "factory/state");
-    const objects = git(w.config, "count-objects", "-v");
     const r = err(await c.call("interview.reply", { session, item: "Q-001", revision: 0, reply_id: "s", kind: "answer", text: "key FAKE-SECRET-42" }))!;
-    expect(r.message).toMatch(/secret/);
-    expect(r.message).not.toContain("FAKE-SECRET-42");
-    expect(git(w.config, "rev-parse", "factory/state")).toBe(before);
-    expect(git(w.config, "count-objects", "-v")).toBe(objects);
+    expect(r).toEqual({ code: -32008, message: REFUSED_MESSAGE });
+    const item = onlyNewSecurityItem(w, before);
+    expect(item).toContain(feature);
+    expect(item).not.toContain("FAKE-SECRET");
     expect(await c.ok("interview.state", { feature, item: "Q-001" })).toEqual({ status: "open", revision: 0 });
     expect(fs.readFileSync(path.join(w.config, ".factory", "interviews", feature, "transcript.jsonl"), "utf8")).not.toContain("FAKE-SECRET");
   });
@@ -314,7 +324,7 @@ describe("restart and tampering (FR-14, SR-17)", () => {
     engines.push(e2);
     const c2 = await RpcClient.connect(engineJson(w).path);
     clients.push(c2);
-    expect(err(await c2.call("interview.open", { feature }))!.code).toBe(-32000);
+    expect(err(await c2.call("interview.open", { feature }))).toEqual({ code: -32008, message: REFUSED_MESSAGE });
     expect((await c2.ok("interview.list")).features).toEqual([]);
     const items = git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", "inbox/decision");
     expect(git(w.config, "show", `factory/state:${items}`)).toContain(`Transcript of ${feature} changed outside the engine`);

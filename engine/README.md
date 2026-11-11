@@ -112,7 +112,7 @@ The handle offers:
 | `runs` | The run book: running, interrupted, complete and failed runs |
 | `feature(id)` | One feature's interview |
 | `interviewTools(feature, worktree, facts?)` | The analyst's five tools. The first call starts the feature's analyst run |
-| `sync()` | Fetches `factory/state` and checks every transcript against the engine's chain (SR-17). Interview changes the engine didn't make are refused, the feature is closed and a Security item is filed. Other remote changes that fast-forward are adopted |
+| `sync()` | Fetches `factory/state` and checks every transcript against the engine's chain (SR-17). Interview changes on the remote that the engine didn't make are not adopted: a Security item is filed and the feature's readiness checks fail. A local transcript edit closes the feature. Other remote changes that fast-forward are adopted |
 | `confirmProject(path, io)` | The SR-5 confirm command, using this engine's GitHub, clock and logger. A confirmed project runs after a restart |
 | `stop()` | Shuts down: ends sessions, frees the sockets, removes `engine.json` |
 | `crash()` | Stops as a kill would. It commits and writes nothing more and leaves `engine.json`, but frees the sockets so a new `startEngine` can run in the same process (AC-12) |

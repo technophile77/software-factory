@@ -45,6 +45,8 @@ export class FeatureInterview {
   readonly changed = new EventEmitter();
   /** False once the transcript holds entries the engine didn't write (SR-17). */
   chainIntact = true;
+  /** True once the remote factory/state was found holding interview changes the engine refused (SR-17 on fetch). */
+  remoteRefused = false;
   paused = false;
   private entries: Entry[] = [];
   private readonly firstResults = new Map<string, ReplyResult>();

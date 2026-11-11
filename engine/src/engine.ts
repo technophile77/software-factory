@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -340,8 +341,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
    * Fetches factory/state and refuses what the engine didn't write (SR-17,
    * "on fetch"). Only the engine writes under interviews/, so any change
    * there that the local branch doesn't already hold is refused: nothing of
-   * it is adopted, the feature is closed and a Security item is filed. Other
-   * changes (an answered inbox item) are adopted when they fast-forward.
+   * it is adopted, a Security item is filed, and the feature's readiness
+   * checks fail. The interview itself goes on, since the engine's own local
+   * transcript is intact. Other changes (an answered inbox item) are adopted
+   * when they fast-forward.
    */
   async function checkRemote(p: Project): Promise<void> {
     if (!o.push || !p.token || !p.state_repo || dead) return;
@@ -362,16 +365,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     for (const dir of touched) {
       const fid = FEATURE_ID_RE.test(dir) ? dir : null;
       const f = fid ? p.features.get(fid) : undefined;
-      if (f) {
-        await f.exclusive(() => tampered(p, f, `the remote factory/state at ${remote!.slice(0, 12)} changes interviews/${f.id}/`, `fetch:${remote}`));
-      } else {
-        await alert(p, `fetch:${dir}:${remote}`, {
-          title: "Remote factory/state holds interview files the engine didn't write", ...(fid ? { feature: fid } : {}),
-          context: `The remote factory/state at ${remote!.slice(0, 12)} adds or changes files under interviews/ that this engine has no record of writing (F-007 SR-17).`,
-          impact: "The engine didn't adopt the remote branch. Its pushes of factory/state fail until this is resolved.",
-          confirm: "Investigate and restore factory/state on the remote", hold: "Leave it as it is", recommendation: "A",
-        });
-      }
+      if (f) f.remoteRefused = true;
+      await alert(p, `fetch:${dir}:${remote}`, {
+        title: `Remote factory/state holds interview files the engine didn't write${fid ? ` (${fid})` : ""}`, ...(fid ? { feature: fid } : {}),
+        context: `The remote factory/state at ${remote!.slice(0, 12)} adds or changes files under interviews/${fid ?? "<unknown>"}/ that this engine has no record of writing (F-007 SR-17). None of it was adopted.`,
+        impact: `${f ? `The readiness checks of ${fid} fail until this is resolved. ` : ""}The engine's pushes of factory/state fail while the remote holds these commits.`,
+        confirm: "Investigate and restore factory/state on the remote", hold: "Leave it as it is", recommendation: "A",
+      });
     }
     if (touched.size) return;
     if (await p.state_repo.isAncestor(local, remote)) {
@@ -472,6 +472,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       sessions: p.sessions!,
       features: () => [...p.features.values()].filter((f) => !ambiguous.has(f.id)),
       feature: (fid) => (ambiguous.has(fid) ? null : p.features.get(fid) ?? null),
+      secretRefused: async (where, found, fid) => {
+        const rules = [...new Set(found.rules)].filter((r) => /^[A-Za-z0-9_.-]{1,80}$/.test(r));
+        // Each refusal is its own event, so the alert key never repeats.
+        await alert(p, `secret:${crypto.randomBytes(8).toString("hex")}`, {
+          title: "Owner text refused: the secrets scan found a secret", ...(fid ? { feature: fid } : {}),
+          context: `The engine refused a ${where} call because gitleaks flagged its text (rules: ${rules.join(", ") || "unnamed"}). Nothing was recorded or pushed; the text itself is not kept here (F-007 AC-11, H-0084).`,
+          impact: "Nothing changed. If the text was meant to be sent, send it again without the secret.",
+          confirm: "It was a real secret: rotate it", hold: "It was a false positive: no action", recommendation: "A",
+        });
+      },
       startFeature: (request) => {
         // One at a time across projects, so two requests can't take the same id.
         const run = startLock.then(async () => {
