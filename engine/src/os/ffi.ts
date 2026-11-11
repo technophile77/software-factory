@@ -84,7 +84,7 @@ export const FUNCTIONS = {
   win32: {
     "kernel32.dll": [
       "CreateNamedPipeW", "ConnectNamedPipe", "DisconnectNamedPipe", "GetNamedPipeClientProcessId", "PeekNamedPipe",
-      "ReadFile", "WriteFile", "FlushFileBuffers", "CloseHandle", "OpenProcess", "GetCurrentProcess", "LocalFree",
+      "SetNamedPipeHandleState", "ReadFile", "WriteFile", "CloseHandle", "OpenProcess", "GetCurrentProcess", "LocalFree",
       "CreateToolhelp32Snapshot", "Process32FirstW", "Process32NextW",
     ],
     "advapi32.dll": [
@@ -195,6 +195,9 @@ const PIPE_ACCESS_DUPLEX = 0x3;
 const FILE_FLAG_FIRST_PIPE_INSTANCE = 0x80000;
 const PIPE_TYPE_BYTE = 0x0;
 const PIPE_WAIT = 0x0;
+const PIPE_NOWAIT = 0x1;
+const PIPE_READMODE_BYTE = 0x0;
+const CONNECT_POLL_MS = 20;
 const PIPE_REJECT_REMOTE_CLIENTS = 0x8;
 const PIPE_UNLIMITED_INSTANCES = 255;
 const PIPE_BUFFER = 1024 * 1024 + 4096;
@@ -228,7 +231,7 @@ function windowsApi(): WindowsApi {
   const PeekNamedPipe = k("int32 __stdcall PeekNamedPipe(factory_HANDLE h, void *buf, uint32 size, void *read, _Out_ uint32 *avail, void *left)");
   const ReadFile = k("int32 __stdcall ReadFile(factory_HANDLE h, _Out_ uint8 *buf, uint32 n, _Out_ uint32 *read, void *ovl)");
   const WriteFile = k("int32 __stdcall WriteFile(factory_HANDLE h, const uint8 *buf, uint32 n, _Out_ uint32 *written, void *ovl)");
-  const FlushFileBuffers = k("int32 __stdcall FlushFileBuffers(factory_HANDLE h)");
+  const SetNamedPipeHandleState = k("int32 __stdcall SetNamedPipeHandleState(factory_HANDLE h, uint32 *mode, void *maxCollect, void *timeout)");
   const CloseHandle = k("int32 __stdcall CloseHandle(factory_HANDLE h)");
   const OpenProcess = k("factory_HANDLE __stdcall OpenProcess(uint32 access, int32 inherit, uint32 pid)");
   const GetCurrentProcess = k("factory_HANDLE __stdcall GetCurrentProcess()");
@@ -365,21 +368,37 @@ function windowsApi(): WindowsApi {
       });
     },
     connectPipe(h) {
+      // A blocking ConnectNamedPipe would hold one of libuv's few pool threads per listener for as long as
+      // it waits, starving the process's file I/O. Instead the instance listens in nonblocking mode and is
+      // polled; Peek succeeds only once a client is connected (ERROR_PIPE_CONNECTED, which koffi can't
+      // hand back reliably). Once connected the instance goes back to blocking mode for reads and writes.
       return new Promise((resolve, reject) => {
-        // ConnectNamedPipe blocks until a client arrives, so it runs on koffi's worker thread.
-        ConnectNamedPipe.async(h, null, (err: unknown, ok: unknown) => {
-          if (err) return reject(new FfiError("ConnectNamedPipe"));
-          if (ok) return resolve();
-          // A client that connected between CreateNamedPipe and ConnectNamedPipe reports ERROR_PIPE_CONNECTED,
-          // which koffi can't hand back reliably; Peek tells a live client from a failure instead.
+        const mode = (m: number) => {
+          if (!SetNamedPipeHandleState(h, [m], null, null)) throw new FfiError("SetNamedPipeHandleState");
+        };
+        const tick = () => {
           try {
+            ConnectNamedPipe(h, null);
             const avail = [0];
-            if (PeekNamedPipe(h, null, 0, null, avail, null)) return resolve();
+            if (PeekNamedPipe(h, null, 0, null, avail, null)) {
+              mode(PIPE_READMODE_BYTE | PIPE_WAIT);
+              return resolve();
+            }
+            // A client that came and went between two polls leaves the instance unusable (ERROR_NO_DATA)
+            // until it is disconnected; a known client pid with a dead pipe is that case.
+            const pid = [0];
+            if (GetNamedPipeClientProcessId(h, pid) && pid[0]) DisconnectNamedPipe(h);
           } catch {
-            // fall through
+            return reject(new FfiError("ConnectNamedPipe"));
           }
-          reject(new FfiError(`ConnectNamedPipe (${ERROR_PIPE_CONNECTED} not confirmed)`));
-        });
+          setTimeout(tick, CONNECT_POLL_MS);
+        };
+        try {
+          mode(PIPE_READMODE_BYTE | PIPE_NOWAIT);
+        } catch (e) {
+          return reject(e);
+        }
+        tick();
       });
     },
     pipeClientPid(h) {
@@ -418,8 +437,8 @@ function windowsApi(): WindowsApi {
     writePipe(h, data) {
       guard("WriteFile", () => {
         const written = [0];
+        // No FlushFileBuffers: it waits until the client has read everything, which deadlocks a client in this process.
         if (!WriteFile(h, data, data.length, written, null) || written[0] !== data.length) throw new FfiError("WriteFile");
-        FlushFileBuffers(h);
       });
     },
     closePipe(h) {
