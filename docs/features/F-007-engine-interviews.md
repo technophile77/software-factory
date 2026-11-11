@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Draft (requirements interview in progress)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 3
+- **Spec version:** 4
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -55,7 +55,7 @@ proxy.
 | Id | Requirement |
 |---|---|
 | FR-1 | The engine is a TypeScript Node process in `engine/` (ADR 0001, 0003), started by a command. One engine serves all enabled projects on the machine. |
-| FR-2 | At start it loads each enabled project's manifest from its config repo, which holds the owner's GitHub id, the OAuth client id and the allow list (OQ-2, H-0080). The engine finds the config repos from a local list of paths on the machine, which holds no settings. It refuses to run a project whose manifest fails validation, whose repo isn't reachable with the factory token, or whose owner isn't on the allow list (ADR 0012). A refusal files a Security item and stops only that project. |
+| FR-2 | At start it loads each enabled project's manifest from its config repo, which holds the owner's GitHub id, the OAuth client id and the allow list (OQ-2, H-0080). The engine finds the config repos from a git-ignored file in the user's clone of the master repo that lists their paths and holds no settings (owner, 2026-11-11; the `.gitignore` entry is hygiene item H-0081). It refuses to run a project whose manifest fails validation, whose repo isn't reachable with the factory token, or whose owner isn't on the allow list (ADR 0012). A refusal files a Security item and stops only that project. |
 | FR-3 | It refuses to start when its model credentials don't match a project's billing mode (ADR 0012). |
 | FR-4 | It serves Engine control channel v1.3 on a Unix socket or Windows named pipe with every access rule of the contract, and writes `engine.json` as the contract says. Advisor reply kinds return `kind_not_allowed` until the advisor increment, and `engine.json` reports the channel version it serves, so the skill doesn't offer the advisor (F-006 FR-11). |
 | FR-5 | `feature.start` assigns the next feature id, creates `feature/F-nnn-name` from `main` (ADR 0005) and queues the interview. New features enter only this way (ADR 0012). |
@@ -164,7 +164,7 @@ Asked one at a time in the interview. None is assumed.
 | Id | Question | Category | Status |
 |---|---|---|---|
 | OQ-1 | Is this the right first increment? | Product | Decided: real interviews end to end (owner, decision card, 2026-11-11) |
-| OQ-2 | Where does the owner's factory config live (owner GitHub id, OAuth client id, allow list)? | Architecture, Interfaces | Decided: per project, in the project's config repo manifest (ADR 0010); nothing owner-specific in the master repo (owner, thread, 2026-11-11). Contract change drafted as H-0080 |
+| OQ-2 | Where does the owner's factory config live (owner GitHub id, OAuth client id, allow list)? | Architecture, Interfaces | Decided: per project, in the project's config repo manifest (ADR 0010); nothing owner-specific in the master repo (owner, thread, 2026-11-11). Contract change drafted as H-0080. Project paths in a git-ignored file in the master repo clone (owner, thread, 2026-11-11; H-0081) |
 | OQ-3 | Node can't read a socket peer's uid or pid, set a named pipe's ACL, or read a pipe client's SID, all of which the channel contract requires. How do we get them: a small FFI library, a native addon, or a separate helper program? | Architecture, Security | Open |
 | OQ-4 | Approve the Claude Agent SDK, and Claude Code inside the agent image, after their S4.1 review. | Architecture, Security | Open |
 | OQ-5 | How the engine drives containers: the `docker` command line (no new library) or a Docker API library. And the egress proxy: written in the engine with Node's own modules, or an existing proxy image. | Architecture, Security | Open |
@@ -191,3 +191,4 @@ Asked one at a time in the interview. None is assumed.
 | 1 | 2026-11-11 | Draft from the specs, ADRs and the F-005 and F-006 deferred lists, before the owner interview | — |
 | 2 | 2026-11-11 | OQ-1: first increment is real interviews end to end | Owner, 2026-11-11 (decision card) |
 | 3 | 2026-11-11 | OQ-2: owner config goes per project in the config repo manifest; master repo holds templates only | Owner, 2026-11-11 (thread) |
+| 4 | 2026-11-11 | OQ-2: the list of project paths is a git-ignored file in the master repo clone | Owner, 2026-11-11 (thread) |
