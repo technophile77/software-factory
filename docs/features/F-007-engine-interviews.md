@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** In review (all owner questions answered; contract changes approved; readiness gate next)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 19
+- **Spec version:** 20
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -108,6 +108,11 @@ Drafted from the requirements above; each is refined in the interview.
   integrity hashes; `npm ci --ignore-scripts` on the host; Claude Code's
   `postinstall` only in the image build, with the binary's SHA-256 checked
   against the SDK manifest. Each bump is a new S4.1 check (G1 #22).
+- gitleaks 8.30.1, pinned by SHA-256 per platform (Gate 1 component review
+  5). The engine never runs its git mode: it copies each blob with
+  `git cat-file` into an engine-owned 0700 folder, files named by blob SHA,
+  and runs `gitleaks dir` with the fixed flags in that review, report to
+  stdout, redacted; any exit code but the two expected fails closed.
 - The engine's own repo maturity is Rapid prototype until promoted, so the
   bar in `maturity-levels.md` applies.
 - No change to the skill or the channel contract is needed for this
@@ -292,7 +297,7 @@ Asked one at a time in the interview. None is assumed.
 | OQ-1 | Is this the right first increment? | Product | Decided: real interviews end to end (owner, decision card, 2026-11-11) |
 | OQ-2 | Where does the owner's factory config live (owner GitHub id, OAuth client id, allow list)? | Architecture, Interfaces | Decided: per project, in the project's config repo manifest (ADR 0010); nothing owner-specific in the master repo (owner, thread, 2026-11-11). Contract change drafted as H-0080 (section 10). Project paths in a git-ignored file in the master repo clone (owner, thread, 2026-11-11; H-0081) |
 | OQ-3 | Node can't read a socket peer's uid or pid, set a named pipe's ACL, or read a pipe client's SID, all of which the channel contract requires. How do we get them: a small FFI library, a native addon, or a separate helper program? | Architecture, Security | Decided: the koffi FFI library, subject to its S4.1 security review before it is approved for use (owner, decision card, 2026-11-11) |
-| OQ-4 | Approve the Claude Agent SDK, and Claude Code inside the agent image, after their S4.1 review. | Architecture, Security | Open |
+| OQ-4 | Approve the Claude Agent SDK, and Claude Code inside the agent image, after their S4.1 review. | Architecture, Security | Asked: Gate 1 approves koffi, the Agent SDK, Claude Code, the Node image and gitleaks with pins and conditions; the owner's approval is pending |
 | OQ-5 | How the engine drives containers: the `docker` command line (no new library) or a Docker API library. And the egress proxy: written in the engine with Node's own modules, or an existing proxy image. | Architecture, Security | Containers: decided, the `docker` command line, no Docker library (owner, decision card, 2026-11-11). Proxy: decided, our own small proxy on Node's built-in modules, allowing only listed hosts on port 443 and logging each connection (owner, decision card, 2026-11-11) |
 | OQ-6 | Which base image, pinned by digest. | Architecture, Security | Decided: Docker's official Node LTS image on Debian slim, pinned by digest, with its S4.1 review and CVE scanning (owner, decision card, 2026-11-11) |
 | OQ-7 | How the model credential reaches a container and where the engine keeps it (subscription token from `claude setup-token`, or an API key), and where the factory token is stored. | Security | Decided: the OS credential store (Windows Credential Manager, macOS Keychain, Linux Secret Service) through koffi; the owner enters each secret once with an engine command (owner, decision card, 2026-11-11) |
@@ -348,3 +353,4 @@ section 9.
 | 17 | 2026-11-11 | OQ-10: feature ids unique across projects, no channel change | Owner, 2026-11-11 (decision card) |
 | 18 | 2026-11-11 | OQ-11: gitleaks as the secrets scanner | Owner, 2026-11-11 (decision card) |
 | 19 | 2026-11-11 | H-0080 to H-0083 approved and applied | Owner, 2026-11-11 (decision card) |
+| 20 | 2026-11-11 | gitleaks review folded in (pin 8.30.1, blob-only scanning) | — (review) |

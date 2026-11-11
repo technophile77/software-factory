@@ -199,6 +199,52 @@ first CI run under #18. No component was run.
 and its whole lockfile (102 packages) has no npm advisories. The engine
 should pin the same version and never run Vitest's UI or API server.
 
+### 5. gitleaks (the engine's secrets scanner, OQ-11)
+
+Checked on 2026-11-11 for spec v18 (OQ-11, SR-19). **Sources that worked:**
+GitHub release downloads (archives and `checksums.txt`),
+`raw.githubusercontent.com` (README, `SECURITY.md`, `go.mod` on `master`),
+the Go module proxy and checksum database, Docker Hub, and the OSV bulk
+exports for the Go and GIT ecosystems (`osv-vulnerabilities` bucket, dated
+2026-11-10). **Lookups that failed:** the GitHub API and web pages (release
+metadata, repository advisories, contributors; refused, because this session
+is bound to its own repositories), `api.osv.dev`, `vuln.go.dev` and NVD
+(refused by the proxy). So **who published the release, and when, is not
+verified**, and only advisories that reached OSV are counted. Unlike the
+reviews above, this component **was run**, in this session's sandbox, to
+test the suppression paths below. CVE reachability came from `govulncheck`
+1.9.0 against a local copy of the OSV Go data.
+
+| Item | Finding |
+|---|---|
+| Source and maintainers | `github.com/gitleaks/gitleaks`, Go module `github.com/zricethezav/gitleaks/v8`, MIT license (Zachary Rice). **One maintainer in practice.** The README on `master` says gitleaks is "feature complete", that future releases will be "security patches only", and that he has moved to Betterleaks. The latest release is **8.30.1**: tag `8d1f98c7` dated 2026-02-21, archives dated 2026-03-21. There has been no release since, although `master` has commits up to 2026-10-23. **The release binaries are built on the maintainer's Mac, not in CI.** They embed `/Users/zrice/...` paths. The release workflow only builds the Docker image. There are no signatures, provenance or SBOM. `checksums.txt` sits beside the archives, so it proves integrity, not origin. **Mitigation found:** I rebuilt the source at the tag, verified against the Go checksum database, with Go 1.24.11 and the release's flags. The linux x64 and arm64, darwin x64, and windows x64 and arm64 binaries came out **bit-for-bit identical**. darwin arm64 is built with cgo and couldn't be reproduced here. |
+| Known CVEs | **gitleaks itself (OSV GIT data):** CVE-2026-63728 (secret exfiltration through Sprig functions in `--report-template`) is fixed in 8.30.1. **CVE-2026-124039 (published 2026-11-06) is unfixed through 8.30.1.** It writes the `--report-path` file with default permissions, so other local users can read unredacted secrets. It is avoided by reporting to stdout with `--redact`. **Compiled-in code:** the binary has Go 1.24.11 (a line that is no longer supported; Go 1.26.11 is current) and old modules. `govulncheck` finds 72 advisories by symbol in binary mode: 46 stdlib, 20 `golang.org/x/crypto`, and the rest in `klauspost/compress`, `andybalholm/brotli`, `nwaples/rardecode` and `golang.org/x/text`. In source mode, 29 are reachable by its call graph. Each reachable trace runs through one of four paths: the `--diagnostics=http` pprof server, archive extraction (`--max-archive-depth` > 0), git mode (`git log` parsing, remote URL), or a call-graph over-approximation through `signal.Notify` and `re2.init`. **The invocation below uses none of the first three.** `x/crypto/ssh` is linked in but not called. **Upstream fix: none.** `master` still pins Go 1.24.11 and `x/crypto` 0.35.0. |
+| Install | Use the official release archive, with its SHA-256 pinned in the engine (below). Check it before extracting, extract only the `gitleaks` binary into an engine-owned folder, check the binary's SHA-256 too, and check that `gitleaks version` prints `8.30.1`. No install scripts. **Not `go install`:** it builds on the owner's machine with whatever toolchain is local and resolves the module at install time. Also not Homebrew, Scoop or the Docker image (`zricethezav/gitleaks:v8.30.1` is index `sha256:c00b6bd0…bbb7f`, which isn't needed for host scanning), and not the pre-commit hook or `gitleaks-action`. |
+| Permissions it needs | **No network** for `dir` or `stdin` scans. It ran clean in an empty network namespace. `strace` shows no sockets and only the `--config` file opened. It reads files under its source path and needs no privilege. **Inputs a scanned repo can control, all confirmed by test:** (a) `{source}/.gitleaks.toml` replaces the rules unless `--config` is given. (b) **`{source}/.gitleaksignore` is always loaded, and no flag turns it off.** `--gitleaks-ignore-path` only adds a second file. In `stdin` mode `{source}` is the working directory. (c) An inline `gitleaks:allow` on the line suppresses a finding unless `--ignore-gitleaks-allow` is given. (d) The default config's path allowlist skips any path containing `gitleaks.toml`, images, `.pdf`, lockfiles, `node_modules/`, `vendor/` and more, so an agent can hide a secret through a file's name. (e) **Git mode (`gitleaks git`, `detect`, `protect`) runs `git log -p` in the repo.** The repo's `.git/config` textconv driver plus `.gitattributes` ran a command on the host, and `-diff` hid the content. Both secrets were missed. (f) The `GITLEAKS_CONFIG` and `GITLEAKS_CONFIG_TOML` environment variables are read when `--config` is absent. |
+| What it pulls in | One static binary (CGO off, except darwin arm64), about 22 MB. It needs `git` only in git mode, which the engine must not use. 65 third-party Go modules are compiled in: cobra and viper (CLI and config), Sprig (report templates), `wasilibs/go-re2` running RE2 as WebAssembly in `tetratelabs/wazero` (no disk cache), and `mholt/archives` with 7z, rar, xz, brotli, zstd and lz4 decoders (archive scanning, off at depth 0). |
+| Verdict | **Approve, with conditions:** (1) The engine never runs git mode. It reads each blob of the commit itself with `git cat-file blob <sha>`, which applies no textconv or attributes, and writes it to a fresh engine-owned 0700 staging folder outside every repo. Each blob is a regular file named by its blob SHA, so no path allowlist or `.gitleaksignore` can match. The engine maps findings back to paths itself. (2) The exact invocation below, by absolute path, with an argument array, no shell, the working folder set to an engine-owned empty folder, and the two `GITLEAKS_*` variables cleared. (3) Exit 0 means clean, exit 99 means findings (block the commit), and **any other exit (1 = error, 126 = bad flag, timeout) means fail closed** (SR-2). (4) The rules file is engine-owned factory configuration, change-controlled, outside every repo. Any allowlist (for example for lockfile false positives) needs owner approval. (5) The OSV-Scanner run in CI (SR-19) will flag the 72 compiled-in advisories. Record them as not in the used code path with this triage, and re-review when a gitleaks release or advisory appears. (6) **Residual risk for the owner to note:** the tool is in security-patch-only mode with a single maintainer, has not released a fix for a CVE five days old, and ships on an unsupported Go line. If that continues, revisit OQ-11 (for example by building from a pinned tag with a current Go, or a replacement). Approval doesn't depend on it. |
+| Proposed pin | **gitleaks 8.30.1** (tag commit `8d1f98c7967eb1e79cb44ac6241a124e145d2165`, Go sum `h1:PmEvCfVI7ti9dV3s5aMZUY7sS2GxRvG3yzih7E+cS3w=`). Archive SHA-256 values, all checked against downloads and `checksums.txt`: linux_x64 `551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb`, linux_arm64 `e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080`, darwin_x64 `dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709`, darwin_arm64 `b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5` (not reproduced), windows_x64 `d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e`, windows_arm64 `b95f5e4f5c425cedca7ee203d9afd29597e692c4924a12ed42f970537c72cc0f`. Binary SHA-256 values: linux_x64 `88f91962aa2f93ac6ab281d553b9e125f5197bbbce38f9f2437f7299c32e5509`, linux_arm64 `00e91bbe655bd7c47753e8cfe61cb76ea1a5d7e7702fe161ee40102b46b3823b`, darwin_x64 `cee01fea7173f1b779dff188e1c26ecbcb4027d394acc573b23aaf0be260e291`, darwin_arm64 `ba52fb1bfabbcde42f032afad3d6e0b19dff8ed105229a16e7caa338bbc0e84f`, windows_x64 `17157e2ee8b76fc8b1d8bee607a250e34b8a8023c8bc81822d4b5ee4d78fcb7c`, windows_arm64 `200df852fdecbedb19a33960657333cba5e231740bc8968972b507b50f93b194`. |
+
+**Required invocation** (each flag tested against 8.30.1):
+
+```
+<abs path>/gitleaks dir <staging dir>
+  --config <engine-owned rules file>      # skips {source}/.gitleaks.toml and the env vars
+  --gitleaks-ignore-path <empty engine-owned dir>
+  --ignore-gitleaks-allow                 # inline gitleaks:allow no longer suppresses
+  --max-archive-depth 0                   # no archive decoders
+  --redact --report-format json --report-path -   # no report file (CVE-2026-124039), no secret in output
+  --exit-code 99 --no-banner --no-color --log-level error
+  --timeout <seconds>
+```
+
+The rules file holds only `[extend]` and `useDefault = true`, so the rules
+are the defaults built into the pinned binary. Never pass `--baseline-path`,
+`--enable-rule`, `--diagnostics`, `--report-template`, `--follow-symlinks` or
+`--log-opts`. `stdin` mode is also safe with the same flags, but only when the
+working folder is an empty engine-owned folder, because it loads
+`./.gitleaksignore`.
+
 ## Threat model (S9.7)
 
 **System:** the owner's Claude Code session (skill and client) talks to the
