@@ -1,3 +1,4 @@
+import { realPath } from "../fsutil";
 import * as fs from "node:fs";
 import { Clock, iso } from "../clock";
 import { Git } from "../git";
@@ -32,10 +33,10 @@ export async function confirmProject(o: {
   io: ConfirmIo;
 }): Promise<boolean> {
   const listed = readPathsFile(o.masterRepo, o.os);
-  const want = fs.realpathSync(o.projectPath);
+  const want = realPath(o.projectPath);
   const match = listed.find((p) => {
     try {
-      return fs.realpathSync(p) === want;
+      return realPath(p) === want;
     } catch {
       return false;
     }

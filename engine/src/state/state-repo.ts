@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { STATE_BRANCH } from "../constants";
-import { ensureOwnerDir, writeFileAtomic } from "../fsutil";
+import { ensureOwnerDir, realPath, writeFileAtomic } from "../fsutil";
 import { Git, GitError } from "../git";
 import { Blob, ScanError, SecretsScanner } from "../gitleaks";
 import { Logger } from "../log";
@@ -74,7 +74,7 @@ export class StateRepo {
 
   private async checkRegistered(): Promise<void> {
     const out = await this.git.out(this.repoRoot, ["worktree", "list", "--porcelain", "-z"]);
-    const real = fs.realpathSync(this.factoryDir);
+    const real = realPath(this.factoryDir);
     let wt: string | null = null;
     for (const field of out.split("\0")) {
       if (field.startsWith("worktree ")) wt = field.slice(9);
@@ -114,8 +114,8 @@ export class StateRepo {
     const file = path.join(this.factoryDir, ...rel.split("/"));
     const dir = path.dirname(file);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const real = fs.realpathSync(dir);
-    const root = fs.realpathSync(this.factoryDir);
+    const real = realPath(dir);
+    const root = realPath(this.factoryDir);
     if (real !== root && !real.startsWith(root + path.sep)) throw new GitError("state path leaves .factory");
     writeFileAtomic(file, content);
   }
@@ -278,7 +278,7 @@ function transport(base: string): string[] {
 
 function safeReal(p: string): string | null {
   try {
-    return fs.realpathSync(p);
+    return realPath(p);
   } catch {
     return null;
   }

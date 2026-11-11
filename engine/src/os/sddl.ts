@@ -42,22 +42,30 @@ const FIXED_ALIASES: Record<string, string> = {
 /**
  * Aliases such as LA (local Administrator), LG, DA or DU stand for a SID
  * relative to the machine's or the domain's own SID, which this text alone
- * can't tell. Such an alias is resolved only when Windows itself wrote it for
- * the current user (`self.token`); any other one stays unresolved, so it
- * never matches the owner and counts as an untrusted writer (fail closed).
+ * can't tell. They stay unresolved, so one never matches the owner and counts
+ * as an untrusted writer (fail closed). The FFI layer first writes the
+ * current user's own alias back as its SID (withSelfSid).
  */
 const UNRESOLVED = "unresolved:";
 
-export interface Self {
-  sid: string;
-  /** How Windows writes `sid` in SDDL: the SID itself, or an alias such as LA. */
-  token?: string;
+function principal(t: string): string {
+  if (/^S-1-[0-9-]+$/.test(t)) return t;
+  return FIXED_ALIASES[t] ?? UNRESOLVED + t;
 }
 
-function principal(t: string, self?: Self): string {
-  if (/^S-1-[0-9-]+$/.test(t)) return t;
-  if (self?.token && t === self.token) return self.sid;
-  return FIXED_ALIASES[t] ?? UNRESOLVED + t;
+/**
+ * Replaces `token`, the alias Windows uses for the current user (LA for the
+ * built-in Administrator), with the user's SID wherever it names a principal:
+ * the owner and each ACE's trustee. `token` must come from Windows' own
+ * converter for this user's SID, never from the descriptor being checked.
+ */
+export function withSelfSid(sddl: string, token: string, sid: string): string {
+  if (!/^S-1-[0-9-]+$/.test(sid)) throw new Error("bad SID");
+  if (token === sid) return sddl;
+  if (!/^[A-Z]{2}$/.test(token) || FIXED_ALIASES[token]) throw new Error("unexpected alias for the current user");
+  return sddl
+    .replace(new RegExp(`(^|[^A-Z])O:${token}(?=[A-Z]:|$)`), `$1O:${sid}`)
+    .replace(new RegExp(`\\(([^()]*;)${token}\\)`, "g"), `($1${sid})`);
 }
 
 function parseMask(s: string): number {
@@ -72,7 +80,7 @@ function parseMask(s: string): number {
   return mask >>> 0;
 }
 
-export function parseSddl(text: string, self?: Self): Sddl {
+export function parseSddl(text: string): Sddl {
   const owner = /O:([A-Z]{2}|S-1-[0-9-]+)/.exec(text)?.[1] ?? null;
   const d = /D:([A-Z]*)((?:\([^()]*\))*)/.exec(text);
   if (!d) throw new Error("no DACL");
@@ -81,15 +89,15 @@ export function parseSddl(text: string, self?: Self): Sddl {
     const parts = m[1]!.split(";");
     if (parts.length !== 6) throw new Error("unreadable ACE");
     const [type, flags, rights, , , sid] = parts as [string, string, string, string, string, string];
-    aces.push({ type, flags, mask: parseMask(rights), sid: principal(sid, self) });
+    aces.push({ type, flags, mask: parseMask(rights), sid: principal(sid) });
   }
-  return { owner: owner ? principal(owner, self) : null, daclFlags: d[1]!, aces };
+  return { owner: owner ? principal(owner) : null, daclFlags: d[1]!, aces };
 }
 
 /** The channel pipe: a protected DACL that grants access to the owner and nobody else. */
-export function isOwnerOnlyPipe(sddl: string, ownerSid: string, ownerToken?: string): boolean {
+export function isOwnerOnlyPipe(sddl: string, ownerSid: string): boolean {
   try {
-    const sd = parseSddl(sddl, { sid: ownerSid, token: ownerToken });
+    const sd = parseSddl(sddl);
     if (!sd.daclFlags.includes("P") || sd.aces.length === 0) return false;
     return sd.aces.every((a) => (a.type === "A" && a.sid === ownerSid && a.mask !== 0) || a.type === "D");
   } catch {
@@ -101,9 +109,9 @@ export function isOwnerOnlyPipe(sddl: string, ownerSid: string, ownerToken?: str
  * The project paths file (SR-13): owned by the owner, and nobody but the
  * owner, SYSTEM and Administrators may write it.
  */
-export function isOwnerWritableOnly(sddl: string, ownerSid: string, ownerToken?: string): boolean {
+export function isOwnerWritableOnly(sddl: string, ownerSid: string): boolean {
   try {
-    const sd = parseSddl(sddl, { sid: ownerSid, token: ownerToken });
+    const sd = parseSddl(sddl);
     if (sd.owner !== ownerSid) return false;
     const trusted = new Set([ownerSid, "S-1-5-18", "S-1-5-32-544"]);
     for (const a of sd.aces) {

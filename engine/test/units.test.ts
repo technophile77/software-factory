@@ -16,7 +16,7 @@ import { Gitleaks, ScanError } from "../src/gitleaks";
 import { frameTurn } from "../src/interview/frame";
 import { MemoryLogger } from "../src/log";
 import { CredentialApi, FfiError, FUNCTIONS, Handle, OsApi, WindowsApi, realOsApi } from "../src/os/ffi";
-import { isOwnerOnlyPipe, isOwnerWritableOnly, ownerOnlyPipeSddl, parseSddl } from "../src/os/sddl";
+import { isOwnerOnlyPipe, isOwnerWritableOnly, ownerOnlyPipeSddl, parseSddl, withSelfSid } from "../src/os/sddl";
 import { Children, osParent } from "../src/proc";
 import { MemoryCredentialStore, OsCredentialStore, SecretError, factoryTokenName } from "../src/secrets";
 import { EngineRecord } from "../src/state/record";
@@ -164,19 +164,24 @@ describe("SDDL (SR-15, SR-13 on Windows)", () => {
     // The Windows runner's built-in Administrator: Windows writes its SID as LA.
     const admin = "S-1-5-21-1111111111-2222222222-3333333333-500";
     const runner = "O:LAD:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;LA)";
-    expect(isOwnerWritableOnly(runner, admin, "LA")).toBe(true);
-    expect(isOwnerOnlyPipe("O:LAD:P(A;;GA;;;LA)", admin, "LA")).toBe(true);
-    // Without knowing how Windows writes the user, LA can't be trusted.
+    const asSelf = (s: string) => withSelfSid(s, "LA", admin);
+    expect(asSelf(runner)).toBe(`O:${admin}D:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;${admin})`);
+    expect(isOwnerWritableOnly(asSelf(runner), admin)).toBe(true);
+    expect(isOwnerOnlyPipe(asSelf("O:LAD:P(A;;GA;;;LA)"), admin)).toBe(true);
+    // Unexpanded, LA can't be trusted: its machine prefix isn't in the text.
     expect(isOwnerWritableOnly(runner, admin)).toBe(false);
-    expect(isOwnerWritableOnly(runner, admin, admin)).toBe(false);
-    // Another machine- or domain-relative principal stays unresolved: never the owner, never trusted to write.
-    expect(isOwnerWritableOnly(runner.replace("O:LA", "O:LG"), admin, "LA")).toBe(false);
-    expect(isOwnerWritableOnly(`O:LAD:(A;;FA;;;LA)(A;;FW;;;DU)`, admin, "LA")).toBe(false);
-    expect(isOwnerWritableOnly(`O:LAD:(A;;FA;;;LA)(A;;FR;;;DU)`, admin, "LA")).toBe(true);
-    expect(isOwnerOnlyPipe("O:LAD:P(A;;GA;;;DA)", admin, "LA")).toBe(false);
-    expect(parseSddl("O:LGD:(A;;FA;;;DA)", { sid: admin, token: "LA" })).toMatchObject({ owner: "unresolved:LG", aces: [{ sid: "unresolved:DA" }] });
-    // A user Windows writes as a plain SID is unaffected.
-    expect(isOwnerWritableOnly(`O:${me}D:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;${me})`, me, me)).toBe(true);
+    // Any other machine- or domain-relative principal stays unresolved: never the owner, never trusted to write.
+    expect(isOwnerWritableOnly(asSelf(runner.replace("O:LA", "O:LG")), admin)).toBe(false);
+    expect(isOwnerWritableOnly(asSelf("O:LAD:(A;;FA;;;LA)(A;;FW;;;DU)"), admin)).toBe(false);
+    expect(isOwnerWritableOnly(asSelf("O:LAD:(A;;FA;;;LA)(A;;FR;;;DU)"), admin)).toBe(true);
+    expect(isOwnerOnlyPipe(asSelf("O:LAD:P(A;;GA;;;DA)"), admin)).toBe(false);
+    expect(parseSddl("O:LGD:(A;;FA;;;DA)")).toMatchObject({ owner: "unresolved:LG", aces: [{ sid: "unresolved:DA" }] });
+    // Only whole trustee and owner fields change; rights such as "LA" can't appear, and flags are untouched.
+    expect(asSelf("O:BAD:(A;OICI;FA;;;LA)")).toBe(`O:BAD:(A;OICI;FA;;;${admin})`);
+    // A user Windows writes as a plain SID is unaffected, and a fixed alias is never taken as the user.
+    expect(withSelfSid(`O:${me}D:(A;;FA;;;${me})`, me, me)).toBe(`O:${me}D:(A;;FA;;;${me})`);
+    expect(() => withSelfSid(runner, "BA", admin)).toThrow();
+    expect(() => withSelfSid(runner, "LA", "x")).toThrow();
     expect(parseSddl("O:BUD:(A;;FA;;;AU)").aces[0]!.sid).toBe("S-1-5-11");
   });
 });

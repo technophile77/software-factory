@@ -10,6 +10,7 @@ import { PinStore } from "../src/config/pins";
 import { Git } from "../src/git";
 import { Children } from "../src/proc";
 import { realOsApi } from "../src/os/ffi";
+import { realPath } from "../src/fsutil";
 import { grantWrite } from "./acceptance/support/platform";
 import {
   GIT_PATH, OWNER_ID, ORG_ID, OTHER_ID, advanceSoon, RpcClient, World, engineJson, git, initRepo, makeWorld, manifestYaml, start,
@@ -193,7 +194,7 @@ describe("pinned keys (SR-5, AC-20)", () => {
     await engines.pop()!.stop();
     w.github.approver = OWNER_ID;
     expect(await confirm()).toBe(true);
-    expect(new PinStore(w.home).get(fs.realpathSync(w.config))!.owner.github_id).toBe(OTHER_ID);
+    expect(new PinStore(w.home).get(realPath(w.config))!.owner.github_id).toBe(OTHER_ID);
     expect((await boot(w)).projects[0]!.state).toBe("running");
   });
 

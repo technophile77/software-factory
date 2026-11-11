@@ -4,6 +4,15 @@ import * as path from "node:path";
 
 const isWindows = process.platform === "win32";
 
+/**
+ * A path's canonical form, for comparing two paths. On Windows only the
+ * native call expands 8.3 short names (C:\Users\RUNNER~1) and settles case,
+ * so a path from the user and one from git compare equal.
+ */
+export function realPath(p: string): string {
+  return isWindows ? fs.realpathSync.native(p) : fs.realpathSync(p);
+}
+
 export function euid(): number | null {
   return typeof process.geteuid === "function" ? process.geteuid() : null;
 }

@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import YAML from "yaml";
 import { PATHS_FILE } from "../constants";
-import { euid } from "../fsutil";
+import { euid, realPath } from "../fsutil";
 import { Git } from "../git";
 import type { OsApi } from "../os/ffi";
 import { isOwnerWritableOnly } from "../os/sddl";
@@ -32,7 +32,7 @@ export function readPathsFile(masterRepo: string, os: OsApi): string[] {
     let ok = false;
     try {
       const w = os.windows();
-      ok = isOwnerWritableOnly(w.fileSddl(file), w.currentUserSid(), w.currentUserSddlToken?.());
+      ok = isOwnerWritableOnly(w.fileSddl(file), w.currentUserSid());
     } catch {
       ok = false;
     }
@@ -78,15 +78,15 @@ export async function checkProjectPath(p: string, masterRepo: string, git: Git):
   }
   if (st.isSymbolicLink()) throw new ConfigError("The path is a symbolic link.");
   if (!st.isDirectory()) throw new ConfigError("The path is not a folder.");
-  const real = fs.realpathSync(p);
+  const real = realPath(p);
   let top: string;
   try {
-    top = fs.realpathSync(await git.out(real, ["rev-parse", "--show-toplevel"]));
+    top = realPath(await git.out(real, ["rev-parse", "--show-toplevel"]));
   } catch {
     throw new ConfigError("The path is not a Git work tree.");
   }
   if (top !== real) throw new ConfigError("The path is not the top of a Git work tree.");
-  const master = fs.realpathSync(masterRepo);
+  const master = realPath(masterRepo);
   if (real === master) throw new ConfigError("The path is the master repo itself.");
   const roots = async (dir: string) => {
     try {

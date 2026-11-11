@@ -11,7 +11,7 @@ import { validateManifest } from "../src/config/manifest";
 import YAML from "yaml";
 import { MemoryCredentialStore } from "../src/secrets";
 import { MemoryLogger } from "../src/log";
-import { findOnPath } from "../src/fsutil";
+import { findOnPath, realPath } from "../src/fsutil";
 import { EngineHandle, EngineOptions, startEngine } from "../src/engine";
 import { nodeProgram, ownerOnly } from "./acceptance/support/platform";
 
@@ -48,7 +48,7 @@ export function tmpdir(prefix = "sf-"): string {
   // Short paths: Unix socket paths are limited to about 100 bytes.
   const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   fs.chmodSync(d, 0o700);
-  return fs.realpathSync(d);
+  return realPath(d);
 }
 
 export function initRepo(dir: string, files: Record<string, string>, origin?: string): void {

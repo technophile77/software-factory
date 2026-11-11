@@ -1,3 +1,4 @@
+import { realPath } from "../fsutil";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { InterviewState } from "./model";
@@ -30,7 +31,7 @@ export function readSpec(worktree: string, feature: string, specPath: string): s
   if (typeof specPath !== "string" || specPath.normalize("NFC") !== specPath || !specPathPattern(feature).test(specPath)) throw refuse();
   let root: string;
   try {
-    root = fs.realpathSync(worktree);
+    root = realPath(worktree);
   } catch {
     throw refuse();
   }
@@ -48,7 +49,7 @@ export function readSpec(worktree: string, feature: string, specPath: string): s
   }
   let real: string;
   try {
-    real = fs.realpathSync(full);
+    real = realPath(full);
   } catch {
     throw refuse();
   }

@@ -12,6 +12,7 @@
  * engine is unit-tested through a fake OsApi.
  */
 import koffi from "koffi";
+import { withSelfSid } from "./sddl";
 
 export class FfiError extends Error {
   constructor(step: string) {
@@ -39,16 +40,11 @@ export interface UnixApi {
 
 export interface WindowsApi {
   currentUserSid(): string;
-  /**
-   * How Windows writes the current user's SID in SDDL: the SID, or an alias
-   * such as LA when the user is the machine's built-in Administrator.
-   */
-  currentUserSddlToken?(): string;
   /** CreateNamedPipeW with the given SDDL as its security descriptor. */
   createPipe(name: string, sddl: string, first: boolean): Handle;
-  /** The pipe's owner and DACL, read back from the kernel object, as SDDL. */
+  /** The pipe's owner and DACL, read back from the kernel object, as SDDL with the current user named by SID. */
   handleSddl(h: Handle): string;
-  /** Owner and DACL of a file, as SDDL. */
+  /** Owner and DACL of a file, as SDDL with the current user named by SID. */
   fileSddl(path: string): string;
   /** Resolves when a client connects (ConnectNamedPipe on a worker thread). */
   connectPipe(h: Handle): Promise<void>;
@@ -287,6 +283,30 @@ function windowsApi(): WindowsApi {
     }
   }
 
+  let selfAlias: { sid: string; token: string } | null = null;
+  /**
+   * Windows writes some SIDs as aliases, such as LA for the built-in
+   * Administrator. A round trip of the user's own SID through Windows'
+   * converter shows which, if any, it uses; that one alias is written back
+   * as the SID, and every other alias stays unresolved (sddl.ts).
+   */
+  function self(sddl: string): string {
+    if (!selfAlias) {
+      const sid = tokenUserSid(GetCurrentProcess());
+      const sd: unknown[] = [null];
+      const size = [0];
+      if (!StringToSd(`O:${sid}D:`, SDDL_REVISION_1, sd, size) || !sd[0]) throw new FfiError("security descriptor");
+      const m = /^O:([A-Z]{2}|S-1-[0-9-]+)D:/.exec(sdToSddl(sd[0], "owner SDDL"));
+      if (!m) throw new FfiError("owner SDDL");
+      selfAlias = { sid, token: m[1]! };
+    }
+    try {
+      return withSelfSid(sddl, selfAlias.token, selfAlias.sid);
+    } catch {
+      throw new FfiError("current user alias");
+    }
+  }
+
   return {
     currentUserSid: () => guard("current user SID", () => tokenUserSid(GetCurrentProcess())),
     parentPid(pid) {
@@ -308,17 +328,7 @@ function windowsApi(): WindowsApi {
         }
       });
     },
-    currentUserSddlToken: () =>
-      guard("current user SDDL token", () => {
-        const sid = tokenUserSid(GetCurrentProcess());
-        // A round trip through Windows' own converter shows which alias, if any, it uses for this SID.
-        const sd: unknown[] = [null];
-        const size = [0];
-        if (!StringToSd(`O:${sid}D:`, SDDL_REVISION_1, sd, size) || !sd[0]) throw new FfiError("security descriptor");
-        const m = /^O:([A-Z]{2}|S-1-[0-9-]+)D:/.exec(sdToSddl(sd[0], "owner SDDL"));
-        if (!m) throw new FfiError("owner SDDL");
-        return m[1]!;
-      }),
+
     createPipe(name, sddl, first) {
       return guard("CreateNamedPipeW", () => {
         const sd: unknown[] = [null];
@@ -342,7 +352,7 @@ function windowsApi(): WindowsApi {
         if (GetSecurityInfo(h, SE_KERNEL_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, o, g, d, s, sd) !== 0 || !sd[0]) {
           throw new FfiError("GetSecurityInfo");
         }
-        return sdToSddl(sd[0], "pipe SDDL");
+        return self(sdToSddl(sd[0], "pipe SDDL"));
       });
     },
     fileSddl(path) {
@@ -351,7 +361,7 @@ function windowsApi(): WindowsApi {
         if (GetNamedSecurityInfoW(path, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, o, g, d, s, sd) !== 0 || !sd[0]) {
           throw new FfiError("GetNamedSecurityInfoW");
         }
-        return sdToSddl(sd[0], "file SDDL");
+        return self(sdToSddl(sd[0], "file SDDL"));
       });
     },
     connectPipe(h) {
