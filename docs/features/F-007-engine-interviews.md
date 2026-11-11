@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Draft (requirements interview in progress)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 11
+- **Spec version:** 12
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -225,6 +225,18 @@ Asked one at a time in the interview. None is assumed.
 | OQ-8 | The analyst-to-engine tools: names, parameters and results. | Interfaces | Drafted as H-0082 (section 10), for the owner's review |
 | OQ-9 | Test tools for the engine: Vitest, as the extension uses, or Node's built-in runner. | Architecture | Decided: Vitest, as the extension uses (owner, decision card, 2026-11-11) |
 
+### Security Gate 1 decisions
+From `F-007-security-gate1.md`. The findings become requirements once all
+five are decided.
+
+| Finding | Question | Status |
+|---|---|---|
+| #1 | Where the egress proxy runs | Decided: a sidecar container from the pinned base image, the only member of the agents' internal Docker network with a route out (owner, decision card, 2026-11-11) |
+| #4 | How the model credential reaches a session | Asked |
+| #7 | Guarding owner-key changes before signed owner actions | Open |
+| #19 | Residual risk of the OS credential store | Open |
+| #20 | Web reader page fetching | Open |
+
 ## 13. Increments (first one chosen by the owner, OQ-1; later order open)
 1. **This feature:** engine core, channel, phone approval, analyst and web
    reader in containers, transcript, interview readiness checks.
@@ -251,3 +263,4 @@ Asked one at a time in the interview. None is assumed.
 | 9 | 2026-11-11 | OQ-7: secrets in the OS credential store through koffi | Owner, 2026-11-11 (decision card) |
 | 10 | 2026-11-11 | Section 10: drafts of H-0080 (manifest owner keys), H-0081 (.gitignore) and H-0082 (interview tools, OQ-8) | — (drafts) |
 | 11 | 2026-11-11 | OQ-9: Vitest | Owner, 2026-11-11 (decision card) |
+| 12 | 2026-11-11 | Gate 1 #1: proxy as a sidecar container on an internal network | Owner, 2026-11-11 (decision card) |
