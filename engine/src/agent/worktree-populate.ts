@@ -119,17 +119,32 @@ export function writeNew(root: string, rel: string, content: Buffer, executable:
     if (!st.isDirectory() || st.isSymbolicLink()) throw new WorktreeRefused(`${rel.slice(0, 200)}: a parent isn't a plain folder.`);
     if (realPath(dir) !== realDir) throw new WorktreeRefused(`${rel.slice(0, 200)}: a parent resolves outside the worktree.`);
   }
+  const file = path.join(dir, segs.at(-1)!);
+  // Windows has no O_NOFOLLOW, and O_EXCL there creates the target of a
+  // dangling link; so any existing entry, a link included, is refused first,
+  // and the opened file's real path is checked before anything is written.
+  if (lstatOrNull(file)) throw new WorktreeRefused(`${rel.slice(0, 200)}: another entry already wrote this name.`);
   const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0);
   let fd: number;
   try {
-    fd = fs.openSync(path.join(dir, segs.at(-1)!), flags, executable ? 0o755 : 0o644);
+    fd = fs.openSync(file, flags, executable ? 0o755 : 0o644);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "EEXIST") throw new WorktreeRefused(`${rel.slice(0, 200)}: another entry already wrote this name.`);
     throw e;
   }
   try {
+    if (realPath(file) !== path.join(realDir, segs.at(-1)!)) throw new WorktreeRefused(`${rel.slice(0, 200)}: the file resolves outside the worktree.`);
     fs.writeSync(fd, content);
   } finally {
     fs.closeSync(fd);
+  }
+}
+
+function lstatOrNull(p: string): fs.Stats | null {
+  try {
+    return fs.lstatSync(p);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
   }
 }
