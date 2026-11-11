@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Draft (requirements interview in progress)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 9
+- **Spec version:** 10
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -143,12 +143,64 @@ external interactions, so it gets a STRIDE threat model at Gate 1):
 | SR-5 | The allow list sits in the manifest it guards, so widening it is a manifest change: it needs an approved hygiene item, and the engine refuses an unsigned owner change to it (ADR 0015). For Gate 1 to review. | Analyst (OQ-2) | Draft |
 
 ## 10. Interface requirements
-- Engine control channel v1.3: implemented as approved; no change expected.
-- New: analyst-to-engine interview tools (OQ-8). An Interfaces decision.
-- Project manifest: owner GitHub id, OAuth client id and allow list (OQ-2), drafted as H-0080. An Interfaces decision.
-- The master repo ships only templates and placeholders; no owner's real values are ever committed to it (owner, 2026-11-11).
-- Project manifest: `enabled` (ADR 0012) is not yet in the contract; needs
-  its hygiene item before FR-2 can read it.
+- Engine control channel v1.3: implemented as approved; no change.
+- The master repo ships only templates and placeholders; no owner's real
+  values are ever committed to it (owner, 2026-11-11).
+
+The three changes below are drafts for the owner. Each is a
+change-controlled edit, applied only after approval, through its hygiene
+item.
+
+### H-0080 (draft): Project manifest v1.3, owner and authorization keys
+Adds optional keys; non-breaking. The engine refuses to run a project that
+lacks `owner` or `enabled` (FR-2).
+
+```yaml
+enabled: false                 # ADR 0012; onboarding writes false
+owner:
+  github_id: <numeric id>      # the only account whose device approval opens an interview (ADR 0014)
+  oauth_client_id: <client id> # the owner's OAuth app, device flow, no scopes, no secret
+allowed_repo_owners:           # accounts whose repos this project may work on (ADR 0012)
+  - { login: <login>, id: <numeric id> }   # the engine checks the id; the login is for people
+```
+
+`repos[].url` must be owned by an `allowed_repo_owners` id, checked against
+GitHub's answer for the repo, not the URL text. The onboarding template gets
+placeholders only.
+
+### H-0081 (draft): `.gitignore` in the master repo
+Add `/factory-projects.local.yaml`: the list of the user's config repo
+clones, `projects: [{ path: <absolute path> }]`, with no settings. The engine
+refuses a path that isn't a Git work tree with a valid manifest.
+
+### H-0082 (draft): Interview tools v1.0 (OQ-8), a new contract
+The engine gives the analyst these tools in its session (an in-process MCP
+server named `factory`). They are the analyst's only way to reach the owner.
+Every call is checked against the session's own feature; text fields are
+stored and shown as written, and are data to the engine (SR-3).
+
+| Tool | Params | Result |
+|---|---|---|
+| `interview_ask` | `{ text, why, suggested?, options?: [string], findings?: [{ text, source }] }` | `{ item }`; a new question, status `open` |
+| `interview_propose_assumption` | `{ text, why }` | `{ item }`; status `open` until the owner approves or rejects it |
+| `interview_revise` | `{ item, text, why, suggested?, options?, findings? }` | `{ revision }`; answers a `more_info` reply: the item gets a new revision and returns to `open` |
+| `research_web` | `{ query }` | `{ summary, sources: [string] }` from the web reader in its own container, labelled untrusted |
+| `interview_spec_ready` | `{ spec_path, spec_version }` | `{ checks: [{ name, passed, evidence }] }`; runs FR-12 |
+
+Rules:
+- One question at a time: `interview_ask` is refused with `one_at_a_time`
+  while an earlier question is `open` and not deferred. Assumptions don't
+  count against this.
+- Limits: `text` up to 4,000 characters, `why` up to 2,000, up to 8
+  `options` of up to 200, up to 20 `findings`; over a limit is `invalid`.
+- The analyst's turn ends after it asks. Each owner reply reaches it as the
+  next turn's message, in a fixed frame the engine writes:
+  `Owner reply to <item> revision <n> (<kind>):` and then the owner's text
+  unchanged. Nothing else in a turn's message comes from the owner.
+- `research_web` sends only the query; the engine logs it against the item.
+- The advisor proposal tool comes with the advisor increment.
+- Errors: `one_at_a_time`, `invalid`, `unknown_item`, `wrong_status` (for
+  example revising an item that had no `more_info` reply).
 
 ## 11. Readiness gate
 - [ ] Clear objective
@@ -164,13 +216,13 @@ Asked one at a time in the interview. None is assumed.
 | Id | Question | Category | Status |
 |---|---|---|---|
 | OQ-1 | Is this the right first increment? | Product | Decided: real interviews end to end (owner, decision card, 2026-11-11) |
-| OQ-2 | Where does the owner's factory config live (owner GitHub id, OAuth client id, allow list)? | Architecture, Interfaces | Decided: per project, in the project's config repo manifest (ADR 0010); nothing owner-specific in the master repo (owner, thread, 2026-11-11). Contract change drafted as H-0080. Project paths in a git-ignored file in the master repo clone (owner, thread, 2026-11-11; H-0081) |
+| OQ-2 | Where does the owner's factory config live (owner GitHub id, OAuth client id, allow list)? | Architecture, Interfaces | Decided: per project, in the project's config repo manifest (ADR 0010); nothing owner-specific in the master repo (owner, thread, 2026-11-11). Contract change drafted as H-0080 (section 10). Project paths in a git-ignored file in the master repo clone (owner, thread, 2026-11-11; H-0081) |
 | OQ-3 | Node can't read a socket peer's uid or pid, set a named pipe's ACL, or read a pipe client's SID, all of which the channel contract requires. How do we get them: a small FFI library, a native addon, or a separate helper program? | Architecture, Security | Decided: the koffi FFI library, subject to its S4.1 security review before it is approved for use (owner, decision card, 2026-11-11) |
 | OQ-4 | Approve the Claude Agent SDK, and Claude Code inside the agent image, after their S4.1 review. | Architecture, Security | Open |
 | OQ-5 | How the engine drives containers: the `docker` command line (no new library) or a Docker API library. And the egress proxy: written in the engine with Node's own modules, or an existing proxy image. | Architecture, Security | Containers: decided, the `docker` command line, no Docker library (owner, decision card, 2026-11-11). Proxy: decided, our own small proxy on Node's built-in modules, allowing only listed hosts on port 443 and logging each connection (owner, decision card, 2026-11-11) |
 | OQ-6 | Which base image, pinned by digest. | Architecture, Security | Decided: Docker's official Node LTS image on Debian slim, pinned by digest, with its S4.1 review and CVE scanning (owner, decision card, 2026-11-11) |
 | OQ-7 | How the model credential reaches a container and where the engine keeps it (subscription token from `claude setup-token`, or an API key), and where the factory token is stored. | Security | Decided: the OS credential store (Windows Credential Manager, macOS Keychain, Linux Secret Service) through koffi; the owner enters each secret once with an engine command (owner, decision card, 2026-11-11) |
-| OQ-8 | The analyst-to-engine tools: names, parameters and results. | Interfaces | Open |
+| OQ-8 | The analyst-to-engine tools: names, parameters and results. | Interfaces | Drafted as H-0082 (section 10), for the owner's review |
 | OQ-9 | Test tools for the engine: Vitest, as the extension uses, or Node's built-in runner. | Architecture | Asked |
 
 ## 13. Increments (first one chosen by the owner, OQ-1; later order open)
@@ -197,3 +249,4 @@ Asked one at a time in the interview. None is assumed.
 | 7 | 2026-11-11 | OQ-5: egress proxy written in the engine on Node's built-in modules | Owner, 2026-11-11 (decision card) |
 | 8 | 2026-11-11 | OQ-6: base image is the official Node LTS image on Debian slim | Owner, 2026-11-11 (decision card) |
 | 9 | 2026-11-11 | OQ-7: secrets in the OS credential store through koffi | Owner, 2026-11-11 (decision card) |
+| 10 | 2026-11-11 | Section 10: drafts of H-0080 (manifest owner keys), H-0081 (.gitignore) and H-0082 (interview tools, OQ-8) | — (drafts) |
