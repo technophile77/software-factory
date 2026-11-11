@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Draft (requirements interview in progress)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 10
+- **Spec version:** 11
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -223,7 +223,7 @@ Asked one at a time in the interview. None is assumed.
 | OQ-6 | Which base image, pinned by digest. | Architecture, Security | Decided: Docker's official Node LTS image on Debian slim, pinned by digest, with its S4.1 review and CVE scanning (owner, decision card, 2026-11-11) |
 | OQ-7 | How the model credential reaches a container and where the engine keeps it (subscription token from `claude setup-token`, or an API key), and where the factory token is stored. | Security | Decided: the OS credential store (Windows Credential Manager, macOS Keychain, Linux Secret Service) through koffi; the owner enters each secret once with an engine command (owner, decision card, 2026-11-11) |
 | OQ-8 | The analyst-to-engine tools: names, parameters and results. | Interfaces | Drafted as H-0082 (section 10), for the owner's review |
-| OQ-9 | Test tools for the engine: Vitest, as the extension uses, or Node's built-in runner. | Architecture | Asked |
+| OQ-9 | Test tools for the engine: Vitest, as the extension uses, or Node's built-in runner. | Architecture | Decided: Vitest, as the extension uses (owner, decision card, 2026-11-11) |
 
 ## 13. Increments (first one chosen by the owner, OQ-1; later order open)
 1. **This feature:** engine core, channel, phone approval, analyst and web
@@ -250,3 +250,4 @@ Asked one at a time in the interview. None is assumed.
 | 8 | 2026-11-11 | OQ-6: base image is the official Node LTS image on Debian slim | Owner, 2026-11-11 (decision card) |
 | 9 | 2026-11-11 | OQ-7: secrets in the OS credential store through koffi | Owner, 2026-11-11 (decision card) |
 | 10 | 2026-11-11 | Section 10: drafts of H-0080 (manifest owner keys), H-0081 (.gitignore) and H-0082 (interview tools, OQ-8) | — (drafts) |
+| 11 | 2026-11-11 | OQ-9: Vitest | Owner, 2026-11-11 (decision card) |
