@@ -8,6 +8,7 @@ import { Logger } from "../log";
 
 const STATE_REF = `refs/heads/${STATE_BRANCH}`;
 const ZERO = "0".repeat(40);
+const REMOTE_REF = `refs/remotes/origin/${STATE_BRANCH}`;
 
 export class SecretFound extends Error {
   override name = "SecretFound";
@@ -137,7 +138,12 @@ export class StateRepo {
 
   /** Commits `changes` on factory/state, one at a time per repo. Resolves to the new commit. */
   commit(changes: Change[], message: string): Promise<string> {
-    const run = this.queue.then(() => this.commitNow(changes, message));
+    return this.serial(() => this.commitNow(changes, message));
+  }
+
+  /** Every change to the factory/state ref goes through one queue, so none sees another half done. */
+  private serial<T>(f: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(f);
     this.queue = run.catch(() => undefined);
     return run;
   }
@@ -205,14 +211,69 @@ export class StateRepo {
     }
   }
 
-  /** Pushes factory/state over HTTPS with the factory token through askpass (SR-11). */
-  async push(token: string): Promise<void> {
-    const url = await this.git.out(this.repoRoot, ["remote", "get-url", "origin"]);
-    if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?(\.git)?$/.test(url)) {
-      throw new GitError("origin is not an https://github.com/ URL, so factory/state is not pushed");
-    }
-    await this.git.run(this.repoRoot, ["push", "--no-verify", "origin", `${STATE_REF}:${STATE_REF}`], { askpassToken: token });
+  /**
+   * The URL of `origin` when it is a repo under `base`, rebuilt from its
+   * parts so that nothing but owner and repo comes from the repo's config.
+   */
+  async remoteUrl(base: string): Promise<string> {
+    const url = await this.git.out(this.repoRoot, ["remote", "get-url", "origin"]).catch(() => "");
+    const m = /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9_.-]{1,100}?)(?:\.git)?\/?$/.exec(url.startsWith(base + "/") ? url.slice(base.length + 1) : "");
+    if (!m || m[2] === "." || m[2] === "..") throw new GitError(`origin is not a repo under ${base}, so factory/state is not pushed or fetched`);
+    return `${base}/${m[1]}/${m[2]}.git`;
   }
+
+  /** Pushes factory/state to the GitHub base the engine was given, with the factory token through askpass (SR-1, SR-11). */
+  async push(token: string, base: string): Promise<void> {
+    const url = await this.remoteUrl(base);
+    await this.git.run(this.repoRoot, [...transport(base), "push", "--no-verify", url, `${STATE_REF}:${STATE_REF}`], { askpassToken: token });
+  }
+
+  /** Fetches the remote factory/state into refs/remotes/origin/factory/state and returns it, or null if the remote has none. */
+  async fetch(token: string, base: string): Promise<string | null> {
+    const url = await this.remoteUrl(base);
+    const listed = await this.git.out(this.repoRoot, [...transport(base), "ls-remote", "--heads", url, STATE_REF], { askpassToken: token });
+    if (!listed) return null;
+    await this.git.run(this.repoRoot, [...transport(base), "fetch", "--no-tags", "--no-write-fetch-head", url, `+${STATE_REF}:${REMOTE_REF}`], { askpassToken: token });
+    return this.git.revParse(this.repoRoot, REMOTE_REF);
+  }
+
+  async isAncestor(a: string, b: string): Promise<boolean> {
+    const r = await this.git.run(this.repoRoot, ["merge-base", "--is-ancestor", a, b], { okCodes: [1] });
+    return r.code === 0;
+  }
+
+  /** Paths that differ between two commits. Names only, so no diff driver or textconv runs. */
+  async changedPaths(a: string, b: string): Promise<string[]> {
+    const out = await this.git.out(this.repoRoot, ["diff-tree", "-r", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--name-only", a, b]);
+    return out.split("\0").filter(Boolean);
+  }
+
+  /**
+   * Moves factory/state forward to `to` (a descendant of `from`) and writes
+   * the changed files from their blobs, as the first checkout does.
+   */
+  async fastForward(from: string, to: string): Promise<void> {
+    const changed = await this.changedPaths(from, to);
+    await this.serial(async () => {
+      await this.git.run(this.repoRoot, ["update-ref", STATE_REF, to, from]);
+      await this.git.run(this.factoryDir, ["read-tree", "HEAD"]);
+      for (const rel of changed) {
+        try {
+          checkStatePath(rel);
+        } catch {
+          continue;
+        }
+        const e = await this.git.lsTreeEntry(this.factoryDir, "HEAD", rel);
+        if (!e) fs.rmSync(path.join(this.factoryDir, ...rel.split("/")), { force: true });
+        else if (e.type === "blob" && (e.mode === "100644" || e.mode === "100755")) this.writeWorking(rel, await this.git.catBlob(this.factoryDir, e.sha));
+      }
+    });
+  }
+}
+
+/** Plain http only for a loopback base, which only the in-process options can give (tests). */
+function transport(base: string): string[] {
+  return base.startsWith("http://") ? ["-c", "protocol.http.allow=always"] : [];
 }
 
 function safeReal(p: string): string | null {

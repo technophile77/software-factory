@@ -233,6 +233,79 @@ describe("FR-14 interrupted runs", () => {
     expect(after.map((r) => r.id)).toEqual([run.id]);
     expect(after[0]!.resumes).toBe(0);
   });
+
+  it("AC-12: after crash() a new engine in the same process finds the analyst's run interrupted, reports it and resumes it", async () => {
+    const w = makeWorld();
+    const e1 = await boot(w);
+    const c = await connect(w);
+    const feature = (await c.ok("feature.start", { request: "Export" })).feature as string;
+    const tools = e1.interviewTools(feature, w.worktree);
+    expect((await tools.interview_ask({ text: "Q?", why: "w" })).ok).toBe(true);
+    const [run] = new EngineRecord(w.home).runs();
+    expect(run).toMatchObject({ feature, role: "requirements-analyst", status: "running", worktree: w.worktree });
+    const headBefore = git(w.config, "rev-parse", "factory/state");
+    await e1.crash();
+    // Nothing more is written once crashed, and engine.json stays, as after a kill.
+    expect((await tools.interview_propose_assumption({ text: "A.", why: "w" })).ok).toBe(false);
+    expect(git(w.config, "rev-parse", "factory/state")).toBe(headBefore);
+    expect(fs.existsSync(path.join(w.config, ".factory", "engine.json"))).toBe(true);
+    engines = engines.filter((x) => x !== e1);
+
+    const resumed: Array<{ feature: string; worktree: string; mode: string; resumes: number }> = [];
+    const e2 = await boot(w, {
+      resumeAnalyst: (r: { feature: string; worktree: string; plan: { mode: string; run: { resumes: number } } }) =>
+        resumed.push({ feature: r.feature, worktree: r.worktree, mode: r.plan.mode, resumes: r.plan.run.resumes }),
+    });
+    expect(resumed).toEqual([{ feature, worktree: w.worktree, mode: "from_commit", resumes: 1 }]);
+    const report = JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/requirements_interview/requirements-analyst-1.json`));
+    expect(report).toMatchObject({ role: "requirements-analyst", feature, outcome: "partial" });
+    expect(report.summary).toContain("interrupted");
+    expect(new EngineRecord(w.home).run(run!.id)).toMatchObject({ status: "running", resumes: 1 });
+    // The resumed run is the one the analyst's tools continue; the channel serves again.
+    expect((await e2.interviewTools(feature, w.worktree).interview_propose_assumption({ text: "A.", why: "w" })).ok).toBe(true);
+    expect(new EngineRecord(w.home).runs()).toHaveLength(1);
+    const c2 = await connect(w);
+    expect((await c2.ok("engine.status")).features).toEqual([{ id: feature, stage: "requirements_interview", active_agents: 0 }]);
+  });
+
+  it("an append the engine committed but didn't record before a kill is still its own", async () => {
+    const w = makeWorld();
+    const e1 = await boot(w);
+    const c = await connect(w);
+    const feature = (await c.ok("feature.start", { request: "Export" })).feature as string;
+    const f = e1.feature(feature)!;
+    const key = f.chainKey;
+    const rec = new EngineRecord(w.home);
+    const head = rec.chain(key)!;
+    expect(head.pending).toBeUndefined();
+    await e1.interviewTools(feature, w.worktree).interview_ask({ text: "Q?", why: "w" });
+    await e1.crash();
+    engines = engines.filter((x) => x !== e1);
+    // Roll the record back to where a kill between commit and record would leave it.
+    const now = new EngineRecord(w.home).chain(key)!;
+    const back = new EngineRecord(w.home);
+    back.setChain(key, { seq: head.seq, head: head.head, pending: { seq: now.seq, head: now.head } });
+    const e2 = await boot(w);
+    expect(e2.feature(feature)!.chainIntact).toBe(true);
+    expect(new EngineRecord(w.home).chain(key)).toEqual({ seq: now.seq, head: now.head });
+  });
+});
+
+describe("confirm on the handle (SR-5)", () => {
+  it("confirmProject uses the engine's GitHub and clock; the project runs after a restart", async () => {
+    const w = makeWorld({ pinned: false });
+    const e = await boot(w);
+    expect(e.projects[0]!.state).toBe("stopped");
+    w.github.approver = OWNER_ID;
+    let ok = false;
+    const run = e.confirmProject(w.config, { say: () => undefined, ask: async () => "acme" }).then((r) => (ok = r));
+    for (let i = 0; i < 10 && !ok; i++) await advanceSoon(w, 5000);
+    await run;
+    expect(ok).toBe(true);
+    await e.stop();
+    engines = [];
+    expect((await boot(w)).projects[0]!.state).toBe("running");
+  });
 });
 
 describe("shutdown", () => {

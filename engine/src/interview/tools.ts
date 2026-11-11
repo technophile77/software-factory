@@ -80,6 +80,8 @@ export interface ToolContext {
   log: Logger;
   /** Builds the agent report (FR-13) and returns it as a state change, committed with the result. */
   reportFor(result: { specPath: string; specVersion: number; checks: Check[]; passed: boolean }): Promise<Change[]>;
+  /** Told once the result is committed; a pass ends the analyst's run. */
+  onSpecReady?(passed: boolean): void;
 }
 
 export interface InterviewTools {
@@ -184,6 +186,7 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
         const bodies = [{ type: "spec_ready", spec_path: a.spec_path, spec_version: a.spec_version, passed, checks }];
         if (passed) bodies.push({ type: "stage", stage: AFTER_INTERVIEW_STAGE } as never);
         await f.append(bodies, passed ? "spec ready: interview checks pass" : "spec ready: interview checks fail", extra);
+        ctx.onSpecReady?.(passed);
         return { checks };
       }),
   };

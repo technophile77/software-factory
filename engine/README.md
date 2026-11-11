@@ -19,7 +19,7 @@ wiring.
 npm ci --ignore-scripts
 npm run typecheck
 npm run build      # dist/engine.js; koffi stays external and loads its prebuilt binary
-npm test
+npm test           # unit tests (test/*.test.ts) and the acceptance suite (test/acceptance, its own config)
 ```
 
 The dependencies are pinned exactly in `package.json` and the committed
@@ -95,7 +95,28 @@ Every outside dependency can be injected:
 | `env` | `process.env` | The environment the billing check reads |
 | `logger` | `FileLogger` in `<engineHome>/logs` | `MemoryLogger` |
 | `parentOf` | `/proc` on Linux | A function from pid to parent pid |
-| `push` | `false` (the CLI sets `true`) | Push `factory/state` after each commit |
+| `push` | `false` (the CLI sets `true`) | Talk to each project's remote: fetch `factory/state` at start and on `sync()`, and push it after each commit |
+| `resumeAnalyst` | none | Called at start for each interrupted analyst run, with its tools and resume plan (FR-14). Milestone 2 starts the SDK session here |
+
+Pushes and fetches go only to `<webBase>/<owner>/<repo>.git`, where
+`webBase` is the GitHub web base (`https://github.com` unless injected) and
+owner and repo come from the config repo's `origin`. Any other `origin` is
+neither pushed to nor fetched from. A loopback `http://` base works only when
+passed in through these options. Config and the CLI can't set it.
+
+The handle offers:
+
+| Member | What it does |
+|---|---|
+| `projects` | Each listed project's status |
+| `runs` | The run book: running, interrupted, complete and failed runs |
+| `feature(id)` | One feature's interview |
+| `interviewTools(feature, worktree, facts?)` | The analyst's five tools. The first call starts the feature's analyst run |
+| `sync()` | Fetches `factory/state` and checks every transcript against the engine's chain (SR-17). Interview changes the engine didn't make are refused, the feature is closed and a Security item is filed. Other remote changes that fast-forward are adopted |
+| `confirmProject(path, io)` | The SR-5 confirm command, using this engine's GitHub, clock and logger. A confirmed project runs after a restart |
+| `stop()` | Shuts down: ends sessions, frees the sockets, removes `engine.json` |
+| `crash()` | Stops as a kill would. It commits and writes nothing more and leaves `engine.json`, but frees the sockets so a new `startEngine` can run in the same process (AC-12) |
+| `stopped` | Resolves once stopped |
 
 The channel version served is `SERVED_CHANNEL_VERSION` (`"1.2"`; see the dev
 report for why it isn't 1.3 yet). It is written to each project's

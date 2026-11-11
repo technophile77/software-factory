@@ -11,10 +11,11 @@ import { AuthorizationError, authorizeProject, billingMismatch } from "./config/
 import { Manifest, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin } from "./config/pins";
-import { ENGINE_JSON, FEATURE_ID_RE, INTERVIEW_STAGE, SERVED_CHANNEL_VERSION } from "./constants";
+import { ConfirmIo, confirmProject as runConfirm } from "./config/confirm";
+import { ENGINE_JSON, FEATURE_ID_RE, GITHUB_WEB_BASE, INTERVIEW_STAGE, SERVED_CHANNEL_VERSION } from "./constants";
 import { ensureOwnerDir, findOnPath, sha256Hex, writeFileAtomic } from "./fsutil";
 import { Git } from "./git";
-import { GitHubClient, HttpGitHub } from "./github";
+import { GitHubClient, HttpGitHub, checkBase } from "./github";
 import { Gitleaks, SecretsScanner } from "./gitleaks";
 import { FeatureInterview } from "./interview/feature";
 import { InterviewTools, createInterviewTools } from "./interview/tools";
@@ -23,10 +24,10 @@ import { OsApi, realOsApi } from "./os/ffi";
 import { Children, linuxParent } from "./proc";
 import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryTokenName } from "./secrets";
 import { SecurityAlert, fileSecurityItem } from "./state/inbox";
-import { EngineRecord } from "./state/record";
-import { RunBook, RunFacts, agentReport } from "./state/runs";
+import { EngineRecord, RunRecord } from "./state/record";
+import { ResumePlan, RunBook, RunFacts, agentReport } from "./state/runs";
 import { Change, StateRepo } from "./state/state-repo";
-import { ChainError, checkAgainstHead, parseTranscript, transcriptPath } from "./state/transcript";
+import { ChainError, Entry, checkAgainstHead, parseTranscript, transcriptPath } from "./state/transcript";
 
 export class StartError extends Error {
   override name = "StartError";
@@ -53,8 +54,17 @@ export interface EngineOptions {
   logger?: Logger;
   /** How the channel finds a peer's parent process. Default: /proc on Linux. */
   parentOf?: (pid: number) => number | null;
-  /** Push factory/state after each commit. Default false; the CLI turns it on. */
+  /**
+   * Talk to each project's remote: fetch factory/state at start and on
+   * sync(), push it after each commit. Default false; the CLI turns it on.
+   */
   push?: boolean;
+  /**
+   * Starts the analyst again for a run the engine found interrupted (FR-14).
+   * Milestone 2 starts an Agent SDK session here. Without it, the resumed run
+   * waits for the next interviewTools call for its feature.
+   */
+  resumeAnalyst?: (r: { feature: string; worktree: string; tools: InterviewTools; plan: ResumePlan }) => void;
 }
 
 export type ProjectState = "running" | "stopped" | "disabled";
@@ -85,6 +95,16 @@ export interface EngineHandle {
   /** Resolves when the engine has stopped (engine.shutdown or stop()). */
   stopped: Promise<void>;
   stop(): Promise<void>;
+  /**
+   * Stops as a kill would: no shutdown work, and nothing more is committed or
+   * written. The sockets are freed, so a new startEngine can run in this
+   * process and find its runs interrupted (AC-12).
+   */
+  crash(): Promise<void>;
+  /** Fetches factory/state for each running project and checks every transcript against the engine's chain (SR-17). */
+  sync(): Promise<void>;
+  /** The SR-5 confirm command, with this engine's GitHub, clock and logger. A confirmed project runs after a restart. */
+  confirmProject(projectPath: string, io: ConfirmIo): Promise<boolean>;
   feature(id: string): FeatureInterview | null;
   /** The analyst's tools for one feature, reading the spec from `worktree` (the analyst's checkout). */
   interviewTools(feature: string, worktree: string, facts?: RunFacts): InterviewTools;
@@ -131,9 +151,20 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const record = new EngineRecord(home);
   const pins = new PinStore(home);
   const runs = new RunBook(record, clock);
-  for (const r of runs.markInterrupted()) log.warn(`Run ${r.id} (${r.role}, ${r.feature}) was interrupted; it will resume without counting a retry.`);
+  const interruptedAtStart = runs.markInterrupted();
+  for (const r of interruptedAtStart) log.warn(`Run ${r.id} (${r.role}, ${r.feature}) was interrupted; it will resume without counting a retry.`);
   const credentials = o.credentials ?? new OsCredentialStore(() => osApi.credentials());
   const github: GitHubClient = o.github && "requestDeviceCode" in o.github ? o.github : new HttpGitHub({ ...(o.github ?? {}), log });
+  // Pushes and fetches go only to the GitHub the engine was given (SR-1). A
+  // loopback http base can come only from these in-process options.
+  let gitBase: string;
+  try {
+    gitBase = checkBase(github.webBase ?? GITHUB_WEB_BASE);
+  } catch (e) {
+    throw new StartError((e as Error).message);
+  }
+  // Set by crash(): from then on the engine acts as if its process were gone.
+  let dead = false;
   const runtimeDir = o.runtimeDir ?? path.join(home, "run");
   const tmpDir = path.join(home, "tmp");
   const startedAt = clock.now();
@@ -158,7 +189,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }));
 
   const alert = async (p: Project, key: string, a: SecurityAlert) => {
-    if (!p.state_repo) return;
+    if (!p.state_repo || dead) return;
     const k = sha256Hex(`${p.real}\0${key}`);
     if (record.alert(k)) return;
     try {
@@ -250,6 +281,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       continue;
     }
     await loadFeatures(p);
+    await checkRemote(p);
   }
 
   async function loadFeatures(p: Project): Promise<void> {
@@ -261,27 +293,103 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     }
     for (const fid of ids) {
       const f = newFeature(p, fid);
-      const raw = await p.state_repo!.read(transcriptPath(fid));
-      let intact = true;
-      let list: ReturnType<typeof parseTranscript> = [];
+      const t = await readTranscript(p, f);
+      if (t.intact) {
+        f.load(t.entries, true);
+        continue;
+      }
+      let shown: Entry[] = [];
       try {
-        list = parseTranscript(raw?.toString("utf8") ?? "");
-        checkAgainstHead(list, record.chain(f.chainKey));
-      } catch (e) {
-        if (!(e instanceof ChainError)) throw e;
-        intact = false;
-        await alert(p, `chain:${fid}:${sha256Hex(raw ?? "")}`, {
-          title: `Transcript of ${fid} changed outside the engine`, feature: fid,
-          context: `The interview transcript on factory/state doesn't match the engine's own hash chain (${e.message}). Someone or something other than the engine wrote to it (F-007 SR-17).`,
-          impact: `The interview of ${fid} is closed and its readiness checks fail until this is resolved.`,
-          confirm: "Investigate and restore the transcript the engine wrote", hold: "Keep the feature closed", recommendation: "B",
+        shown = parseTranscript(t.raw?.toString("utf8") ?? "");
+      } catch {
+        // Unparseable: the feature opens empty and closed.
+      }
+      f.load(shown, false);
+      await tampered(p, f, t.why!, `local:${sha256Hex(t.raw ?? "")}`);
+    }
+  }
+
+  /** Reads a feature's transcript from local factory/state and checks it against the engine's chain head (SR-17). */
+  async function readTranscript(p: Project, f: FeatureInterview): Promise<{ entries: Entry[]; intact: boolean; raw: Buffer | null; why?: string }> {
+    const raw = await p.state_repo!.read(transcriptPath(f.id));
+    try {
+      const entries = parseTranscript(raw?.toString("utf8") ?? "");
+      if (checkAgainstHead(entries, record.chain(f.chainKey)) === "pending") {
+        // The engine was killed after committing its own append and before recording it.
+        const last = entries[entries.length - 1]!;
+        record.setChain(f.chainKey, { seq: last.seq, head: last.hash });
+      }
+      return { entries, intact: true, raw };
+    } catch (e) {
+      if (!(e instanceof ChainError)) throw e;
+      return { entries: [], intact: false, raw, why: e.message };
+    }
+  }
+
+  async function tampered(p: Project, f: FeatureInterview, why: string, key: string): Promise<void> {
+    f.chainIntact = false;
+    await alert(p, `chain:${f.id}:${key}`, {
+      title: `Transcript of ${f.id} changed outside the engine`, feature: f.id,
+      context: `The interview transcript on factory/state doesn't match the engine's own hash chain (${why}). Someone or something other than the engine wrote to it (F-007 SR-17).`,
+      impact: `The interview of ${f.id} is closed and its readiness checks fail until this is resolved.`,
+      confirm: "Investigate and restore the transcript the engine wrote", hold: "Keep the feature closed", recommendation: "B",
+    });
+  }
+
+  /**
+   * Fetches factory/state and refuses what the engine didn't write (SR-17,
+   * "on fetch"). Only the engine writes under interviews/, so any change
+   * there that the local branch doesn't already hold is refused: nothing of
+   * it is adopted, the feature is closed and a Security item is filed. Other
+   * changes (an answered inbox item) are adopted when they fast-forward.
+   */
+  async function checkRemote(p: Project): Promise<void> {
+    if (!o.push || !p.token || !p.state_repo || dead) return;
+    let remote: string | null;
+    try {
+      remote = await p.state_repo.fetch(p.token, gitBase);
+    } catch (e) {
+      log.warn(`${p.name}: factory/state couldn't be fetched (${(e as Error).message}); transcripts were checked against the local branch only.`);
+      return;
+    }
+    const local = await p.state_repo.head();
+    if (!remote || remote === local || (await p.state_repo.isAncestor(remote, local))) return;
+    const touched = new Set<string>();
+    for (const c of await p.state_repo.changedPaths(local, remote)) {
+      const m = /^interviews\/([^/]+)\//.exec(c);
+      if (m) touched.add(m[1]!);
+    }
+    for (const dir of touched) {
+      const fid = FEATURE_ID_RE.test(dir) ? dir : null;
+      const f = fid ? p.features.get(fid) : undefined;
+      if (f) {
+        await f.exclusive(() => tampered(p, f, `the remote factory/state at ${remote!.slice(0, 12)} changes interviews/${f.id}/`, `fetch:${remote}`));
+      } else {
+        await alert(p, `fetch:${dir}:${remote}`, {
+          title: "Remote factory/state holds interview files the engine didn't write", ...(fid ? { feature: fid } : {}),
+          context: `The remote factory/state at ${remote!.slice(0, 12)} adds or changes files under interviews/ that this engine has no record of writing (F-007 SR-17).`,
+          impact: "The engine didn't adopt the remote branch. Its pushes of factory/state fail until this is resolved.",
+          confirm: "Investigate and restore factory/state on the remote", hold: "Leave it as it is", recommendation: "A",
         });
       }
-      try {
-        f.load(intact ? list : parseTranscript(raw?.toString("utf8") ?? ""), intact);
-      } catch {
-        f.load([], false);
-      }
+    }
+    if (touched.size) return;
+    if (await p.state_repo.isAncestor(local, remote)) {
+      await p.state_repo.fastForward(local, remote);
+      log.info(`${p.name}: factory/state moved forward to the remote ${remote.slice(0, 12)}`);
+    } else {
+      log.warn(`${p.name}: factory/state on the remote has diverged from the engine's; it was not adopted.`);
+    }
+  }
+
+  /** Checks every open feature's transcript on the local branch again (SR-17). */
+  async function checkLocal(p: Project): Promise<void> {
+    for (const f of p.features.values()) {
+      if (!f.chainIntact) continue;
+      await f.exclusive(async () => {
+        const t = await readTranscript(p, f);
+        if (!t.intact) await tampered(p, f, t.why!, `local:${sha256Hex(t.raw ?? "")}`);
+      });
     }
   }
 
@@ -289,6 +397,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const f = new FeatureInterview(fid, `${p.real}#${fid}`, {
       record, clock, log,
       persist: async (feature, text, extra, message) => {
+        if (dead) throw new Error("the engine has stopped");
         const commit = await p.state_repo!.commit([{ path: transcriptPath(feature), content: text }, ...extra], message);
         await pushState(p);
         return commit;
@@ -302,9 +411,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   async function pushState(p: Project): Promise<void> {
-    if (!o.push || !p.token || !p.state_repo) return;
+    if (!o.push || !p.token || !p.state_repo || dead) return;
     try {
-      await p.state_repo.push(p.token);
+      await p.state_repo.push(p.token, gitBase);
       log.action({ agent: "engine", action: "git.push", target: `${p.name}:factory/state` });
     } catch (e) {
       log.warn(`${p.name}: factory/state wasn't pushed (${(e as Error).message}); the next commit tries again.`);
@@ -384,6 +493,37 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     };
   }
 
+  const analystRuns = new Map<string, string>();
+
+  /** The feature's analyst run in this engine, started on the first call for its tools. */
+  function analystRun(p: Project, fid: string, worktree: string): string {
+    const have = analystRuns.get(fid);
+    if (have && record.run(have)?.status === "running") return have;
+    const run = runs.start({ project: p.real!, feature: fid, role: "requirements-analyst", stage: INTERVIEW_STAGE, worktree });
+    analystRuns.set(fid, run.id);
+    return run.id;
+  }
+
+  async function nextReport(p: Project, fid: string): Promise<number> {
+    const existing = await p.state_repo!.list(`runs/${fid}/${INTERVIEW_STAGE}`).catch(() => []);
+    return existing.filter((e) => /\/requirements-analyst-\d+\.json$/.test(e.path)).length + 1;
+  }
+
+  async function reportInterrupted(p: Project, f: FeatureInterview, r: RunRecord): Promise<void> {
+    try {
+      await p.state_repo!.commit([agentReport({
+        feature: f.id, stage: INTERVIEW_STAGE, role: "requirements-analyst", n: await nextReport(p, f.id), commit: r.last_commit ?? "unknown",
+        outcome: "partial",
+        summary: `Run ${r.id} was interrupted when the engine stopped. It resumes ${r.session_id ? "from its session" : "from its last commit with a summary of the transcript"}; no retry is counted (FR-14).`,
+        body: { spec_path: null, spec_version: null, open_assumptions: f.state.list("assumption").filter((a) => a.status === "open").map((a) => a.id) },
+        facts: {},
+      })], `${f.id}: run ${r.id} interrupted`);
+      await pushState(p);
+    } catch (e) {
+      log.warn(`${p.name}: the report for interrupted run ${r.id} wasn't committed (${(e as Error).message}).`);
+    }
+  }
+
   let done!: () => void;
   const stopped = new Promise<void>((r) => (done = r));
   let stopping: Promise<void> | null = null;
@@ -452,14 +592,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const f = handle.feature(fid);
       const p = projects.find((x) => x.features.get(fid) === f);
       if (!f || !p) throw new Error(`unknown feature ${fid}`);
+      const runId = analystRun(p, fid, worktree);
       return createInterviewTools({
         feature: f,
         worktree,
         log,
+        onSpecReady: (passed) => {
+          if (passed && !dead && record.run(runId)?.status === "running") runs.finish(runId, "complete");
+        },
         reportFor: async (r): Promise<Change[]> => {
-          const dir = `runs/${fid}/${INTERVIEW_STAGE}`;
-          const existing = await p.state_repo!.list(dir).catch(() => []);
-          const n = existing.filter((e) => /\/requirements-analyst-\d+\.json$/.test(e.path)).length + 1;
+          const n = await nextReport(p, fid);
           const commit = await git.out(worktree, ["rev-parse", "HEAD"]).catch(() => "unknown");
           return [agentReport({
             feature: fid, stage: INTERVIEW_STAGE, role: "requirements-analyst", n, commit,
@@ -476,6 +618,23 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         },
       });
     },
+    async crash() {
+      dead = true;
+      for (const p of projects) {
+        p.sessions?.closeAll();
+        await p.listener?.close().catch(() => undefined);
+      }
+      done();
+    },
+    async sync() {
+      for (const p of projects) {
+        if (p.state !== "running" || dead) continue;
+        await checkRemote(p);
+        await checkLocal(p);
+      }
+    },
+    confirmProject: (projectPath, io) =>
+      runConfirm({ masterRepo: o.masterRepo, projectPath, git, github, pins, os: osApi, clock, log, io }),
     stop() {
       stopping ??= (async () => {
         for (const p of projects) {
@@ -489,5 +648,23 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return stopping;
     },
   };
+
+  // FR-14: an interrupted analyst run gets a report saying so, then resumes
+  // from its session or its last commit, with no retry counted.
+  for (const r of interruptedAtStart) {
+    const p = projects.find((x) => x.real === r.project && x.state === "running");
+    const f = p?.features.get(r.feature);
+    if (!p || !f || ambiguous.has(f.id) || r.role !== "requirements-analyst") continue;
+    await reportInterrupted(p, f, r);
+    const plan = runs.resume(r.id, f.state);
+    if (plan.mode === "failed") {
+      log.warn(`Run ${r.id} (${f.id}) failed: ${plan.run.reason}.`);
+      continue;
+    }
+    analystRuns.set(f.id, r.id);
+    if (o.resumeAnalyst && r.worktree) {
+      o.resumeAnalyst({ feature: f.id, worktree: r.worktree, tools: handle.interviewTools(f.id, r.worktree), plan });
+    }
+  }
   return handle;
 }

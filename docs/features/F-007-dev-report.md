@@ -216,3 +216,43 @@ joins this workflow in milestone 2, when the image exists.
 2. Confirm interpretations 4 to 6: assumption matching, refusing entries past the chain head, and the manifest rules.
 3. Set the `research_web` cap values before milestone 2.
 4. Approve the CI workflow above as a hygiene item.
+
+## Fix round 1
+
+The orchestrator merged milestone 1 with the test engineer's acceptance
+suite. On that branch (`00f7d69`), 210 of 214 acceptance tests passed. This
+round fixes the four items the coordinator assigned. Two items are on hold
+for the owner and were left as they were:
+
+- the channel version (ST-1);
+- the -32000 code for refusals.
+
+### Changes
+
+| Item | What changed | Where |
+|---|---|---|
+| RS-1 (AC-12) | **`handle.crash()`.** It stops as a kill would. Every later commit, push and alert is refused, and `engine.json` stays. It still ends sessions and frees the sockets, so a new `startEngine` can run in the same process.<br>**Run bookkeeping.** The first `interviewTools` call for a feature starts its analyst run, recording the worktree, and a passing `interview_spec_ready` completes it. At start, each analyst run left `running` is marked `interrupted`. The engine then commits an Agent report for it (outcome `partial`, saying it was interrupted), resumes it with no retry counted, and hands its tools and resume plan to a new `resumeAnalyst` option.<br>**Crash-safe chain head.** The engine record now holds a *pending* head before each transcript commit. If a kill lands between the commit and the record update, the next start accepts the engine's own append; before this change it would have flagged it as tampering. The test report saw exactly this. | `engine.ts`, `state/record.ts`, `state/transcript.ts`, `interview/feature.ts`, `interview/tools.ts`, `state/runs.ts` |
+| GS-4 (SR-1, SR-11; AC-11) | **Push target.** Pushes go only to `<webBase>/<owner>/<repo>.git`. `webBase` is the injected GitHub base (`https://github.com` by default). The engine rebuilds the URL from `origin`'s owner and repo; any other `origin` is neither pushed to nor fetched from.<br>**Plain http.** It is allowed only for a loopback base, and only one passed through the in-process options. Git then gets `-c protocol.http.allow=always` for that one command. Config and the CLI can't set a base. A non-loopback `http://` base stops the engine at start.<br>**`GitHubClient.webBase`.** This optional field carries the base when a client object is injected. | `state/state-repo.ts`, `github.ts`, `engine.ts` |
+| TR-11 (SR-17, "on fetch") | **When it runs.** With `push` on, the engine fetches `factory/state` from the same URL at start and on the new `handle.sync()`, with the token through askpass. `sync()` also re-checks every open transcript on the local branch.<br>**Interview changes.** If the remote changes anything under `interviews/` that the local branch doesn't hold, nothing of it is adopted. The feature is closed (its readiness checks fail) and one Security item is filed for each remote commit. Only the engine writes under `interviews/`, so a whole extra file such as `forged.jsonl` counts too.<br>**Other changes.** Remote changes elsewhere are adopted when they fast-forward, with files written from blobs as at checkout. A diverged branch is not adopted, and the engine logs a warning. | `engine.ts`, `state/state-repo.ts` |
+| SR-5 confirm | `handle.confirmProject(path, io)` runs the confirm command with the engine's GitHub, clock and logger. `io` answers the name prompt and receives the device code, as the test report (c-4) asked. | `engine.ts` |
+
+Other changes in `engine/`:
+
+- **`vitest.config.mts`** runs the unit tests and the acceptance suite as two projects, so `npx vitest run` uses the acceptance suite's own timeouts.
+- **Typecheck.** `tsconfig.json` excludes `test/acceptance`, and `npm run typecheck` checks it with its own tsconfig.
+- **Unit tests.** 11 new ones:
+  - `test/remote.test.ts` (6): pushes, origin rules, fetch at start, `sync()`. They run against real git smart HTTP on loopback (`test/git-http.ts`).
+  - `engine.test.ts` (3): crash and resume, the pending head, confirm on the handle.
+  - Two more in other files.
+- **README** documents the handle and the new options.
+
+### Tests run
+
+TO_FILL
+
+### Still open
+
+1. **RS-1 also needs harness changes** (the test engineer's file). `harness.ts` still throws `MissingSeam` for `crash()`, and nothing maps `resumeAnalyst` to the fake analyst, so no restart triggers a resume. The test also asserts that some report value is exactly `"interrupted"`. Agent report v1.1 allows only `complete`, `blocked`, `failed` or `partial`. The engine therefore writes `partial`, says "interrupted" in the summary, and the engine record holds the `interrupted` status (`handle.runs`).
+   - **Decision needed (Interfaces):** either add an `interrupted` outcome to the Agent report, or have RS-1 check `handle.runs`.
+2. **Harness mapping for the other items.** The harness can now call `real.sync()` (TR-11) and `real.confirmProject(path, io)` (c-4).
+3. **ST-1 and -32000** are unchanged, pending the owner.

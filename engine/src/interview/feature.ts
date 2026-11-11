@@ -86,9 +86,16 @@ export class FeatureInterview {
       added.push(prev);
     }
     const all = [...this.entries, ...added];
-    const commit = await this.deps.persist(this.id, serialize(all), extra, `${this.id}: ${message}`);
-    this.entries = all;
     const last = all[all.length - 1]!;
+    this.deps.record.setPending(this.chainKey, { seq: last.seq, head: last.hash });
+    let commit: string;
+    try {
+      commit = await this.deps.persist(this.id, serialize(all), extra, `${this.id}: ${message}`);
+    } catch (e) {
+      this.deps.record.setPending(this.chainKey, null);
+      throw e;
+    }
+    this.entries = all;
     this.deps.record.setChain(this.chainKey, { seq: last.seq, head: last.hash });
     for (const e of added) this.state.apply(e);
     this.changed.emit("change", commit);
