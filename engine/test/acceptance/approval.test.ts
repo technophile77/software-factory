@@ -132,10 +132,13 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
     w = await World.create();
     await w.boot();
     const f = await w.startFeature();
+    // Boot's first-pin confirmation used a device code of its own.
+    const before = w.gh.devices.length;
     const s1 = await w.approvedSession(f);
     await w.ok("interview.close", { session: s1 });
     const open2 = await w.ok("interview.open", { feature: f });
-    expect(w.gh.devices.length).toBe(2);
+    expect(w.gh.devices.length).toBe(before + 2);
+    expect(open2.approval.user_code).not.toBe(w.gh.devices[before].userCode);
     expectRpcError(await w.rpc("interview.next", { session: open2.session }), ERR.approvalPending);
   });
 

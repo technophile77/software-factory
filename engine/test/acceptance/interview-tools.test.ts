@@ -96,10 +96,17 @@ describe("Interview tools: one question at a time", () => {
     const q1 = await askAndFetch(w, feature, session);
     const second = await w.tool(feature, "interview_ask", ok);
     expect(second).toMatchObject({ ok: false, code: "one_at_a_time" });
-    expect((await w.tool(feature, "interview_propose_assumption", { text: "A", why: "B" })).ok).toBe(true);
+    const a = await w.tool(feature, "interview_propose_assumption", { text: "A", why: "B" });
+    expect(a.ok).toBe(true);
     await w.reply(session, q1, "defer", "");
     const q2 = await w.ask(feature);
-    const fetched = (await w.ok("interview.next", { session })).item;
+    // The channel doesn't fix the order of an open assumption and a new
+    // question, so decide the assumption first if it comes up.
+    let fetched = (await w.ok("interview.next", { session })).item;
+    if (a.ok && fetched.id === a.value.item.id) {
+      await w.reply(session, fetched, "approve_assumption", "");
+      fetched = (await w.ok("interview.next", { session })).item;
+    }
     expect(fetched.id).toBe(q2.id);
     await w.reply(session, fetched, "answer", "done");
     expect((await w.tool(feature, "interview_ask", ok)).ok).toBe(true);

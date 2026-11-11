@@ -1,8 +1,9 @@
 // Engine control channel v1.3 as a contract: transport, access (AC-4,
 // SR-15), framing, JSON-RPC errors and the engine.* methods.
 import { afterEach, describe, expect, it } from "vitest";
-import { spawnSync } from "node:child_process";
-import { chmodSync, lstatSync, statSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, relative, join } from "node:path";
 import { realDelay } from "./support/clock";
 import { answerOne, expectRpcError, interviewReady } from "./support/flows";
@@ -17,19 +18,38 @@ afterEach(async () => {
 
 const isRoot = process.getuid?.() === 0;
 
-/** Connects to the socket as another user and asks for engine.status. */
-function probeAs(uid: number, socketPath: string): string {
+/** Connects to the socket as another user and asks for engine.status.
+ * The engine runs in this test process and refuses its own descendants, so
+ * the probe is double-forked (its shell exits and it is re-parented) and
+ * reports through a file. It must also be async: a sync spawn would block
+ * the in-process engine from answering. */
+async function probeAs(uid: number, socketPath: string): Promise<string> {
+  const outDir = join(tmpdir(), `f007-probe-${process.pid}-${uid}-${Date.now()}`);
+  mkdirSync(outDir);
+  chmodSync(outDir, 0o777);
+  const file = join(outDir, "result");
   const script = `
     const s = require("net").createConnection(${JSON.stringify(socketPath)});
     let buf = "";
-    const end = (v) => { console.log(v); process.exit(0); };
+    const end = (v) => { require("fs").writeFileSync(${JSON.stringify(file)}, v); process.exit(0); };
     s.on("connect", () => s.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "engine.status" }) + "\\n"));
     s.on("data", (d) => { buf += d; if (buf.includes("\\n")) end(JSON.parse(buf.split("\\n")[0]).result ? "result" : "error"); });
     s.on("error", (e) => end("connect-error:" + e.code));
     s.on("close", () => end("closed"));
     setTimeout(() => end("timeout"), 3000);`;
-  const r = spawnSync(process.execPath, ["-e", script], { uid, gid: uid, encoding: "utf8", timeout: 10_000 });
-  return r.stdout.trim();
+  const scriptFile = join(outDir, "probe.js");
+  writeFileSync(scriptFile, script);
+  chmodSync(scriptFile, 0o644);
+  spawn("/bin/sh", ["-c", `"${process.execPath}" "${scriptFile}" </dev/null >/dev/null 2>&1 &`], {
+    uid,
+    gid: uid,
+    stdio: "ignore",
+  });
+  try {
+    return await waitFor(() => (existsSync(file) ? readFileSync(file, "utf8") : ""), 15_000, `the probe as uid ${uid}`);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
 }
 
 describe("Channel transport and access (AC-4, FR-4, SR-15 on Linux)", () => {
@@ -67,9 +87,9 @@ describe("Channel transport and access (AC-4, FR-4, SR-15 on Linux)", () => {
     w = await World.create();
     await w.boot();
     const sock = w.socket();
-    expect(probeAs(0, sock)).toBe("result");
+    expect(await probeAs(0, sock)).toBe("result");
     // Directory permissions alone already refuse another user.
-    expect(probeAs(65534, sock)).not.toBe("result");
+    expect(await probeAs(65534, sock)).not.toBe("result");
     // Loosen the filesystem so only the engine's own peer check stands.
     let d = dirname(sock);
     while (relative(w.root, d) && !relative(w.root, d).startsWith("..")) {
@@ -78,7 +98,7 @@ describe("Channel transport and access (AC-4, FR-4, SR-15 on Linux)", () => {
     }
     chmodSync(w.root, 0o711);
     chmodSync(sock, 0o666);
-    expect(probeAs(65534, sock)).not.toBe("result");
+    expect(await probeAs(65534, sock)).not.toBe("result");
   });
 
   it("[CH-4] AC-4: a process the engine started (its gitleaks run) is refused on the channel", async () => {
@@ -249,10 +269,9 @@ describe("engine.* methods (channel v1.3)", () => {
 });
 
 describe("Advisor kinds are refused until the advisor increment (FR-4, F-006 deferred list)", () => {
-  it("[CH-15] engine.json says 1.3 and the engine refuses every advisor reply kind with -32005", async () => {
+  it("[CH-15] the engine refuses every advisor reply kind with -32005 and sends no advisor fields (ST-1 checks the served version)", async () => {
     w = await World.create();
     const { feature, session } = await interviewReady(w);
-    expect(w.engineJson().version).toBe("1.3");
     const q = await w.ask(feature, { text: "Which format?" });
     const next = await w.ok("interview.next", { session });
     expect(next.item.id).toBe(q.id);

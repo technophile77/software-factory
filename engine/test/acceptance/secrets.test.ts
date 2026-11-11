@@ -91,17 +91,18 @@ describe("SR-1: secrets stay out of logs, Git, inbox items, argument lists and p
     }
   });
 
-  it("[SC-4] SR-20: the engine reads secrets only under factory-specific names", async () => {
+  it("[SC-4] SR-20: the engine reads only its own secret names (the store's service is software-factory-engine)", async () => {
     w = await World.create();
     await fullRun(w);
     expect(w.store.accessed.length).toBeGreaterThan(0);
-    for (const name of w.store.accessed) expect(name).toMatch(/factory/i);
-    expect(w.store.accessed).toContain(CREDENTIAL_NAMES.factoryToken);
+    const own = new Set([CREDENTIAL_NAMES.model, ...w.projects.map((p) => CREDENTIAL_NAMES.factoryToken(p.name))]);
+    for (const name of w.store.accessed) expect(own.has(name), name).toBe(true);
+    expect(w.store.accessed).toContain(CREDENTIAL_NAMES.factoryToken(w.projects[0].name));
   });
 
   it("[SC-5] SR-2: with no factory token in the store, no project runs (fail closed)", async () => {
     w = await World.create();
-    w.store.values.delete(CREDENTIAL_NAMES.factoryToken);
+    w.store.values.delete(CREDENTIAL_NAMES.factoryToken(w.projects[0].name));
     let started = true;
     try {
       await w.boot();

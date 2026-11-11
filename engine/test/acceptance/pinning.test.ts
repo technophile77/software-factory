@@ -64,6 +64,10 @@ describe("AC-20 / SR-5: a change to a pinned key stops the project", () => {
       w.commitManifest(p, (t) => t.replace("enabled: true", "enabled: false"));
       await w.boot({ confirm: false });
       expect(await w.isRunning(p)).toBe(false);
+      // The owner confirms switching it off, so `false` is now the pin and
+      // switching it back on is the change under test.
+      await w.confirm(p, p.ownerId);
+      expect(await w.isRunning(p)).toBe(false);
       await w.stop();
       w.commitManifest(p, (t) => t.replace("enabled: false", "enabled: true"));
     }
