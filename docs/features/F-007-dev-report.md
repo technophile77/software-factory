@@ -581,3 +581,42 @@ This settles blocked decisions 5 and 6 above.
   - Writing `.factory`'s checked-out copy after the commit is made is logged on failure, not reported as a failed record.
 - **Symlinks:** tests that need a real symlink (RD-11, RD-12, RD-13, ST-12, unit AC-19 file case, unit paths-file link) skip with a reason when the OS refuses them. Folder-link cases (ST-16, unit AC-19 parent folder) use a junction on Windows.
 - **Cleanup:** `World.cleanup` waits at most 15 s for the engine. If removal is refused on Windows, it kills this test process's children and retries. Unit `tmpdir()` folders are removed after each test file (`test/setup.ts`).
+
+## Security Gate 2 fixes
+
+- **H1 (tool gate):** the gate now also runs as a PreToolUse hook, so it sees calls Claude Code approves itself in `permissionMode: "default"`: in-folder reads and read-only Bash. `canUseTool` stays. A Read, Write or Edit without `file_path` is denied. A Grep over a folder is denied if any file under it (up to 100,000 entries) isn't readable. `test/claude-real.test.ts` runs the SDK's real binary on the host, in a scratch folder, against a fake Messages API with a dummy key. Read, Grep, Glob and `cat` on denied paths are refused there, allowed ones work, and no denied content reaches a request. The same run fails without the hook. **Residual:** the paths in an allowed Bash command's arguments aren't checked. F-007's roles have no commands.
+- **H2 (populating the worktree):** the whole tree is checked before the worktree is touched. It is refused if it contains:
+  - a symlink or submodule entry;
+  - `.git` in any case;
+  - empty, `.` or `..` segments;
+  - names the file system would read as the same: case (when a probe shows the worktree ignores case), Unicode form, or file against folder.
+
+  On Windows these are refused too:
+  - trailing dots or spaces;
+  - `:` and the other reserved characters;
+  - device names (CON, AUX, COM1, LPT9 …, with or without an extension);
+  - 8.3 short-name forms.
+
+  These rules are Windows-only, so a Linux project with `aux.c` still runs. Each file is created one folder at a time. Each folder is checked with `lstat` and `realpath`, and each file is opened `O_CREAT|O_EXCL|O_NOFOLLOW`.
+- **M2 (SDDL):** the parser matches the whole descriptor with an anchored grammar. It refuses:
+  - a NULL DACL, and unknown DACL flags;
+  - ACE types other than allow and deny;
+  - object and conditional ACEs;
+  - unknown ACE flags, and unreadable trustees;
+  - a SACL or trailing text.
+- **L2:** the agent report's commit is read with an explicit `--git-dir` from the run record. Without one, it is the branch tip in the project repo, never the worktree's own `.git`.
+- **L6:** SR-8 also refuses these ranges:
+  - IPv4: `192.0.0.0/24`, `192.0.2.0/24`, `192.88.99.0/24`, `198.18.0.0/15`, `198.51.100.0/24`, `203.0.113.0/24`;
+  - IPv6: `100::/64`, Teredo `2001::/32`, `2001:10::/28`, `2001:20::/28`, `2001:db8::/32`, 6to4 `2002::/16`, `3fff::/20`.
+- **L7 (repo config on push/fetch):** system and global config were already off, and the URL was already rebuilt from owner and repo only. Before a fetch or push, the engine now lists every config key git would see, without following includes. It refuses the network step if the clone's own config sets any of these:
+  - `include*`, `url.*`, `http.*`, `credential.*` or `protocol.*`;
+  - `core.gitProxy` or `core.sshCommand`;
+  - `remote.*.proxy*`.
+
+  A `-c` override can't remove an `insteadOf` rule or a URL-scoped `http.<url>.*` key, so refusing them is the fail-closed choice. The error names the key without its subsection, which can hold a URL. Pushes also set `push.gpgSign=false`, and fetches pass `--no-recurse-submodules`.
+- **M1 (owner decision, 2026-11-11):** the gateway reads the whole `/v1/messages` (and `count_tokens`) body before sending it on. It returns 403 if:
+  - any tool has a `type` other than `custom`;
+  - the body has `mcp_servers`;
+  - the body isn't a JSON object.
+
+  A compressed body gets 415. Each refusal is logged with a reason and never the body. `anthropic-beta` values outside the allow-list in `src/proxy/server.ts` are dropped, and the request still goes. The dropped values are logged after being cleaned to plain tokens. The allow-list is what Claude Code 2.1.311 sent for both the analyst and web-reader models, captured from the real binary, plus `oauth-2025-04-20`. The real-binary test fails if the CLI starts sending a beta that isn't listed.

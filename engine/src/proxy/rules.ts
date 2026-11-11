@@ -58,10 +58,15 @@ function inCidr(bits: bigint, c: Cidr): boolean {
  * SR-8: loopback, private, CGNAT, link-local, unique-local, multicast and
  * unspecified addresses, in IPv4, IPv6 and the IPv6 forms that carry an
  * IPv4 address. Reserved and broadcast IPv4 are refused too: nothing public
- * lives there.
+ * lives there. So are the other special-purpose ranges (Security Gate 2,
+ * L6): IETF protocol assignments, documentation, benchmarking and discard
+ * space, and the 6to4 and Teredo tunnel prefixes, which carry an IPv4
+ * address (Teredo's obfuscated) a plain low-32-bit check wouldn't see.
  */
-const BLOCKED_V4 = ["0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4", "240.0.0.0/4"];
-const BLOCKED_V6 = ["::/128", "::1/128", "fc00::/7", "fe80::/10", "fec0::/10", "ff00::/8"];
+const BLOCKED_V4 = ["0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24",
+  "192.88.99.0/24", "192.168.0.0/16", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4"];
+const BLOCKED_V6 = ["::/128", "::1/128", "100::/64", "2001::/32", "2001:10::/28", "2001:20::/28", "2001:db8::/32", "2002::/16", "3fff::/20",
+  "fc00::/7", "fe80::/10", "fec0::/10", "ff00::/8"];
 const BLOCKED: Cidr[] = [...BLOCKED_V4, ...BLOCKED_V6].map((c) => parseCidr(c)!);
 /** IPv6 ranges that embed an IPv4 address in their low 32 bits: compatible (::a.b.c.d), NAT64 and 6to4-style translation. */
 const EMBEDS_V4: Cidr[] = ["::/96", "64:ff9b::/96", "64:ff9b:1::/48"].map((c) => parseCidr(c)!);

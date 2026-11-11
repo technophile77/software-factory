@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { htmlToText, pageText, stripInvisible } from "../src/agent/page-text";
 import { addressOn } from "../src/proxy/main";
 import { blockedAddress, hostAllowed, normalHost, parseCidr, toBits } from "../src/proxy/rules";
-import { EgressProxy, ProxyDeps, ProxyLog, Resolved } from "../src/proxy/server";
+import { ALLOWED_BETAS, EgressProxy, ProxyDeps, ProxyLog, Resolved, refusedBody } from "../src/proxy/server";
 
 describe("SR-8 address rules", () => {
   it("refuses loopback, private, CGNAT, link-local, unique-local, multicast, unspecified and mapped forms", () => {
@@ -21,6 +21,14 @@ describe("SR-8 address rules", () => {
     }
     expect(blockedAddress("203.0.113.9", [parseCidr("203.0.113.0/24")!])).toBe(true);
     expect(blockedAddress("2001:db8::5", [parseCidr("2001:db8::/64")!])).toBe(true);
+  });
+
+  it("L6: refuses the other special-purpose ranges, 6to4 and Teredo", () => {
+    for (const a of ["192.0.0.8", "192.0.2.1", "192.88.99.1", "198.18.0.1", "198.19.255.255", "198.51.100.7", "203.0.113.9", "100::1",
+      "2001:0:4136:e378:8000:63bf:3fff:fdd2", "2001:10::1", "2001:20::1", "2001:db8::5", "2002:7f00:1::1", "2002:a00:1::", "3fff::1", "::ffff:198.18.0.1"]) {
+      expect(blockedAddress(a), a).toBe(true);
+    }
+    for (const a of ["192.0.3.1", "198.20.0.1", "203.0.114.1", "2001:4860:4860::8888", "2003::1"]) expect(blockedAddress(a), a).toBe(false);
   });
 
   it("parses IPv6 forms consistently", () => {
@@ -65,13 +73,13 @@ interface Harness {
   proxy: EgressProxy;
   port: number;
   logs: ProxyLog[];
-  upstream: { headers: http.IncomingHttpHeaders[]; paths: string[] };
+  upstream: { headers: http.IncomingHttpHeaders[]; paths: string[]; bodies: string[] };
 }
 
 /** The proxy with DNS and the outside replaced: names resolve from a table and every connection lands on a local server. */
 async function harness(o: { dns?: Record<string, string[]>; kind?: "api_key" | "subscription"; pages?: Record<string, { status: number; headers?: Record<string, string>; body?: string }> } = {}): Promise<Harness> {
   const dns = o.dns ?? { "example.org": ["93.184.216.34"], "api.anthropic.com": ["160.79.104.10"], "evil.test": ["127.0.0.1"], "mixed.test": ["93.184.216.35", "10.0.0.1"] };
-  const upstream = { headers: [] as http.IncomingHttpHeaders[], paths: [] as string[] };
+  const upstream = { headers: [] as http.IncomingHttpHeaders[], paths: [] as string[], bodies: [] as string[] };
   const echo = net.createServer((s) => s.pipe(s));
   const echoPort = await listen(echo);
   const web = http.createServer((req, res) => {
@@ -79,8 +87,10 @@ async function harness(o: { dns?: Record<string, string[]>; kind?: "api_key" | "
     upstream.paths.push(req.url ?? "");
     const host = String(req.headers.host);
     if (host === "api.anthropic.com") {
-      req.resume();
+      let b = "";
+      req.on("data", (d) => (b += d));
       req.on("end", () => {
+        upstream.bodies.push(b);
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.end("data: ok\n\n");
       });
@@ -213,10 +223,54 @@ describe("credential gateway (SR-9, AC-16)", () => {
 
   it("a subscription token goes as a bearer token with the OAuth beta header", async () => {
     const h = await harness({ kind: "subscription" });
-    await post(h.port, `/gw/${CRED}/v1/messages`, { "x-api-key": DUMMY, "anthropic-beta": "a-beta" });
+    await post(h.port, `/gw/${CRED}/v1/messages`, { "x-api-key": DUMMY, "anthropic-beta": "claude-code-20250219" });
     expect(h.upstream.headers[0]!.authorization).toBe(`Bearer ${REAL_KEY}`);
     expect(h.upstream.headers[0]!["x-api-key"]).toBeUndefined();
-    expect(h.upstream.headers[0]!["anthropic-beta"]).toBe("a-beta,oauth-2025-04-20");
+    expect(h.upstream.headers[0]!["anthropic-beta"]).toBe("claude-code-20250219,oauth-2025-04-20");
+  });
+
+  it("M1: refuses a request with a server-side tool or MCP servers, logged without the body", async () => {
+    const h = await harness();
+    const client = { name: "Read", description: "d", input_schema: { type: "object" } };
+    const ok = JSON.stringify({ model: "m", messages: [{ role: "user", content: "hi" }], tools: [client, { ...client, name: "x", type: "custom" }] });
+    expect((await post(h.port, `/gw/${CRED}/v1/messages`, { "x-api-key": DUMMY }, ok)).status).toBe(200);
+    expect(h.upstream.bodies[0]).toBe(ok);
+    const SENTINEL = "BODY-SENTINEL-not-for-logs";
+    for (const tool of [{ type: "web_search_20250305", name: "web_search" }, { type: "web_fetch_20250910", name: "web_fetch" }, { type: "code_execution_20250825", name: "code_execution" },
+      { type: "computer_20250124", name: "computer" }, { type: "bash_20250124", name: "bash" }, { type: "text_editor_20250728", name: "str_replace_based_edit_tool" }, { type: "some_future_tool", name: "f" }]) {
+      const body = JSON.stringify({ model: "m", messages: [{ role: "user", content: SENTINEL }], tools: [client, tool] });
+      for (const p of ["/v1/messages", "/v1/messages/count_tokens"]) {
+        const r = await post(h.port, `/gw/${CRED}${p}`, { "x-api-key": DUMMY }, body);
+        expect(r.status, `${tool.type} ${p}`).toBe(403);
+      }
+    }
+    for (const body of [JSON.stringify({ model: "m", messages: [], mcp_servers: [{ type: "url", url: "https://evil.example/mcp", name: "x" }] }),
+      JSON.stringify({ messages: [], tools: "web_search" }), JSON.stringify({ messages: [], tools: [null] }), "[]", "not json"]) {
+      expect((await post(h.port, `/gw/${CRED}/v1/messages`, { "x-api-key": DUMMY }, body)).status, body).toBe(403);
+    }
+    expect((await post(h.port, `/gw/${CRED}/v1/messages`, { "x-api-key": DUMMY, "content-encoding": "gzip" }, ok)).status).toBe(415);
+    expect(h.upstream.paths).toHaveLength(1);
+    const refused = h.logs.filter((l) => l.kind === "refused");
+    expect(refused.map((l) => l.reason)).toContain("the request has a server-side tool (web_search_20250305)");
+    expect(refused.map((l) => l.reason)).toContain("the request asks for MCP servers on the API side");
+    expect(JSON.stringify(h.logs)).not.toContain(SENTINEL);
+    expect(JSON.stringify(h.logs)).not.toContain("evil.example");
+    expect(refusedBody(Buffer.from("{}"))).toBeNull();
+  });
+
+  it("M1: passes only allow-listed anthropic-beta values, drops the rest and logs which", async () => {
+    const h = await harness();
+    await post(h.port, `/gw/${CRED}/v1/messages`, { "x-api-key": DUMMY, "anthropic-beta": "claude-code-20250219, mcp-client-2025-04-04,effort-2025-11-24,code-execution-2025-08-25,claude-code-20250219" });
+    expect(h.upstream.headers[0]!["anthropic-beta"]).toBe("claude-code-20250219,effort-2025-11-24");
+    expect(h.logs).toContainEqual({ t: "log", kind: "gateway", session: "s1", role: "web-reader", host: "api.anthropic.com", path: "/v1/messages", reason: "dropped anthropic-beta: mcp-client-2025-04-04, code-execution-2025-08-25" });
+    await post(h.port, `/gw/${CRED}/v1/messages`, { "x-api-key": DUMMY, "anthropic-beta": "files-api-2025-04-14" });
+    expect(h.upstream.headers[1]!["anthropic-beta"]).toBeUndefined();
+    await post(h.port, `/gw/${CRED}/v1/messages`, { "x-api-key": DUMMY, "anthropic-beta": "x<script>{y}=".repeat(20) });
+    const last = h.logs.filter((l) => l.reason?.startsWith("dropped")).pop()!;
+    expect(last.reason!.length).toBeLessThan(120);
+    expect(last.reason).not.toContain("<");
+    expect(h.upstream.paths).toHaveLength(3);
+    expect(ALLOWED_BETAS.has("oauth-2025-04-20")).toBe(true);
   });
 });
 

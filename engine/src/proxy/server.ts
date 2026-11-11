@@ -100,6 +100,63 @@ export interface ProxyOptions {
 
 const HOP = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "host"]);
 
+/**
+ * The `anthropic-beta` values the gateway passes on (Security Gate 2, M1;
+ * owner decision of 2026-11-11, card 23:12Z: allow-list the header). A beta
+ * can switch on a feature that runs on Anthropic's side, outside the
+ * container's egress rules. These are what Claude Code 2.1.311 sends for a
+ * session with the factory's flags (captured from the real binary by
+ * test/claude-real.test.ts, which fails when the CLI sends one not listed),
+ * plus the OAuth beta that subscription mode needs. Any other value is
+ * dropped from the header and logged; the request still goes.
+ */
+export const ALLOWED_BETAS: ReadonlySet<string> = new Set([
+  "claude-code-20250219",
+  "context-management-2025-06-27",
+  "effort-2025-11-24",
+  "interleaved-thinking-2025-05-14",
+  "mid-conversation-tool-changes-2026-07-01",
+  "oauth-2025-04-20",
+  "per-turn-control-2026-07-01",
+  "thinking-display-updates-2026-08-18",
+  "thinking-token-count-2026-05-13",
+]);
+
+/**
+ * Why a Messages API body must not go out, or null (Security Gate 2, M1;
+ * owner decision: block them). A tool with a `type` other than `custom` is a
+ * server-side tool (web_search_*, web_fetch_*, code_execution_*, computer_*,
+ * the bash_* and text_editor_* variants, and any added later): Anthropic runs
+ * it, so it reaches the web or runs code past SR-8 and SR-21. `mcp_servers`
+ * makes Anthropic call an MCP server for the session. Fails closed: a body
+ * that isn't a JSON object, or a tools list that isn't a list of objects, is
+ * refused too.
+ */
+export function refusedBody(body: Buffer): string | null {
+  let j: unknown;
+  try {
+    j = JSON.parse(body.toString("utf8"));
+  } catch {
+    return "the request body isn't JSON";
+  }
+  if (typeof j !== "object" || j === null || Array.isArray(j)) return "the request body isn't a JSON object";
+  const o = j as Record<string, unknown>;
+  if ("mcp_servers" in o) return "the request asks for MCP servers on the API side";
+  if (o.tools === undefined) return null;
+  if (!Array.isArray(o.tools)) return "the request's tools aren't a list";
+  for (const t of o.tools as unknown[]) {
+    if (typeof t !== "object" || t === null || Array.isArray(t)) return "the request's tools aren't a list";
+    const type = (t as Record<string, unknown>).type;
+    if (type !== undefined && type !== "custom") return `the request has a server-side tool (${safeToken(type)})`;
+  }
+  return null;
+}
+
+/** A value from the request, cut down so a log line can't carry content. */
+function safeToken(v: unknown): string {
+  return String(v).replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 64);
+}
+
 export class EgressProxy {
   private readonly grants = new Map<string, Grant>();
   private readonly extra: Cidr[];
@@ -214,6 +271,25 @@ export class EgressProxy {
     }
     const len = Number(req.headers["content-length"] ?? "0");
     if (!Number.isFinite(len) || len > MAX_API_BODY) return refuse(413, "request too large", g);
+    // The body is read whole and checked (M1), so it must be plain JSON.
+    const encoding = req.headers["content-encoding"];
+    if (encoding !== undefined && encoding.toLowerCase() !== "identity") return refuse(415, "a compressed request body can't be checked", g);
+    const chunks: Buffer[] = [];
+    let seen = 0;
+    const body = await new Promise<Buffer | null>((resolve) => {
+      req.on("data", (d: Buffer) => {
+        seen += d.length;
+        if (seen > MAX_API_BODY) {
+          req.removeAllListeners("data");
+          resolve(null);
+        } else chunks.push(d);
+      });
+      req.on("end", () => resolve(Buffer.concat(chunks)));
+      req.on("error", () => resolve(null));
+    });
+    if (body === null) return refuse(413, "request too large", g);
+    const bad = refusedBody(body);
+    if (bad) return refuse(403, bad, g);
     let address: string;
     try {
       address = await this.checkedAddress(API_HOST);
@@ -222,17 +298,23 @@ export class EgressProxy {
     }
     const headers: http.OutgoingHttpHeaders = {};
     for (const [k, v] of Object.entries(req.headers)) {
-      if (v === undefined || HOP.has(k) || k === "x-api-key" || k === "authorization" || k.startsWith("x-forwarded")) continue;
+      if (v === undefined || HOP.has(k) || k === "x-api-key" || k === "authorization" || k === "anthropic-beta" || k === "content-length" || k.startsWith("x-forwarded")) continue;
       headers[k] = v;
     }
     headers.host = API_HOST;
+    headers["content-length"] = String(body.length);
+    const asked = [req.headers["anthropic-beta"] ?? []].flat().flatMap((h) => h.split(",")).map((s) => s.trim()).filter((s) => s !== "");
+    const betas = [...new Set(asked.filter((b) => ALLOWED_BETAS.has(b)))];
+    const dropped = [...new Set(asked.filter((b) => !ALLOWED_BETAS.has(b)))];
+    if (dropped.length > 0) {
+      this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host: API_HOST, path: p, reason: `dropped anthropic-beta: ${dropped.slice(0, 10).map(safeToken).join(", ")}` });
+    }
     if (this.o.credential.kind === "api_key") headers["x-api-key"] = this.o.credential.value;
     else {
       headers.authorization = `Bearer ${this.o.credential.value}`;
-      const beta = String(headers["anthropic-beta"] ?? "");
-      if (!beta.split(",").map((s) => s.trim()).includes("oauth-2025-04-20")) headers["anthropic-beta"] = beta ? `${beta},oauth-2025-04-20` : "oauth-2025-04-20";
+      if (!betas.includes("oauth-2025-04-20")) betas.push("oauth-2025-04-20");
     }
-    let seen = 0;
+    if (betas.length > 0) headers["anthropic-beta"] = betas.join(",");
     const up = this.deps.request(address, API_HOST, { method: "POST", path: target, headers });
     up.on("response", (ur) => {
       this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host: API_HOST, path: p, status: ur.statusCode });
@@ -243,14 +325,7 @@ export class EgressProxy {
     });
     up.on("error", () => refuse(502, "the model API is unreachable", g));
     up.on("timeout", () => up.destroy(new Error("timeout")));
-    req.on("data", (d: Buffer) => {
-      seen += d.length;
-      if (seen > MAX_API_BODY) {
-        up.destroy();
-        refuse(413, "request too large", g);
-      }
-    });
-    req.pipe(up);
+    up.end(body);
   }
 
   /**

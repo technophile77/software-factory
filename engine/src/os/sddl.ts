@@ -80,18 +80,39 @@ function parseMask(s: string): number {
   return mask >>> 0;
 }
 
+const TRUSTEE = "(?:[A-Z]{2}|S-1-[0-9]+(?:-[0-9]+)+)";
+// The whole string, anchored: an owner, a group, then the DACL, as the engine
+// asks Windows for them. Each ACE is six plain fields; a conditional ACE's
+// seventh, parenthesised field, a SACL or anything trailing doesn't match.
+const SDDL_RE = new RegExp(`^(?:O:(${TRUSTEE}))?(?:G:${TRUSTEE})?D:([A-Z_]*)((?:\\([^()]*\\))*)$`);
+const DACL_FLAGS = /^(?:P|AI|AR)*$/;
+const ACE_FLAGS = new Set(["OI", "CI", "NP", "IO", "ID"]);
+
+/**
+ * Parses an owner-and-DACL descriptor, failing closed (Security Gate 2, M2):
+ * a NULL DACL (`NO_ACCESS_CONTROL`, which grants everyone everything), an
+ * unknown DACL flag, any ACE type other than plain allow (`A`) and deny
+ * (`D`), an object or conditional ACE, an unknown ACE flag, and any text
+ * the grammar doesn't cover all throw.
+ */
 export function parseSddl(text: string): Sddl {
-  const owner = /O:([A-Z]{2}|S-1-[0-9-]+)/.exec(text)?.[1] ?? null;
-  const d = /D:([A-Z]*)((?:\([^()]*\))*)/.exec(text);
-  if (!d) throw new Error("no DACL");
+  const m = SDDL_RE.exec(text);
+  if (!m) throw new Error("unreadable or unsupported security descriptor");
+  const daclFlags = m[2]!;
+  if (daclFlags.includes("NO_ACCESS_CONTROL")) throw new Error("a NULL DACL grants everyone access");
+  if (!DACL_FLAGS.test(daclFlags)) throw new Error("unknown DACL flags");
   const aces: Ace[] = [];
-  for (const m of d[2]!.matchAll(/\(([^()]*)\)/g)) {
-    const parts = m[1]!.split(";");
+  for (const a of m[3]!.matchAll(/\(([^()]*)\)/g)) {
+    const parts = a[1]!.split(";");
     if (parts.length !== 6) throw new Error("unreadable ACE");
-    const [type, flags, rights, , , sid] = parts as [string, string, string, string, string, string];
+    const [type, flags, rights, objectGuid, inheritGuid, sid] = parts as [string, string, string, string, string, string];
+    if (type !== "A" && type !== "D") throw new Error(`unsupported ACE type ${type.slice(0, 4)}`);
+    if (objectGuid !== "" || inheritGuid !== "") throw new Error("object ACE");
+    if (flags.length % 2 !== 0 || !(flags.match(/../g) ?? []).every((f) => ACE_FLAGS.has(f))) throw new Error("unknown ACE flags");
+    if (!new RegExp(`^${TRUSTEE}$`).test(sid)) throw new Error("unreadable trustee");
     aces.push({ type, flags, mask: parseMask(rights), sid: principal(sid) });
   }
-  return { owner: owner ? principal(owner) : null, daclFlags: d[1]!, aces };
+  return { owner: m[1] ? principal(m[1]) : null, daclFlags, aces };
 }
 
 /** The channel pipe: a protected DACL that grants access to the owner and nobody else. */

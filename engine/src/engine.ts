@@ -890,7 +890,12 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         },
         reportFor: async (r): Promise<Change[]> => {
           const n = await nextReport(p, fid);
-          const commit = await git.out(worktree, ["rev-parse", "HEAD"]).catch(() => "unknown");
+          // Never the worktree's own .git link, which the agent can rewrite (Gate 2, L2): the git dir
+          // recorded when the worktree was made, else the feature branch in the project repo.
+          const gitDir = record.run(runId)?.git_dir;
+          const commit = (gitDir
+            ? await git.out(worktree, ["--git-dir", gitDir, "--work-tree", worktree, "rev-parse", "--verify", "HEAD^{commit}"]).catch(() => null)
+            : await git.revParse(p.real!, `refs/heads/${f.state.branch}`).catch(() => null)) ?? "unknown";
           return [agentReport({
             feature: fid, stage: INTERVIEW_STAGE, role: "requirements-analyst", n, commit,
             outcome: r.passed ? "complete" : "partial",

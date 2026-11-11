@@ -103,6 +103,35 @@ describe("remote factory/state (GS-4: SR-1, SR-11)", () => {
     expect(await url("http://127.0.0.1:9/acme/web", "http://127.0.0.1:9")).toBe("http://127.0.0.1:9/acme/web.git");
   });
 
+  it("L7: refuses to push or fetch while the clone's config could redirect it, and says which key without its URL", async () => {
+    const { w, srv } = await remoteWorld();
+    const g = new Git({ gitPath: GIT_PATH, homeDir: path.join(w.root, "l7home"), children: new Children() });
+    const s = new StateRepo(g, { scan: async () => [] } as never, w.config, new MemoryLogger(), path.join(w.root, "l7tmp"));
+    await expect(s.refuseRedirectingConfig()).resolves.toBeUndefined();
+    const cfg = path.join(git(w.config, "rev-parse", "--absolute-git-dir"), "config");
+    const clean = fs.readFileSync(cfg, "utf8");
+    for (const [extra, shown] of [
+      ['[url "https://token@evil.example/"]\n\tinsteadOf = http://127.0.0.1\n', "url.<…>.insteadof"],
+      ['[http]\n\tproxy = http://evil.example:8080\n', "http.proxy"],
+      ['[http "http://127.0.0.1"]\n\textraHeader = X: y\n', "http.<…>.extraheader"],
+      ["[include]\n\tpath = elsewhere\n", "include.path"],
+      ['[includeIf "gitdir:/"]\n\tpath = elsewhere\n', "includeif.<…>.path"],
+      ["[credential]\n\thelper = store\n", "credential.helper"],
+      ["[core]\n\tgitProxy = evil\n", "core.gitproxy"],
+      ['[remote "origin"]\n\tproxy = http://evil.example\n', "remote.<…>.proxy"],
+    ] as const) {
+      fs.writeFileSync(cfg, clean + extra);
+      for (const op of [() => s.push(FACTORY_TOKEN, srv.base), () => s.fetch(FACTORY_TOKEN, srv.base)]) {
+        const err = await op().then(() => null, (e: Error) => e.message);
+        expect(err, extra).toContain(`sets ${shown}, which could redirect`);
+        expect(err).not.toContain("evil");
+      }
+    }
+    fs.writeFileSync(cfg, clean);
+    expect(srv.pushes).toEqual([]);
+    expect(srv.fetches).toBe(0);
+  });
+
   it("refuses a plain-http base that isn't loopback", async () => {
     const w = makeWorld();
     w.github.webBase = "http://github.example";

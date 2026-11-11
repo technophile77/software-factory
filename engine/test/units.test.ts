@@ -161,6 +161,32 @@ describe("SDDL (SR-15, SR-13 on Windows)", () => {
     expect(parseSddl(`O:SYD:(A;;GA;;;BA)`).owner).toBe("S-1-5-18");
   });
 
+  it("M2: fails closed on a NULL DACL, conditional, object or audit ACEs, unknown flags and trailing text", () => {
+    const cases = {
+      nullDacl: `O:${me}D:NO_ACCESS_CONTROL`,
+      nullDaclProtected: `O:${me}D:PNO_ACCESS_CONTROL`,
+      conditional: `O:${me}D:(A;;FA;;;${me})(XA;;FA;;;WD;(Member_of {SID(WD)}))`,
+      conditionalPipe: `D:P(A;;GA;;;${me})(XA;;GA;;;WD;(Member_of {SID(WD)}))`,
+      objectAce: `O:${me}D:(A;;FA;;;${me})(OA;;FA;;;WD)`,
+      objectGuid: `O:${me}D:(A;;FA;00000000-0000-0000-0000-000000000000;;;WD)`,
+      auditAce: `O:${me}D:(A;;FA;;;${me})(AU;SA;FA;;;WD)`,
+      trailingJunk: `O:${me}D:P(A;;GA;;;${me})garbage(A;;GA;;;WD)`,
+      trailingAfterAces: `O:${me}D:P(A;;GA;;;${me})x`,
+      unknownDaclFlag: `O:${me}D:PZ(A;;GA;;;${me})`,
+      unknownAceFlag: `O:${me}D:(A;ZZ;FA;;;${me})`,
+      sacl: `O:${me}D:P(A;;GA;;;${me})S:(ML;;NW;;;LW)`,
+      badTrustee: `O:${me}D:P(A;;GA;;;${me}x)`,
+    };
+    for (const [k, v] of Object.entries(cases)) {
+      expect(() => parseSddl(v), k).toThrow();
+      expect(isOwnerWritableOnly(v, me), k).toBe(false);
+      expect(isOwnerOnlyPipe(v, me), k).toBe(false);
+    }
+    // What Windows writes for the engine's own objects still passes.
+    expect(isOwnerWritableOnly(`O:${me}G:SYD:PAI(A;OICIID;FA;;;SY)(A;;FA;;;${me})`, me)).toBe(true);
+    expect(isOwnerOnlyPipe(`O:${me}G:${me}D:P(A;;GA;;;${me})`, me)).toBe(true);
+  });
+
   it("machine-relative aliases resolve only to the current user, as Windows writes it", () => {
     // The Windows runner's built-in Administrator: Windows writes its SID as LA.
     const admin = "S-1-5-21-1111111111-2222222222-3333333333-500";

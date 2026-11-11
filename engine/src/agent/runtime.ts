@@ -6,6 +6,7 @@ import type { Git } from "../git";
 import type { FeatureInterview } from "../interview/feature";
 import type { Logger } from "../log";
 import type { AgentSdk, UserTurn } from "./sdk";
+import { caseInsensitiveAt, checkTree, writeNew } from "./worktree-populate";
 
 /**
  * What the engine needs to run agents. The CLI builds the real one; tests
@@ -68,23 +69,22 @@ export class TurnQueue implements AsyncIterable<UserTurn> {
 /**
  * Writes `commit`'s tree into the worktree from git objects, after removing
  * everything but `.git`, and restores the `.git` link. No checkout runs, so
- * no filter, attribute or hook of the repo applies (SR-11). Links are written
- * as links where the OS allows, as git would.
+ * no filter, attribute or hook of the repo applies (SR-11). The whole tree
+ * is checked first (H2): no links or submodules, no name the file system
+ * would read as another, and each file is created new under folders this
+ * writer made, never through a link.
  */
-export async function populateWorktree(git: Git, repo: string, commit: string, wt: string, gitDir: string): Promise<void> {
+export async function populateWorktree(git: Git, repo: string, commit: string, wt: string, gitDir: string, platform: NodeJS.Platform = process.platform): Promise<void> {
+  const entries = await git.lsTree(repo, commit);
+  checkTree(entries, caseInsensitiveAt(wt), platform);
   for (const name of fs.readdirSync(wt)) if (name !== ".git") fs.rmSync(path.join(wt, name), { recursive: true, force: true });
   fs.rmSync(path.join(wt, ".git"), { recursive: true, force: true });
   fs.writeFileSync(path.join(wt, ".git"), `gitdir: ${gitDir.split("\\").join("/")}\n`);
-  for (const e of await git.lsTree(repo, commit)) {
-    const dest = path.join(wt, ...e.path.split("/"));
-    if (!dest.startsWith(wt + path.sep)) throw new Error("a tree path leaves the worktree");
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    if (e.mode === "160000") fs.mkdirSync(dest, { recursive: true });
-    else if (e.mode === "120000") {
-      const target = (await git.catBlob(repo, e.sha)).toString("utf8");
-      if (process.platform === "win32") fs.writeFileSync(dest, target);
-      else fs.symlinkSync(target, dest);
-    } else fs.writeFileSync(dest, await git.catBlob(repo, e.sha), { mode: e.mode === "100755" ? 0o755 : 0o644 });
+  // Blobs in batches, so a large repo neither starts a process per file nor holds every file in memory at once.
+  for (let i = 0; i < entries.length; i += 256) {
+    const batch = entries.slice(i, i + 256);
+    const blobs = await git.catBlobs(repo, batch.map((e) => e.sha)).catch(() => null);
+    for (const e of batch) writeNew(wt, e.path, blobs?.get(e.sha) ?? (await git.catBlob(repo, e.sha)), e.mode === "100755");
   }
   await git.run(wt, ["--git-dir", gitDir, "--work-tree", wt, "read-tree", commit]);
 }

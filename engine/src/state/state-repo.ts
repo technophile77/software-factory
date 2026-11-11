@@ -252,18 +252,51 @@ export class StateRepo {
     return `${base}/${m[1]}/${m[2]}.git`;
   }
 
+  /**
+   * Security Gate 2, L7: the clone's own config can still redirect a fetch or
+   * push, and the token with it, to another host (`url.*.insteadOf`), send it
+   * through a proxy or with extra headers (`http.*`), add a credential helper,
+   * or pull in another file (`include*`). The system and global files are
+   * already off (GIT_CONFIG_NOSYSTEM, an empty GIT_CONFIG_GLOBAL), and a
+   * `-c` can override a key but can't remove `insteadOf` rules or url-scoped
+   * `http.<url>.*` keys, so the engine lists every key git would see, without
+   * following includes, and refuses the network step if a redirecting one is
+   * set anywhere but its own `-c` list. Config it can't read refuses too. The
+   * error names the key without its subsection, which can hold a URL.
+   */
+  async refuseRedirectingConfig(): Promise<void> {
+    const out = (await this.git.run(this.repoRoot, ["config", "--list", "-z", "--show-scope", "--no-includes"])).stdout.toString("utf8");
+    const fields = out.split("\0");
+    if (fields.pop() !== "" || fields.length % 2 !== 0) throw new GitError("the repo's git config couldn't be read, so factory/state is not pushed or fetched");
+    for (let i = 0; i < fields.length; i += 2) {
+      if (fields[i] === "command") continue;
+      const key = fields[i + 1]!.split("\n", 1)[0]!;
+      const first = key.indexOf(".");
+      const last = key.lastIndexOf(".");
+      const section = key.slice(0, first).toLowerCase();
+      const name = key.slice(last + 1).toLowerCase();
+      if (REDIRECTING_SECTIONS.has(section) || (section === "core" && (name === "gitproxy" || name === "sshcommand")) || (section === "remote" && name.startsWith("proxy"))) {
+        const shown = first === last ? `${section}.${name}` : `${section}.<…>.${name}`;
+        throw new GitError(`the repo's git config sets ${shown}, which could redirect a push or fetch, so factory/state is not pushed or fetched`);
+      }
+    }
+  }
+
   /** Pushes factory/state to the GitHub base the engine was given, with the factory token through askpass (SR-1, SR-11). */
   async push(token: string, base: string): Promise<void> {
+    await this.refuseRedirectingConfig();
     const url = await this.remoteUrl(base);
-    await this.git.run(this.repoRoot, [...transport(base), "push", "--no-verify", url, `${STATE_REF}:${STATE_REF}`], { askpassToken: token });
+    // A signed push would run the repo's gpg.program on the host.
+    await this.git.run(this.repoRoot, [...transport(base), "-c", "push.gpgSign=false", "push", "--no-verify", url, `${STATE_REF}:${STATE_REF}`], { askpassToken: token });
   }
 
   /** Fetches the remote factory/state into refs/remotes/origin/factory/state and returns it, or null if the remote has none. */
   async fetch(token: string, base: string): Promise<string | null> {
+    await this.refuseRedirectingConfig();
     const url = await this.remoteUrl(base);
     const listed = await this.git.out(this.repoRoot, [...transport(base), "ls-remote", "--heads", url, STATE_REF], { askpassToken: token });
     if (!listed) return null;
-    await this.git.run(this.repoRoot, [...transport(base), "fetch", "--no-tags", "--no-write-fetch-head", url, `+${STATE_REF}:${REMOTE_REF}`], { askpassToken: token });
+    await this.git.run(this.repoRoot, [...transport(base), "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", url, `+${STATE_REF}:${REMOTE_REF}`], { askpassToken: token });
     return this.git.revParse(this.repoRoot, REMOTE_REF);
   }
 
@@ -300,6 +333,9 @@ export class StateRepo {
     });
   }
 }
+
+/** Config sections that steer where a fetch or push goes, how it gets there, or what it sends (L7). */
+const REDIRECTING_SECTIONS = new Set(["include", "includeif", "url", "http", "credential", "protocol"]);
 
 /** Plain http only for a loopback base, which only the in-process options can give (tests). */
 function transport(base: string): string[] {

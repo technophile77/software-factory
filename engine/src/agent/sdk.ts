@@ -36,6 +36,13 @@ export type PermissionResult =
 
 export type CanUseTool = (toolName: string, input: Record<string, unknown>, o: { signal: AbortSignal }) => Promise<PermissionResult>;
 
+/** Claude Code's PreToolUse hook callback, the part of the SDK's HookCallback the engine uses. */
+export type PreToolUseHook = (
+  input: { hook_event_name: string; tool_name?: unknown; tool_input?: unknown },
+  toolUseId: string | undefined,
+  o: { signal: AbortSignal },
+) => Promise<{ hookSpecificOutput?: { hookEventName: "PreToolUse"; permissionDecision: "deny"; permissionDecisionReason: string } }>;
+
 export interface CallToolResult {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
@@ -61,7 +68,8 @@ export interface SessionOptions {
   disallowedTools: string[];
   permissionMode: "default";
   canUseTool: CanUseTool;
-  hooks: Record<string, never>;
+  /** Only the engine's own gate; settingSources: [] keeps every other hook out. */
+  hooks: { PreToolUse: [{ hooks: [PreToolUseHook] }] };
   systemPrompt: string;
   plugins: Array<{ type: "local"; path: string }>;
   maxTurns: number;

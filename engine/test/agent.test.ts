@@ -6,7 +6,7 @@ import { AnalystRunInput, SessionRefused, runAnalystSession } from "../src/agent
 import { analystTools, fetchPageTool, toCallResult, UNTRUSTED_LABEL } from "../src/agent/factory-tools";
 import { DUMMY_KEY, ProxyClient, SessionGroup } from "../src/agent/sandbox";
 import type { AgentSdk } from "../src/agent/sdk";
-import { CLAUDE_BIN, CONTAINER_FLAGS, SessionCaps, containerSpawn, hostRelative, runSession, sessionOptions, toolGate } from "../src/agent/session";
+import { CLAUDE_BIN, CONTAINER_FLAGS, SessionCaps, containerSpawn, hostRelative, preToolUseGate, runSession, sessionOptions, toolGate, unreadableUnder } from "../src/agent/session";
 import { DockerCli, DockerError, dockerName, isLocalEndpoint, localEndpoints, pickEndpoint, pipeExists, stderrTail } from "../src/docker/cli";
 import { findOnPath } from "../src/fsutil";
 import { BASE_IMAGE, agentBuildArgs, buildAgentImage, skillsPluginDir, writeBuildContext } from "../src/docker/image";
@@ -388,7 +388,10 @@ describe("SR-10 session options and the FR-9 tool gate", () => {
     expect(o.allowedTools).toEqual(["mcp__factory__interview_ask"]);
     expect(o.disallowedTools).toEqual(["WebFetch"]);
     expect(o.permissionMode).toBe("default");
-    expect(o.hooks).toEqual({});
+    // H1: the gate runs as a PreToolUse hook too, since Claude Code skips canUseTool for calls it approves itself.
+    expect(Object.keys(o.hooks)).toEqual(["PreToolUse"]);
+    expect(o.hooks.PreToolUse).toHaveLength(1);
+    expect(o.hooks.PreToolUse[0]).not.toHaveProperty("matcher");
     expect(o.systemPrompt).toBe("You are the analyst.");
     expect(o.plugins).toEqual([{ type: "local", path: "/opt/factory/skills" }]);
     expect(o.maxTurns).toBe(50);
@@ -414,6 +417,42 @@ describe("SR-10 session options and the FR-9 tool gate", () => {
     expect(hostRelative(wt, "docs/a.md")).toBe("docs/a.md");
     expect(hostRelative(wt, undefined)).toBe("");
     for (const p of ["/etc/passwd", "/workspacex/a", "/workspace/../etc", "../x", "a\\b", 5]) expect(hostRelative(wt, p), String(p)).toBeNull();
+  });
+
+  it("H1: the PreToolUse hook gives the gate's answer: a deny stops the call, an allow leaves canUseTool to answer too", async () => {
+    const wt = tmpdir();
+    fs.writeFileSync(path.join(wt, ".env"), "TOKEN=x\n");
+    const o = sessionOptions({ ...base, worktree: wt }, new AbortController());
+    const hook = o.hooks.PreToolUse[0].hooks[0];
+    const sig = { signal: new AbortController().signal };
+    const call = (tool_name: string, tool_input: unknown) => hook({ hook_event_name: "PreToolUse", tool_name, tool_input }, "t1", sig);
+    const denied = await call("Read", { file_path: "/workspace/.env" });
+    expect(denied.hookSpecificOutput).toMatchObject({ hookEventName: "PreToolUse", permissionDecision: "deny" });
+    expect(denied.hookSpecificOutput!.permissionDecisionReason).toMatch(/Refused by the factory engine/);
+    expect(await call("Read", { file_path: "/workspace/README.md" })).toEqual({});
+    expect((await call("Bash", { command: "cat .env" })).hookSpecificOutput?.permissionDecision).toBe("deny");
+    expect((await call("Grep", { pattern: "TOKEN" })).hookSpecificOutput?.permissionDecision).toBe("deny");
+    expect((await call("Glob", { pattern: "*", path: "/workspace/.env" })).hookSpecificOutput?.permissionDecision).toBe("deny");
+    expect((await call("Read", "not an object")).hookSpecificOutput?.permissionDecision).toBe("deny");
+    expect(await preToolUseGate(async () => ({ behavior: "deny", message: "m" }))({ hook_event_name: "PostToolUse" }, undefined, sig)).toEqual({});
+  });
+
+  it("H1: Grep over a folder is allowed only if every file under it could be read", async () => {
+    const wt = tmpdir();
+    fs.mkdirSync(path.join(wt, "docs", "deep"), { recursive: true });
+    fs.mkdirSync(path.join(wt, "conf"));
+    fs.writeFileSync(path.join(wt, "docs", "a.md"), "a");
+    fs.writeFileSync(path.join(wt, "docs", "deep", "b.md"), "b");
+    fs.writeFileSync(path.join(wt, "conf", "id_ed25519"), "k");
+    const gate = toolGate(analyst, wt, [], log);
+    const sig = { signal: new AbortController().signal };
+    expect((await gate("Grep", { pattern: "x", path: "/workspace/docs" }, sig)).behavior).toBe("allow");
+    expect((await gate("Grep", { pattern: "x", path: "/workspace/docs/a.md" }, sig)).behavior).toBe("allow");
+    const root = await gate("Grep", { pattern: "x" }, sig);
+    expect(root).toMatchObject({ behavior: "deny", message: expect.stringContaining("conf/id_ed25519") });
+    expect((await gate("Grep", { pattern: "x", path: "conf" }, sig)).behavior).toBe("deny");
+    expect(unreadableUnder(wt, "docs", analyst.read)).toBeNull();
+    expect(unreadableUnder(wt, "docs", analyst.read, 1)).toMatch(/more than 1 entries/);
   });
 
   it("checks each file tool call against the role's rules", async () => {

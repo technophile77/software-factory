@@ -6,7 +6,7 @@ import { InterviewState } from "../src/interview/model";
 import { readinessChecks, remoteContentLines, specAssumptions } from "../src/interview/readiness";
 import { makeEntry } from "../src/state/transcript";
 import { canSymlink, linkDir, needsSymlinks } from "./acceptance/support/platform";
-import { RpcClient, World, approvedSession, engineJson, git, makeWorld, start } from "./helpers";
+import { RpcClient, World, approvedSession, engineJson, git, initRepo, makeWorld, start } from "./helpers";
 
 let engines: EngineHandle[] = [];
 let clients: RpcClient[] = [];
@@ -64,6 +64,11 @@ describe("interview_spec_ready (FR-12, AC-10)", () => {
     await c.ok("interview.reply", { session, item: "A-001", revision: 0, reply_id: "a", kind: "approve_assumption", text: "" });
     await c.ok("interview.reply", { session, item: "Q-001", revision: 0, reply_id: "q", kind: "answer", text: "ok" });
     const rel = writeSpec(w, feature, spec(feature, ["| A-1 | CSV is  enough. | Interview A-001, owner 2026-11-11 | Approved |"]));
+    // Gate 2, L2: the worktree's .git is the agent's to rewrite; the report's commit doesn't come from it.
+    const decoy = path.join(w.root, "decoy");
+    initRepo(decoy, { "x.md": "decoy" });
+    fs.rmSync(path.join(w.worktree, ".git"), { recursive: true, force: true });
+    fs.writeFileSync(path.join(w.worktree, ".git"), `gitdir: ${path.join(decoy, ".git")}\n`);
     const r = await tools.interview_spec_ready({ spec_path: rel, spec_version: 3 });
     expect(r.ok).toBe(true);
     const checks = (r as { result: { checks: Checks } }).result.checks;
@@ -73,6 +78,9 @@ describe("interview_spec_ready (FR-12, AC-10)", () => {
       schema: "agent-report/1.0", role: "requirements-analyst", feature, stage: "requirements_interview", outcome: "complete",
       model: "claude-test", effort: "high", body: { spec_path: rel, spec_version: 3, open_assumptions: [] },
     });
+    const branch = e.feature(feature)!.state.branch;
+    expect(report.commit).toBe(git(w.config, "rev-parse", `refs/heads/${branch}`));
+    expect(report.commit).not.toBe(git(decoy, "rev-parse", "HEAD"));
     expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "security_gate_1", active_agents: 0 }]);
     void e;
   });

@@ -1,9 +1,10 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import type { DockerCli } from "../docker/cli";
 import type { Logger } from "../log";
 import { OutsideWorktree, allowedBy, worktreeRelative } from "../policy/glob";
 import type { RolePolicy } from "../policy/role-policy";
-import type { AgentSdk, CanUseTool, FactoryTool, SdkMessage, SessionOptions, SpawnOptions, SpawnedProcess, UserTurn } from "./sdk";
+import type { AgentSdk, CanUseTool, FactoryTool, PreToolUseHook, SdkMessage, SessionOptions, SpawnOptions, SpawnedProcess, UserTurn } from "./sdk";
 
 /** Where the worktree is mounted in every agent container. */
 export const WORKSPACE = "/workspace";
@@ -43,13 +44,13 @@ const WRITE_TOOLS: Record<string, string> = { Write: "file_path", Edit: "file_pa
 const SHELL_SYNTAX = /[;&|`$<>()\\\n\r]/;
 
 /** A container path (or one relative to the workspace) as a worktree-relative path under the ADR 0015 rule, or null if it leaves the worktree. */
-export function hostRelative(worktree: string, p: unknown): string | null {
+export function hostRelative(worktree: string, p: unknown, workspace: string = WORKSPACE): string | null {
   if (p === undefined) return "";
   if (typeof p !== "string" || p.includes("\0") || p.includes("\\")) return null;
   let rel: string;
   if (p.startsWith("/")) {
-    if (p !== WORKSPACE && !p.startsWith(`${WORKSPACE}/`)) return null;
-    rel = p.slice(WORKSPACE.length + 1);
+    if (p !== workspace && !p.startsWith(`${workspace}/`)) return null;
+    rel = p.slice(workspace.length + 1);
   } else rel = p;
   const host = rel === "" ? worktree : path.join(worktree, ...rel.split("/"));
   try {
@@ -60,12 +61,45 @@ export function hostRelative(worktree: string, p: unknown): string | null {
   }
 }
 
+/** Past this many entries a folder search is refused rather than checked: the walk must stay cheap. */
+const SEARCH_WALK_CAP = 100_000;
+
+/**
+ * The first file under `rel` (a folder) that the read rules don't allow, or
+ * null. Grep reads the content of every file under the folder it is given,
+ * so a folder search is allowed only when every file in it could be read on
+ * its own. Links aren't followed, as the search tool doesn't follow them.
+ */
+export function unreadableUnder(worktree: string, rel: string, read: RolePolicy["read"], cap = SEARCH_WALK_CAP): string | null {
+  const stack = [rel];
+  let seen = 0;
+  while (stack.length) {
+    const dir = stack.pop()!;
+    let names: fs.Dirent[];
+    try {
+      names = fs.readdirSync(dir === "" ? worktree : path.join(worktree, ...dir.split("/")), { withFileTypes: true });
+    } catch {
+      return dir || ".";
+    }
+    for (const e of names) {
+      if (++seen > cap) return `${rel || "."} (more than ${cap} entries)`;
+      const r = dir === "" ? e.name : `${dir}/${e.name}`;
+      if (e.isDirectory()) stack.push(r);
+      else if (!allowedBy(read, r)) return r;
+    }
+  }
+  return null;
+}
+
 /**
  * FR-9: every file tool call is checked against the role's read or write
  * rules with the ADR 0015 path rule before it runs. The container is the
- * boundary; this is what keeps a role to its own files inside it.
+ * boundary; this is what keeps a role to its own files inside it. The same
+ * check runs twice: as the PreToolUse hook, which Claude Code calls for
+ * every tool call, and as `canUseTool`, which it skips for calls it
+ * approves by itself (reads inside the working folder, read-only Bash).
  */
-export function toolGate(policy: RolePolicy, worktree: string | null, factoryTools: string[], log: Logger): CanUseTool {
+export function toolGate(policy: RolePolicy, worktree: string | null, factoryTools: string[], log: Logger, workspace: string = WORKSPACE): CanUseTool {
   const builtins = new Set<string>(policy.tools.filter((t) => t !== "fetch_page"));
   const mcp = new Set(factoryTools.map((t) => `mcp__${FACTORY_SERVER}__${t}`));
   return async (name, input) => {
@@ -79,9 +113,22 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
     const writeKey = WRITE_TOOLS[name];
     if (readKey || writeKey) {
       if (worktree === null) return deny("this role has no worktree");
-      const rel = hostRelative(worktree, input[(readKey ?? writeKey)!]);
+      const key = (readKey ?? writeKey)!;
+      // Only Grep and Glob default to the working folder; a file tool without a file is malformed.
+      if (key === "file_path" && typeof input[key] !== "string") return deny("no file path");
+      const rel = hostRelative(worktree, input[key], workspace);
       if (rel === null) return deny("the path is outside the worktree");
       if (!allowedBy(writeKey ? policy.write : policy.read, rel)) return deny(`the role's ${writeKey ? "write" : "read"} rules don't allow ${rel || "the worktree root"}`);
+      if (name === "Grep") {
+        let isDir = false;
+        try {
+          isDir = fs.lstatSync(rel === "" ? worktree : path.join(worktree, ...rel.split("/"))).isDirectory();
+        } catch {
+          // Missing: the tool reports that itself.
+        }
+        const hidden = isDir ? unreadableUnder(worktree, rel, policy.read) : null;
+        if (hidden) return deny(`the folder holds ${hidden}, which the role's read rules don't allow; search a narrower path`);
+      }
       return { behavior: "allow", updatedInput: input };
     }
     if (name === "Bash") {
@@ -96,12 +143,25 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
   };
 }
 
+/** Claude Code's PreToolUse hook, answering with the gate's decision. An allow adds nothing, so `canUseTool` still applies. */
+export function preToolUseGate(gate: CanUseTool): PreToolUseHook {
+  return async (input, _id, o) => {
+    if (input.hook_event_name !== "PreToolUse") return {};
+    const toolInput = input.tool_input && typeof input.tool_input === "object" ? (input.tool_input as Record<string, unknown>) : {};
+    const r = await gate(String(input.tool_name), toolInput, { signal: o.signal });
+    if (r.behavior === "allow") return {};
+    return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: r.message } };
+  };
+}
+
 export interface SessionInput {
   policy: RolePolicy;
   /** The session's working folder in the container: the workspace, or /tmp for a role with no worktree. */
   cwd?: string;
   /** The worktree on the host, for the path rule; null for a role that gets none. */
   worktree: string | null;
+  /** Where the worktree appears to Claude Code: the container mount, except in the real-CLI test. */
+  workspace?: string;
   /** `agents/<role>/AGENT.md` from the master factory, never the worktree (SR-10). */
   instructions: string;
   factoryServer: unknown;
@@ -121,6 +181,7 @@ export function sessionOptions(s: SessionInput, abort: AbortController): Session
   const builtins: string[] = s.policy.tools.filter((t) => t !== "fetch_page");
   if (builtins.includes("Skill") && !s.skillsPluginDir) throw new Error("the role uses Skill, but the image has no baked skills");
   if (!s.instructions.trim()) throw new Error("no instructions for the role");
+  const gate = toolGate(s.policy, s.worktree, s.factoryTools, s.log, s.workspace);
   return {
     cwd: s.cwd ?? WORKSPACE,
     settingSources: [],
@@ -130,8 +191,8 @@ export function sessionOptions(s: SessionInput, abort: AbortController): Session
     allowedTools: s.factoryTools.map((t) => `mcp__${FACTORY_SERVER}__${t}`),
     disallowedTools: ["WebFetch"].filter((t) => !builtins.includes(t)),
     permissionMode: "default",
-    canUseTool: toolGate(s.policy, s.worktree, s.factoryTools, s.log),
-    hooks: {},
+    canUseTool: gate,
+    hooks: { PreToolUse: [{ hooks: [preToolUseGate(gate)] }] },
     systemPrompt: s.instructions,
     plugins: builtins.includes("Skill") ? [{ type: "local", path: s.skillsPluginDir! }] : [],
     maxTurns: s.caps.maxTurns,
