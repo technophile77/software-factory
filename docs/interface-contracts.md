@@ -26,7 +26,9 @@ by the owner 2026-11-10 (decision card, as drafted); the channel and policy
 versions were renumbered from v1.2 and v2.3 when F-006 merged with main.
 Project manifest v1.3 (H-0080), Role policy v2.5 (H-0083) and the new
 Interview tools v1.0 (H-0082) for F-007 approved by the owner 2026-11-11
-(decision card, as drafted after Security Gate 1).
+(decision card, as drafted after Security Gate 1). Channel v1.3 amendment
+H-0084 (error code -32008 `refused`) approved by the owner 2026-11-11
+(decision card).
 
 ## Contract entry format
 
@@ -336,7 +338,10 @@ Interview rules (v1.1):
   after checking its format. Codes:
   -32001 `busy`, -32002 `stale`, -32003 unknown feature or item, -32004
   unknown or expired session, -32005 reply kind not allowed for the item,
-  -32006 `approval_pending`, -32007 `approval_failed` (v1.2).
+  -32006 `approval_pending`, -32007 `approval_failed` (v1.2), -32008
+  `refused` (amendment H-0084): the engine refused for a security reason,
+  such as a found secret or a tampered transcript. Its message is fixed and
+  reveals nothing; the reason is in a Security inbox item.
 
 **Notifications** (engine to client): `feature.stageChanged`,
 `inbox.itemFiled`, `agent.started`, `agent.finished`, and from v1.1
