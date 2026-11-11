@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 34
+- **Spec version:** 35
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -336,6 +336,52 @@ and a project manifest may only lower them. Two changes:
 
 A session at any cap stops and reports which cap (SR-18).
 
+### H-0088 (draft): supply-chain checks in CI (SR-13, SR-19; Gate 2 M4, L3)
+
+Draft for the owner's approval. The owner chose on 2026-11-11 (decision card)
+to add these now rather than before Alpha. Three changes, all to
+change-controlled files:
+
+1. **OSV-Scanner in `engine.yml`**, in a new Linux job `supply-chain` that
+   runs on the same triggers, including the weekly run, with
+   `contents: read` and no secrets:
+   - OSV-Scanner **2.7.1**, the official release binary, downloaded by the
+     job and checked against its pinned SHA-256 before it runs
+     (`osv-scanner_linux_amd64`
+     `fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8`).
+     It is not the `osv-scanner-action`, because that action runs a container
+     image by a mutable tag. S4.1 review: Gate 1 report, review 7.
+   - Scan both lockfiles: `engine/package-lock.json` and
+     `engine/docker/claude-code/package-lock.json`.
+   - Build the agent image the way the engine does (`docker buildx build
+     --load`, the same Dockerfile and context, `BASE_IMAGE` read from the
+     engine's pin), then `osv-scanner scan image` on it.
+   - Any finding fails the job. A finding judged not reachable goes into an
+     `engine/osv-scanner.toml` ignore entry with a reason and an expiry date
+     of at most 90 days. That file is change-controlled, so each entry needs
+     the owner's approval.
+2. **Actions pinned by commit SHA** in all three workflows, with the version
+   in a comment. Same major versions as today, so behaviour does not change:
+   - `actions/checkout` v4.4.0 `11d5960a326750d5838078e36cf38b85af677262`
+   - `actions/setup-node` v4.4.0 `49933ea5288caeca8642d1e84afbd3f7d6820020`
+   - `actions/setup-python` v5.6.0 `a26af69be951a213d495a4c3e4e4022e16d87065`
+
+   `docs-checks.yml` also gets `persist-credentials: false` on checkout.
+   Moving to newer majors is a later, separate change.
+3. **The SR-13 checks in `docs-checks.yml`**, as a new script
+   `scripts/check_placeholders.py`:
+   - Fail if `factory-projects.local.yaml` is tracked anywhere in the repo.
+   - In templates (`**/templates/**`) and test fixtures, fail if an owner key
+     (`github_id`, `oauth_client_id`, an `allowed_repo_owners` entry) holds
+     anything but a `<...>` placeholder or a listed example value.
+   - Across the repo, fail on anything shaped like a GitHub OAuth client id
+     (`Iv1.` followed by 16 hex characters, or `Ov23li` followed by 14
+     characters), and on any email address except `noreply@` ones and those
+     at `example.com`, `.org` or `.net`, a `.invalid` domain, or
+     `github.com` (URL user parts such as `git@github.com` in tests). Today's
+     tree passes all three.
+   - The script has its own tests, and the example values list is part of it.
+
 ## 11. Readiness gate
 Run by the orchestrator, 2026-11-11, on spec v21.
 
@@ -430,3 +476,4 @@ section 9.
 | 32 | 2026-11-11 | Until F-002 is wired: analyst `claude-opus-5-5`, web reader `claude-haiku-5-5`, set in the master defaults file `engine/config/models.yaml`; per-project choice arrives with F-002's `settings.agents.<role>.rung` | Owner, 2026-11-11 (decision card) |
 | 33 | 2026-11-11 | Gate 2 M1: the credential gateway refuses server-side tools and passes only allow-listed `anthropic-beta` values | Owner, 2026-11-11 (decision card) |
 | 34 | 2026-11-11 | Gate 2 M3: this increment assumes a single-user host; defending against other local user accounts (engine home ACL on Windows, Docker pipe server identity, `ProgramData` plugin path, Unix socket owner) is deferred to Alpha and must be fixed before promotion | Owner, 2026-11-11 (decision card) |
+| 35 | 2026-11-11 | H-0088 drafted: OSV-Scanner on both lockfiles and the agent image, actions pinned by SHA, SR-13 placeholder and paths-file checks | Owner chose to add now (decision card); values draft |

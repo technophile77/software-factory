@@ -260,6 +260,25 @@ working folder is an empty engine-owned folder, because it loads
 - **Verdict:** acceptable at Rapid prototype. No findings. Install with
   `npm ci --ignore-scripts` as for the other dev dependencies.
 
+### 7. OSV-Scanner (CI scans of lockfiles and the agent image, SR-19, H-0088)
+
+Checked on 2026-11-11 for spec v35. **Sources that worked:** git tags and the
+source tree at `v2.7.1`, and the release downloads (`osv-scanner_SHA256SUMS`
+and the SLSA provenance file `multiple.intoto.jsonl`). **Lookups that
+failed:** the GitHub API (release metadata, advisories). **Not run:** the
+binary was not executed in this session. The provenance envelope's signature
+was not verified with `slsa-verifier`; only its subject digests were read.
+
+| Item | Finding |
+|---|---|
+| Source and maintainers | `github.com/google/osv-scanner`, Apache-2.0, maintained by Google's open source security team, with many contributors and regular releases. Tag `v2.7.1` is commit `02f96a40691c2d155fdda799af436e111231e365` (2026-11-09). |
+| Provenance | Release binaries are built in GitHub Actions by GoReleaser, with SLSA level 3 provenance from `slsa-github-generator` v2.1.0. The provenance names the tag commit above and lists `osv-scanner_linux_amd64` with SHA-256 `fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8`, the same value as `osv-scanner_SHA256SUMS`. |
+| Known CVEs | None found against `osv-scanner` itself in the sources that could be reached. It is built with Go 1.27.3 (`go.mod`), a supported line. Its 204 Go module requirements were not each checked; CI is its only use, and it runs there with read-only repository access and no secrets. |
+| Install | Download the release binary in the CI job, check its SHA-256 against the pinned value before running, and run it by path. No install scripts. **Not `google/osv-scanner-action`:** that action pins its container image by the tag `ghcr.io/google/osv-scanner-action:v2.7.1`, which can change under a pinned action SHA. |
+| Permissions it needs | Reads the lockfiles it is given. In image mode it runs `docker images` and `docker save` to a temp file, then reads the layers. It sends package names and versions to `api.osv.dev` (public dependency data only; nothing from the factory's own code). Call analysis (which runs `go` or `cargo build`) applies only to Go and Rust projects, so it does not run on npm lockfiles. |
+| What it pulls in | One static Go binary. Nothing is installed into the repo or the image. |
+| Verdict | **Approve for CI use**, with conditions: (1) pinned version and SHA-256 as above; (2) run only in CI jobs with `contents: read` and no secrets; (3) ignore entries only through change-controlled `engine/osv-scanner.toml`, each with a reason and an expiry of at most 90 days; (4) re-review on a version bump. |
+
 ## Threat model (S9.7)
 
 **System:** the owner's Claude Code session (skill and client) talks to the
