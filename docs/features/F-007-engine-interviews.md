@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Draft (Security Gate 1 done; requirements folded in; owner questions OQ-10, OQ-11 and the H-0080 to H-0083 drafts open)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 17
+- **Spec version:** 18
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -169,7 +169,7 @@ to #7) block at Alpha, so they are requirements now.
 | SR-16 | Feature ids are unique across all of the engine's projects, so a feature id alone names its project (OQ-10). Session state is per project: session tokens, device approval, containers, volumes, proxy credentials and image are never shared across projects. | G1 #11; owner decision 2026-11-11 | Approved |
 | SR-17 | The engine keeps a hash chain over the transcript entries it writes, with the head in its own record. On fetch it refuses transcript changes that don't extend the chain, files a Security item and fails that feature's readiness checks. | G1 #12 | Draft |
 | SR-18 | Each session has fixed caps on turns, output tokens or dollars, and wall time; each container on CPU, memory, pids and temp size; all in change-controlled config. A run at a cap stops and reports. At most 3 resumes per run, then `failed`. The billing-mode check runs before each session. | G1 #17 | Draft |
-| SR-19 | CI scans the built image and the engine's lockfile on every change with OSV-Scanner (re-reviewed for image mode). The final agent image has no npm or npx. The engine's CI job has `contents: read` and no secrets. The secrets scanner is named (OQ-11). | G1 #18 | Draft |
+| SR-19 | CI scans the built image and the engine's lockfile on every change with OSV-Scanner (re-reviewed for image mode). The final agent image has no npm or npx. The engine's CI job has `contents: read` and no secrets. The secrets scanner is gitleaks, pinned by version and checksum, run by the engine on the host against git blobs (OQ-11). | G1 #18 | Draft |
 | SR-20 | Secrets live in the OS credential store under a factory-specific name. Residual risk accepted: other programs running as the owner can read them; narrowed by a factory token scoped to the project's repos with an expiry and a spending limit on any API key. | G1 #19; owner decision 2026-11-11 | Accepted risk |
 | SR-21 | The web reader fetches pages only through the engine's `fetch_page` tool, never Claude Code's `WebFetch`: through the proxy with SR-8's rules, hidden content stripped, size capped, plain text with its source address. `WebSearch` queries are logged from the SDK message stream. | G1 #20; owner decision 2026-11-11 | Approved |
 | SR-22 | Transcript text is stored as data (JSON strings), never as live Markdown. The readiness check flags remote images and raw HTML in the spec. | G1 #21 | Draft |
@@ -299,7 +299,7 @@ Asked one at a time in the interview. None is assumed.
 | OQ-9 | Test tools for the engine: Vitest, as the extension uses, or Node's built-in runner. | Architecture | Decided: Vitest, as the extension uses (owner, decision card, 2026-11-11) |
 
 | OQ-10 | One engine serves several projects, but the channel has no project field (G1 #11). Keep feature ids unique across all projects (no contract change), or add a `project` parameter to the channel? | Interfaces | Decided: feature ids unique across all of the engine's projects; no channel change (owner, decision card, 2026-11-11) |
-| OQ-11 | Which secrets scanner the engine uses before each commit (G1 #18): an existing tool after its S4.1 review, or patterns of our own in the engine. | Architecture, Security | Asked |
+| OQ-11 | Which secrets scanner the engine uses before each commit (G1 #18): an existing tool after its S4.1 review, or patterns of our own in the engine. | Architecture, Security | Decided: gitleaks, pinned by version and checksum, after its S4.1 review (owner, decision card, 2026-11-11) |
 
 ### Security Gate 1 decisions
 From `F-007-security-gate1.md`. All five decided; every finding is now in
@@ -345,3 +345,4 @@ section 9.
 | 15 | 2026-11-11 | Gate 1 #19: OS credential store residual risk accepted with scoped tokens | Owner, 2026-11-11 (decision card) |
 | 16 | 2026-11-11 | Gate 1 #20 decided (engine `fetch_page`, H-0083). All Gate 1 findings folded in: SR-1 to SR-23, sensitive data and external services, AC-14 to AC-21, pins in constraints, H-0082 limits and caps. OQ-10, OQ-11 added | Owner, 2026-11-11 (decision card, #20); rest drafts |
 | 17 | 2026-11-11 | OQ-10: feature ids unique across projects, no channel change | Owner, 2026-11-11 (decision card) |
+| 18 | 2026-11-11 | OQ-11: gitleaks as the secrets scanner | Owner, 2026-11-11 (decision card) |
