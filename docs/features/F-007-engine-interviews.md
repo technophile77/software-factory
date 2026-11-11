@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 25
+- **Spec version:** 26
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -382,3 +382,4 @@ section 9.
 | 23 | 2026-11-11 | H-0084: channel error code -32008 `refused` | Owner, 2026-11-11 (decision card) |
 | 24 | 2026-11-11 | OQ-9 follow-up: test coverage by `@vitest/coverage-v8`, pinned, dev only | Owner, 2026-11-11 (decision card) |
 | 25 | 2026-11-11 | H-0085: engine CI workflow on Linux, macOS and Windows | Owner, 2026-11-11 (decision card) |
+| 26 | 2026-11-11 | H-0086: 45-minute limit per engine CI job | Owner, 2026-11-11 (decision card) |
