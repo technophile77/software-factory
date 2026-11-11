@@ -25,11 +25,11 @@ export function dockerName(...parts: string[]): string {
  */
 export function localEndpoints(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, home = os.homedir()): string[] {
   if (platform === "win32") return ["npipe:////./pipe/dockerDesktopLinuxEngine", "npipe:////./pipe/docker_engine"];
-  if (platform === "darwin") return [`unix://${path.join(home, ".docker", "run", "docker.sock")}`, "unix:///var/run/docker.sock"];
+  if (platform === "darwin") return [`unix://${path.posix.join(home, ".docker", "run", "docker.sock")}`, "unix:///var/run/docker.sock"];
   const out: string[] = [];
   const xdg = env.XDG_RUNTIME_DIR;
-  if (xdg && path.isAbsolute(xdg)) out.push(`unix://${path.join(xdg, "docker.sock")}`);
-  out.push(`unix://${path.join(home, ".docker", "desktop", "docker.sock")}`, "unix:///var/run/docker.sock");
+  if (xdg && path.posix.isAbsolute(xdg)) out.push(`unix://${path.posix.join(xdg, "docker.sock")}`);
+  out.push(`unix://${path.posix.join(home, ".docker", "desktop", "docker.sock")}`, "unix:///var/run/docker.sock");
   return out;
 }
 
