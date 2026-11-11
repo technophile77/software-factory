@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Draft (Security Gate 1 done; requirements folded in; owner questions OQ-10, OQ-11 and the H-0080 to H-0083 drafts open)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 16
+- **Spec version:** 17
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -166,7 +166,7 @@ to #7) block at Alpha, so they are requirements now.
 | SR-13 | The project paths file is refused if it is a symlink, isn't owned by the owner, or is group- or world-writable. A listed path is refused if it isn't absolute, is a symlink, isn't a Git work tree, or is the master repo or a clone of it. The master repo's CI fails if that file is ever tracked, or if templates or fixtures hold anything but placeholders. | G1 #9 | Draft |
 | SR-14 | `docker` runs by absolute path with an argument array, no shell, a fixed local context, and `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG` and `DOCKER_TLS*` cleared. Container names come from validated ids only. After each start `docker inspect` must confirm image digest, user, read-only root, no capabilities, `no-new-privileges`, CPU, memory and pids limits, network and exact mounts, or the container is stopped. On Linux, rootless Docker or Docker Desktop is recommended, since the daemon is root-equivalent. | G1 #14 | Draft |
 | SR-15 | Every FFI step fails closed. After creating the socket or pipe the engine reads its mode or ACL back and refuses to serve unless only the owner has access. FFI sits in one small module with a fixed list of OS functions. CI on all three OSes runs negative tests: another user's peer, a wider ACL, a forced FFI error. | G1 #13 | Draft |
-| SR-16 | Session state is per project: feature ids, session tokens, device approval, containers, volumes, proxy credentials and image are never shared across projects. | G1 #11 | Draft |
+| SR-16 | Feature ids are unique across all of the engine's projects, so a feature id alone names its project (OQ-10). Session state is per project: session tokens, device approval, containers, volumes, proxy credentials and image are never shared across projects. | G1 #11; owner decision 2026-11-11 | Approved |
 | SR-17 | The engine keeps a hash chain over the transcript entries it writes, with the head in its own record. On fetch it refuses transcript changes that don't extend the chain, files a Security item and fails that feature's readiness checks. | G1 #12 | Draft |
 | SR-18 | Each session has fixed caps on turns, output tokens or dollars, and wall time; each container on CPU, memory, pids and temp size; all in change-controlled config. A run at a cap stops and reports. At most 3 resumes per run, then `failed`. The billing-mode check runs before each session. | G1 #17 | Draft |
 | SR-19 | CI scans the built image and the engine's lockfile on every change with OSV-Scanner (re-reviewed for image mode). The final agent image has no npm or npx. The engine's CI job has `contents: read` and no secrets. The secrets scanner is named (OQ-11). | G1 #18 | Draft |
@@ -298,8 +298,8 @@ Asked one at a time in the interview. None is assumed.
 | OQ-8 | The analyst-to-engine tools: names, parameters and results. | Interfaces | Drafted as H-0082 (section 10), for the owner's review |
 | OQ-9 | Test tools for the engine: Vitest, as the extension uses, or Node's built-in runner. | Architecture | Decided: Vitest, as the extension uses (owner, decision card, 2026-11-11) |
 
-| OQ-10 | One engine serves several projects, but the channel has no project field (G1 #11). Keep feature ids unique across all projects (no contract change), or add a `project` parameter to the channel? | Interfaces | Open |
-| OQ-11 | Which secrets scanner the engine uses before each commit (G1 #18): an existing tool after its S4.1 review, or patterns of our own in the engine. | Architecture, Security | Open |
+| OQ-10 | One engine serves several projects, but the channel has no project field (G1 #11). Keep feature ids unique across all projects (no contract change), or add a `project` parameter to the channel? | Interfaces | Decided: feature ids unique across all of the engine's projects; no channel change (owner, decision card, 2026-11-11) |
+| OQ-11 | Which secrets scanner the engine uses before each commit (G1 #18): an existing tool after its S4.1 review, or patterns of our own in the engine. | Architecture, Security | Asked |
 
 ### Security Gate 1 decisions
 From `F-007-security-gate1.md`. All five decided; every finding is now in
@@ -344,3 +344,4 @@ section 9.
 | 14 | 2026-11-11 | Gate 1 #7: owner keys pinned, changes confirmed by the previous owner | Owner, 2026-11-11 (decision card) |
 | 15 | 2026-11-11 | Gate 1 #19: OS credential store residual risk accepted with scoped tokens | Owner, 2026-11-11 (decision card) |
 | 16 | 2026-11-11 | Gate 1 #20 decided (engine `fetch_page`, H-0083). All Gate 1 findings folded in: SR-1 to SR-23, sensitive data and external services, AC-14 to AC-21, pins in constraints, H-0082 limits and caps. OQ-10, OQ-11 added | Owner, 2026-11-11 (decision card, #20); rest drafts |
+| 17 | 2026-11-11 | OQ-10: feature ids unique across projects, no channel change | Owner, 2026-11-11 (decision card) |
