@@ -3,12 +3,12 @@
 - **Id:** F-007
 - **Status:** Draft (requirements interview in progress)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 1
+- **Spec version:** 2
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
-feature of its own with its own gates. The proposed order is in section 13;
-the owner decides it.
+feature of its own with its own gates. The owner chose this increment first
+(OQ-1, decision card, 2026-11-11); the order of the rest is in section 13.
 
 ## 1. Objective and business purpose
 The interview skill (F-005) and the advisor client (F-006) are built and
@@ -161,8 +161,8 @@ Asked one at a time in the interview. None is assumed.
 
 | Id | Question | Category | Status |
 |---|---|---|---|
-| OQ-1 | Is this the right first increment, and is the order in section 13 right? | Product | Asked |
-| OQ-2 | Where does the master factory config live, and what does it hold (owner GitHub id, OAuth client id, allow list, the list of projects)? ADR 0014 says the engine refuses interviews until this exists. | Architecture, Interfaces | Open |
+| OQ-1 | Is this the right first increment? | Product | Decided: real interviews end to end (owner, decision card, 2026-11-11) |
+| OQ-2 | Where does the master factory config live, and what does it hold (owner GitHub id, OAuth client id, allow list, the list of projects)? ADR 0014 says the engine refuses interviews until this exists. | Architecture, Interfaces | Asked |
 | OQ-3 | Node can't read a socket peer's uid or pid, set a named pipe's ACL, or read a pipe client's SID, all of which the channel contract requires. How do we get them: a small FFI library, a native addon, or a separate helper program? | Architecture, Security | Open |
 | OQ-4 | Approve the Claude Agent SDK, and Claude Code inside the agent image, after their S4.1 review. | Architecture, Security | Open |
 | OQ-5 | How the engine drives containers: the `docker` command line (no new library) or a Docker API library. And the egress proxy: written in the engine with Node's own modules, or an existing proxy image. | Architecture, Security | Open |
@@ -171,7 +171,7 @@ Asked one at a time in the interview. None is assumed.
 | OQ-8 | The analyst-to-engine tools: names, parameters and results. | Interfaces | Open |
 | OQ-9 | Test tools for the engine: Vitest, as the extension uses, or Node's built-in runner. | Architecture | Open |
 
-## 13. Proposed increments (owner decides, OQ-1)
+## 13. Increments (first one chosen by the owner, OQ-1; later order open)
 1. **This feature:** engine core, channel, phone approval, analyst and web
    reader in containers, transcript, interview readiness checks.
 2. **Advisor:** the engine half of F-006 (its dev report's deferred list).
@@ -187,3 +187,4 @@ Asked one at a time in the interview. None is assumed.
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-11 | Draft from the specs, ADRs and the F-005 and F-006 deferred lists, before the owner interview | — |
+| 2 | 2026-11-11 | OQ-1: first increment is real interviews end to end | Owner, 2026-11-11 (decision card) |
