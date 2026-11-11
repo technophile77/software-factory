@@ -63,6 +63,17 @@ export function initRepo(dir: string, files: Record<string, string>, origin?: st
   if (origin) git(dir, "remote", "add", "origin", origin);
 }
 
+/** The master files the engine reads from the commit `factory.version` names (spec v30). */
+export const MASTER_FILES: Record<string, string> = {
+  "README.md": "master\n",
+  "engine/config/limits.yaml": fs.readFileSync(path.join(__dirname, "..", "config", "limits.yaml"), "utf8"),
+  "agents/requirements-analyst/AGENT.md": "# Requirements analyst (master)\n",
+  "agents/web-reader/AGENT.md": "# Web reader (master)\n",
+  "skills/security-review/SKILL.md": "---\nname: security-review\ndescription: master\n---\nReview.\n",
+  "skills/security-review/checklist.md": "- one\n",
+  "skills/style/SKILL.md": "---\nname: style\ndescription: master\n---\nStyle.\n",
+};
+
 export function manifestYaml(o: { name?: string; enabled?: boolean; ownerId?: number; mode?: string; allowed?: number; extra?: string } = {}): string {
   return [
     "schema: factory-project/1.0",
@@ -217,15 +228,16 @@ export interface World {
   pin(projectPath?: string, manifest?: string): void;
 }
 
-export function makeWorld(o: { manifest?: string; pinned?: boolean } = {}): World {
+export function makeWorld(o: { manifest?: string; pinned?: boolean; configFiles?: Record<string, string> } = {}): World {
   const root = tmpdir();
   const master = path.join(root, "master");
   const config = path.join(root, "acme-config");
   const home = path.join(root, "home");
   const worktree = path.join(root, "analyst");
-  initRepo(master, { "README.md": "master\n" }, "https://github.com/example-org/software-factory");
+  initRepo(master, MASTER_FILES, "https://github.com/example-org/software-factory");
+  git(master, "tag", "v0.1.0");
   const manifest = o.manifest ?? manifestYaml();
-  initRepo(config, { "factory-project.yaml": manifest, "README.md": "config\n" }, "https://github.com/example-org/acme-config");
+  initRepo(config, { "factory-project.yaml": manifest, "README.md": "config\n", ...o.configFiles }, "https://github.com/example-org/acme-config");
   fs.writeFileSync(path.join(master, "factory-projects.local.yaml"), `projects:\n  - path: ${config}\n`, { mode: 0o600 });
   fs.chmodSync(path.join(master, "factory-projects.local.yaml"), 0o600);
   ownerOnly(path.join(master, "factory-projects.local.yaml"));

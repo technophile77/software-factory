@@ -328,6 +328,9 @@ export class World {
     git(this.master, "init", "-q", "-b", "main");
     writeFileSync(join(this.master, "README.md"), "# software-factory (fixture)\n");
     writeFileSync(join(this.master, ".gitignore"), ".factory/\n/factory-projects.local.yaml\n");
+    // The engine reads its limit defaults from the commit factory.version names (spec v30).
+    mkdirSync(join(this.master, "engine", "config"), { recursive: true });
+    writeFileSync(join(this.master, "engine", "config", "limits.yaml"), readFileSync(join(REPO_ROOT, "engine", "config", "limits.yaml")));
     git(this.master, "add", "-A");
     git(this.master, "commit", "-q", "-m", "master root");
     git(this.master, "tag", "v0.1.0");

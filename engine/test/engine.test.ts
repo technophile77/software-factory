@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -12,8 +13,10 @@ import { Children } from "../src/proc";
 import { realOsApi } from "../src/os/ffi";
 import { realPath } from "../src/fsutil";
 import { grantWrite } from "./acceptance/support/platform";
+import { policyDoc } from "./policy-fixture";
+import YAML from "yaml";
 import {
-  GIT_PATH, OWNER_ID, ORG_ID, OTHER_ID, driveClock, RpcClient, World, engineJson, git, initRepo, makeWorld, manifestYaml, start,
+  GIT_ENV, GIT_PATH, MASTER_FILES, OWNER_ID, ORG_ID, OTHER_ID, driveClock, RpcClient, World, engineJson, git, initRepo, makeWorld, manifestYaml, start,
 } from "./helpers";
 
 let engines: EngineHandle[] = [];
@@ -324,21 +327,13 @@ describe("shutdown", () => {
 });
 
 describe("limits (H-0087, Project manifest v1.4)", () => {
-  const SHIPPED = fs.readFileSync(path.join(__dirname, "..", "config", "limits.yaml"), "utf8");
-  function ship(w: World, text = SHIPPED) {
-    fs.mkdirSync(path.join(w.master, "engine", "config"), { recursive: true });
-    fs.writeFileSync(path.join(w.master, "engine", "config", "limits.yaml"), text);
-    git(w.master, "add", "engine/config/limits.yaml");
-    git(w.master, "commit", "-qm", "limits");
-  }
   const lowered = "limits:\n  analyst:\n    turns: 100\n    cpus: 1.5\n  worktree_commit:\n    max_file_mib: 0.5\n";
 
   it("a project's lower values replace the defaults key by key; the rest stay", async () => {
     const w = makeWorld({ manifest: manifestYaml({ extra: lowered }) });
-    ship(w);
     const e = await boot(w);
     expect(e.projects[0]!.state).toBe("running");
-    const l = await e.limits("acme");
+    const l = e.limits("acme");
     expect(l.analyst).toMatchObject({ turns: 100, cpus: 1.5, output_tokens: 500000, memory_mib: 2048 });
     expect(l.worktree_commit).toEqual({ max_files: 200, max_total_mib: 5, max_file_mib: 0.5 });
     expect(l.web_reader.turns).toBe(30);
@@ -347,7 +342,6 @@ describe("limits (H-0087, Project manifest v1.4)", () => {
 
   it("a value above the default stops the project and files one Security item", async () => {
     const w = makeWorld({ manifest: manifestYaml({ extra: "limits:\n  analyst:\n    turns: 301\n  proxy:\n    pids: 64\n" }) });
-    ship(w);
     const e = await boot(w);
     expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringContaining("analyst.turns") });
     expect(e.projects[0]!.reason).not.toContain("proxy.pids");
@@ -355,38 +349,139 @@ describe("limits (H-0087, Project manifest v1.4)", () => {
     const item = git(w.config, "show", `factory/state:${securityItems(w)[0]}`);
     expect(item).toContain("category: Security");
     expect(item).toContain("analyst.turns");
-    await expect(e.limits("acme")).rejects.toThrow(/No running project/);
+    expect(() => e.limits("acme")).toThrow(/No running project/);
   });
 
   it("an invalid block stops the project with a Security item", async () => {
     const w = makeWorld({ manifest: manifestYaml({ extra: "limits:\n  analyst:\n    turns: many\n" }) });
-    ship(w);
     const e = await boot(w);
     expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringContaining("analyst.turns") });
     expect(securityItems(w)).toHaveLength(1);
   });
+});
 
-  it("fails closed: a project with limits stops when the master defaults are missing or invalid", async () => {
-    const a = makeWorld({ manifest: manifestYaml({ extra: lowered }) });
-    expect((await boot(a)).projects[0]).toMatchObject({ state: "stopped", reason: expect.stringContaining("missing") });
-    expect(securityItems(a)).toHaveLength(1);
-    const b = makeWorld({ manifest: manifestYaml({ extra: lowered }) });
-    ship(b, SHIPPED.replace("pids: 64", "pids: 0"));
-    expect((await boot(b)).projects[0]).toMatchObject({ state: "stopped", reason: expect.stringContaining("proxy.pids") });
+describe("factory.version sources (spec v30)", () => {
+  const version = (v: string, extra = "") => manifestYaml({ extra }).replace("version: v0.1.0", `version: ${v}`);
+  function commitMaster(w: World, files: Record<string, string | null>, tag?: string) {
+    for (const [f, c] of Object.entries(files)) {
+      const full = path.join(w.master, f);
+      if (c === null) fs.rmSync(full);
+      else {
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, c);
+      }
+    }
+    git(w.master, "add", "-A");
+    git(w.master, "commit", "-qm", "master change");
+    if (tag) git(w.master, "tag", tag);
+  }
+
+  it("limits come from the tagged commit, never a later commit or the working tree", async () => {
+    const w = makeWorld();
+    commitMaster(w, { "engine/config/limits.yaml": MASTER_FILES["engine/config/limits.yaml"]!.replace("turns: 300", "turns: 9000") });
+    fs.writeFileSync(path.join(w.master, "engine/config/limits.yaml"), "broken: [");
+    const e = await boot(w);
+    expect(e.limits("acme").analyst.turns).toBe(300);
+    expect(e.agentSources("acme").masterCommit).toBe(git(w.master, "rev-parse", "v0.1.0^{commit}"));
   });
 
-  it("without a block the project runs on the defaults, read from HEAD and never the working tree", async () => {
-    const w = makeWorld();
+  it.each([
+    ["a tag that doesn't exist", (_w: World) => "v9.9.9", /not a tag/],
+    ["a branch, not a tag", (w: World) => (git(w.master, "branch", "release"), "release"), /not a tag/],
+    ["a name that is both a tag and a branch", (w: World) => (git(w.master, "branch", "v0.1.0"), "v0.1.0"), /ambiguous/],
+    ["a tag of a tree", (w: World) => (git(w.master, "tag", "-a", "-m", "t", "treetag", "HEAD^{tree}"), "treetag"), /tag of a tree|doesn't resolve/],
+    ["a revision expression", (_w: World) => "HEAD~1", /not a tag name/],
+    ["a tag without limits.yaml", (w: World) => (commitMaster(w, { "engine/config/limits.yaml": null }, "v0.2.0"), "v0.2.0"), /missing/],
+    ["a tag with invalid limits.yaml", (w: World) => (commitMaster(w, { "engine/config/limits.yaml": MASTER_FILES["engine/config/limits.yaml"]!.replace("pids: 64", "pids: 0") }, "v0.2.0"), "v0.2.0"), /proxy.pids/],
+  ])("fails closed on %s, with a Security item", async (_name, make, re) => {
+    const w0 = makeWorld();
+    const v = make(w0);
+    fs.writeFileSync(path.join(w0.config, "factory-project.yaml"), version(v));
+    git(w0.config, "commit", "-q", "--allow-empty", "-am", "version");
+    const e = await boot(w0);
+    expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringMatching(re) });
+    expect(securityItems(w0)).toHaveLength(1);
+  });
+
+  const policy = YAML.stringify({ policy: policyDoc().policy });
+
+  it("master AGENT.md and skills by default, for every role", async () => {
+    const w = makeWorld({ manifest: manifestYaml({ extra: policy }) });
+    const e = await boot(w);
+    expect(e.instructions("acme", "requirements-analyst")).toEqual({ text: "# Requirements analyst (master)\n", from: "master", path: "agents/requirements-analyst/AGENT.md" });
+    // A role with no AGENT.md anywhere may not run.
+    expect(() => e.instructions("acme", "orchestrator")).toThrow(/no AGENT.md/);
+    const s = e.agentSources("acme").skills.get("requirements-analyst")!;
+    expect(s.map((x) => [x.name, x.from, [...x.files.keys()].sort()])).toEqual([
+      ["security-review", "master", ["SKILL.md", "checklist.md"]],
+      ["style", "master", ["SKILL.md"]],
+    ]);
+  });
+
+  const blocks = (b: string) => manifestYaml({ extra: `${policy}${b}` });
+  const own = {
+    "overrides/analyst/AGENT.md": "# Analyst (project)\n",
+    "overrides/style/SKILL.md": "---\nname: style\ndescription: project\n---\nOurs.\n",
+    "custom/pci/SKILL.md": "---\nname: pci\ndescription: project\n---\nPCI.\n",
+  };
+  const ownBlocks = [
+    "agents:",
+    "  override:",
+    "    - { name: requirements-analyst, path: overrides/analyst/AGENT.md, reason: ours, decision: D-0042 }",
+    "skills:",
+    "  override:",
+    "    - { name: style, path: overrides/style/SKILL.md, reason: ours }",
+    "  custom:",
+    "    - { name: pci, path: custom/pci/SKILL.md, agents: [requirements-analyst] }",
+    "",
+  ].join("\n");
+
+  it("a project's overrides and custom skills, from its config repo's main, win over the master", async () => {
+    const w = makeWorld({ manifest: blocks(ownBlocks), configFiles: own });
+    // A newer master and an unmerged edit in the config repo change nothing.
+    commitMaster(w, { "agents/requirements-analyst/AGENT.md": "# newer master\n", "skills/style/SKILL.md": "newer\n" }, "v0.1.1");
+    fs.writeFileSync(path.join(w.config, "overrides/analyst/AGENT.md"), "# unmerged\n");
     const e = await boot(w);
     expect(e.projects[0]!.state).toBe("running");
-    // Uncommitted, so not read: with no defaults there are no limits for a session.
-    fs.mkdirSync(path.join(w.master, "engine", "config"), { recursive: true });
-    fs.writeFileSync(path.join(w.master, "engine", "config", "limits.yaml"), SHIPPED);
-    await expect(e.limits("acme")).rejects.toThrow(/missing/);
-    const w2 = makeWorld();
-    ship(w2);
-    fs.writeFileSync(path.join(w2.master, "engine", "config", "limits.yaml"), SHIPPED.replace("turns: 300", "turns: 9000"));
-    const e2 = await boot(w2);
-    expect((await e2.limits("acme")).analyst.turns).toBe(300);
+    expect(e.instructions("acme", "requirements-analyst")).toEqual({ text: "# Analyst (project)\n", from: "project", path: "overrides/analyst/AGENT.md" });
+    expect(e.instructions("acme", "web-reader").from).toBe("master");
+    const names = (role: string) => e.agentSources("acme").skills.get(role)!.map((x) => `${x.name}:${x.from}`);
+    expect(names("requirements-analyst")).toEqual(["pci:project", "security-review:master", "style:project"]);
+    expect(names("web-reader")).toEqual(["security-review:master", "style:project"]);
+    expect(e.agentSources("acme").skills.get("requirements-analyst")!.find((x) => x.name === "style")!.files.get("SKILL.md")!.content.toString()).toContain("Ours.");
+  });
+
+  it("an excluded skill is gone; a protected one can't be excluded", async () => {
+    const w = makeWorld({ manifest: blocks("skills:\n  exclude:\n    - { name: style, reason: not needed }\n") });
+    const e = await boot(w);
+    expect(e.agentSources("acme").skills.get("requirements-analyst")!.map((x) => x.name)).toEqual(["security-review"]);
+    const w2 = makeWorld({ manifest: blocks("skills:\n  exclude:\n    - { name: security-review, reason: no }\n") });
+    expect((await boot(w2)).projects[0]).toMatchObject({ state: "stopped", reason: expect.stringContaining("protected") });
+  });
+
+  function symlinkInConfig(w: World, file: string, target: string) {
+    const sha = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: w.config, input: target, env: GIT_ENV, encoding: "utf8" }).trim();
+    git(w.config, "update-index", "--add", "--cacheinfo", `120000,${sha},${file}`);
+    git(w.config, "commit", "-qm", "link");
+  }
+
+  it.each([
+    ["an absolute path", "agents:\n  override:\n    - { name: requirements-analyst, path: /etc/passwd, reason: r, decision: D-0001 }\n", null, /relative path/],
+    ["a path out of the repo", "agents:\n  override:\n    - { name: requirements-analyst, path: ../x/AGENT.md, reason: r, decision: D-0001 }\n", null, /relative path/],
+    ["a path into .git", "skills:\n  custom:\n    - { name: pci, path: .git/SKILL.md }\n", null, /relative path/],
+    ["a missing file", "skills:\n  custom:\n    - { name: pci, path: custom/none/SKILL.md }\n", null, /missing/],
+    ["a symlinked AGENT.md", "agents:\n  override:\n    - { name: web-reader, path: overrides/link.md, reason: r }\n", "overrides/link.md", /symbolic link/],
+    ["a symlink inside a skill", "skills:\n  custom:\n    - { name: pci, path: custom/pci/SKILL.md }\n", "custom/pci/extra.md", /symbolic link/],
+    ["a skill folder that is a symlink", "skills:\n  custom:\n    - { name: pci, path: linked/SKILL.md }\n", "linked", /symbolic link/],
+    ["a protected agent overridden without a decision", "agents:\n  override:\n    - { name: requirements-analyst, path: overrides/analyst/AGENT.md, reason: r }\n", null, /protected/],
+    ["an override of a name the master lacks", "skills:\n  override:\n    - { name: nope, path: custom/pci/SKILL.md, reason: r }\n", null, /not a default/],
+    ["a custom skill that shadows a master one", "skills:\n  custom:\n    - { name: style, path: custom/pci/SKILL.md }\n", null, /use override/],
+  ])("refuses %s with a Security item", async (_name, block, link, re) => {
+    const w = makeWorld({ manifest: blocks(block), configFiles: own });
+    if (link) symlinkInConfig(w, link, "/etc/passwd");
+    const e = await boot(w);
+    expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringMatching(re) });
+    expect(securityItems(w)).toHaveLength(1);
+    expect(git(w.config, "show", `factory/state:${securityItems(w)[0]}`)).toContain("category: Security");
   });
 });

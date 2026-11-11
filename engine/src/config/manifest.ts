@@ -17,6 +17,8 @@ export interface Manifest {
   allowed_repo_owners: RepoOwner[];
   repos: Array<{ name: string; url: string; owner: string; repo: string }>;
   billingMode: "subscription" | "tokens";
+  /** The master factory tag the project uses (spec v30: skills, AGENT.md and limit defaults come from its commit). */
+  factoryVersion: string;
   /** The parsed document, from which a session's Role policy is resolved when it starts. */
   raw?: unknown;
 }
@@ -104,6 +106,7 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
     allowed_repo_owners: allowed,
     repos,
     billingMode: mode as "subscription" | "tokens",
+    factoryVersion: (doc.factory as { version: string }).version,
     raw: doc,
   };
 }

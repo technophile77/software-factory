@@ -1,5 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { AgentSources } from "../config/agent-sources";
+import { ensureOwnerDir } from "../fsutil";
+import { ROLE_RE } from "../policy/role-policy";
 import { DockerCli, DockerError } from "./cli";
 
 /** The base image, by multi-arch index digest (Gate 1 review 4, OQ-6). Agent images and the proxy sidecar both start from it. */
@@ -21,23 +24,88 @@ export async function baseImageId(docker: DockerCli): Promise<string> {
   return img.Id;
 }
 
-/** `docker build` for the agent image; the context is the engine's own docker folder, never a project's files. */
-export function agentBuildArgs(contextDir: string, iidFile: string, project: string): string[] {
+/** Where a role's baked skills sit in the image, as a local plugin folder (SR-10). */
+export const SKILLS_ROOT = "/opt/factory/skills";
+export function skillsPluginDir(role: string): string {
+  if (!ROLE_RE.test(role)) throw new DockerError("bad role name");
+  return `${SKILLS_ROOT}/${role}`;
+}
+
+/** The engine's own files the build needs; nothing else of the engine's docker folder is copied. */
+const ENGINE_FILES = ["agent.Dockerfile", "claude-code/package.json", "claude-code/package-lock.json", "claude-sha256.json", "verify-claude.cjs"];
+
+/**
+ * Assembles a fresh build context: the engine's own image files, and under
+ * `skills/<role>/` a local plugin holding that role's resolved skills (spec
+ * v30). Skill files come from git objects only; nothing of a working tree or
+ * a worktree is copied.
+ */
+export function writeBuildContext(engineDockerDir: string, contextDir: string, sources: Pick<AgentSources, "skills">): void {
+  fs.rmSync(contextDir, { recursive: true, force: true });
+  ensureOwnerDir(contextDir);
+  for (const f of ENGINE_FILES) {
+    fs.mkdirSync(path.dirname(path.join(contextDir, f)), { recursive: true });
+    fs.copyFileSync(path.join(engineDockerDir, f), path.join(contextDir, f));
+  }
+  const root = path.join(contextDir, "skills");
+  fs.mkdirSync(root);
+  for (const [role, list] of sources.skills) {
+    skillsPluginDir(role);
+    const plugin = path.join(root, role);
+    fs.mkdirSync(path.join(plugin, ".claude-plugin"), { recursive: true });
+    fs.writeFileSync(path.join(plugin, ".claude-plugin", "plugin.json"), `${JSON.stringify({ name: `factory-${role}`, version: "0.0.0", description: `Skills baked for the ${role} role` }, null, 2)}\n`);
+    for (const s of list) {
+      for (const [rel, f] of s.files) {
+        // Paths come from git trees, so they are already relative and free of '..'; checked again before writing.
+        if (rel.split("/").some((seg) => seg === "" || seg === "." || seg === "..")) throw new DockerError("bad skill file path");
+        const dest = path.join(plugin, "skills", s.name, ...rel.split("/"));
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, f.content, { mode: f.executable ? 0o755 : 0o644 });
+      }
+    }
+  }
+}
+
+export interface ImageIdentity {
+  project: string;
+  /** The master commit `factory.version` names. */
+  masterCommit: string;
+  /** AgentSources.skillsDigest: project overrides differ per project even on one master commit. */
+  skillsDigest: string;
+}
+
+export function agentImageTag(id: ImageIdentity): string {
+  const project = id.project.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+  return `factory-agent:${project}-${id.masterCommit.slice(0, 12)}-${id.skillsDigest.slice(0, 12)}`;
+}
+
+/** `docker build` for the agent image; the context is one `writeBuildContext` made, never a project's files. */
+export function agentBuildArgs(contextDir: string, iidFile: string, id: ImageIdentity): string[] {
   if (!path.isAbsolute(contextDir) || !path.isAbsolute(iidFile)) throw new DockerError("absolute paths only");
-  if (!/^[A-Za-z0-9._-]{1,100}$/.test(project)) throw new DockerError("bad project name");
-  return ["build", "--build-arg", `BASE_IMAGE=${BASE_IMAGE}`, "--iidfile", iidFile, "--label", `factory.project=${project}`,
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(id.project)) throw new DockerError("bad project name");
+  if (!/^[0-9a-f]{40,64}$/.test(id.masterCommit) || !/^[0-9a-f]{64}$/.test(id.skillsDigest)) throw new DockerError("bad image identity");
+  return ["build", "--build-arg", `BASE_IMAGE=${BASE_IMAGE}`, "--iidfile", iidFile, "--tag", agentImageTag(id),
+    "--label", `factory.project=${id.project}`, "--label", `factory.master_commit=${id.masterCommit}`, "--label", `factory.skills_sha256=${id.skillsDigest}`,
     "--file", path.join(contextDir, "agent.Dockerfile"), contextDir];
 }
 
-export async function buildAgentImage(docker: DockerCli, contextDir: string, workDir: string, project: string): Promise<string> {
+export async function buildAgentImage(docker: DockerCli, engineDockerDir: string, workDir: string, ident: ImageIdentity, sources: Pick<AgentSources, "skills">): Promise<string> {
   await baseImageId(docker);
-  const iid = path.join(workDir, `agent-image-${project}.iid`);
+  const context = path.join(workDir, `agent-context-${ident.masterCommit.slice(0, 12)}-${ident.skillsDigest.slice(0, 12)}`);
+  writeBuildContext(engineDockerDir, context, sources);
+  const iid = path.join(workDir, `agent-image-${ident.project}.iid`);
   fs.rmSync(iid, { force: true });
-  await docker.run(agentBuildArgs(contextDir, iid, project), { timeoutMs: 30 * 60_000 });
+  try {
+    await docker.run(agentBuildArgs(context, iid, ident), { timeoutMs: 30 * 60_000 });
+  } finally {
+    fs.rmSync(context, { recursive: true, force: true });
+  }
   const id = fs.readFileSync(iid, "utf8").trim();
   if (!ID_RE.test(id)) throw new DockerError("the build gave no image id");
   const doc = JSON.parse(await docker.out(["image", "inspect", id])) as unknown;
   const img = Array.isArray(doc) ? doc[0] : doc;
   if (!isObj(img) || !isObj(img.Config) || img.Config.User !== "1000:1000") throw new DockerError("the agent image doesn't run as the non-root user");
+  const labels = isObj(img.Config.Labels) ? img.Config.Labels : {};
+  if (labels["factory.master_commit"] !== ident.masterCommit || labels["factory.skills_sha256"] !== ident.skillsDigest) throw new DockerError("the agent image doesn't carry its master commit and skills");
   return id;
 }

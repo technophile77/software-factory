@@ -441,10 +441,10 @@ This settles blocked decision 2 above.
 - **The file:** `engine/config/limits.yaml` holds the spec v29 §10 values exactly. The spec gives the values; the section and key names are mine, with units in the names:
   - sections `analyst`, `web_reader`, `proxy`, `research_web`, `fetch_page`, `research_result` and `worktree_commit`;
   - keys such as `turns`, `output_tokens`, `dollars`, `wall_time_minutes`, `cpus`, `memory_mib`, `pids` and `tmp_mib`.
-- **Where it is read from:** the master clone's `HEAD` commit through `git cat-file`, never the working tree. This is the same rule as the manifest, which is read from `main`.
+- **Where it is read from:** superseded by spec v30 (below): the commit `factory.version` names, through `git cat-file`, never a working tree.
   - The file must hold every key. Each value must be a positive finite number, and whole where the key needs it. Unknown sections and keys are refused.
   - The engine has no built-in values. If the file is missing or invalid, nothing that needs limits can run.
-- **When it is read:** only when something needs it. That is a project whose manifest has `limits:`, or a call to `handle.limits(project)`. The engine still starts without the file, because its other work doesn't use it, and the acceptance fixtures' master repo has no such file.
+- **When it is read:** superseded by spec v30 (below): for every project in phase 1, so a project runs only once its limits are known.
 - **The manifest block (v1.4):** it is checked in phase 1, after the manifest and before the pins.
   - The engine takes the lower of the project's value and the default, key by key.
   - The project is stopped and a Security item is filed if any of these holds: a value is above the default, the block is invalid, or the defaults can't be read. The item names the keys; it is filed once per main commit and reason.
@@ -464,8 +464,48 @@ This settles blocked decision 2 above.
   - The template has a commented example saying projects may only lower values.
   - The checker doesn't compare values with the master defaults; the engine does.
 - **Tests:**
-  - `test/limits.test.ts`: the shipped values, parse refusals, the merge, reading from `HEAD`, and each converter.
-  - `test/engine.test.ts`: lowered values, a value above the default, an invalid block, missing or invalid defaults, and `HEAD` versus the working tree.
+  - `test/limits.test.ts`: the shipped values, parse refusals, the merge, reading from a given commit, and each converter.
+  - `test/engine.test.ts`: lowered values, a value above the default, an invalid block, missing or invalid defaults, and the tagged commit versus later commits and the working tree.
   - `test/agent.test.ts`: per-role container limits.
   - `test/policy.test.ts`: each worktree cap, unchanged files, and breaches past a cap.
   - The onboarding suite gains the `LimitsV14` class.
+
+### Agent sources pinned to `factory.version` (spec v30, owner decision, 2026-11-11)
+
+This settles blocked decisions 5 and 6 above.
+
+- **The master commit:** `src/config/factory-source.ts` resolves `factory.version` through `refs/tags/<version>` only. All of these refuse the project with a Security item:
+  - a name that isn't a plain tag name (for example `HEAD~1`);
+  - a missing tag;
+  - a name that is also a branch (ambiguous);
+  - a tag of anything but a commit.
+
+  Limits, `AGENT.md` and skills are read as blobs from that commit, never a working tree. The engine now requires all of this for every project in phase 1, so `handle.limits()` is synchronous.
+- **Project overrides win (owner rule: a project's changed agent is never overwritten by a factory pull):** `src/config/agent-sources.ts` reads `agents` and `skills` (`custom`, `override`, `exclude`) from the manifest. Their files come from the config repo's `main` commit, the one the manifest was read from.
+  - For `AGENT.md`, the order is: project override, then project custom, then `agents/<role>/AGENT.md` at the master commit. A role with none of these may not run; `handle.instructions()` throws for it.
+  - For skills, the order is: the master `skills/<name>/` folders, minus excluded ones, with overridden ones replaced by the project's folder, plus custom ones. A custom skill with `agents:` goes only to the roles it lists.
+- **Path rules:** each path must be relative and `/`-separated, with no `..`, `.`, `.git`, drive or absolute part.
+  - The file or folder is read from the git tree. A symlink, a submodule, a path through a symlink or a missing file refuses the project, and the engine files a Security item.
+  - A skill path must end in `/SKILL.md`; its folder is the skill.
+- **Proposal 0013 rules, now enforced by the engine too:**
+  - `override` and `exclude` names must exist at the master commit;
+  - `reason` is required on each;
+  - a name may appear only once;
+  - `security-review` and the six core agents can't be excluded;
+  - overriding a protected item needs `decision: D-nnnn`;
+  - a custom name can't shadow a master default (use `override`).
+- **Bounds (my choice, an engine guard, not owner limits):** 256 KiB per `AGENT.md`; per skill folder, 100 files and 2 MiB.
+- **Baked into the image:**
+  - `writeBuildContext` assembles a fresh context. It holds the engine's own image files plus `skills/<role>/`, a local plugin (`.claude-plugin/plugin.json` and `skills/<name>/…`) for each role in the policy and each custom agent. File modes are kept.
+  - The Dockerfile copies it to `/opt/factory/skills`, root-owned and read-only. `skillsPluginDir(role)` gives the session its plugin path.
+  - The image carries the labels `factory.master_commit` and `factory.skills_sha256` (a digest of every role's skill files) and the tag `factory-agent:<project>-<commit12>-<digest12>`. So different versions, or different overrides, give different images. `buildAgentImage` checks both labels on the built image.
+- **Fixtures:** the unit master repo now holds `limits.yaml`, two `AGENT.md` files and two skills, tagged `v0.1.0`. The acceptance master (already tagged `v0.1.0`) gains `engine/config/limits.yaml`, as the coordinator allowed.
+- **Tests (`test/engine.test.ts`, `test/agent.test.ts`):**
+  - the tagged commit versus later commits and the working tree;
+  - seven ways the version or its files fail;
+  - master defaults per role;
+  - overrides and custom skills winning over a newer master and over an unmerged edit;
+  - exclude, including a protected skill;
+  - ten path and rule refusals, symlinks included;
+  - image labels, tag and build context.
+- **Not done:** the analyst still isn't started from `feature.start`, so nothing calls `buildAgentImage` or `instructions()` at run time yet. Recording the resolved skill list in the agent report (proposal 0013) waits for that wiring.

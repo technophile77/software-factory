@@ -76,22 +76,26 @@ describe("mergeLimits", () => {
 });
 
 describe("readDefaultLimits", () => {
-  it("reads the file at HEAD, not the working tree, and fails closed when missing or invalid", async () => {
+  it("reads the file at the commit it is given, not the working tree, and fails closed when missing or invalid", async () => {
     const repo = tmpdir();
     initRepo(repo, { "README.md": "m\n" });
-    await expect(readDefaultLimits(testGit(), repo)).rejects.toThrow(/missing/);
+    const read = () => readDefaultLimits(testGit(), repo, git(repo, "rev-parse", "HEAD"));
+    await expect(read()).rejects.toThrow(/missing/);
     fs.mkdirSync(path.join(repo, "engine", "config"), { recursive: true });
     fs.writeFileSync(path.join(repo, LIMITS_FILE), SHIPPED);
-    await expect(readDefaultLimits(testGit(), repo)).rejects.toThrow(LimitsError);
+    await expect(read()).rejects.toThrow(LimitsError);
     git(repo, "add", "-A");
     git(repo, "commit", "-qm", "limits");
-    expect(await readDefaultLimits(testGit(), repo)).toEqual(defaults());
+    const good = git(repo, "rev-parse", "HEAD");
+    expect(await read()).toEqual(defaults());
     fs.writeFileSync(path.join(repo, LIMITS_FILE), "analyst: [");
     git(repo, "commit", "-qam", "broken");
-    await expect(readDefaultLimits(testGit(), repo)).rejects.toThrow(/not valid YAML/);
+    await expect(read()).rejects.toThrow(/not valid YAML/);
+    // The pinned commit still reads as it was, whatever came after it.
+    expect(await readDefaultLimits(testGit(), repo, good)).toEqual(defaults());
     fs.writeFileSync(path.join(repo, LIMITS_FILE), SHIPPED.replace("max_sources: 8", "max_sources: 8\n  extra: 1"));
     git(repo, "commit", "-qam", "extra key");
-    await expect(readDefaultLimits(testGit(), repo)).rejects.toThrow(/unknown key 'research_result.extra'/);
+    await expect(read()).rejects.toThrow(/unknown key 'research_result.extra'/);
   });
 });
 

@@ -24,6 +24,11 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /opt/yarn* \
  && rm -f /usr/local/bin/docker-entrypoint.sh
 COPY --from=build /out/claude /opt/claude/claude
+# SR-10, spec v30: each role's skills as a local plugin, resolved by the engine
+# from the factory.version commit and the project's overrides. Root-owned and
+# read-only, so a session can't change the skills it runs with.
+COPY skills/ /opt/factory/skills/
+RUN chown -R 0:0 /opt/factory && chmod -R a-w,a+rX /opt/factory
 USER 1000:1000
 WORKDIR /workspace
 ENTRYPOINT []

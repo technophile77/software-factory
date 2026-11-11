@@ -9,7 +9,7 @@ import { DUMMY_KEY, ProxyClient, SessionGroup } from "../src/agent/sandbox";
 import type { AgentSdk, SdkMessage, SessionOptions, UserTurn } from "../src/agent/sdk";
 import { CLAUDE_BIN, CONTAINER_FLAGS, SessionCaps, containerSpawn, hostRelative, runSession, sessionOptions, toolGate } from "../src/agent/session";
 import { DockerCli, DockerError, dockerName, isLocalEndpoint, localEndpoints, pickEndpoint } from "../src/docker/cli";
-import { BASE_IMAGE, agentBuildArgs } from "../src/docker/image";
+import { BASE_IMAGE, agentBuildArgs, skillsPluginDir, writeBuildContext } from "../src/docker/image";
 import { ContainerLimits, ContainerSpec, bindSourceMatches, inspectMismatches, runArgs } from "../src/docker/plan";
 import type { InterviewTools } from "../src/interview/tools";
 import { MemoryLogger } from "../src/log";
@@ -62,11 +62,39 @@ describe("docker command line (SR-14)", () => {
 
   it("builds the agent image from the pinned base only", () => {
     expect(BASE_IMAGE).toBe("node:26.13.0-trixie-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072");
-    const a = agentBuildArgs("/e/docker", "/e/w/iid", "proj");
+    const id = { project: "Proj", masterCommit: "c".repeat(40), skillsDigest: "d".repeat(64) };
+    const a = agentBuildArgs("/e/ctx", "/e/w/iid", id);
     expect(a).toContain(`BASE_IMAGE=${BASE_IMAGE}`);
-    expect(a.at(-1)).toBe("/e/docker");
+    expect(a.at(-1)).toBe("/e/ctx");
+    // Spec v30: the image says which master commit and which skills it holds, so projects on different versions get different images.
+    expect(a).toContain(`factory.master_commit=${"c".repeat(40)}`);
+    expect(a).toContain(`factory.skills_sha256=${"d".repeat(64)}`);
+    expect(a[a.indexOf("--tag") + 1]).toBe(`factory-agent:proj-${"c".repeat(12)}-${"d".repeat(12)}`);
+    expect(() => agentBuildArgs("/e/ctx", "/e/w/iid", { ...id, masterCommit: "HEAD" })).toThrow(/identity/);
     const sha = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docker", "claude-sha256.json"), "utf8"));
     expect(sha.version).toBe("2.1.311");
+  });
+
+  it("bakes each role's resolved skills into the build context as a local plugin, and nothing else of a project", () => {
+    const ctx = path.join(tmpdir(), "ctx");
+    const file = (s: string, executable = false) => ({ content: Buffer.from(s), executable });
+    const skill = (name: string, files: Record<string, ReturnType<typeof file>>) => ({ name, from: "master" as const, path: `skills/${name}`, files: new Map(Object.entries(files)) });
+    writeBuildContext(path.join(__dirname, "..", "docker"), ctx, {
+      skills: new Map([
+        ["requirements-analyst", [skill("security-review", { "SKILL.md": file("sr"), "bin/run.sh": file("#!/bin/sh\n", true) })]],
+        ["web-reader", []],
+      ]),
+    });
+    const list = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? list(path.join(d, e.name)).map((x) => `${e.name}/${x}`) : [e.name]));
+    expect(list(ctx).sort()).toEqual([
+      "agent.Dockerfile", "claude-code/package-lock.json", "claude-code/package.json", "claude-sha256.json",
+      "skills/requirements-analyst/.claude-plugin/plugin.json", "skills/requirements-analyst/skills/security-review/SKILL.md",
+      "skills/requirements-analyst/skills/security-review/bin/run.sh", "skills/web-reader/.claude-plugin/plugin.json", "verify-claude.cjs",
+    ]);
+    if (process.platform !== "win32") expect(fs.statSync(path.join(ctx, "skills/requirements-analyst/skills/security-review/bin/run.sh")).mode & 0o111).not.toBe(0);
+    expect(skillsPluginDir("web-reader")).toBe("/opt/factory/skills/web-reader");
+    expect(() => skillsPluginDir("../x")).toThrow();
+    expect(fs.readFileSync(path.join(__dirname, "..", "docker", "agent.Dockerfile"), "utf8")).toContain("COPY skills/ /opt/factory/skills/");
   });
 });
 

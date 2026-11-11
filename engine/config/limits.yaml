@@ -1,7 +1,8 @@
 # Session, container and interview limits: owner decision H-0087 (F-007
 # SR-18). Change-controlled. The engine reads this file from the master
-# clone's HEAD commit; a project's manifest `limits:` block may only lower
-# these values, never raise them. MiB is 1,048,576 bytes.
+# clone commit that the project's `factory.version` tag names (spec v30); a
+# project's manifest `limits:` block may only lower these values, never raise
+# them. MiB is 1,048,576 bytes.
 analyst:
   turns: 300
   output_tokens: 500000

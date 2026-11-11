@@ -78,21 +78,18 @@ export function parseLimits(doc: unknown, where: string, full: boolean): Limits 
 }
 
 /**
- * Reads the master defaults from the master clone's HEAD commit, never the
- * working tree, which can hold an edit nobody approved (the same rule as the
- * manifest on main). Missing or invalid means no defaults, and every caller
- * fails closed.
+ * Reads the master defaults from `commit`, the master clone commit the
+ * project's `factory.version` names (spec v30), never a working tree.
+ * Missing or invalid means no defaults, and the project doesn't run.
  */
-export async function readDefaultLimits(git: Git, masterRepo: string): Promise<Limits> {
-  const commit = await git.revParse(masterRepo, "HEAD");
-  if (!commit) throw new LimitsError(`The master repo clone has no HEAD commit, so ${LIMITS_FILE} can't be read.`);
+export async function readDefaultLimits(git: Git, masterRepo: string, commit: string): Promise<Limits> {
   let raw: Buffer | null;
   try {
     raw = await git.readBlob(masterRepo, commit, LIMITS_FILE);
   } catch {
     throw new LimitsError(`${LIMITS_FILE} in the master repo is not a regular file.`);
   }
-  if (!raw) throw new LimitsError(`${LIMITS_FILE} is missing from the master repo's HEAD commit.`);
+  if (!raw) throw new LimitsError(`${LIMITS_FILE} is missing from master commit ${commit.slice(0, 12)}.`);
   if (raw.length > MAX_FILE) throw new LimitsError(`${LIMITS_FILE} is over 64 KiB.`);
   let doc: unknown;
   try {

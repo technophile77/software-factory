@@ -38,7 +38,7 @@ describe.skipIf(!ON)("agent containers on a real Docker daemon (AC-8, AC-13 to A
     const proxyScript = path.join(__dirname, "..", "dist", "proxy.js");
     if (!fs.existsSync(proxyScript)) throw new Error("run npm run build first (dist/proxy.js)");
     const proxyImageId = await baseImageId(docker);
-    const agentImageId = await buildAgentImage(docker, path.join(__dirname, "..", "docker"), work, "docker-test");
+    const agentImageId = await buildAgentImage(docker, path.join(__dirname, "..", "docker"), work, { project: "docker-test", masterCommit: "0".repeat(40), skillsDigest: "0".repeat(64) }, { skills: new Map([["requirements-analyst", []]]) });
     group = new SessionGroup({
       docker, runId: `R-${Date.now().toString(16)}`, project: "docker-test", agentImageId, proxyImageId, proxyScript,
       agentLimits: { "requirements-analyst": LIMITS, "web-reader": LIMITS }, proxyLimits: LIMITS, maxPageBytes: 1 << 20, credential: { kind: "api_key", value: PLACEHOLDER }, log,

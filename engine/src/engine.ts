@@ -9,6 +9,8 @@ import { Listener, listenUnix } from "./channel/unix";
 import { listenPipe } from "./channel/windows";
 import { Clock, iso, systemClock } from "./clock";
 import { AuthorizationError, authorizeProject, billingMismatch } from "./config/authorize";
+import { AgentSources, Instructions, resolveAgentSources } from "./config/agent-sources";
+import { resolveFactoryVersion } from "./config/factory-source";
 import { Limits, LimitsError, manifestLimits, mergeLimits, readDefaultLimits } from "./config/limits";
 import { Manifest, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
@@ -83,8 +85,9 @@ export interface ProjectStatus {
 interface Project extends ProjectStatus {
   real: string | null;
   manifest: Manifest | null;
-  /** H-0087 effective limits, once known; see EngineHandle.limits. */
+  /** Known for every running project (phase 1); see EngineHandle.limits and agentSources. */
   limits: Limits | null;
+  sources: AgentSources | null;
   state_repo: StateRepo | null;
   features: Map<string, FeatureInterview>;
   sessions: SessionManager | null;
@@ -116,11 +119,15 @@ export interface EngineHandle {
    */
   interviewTools(feature: string, worktree: string, facts?: RunFacts, research?: ResearchConfig): InterviewTools;
   /**
-   * H-0087: a running project's effective limits, the master defaults lowered
-   * by its manifest's `limits:`. Throws LimitsError when the defaults can't be
-   * read or checked, so no session or container starts without them.
+   * H-0087: a running project's effective limits, the defaults at its
+   * `factory.version` commit lowered by its manifest's `limits:`. A project
+   * runs only once these are known; any other name throws.
    */
-  limits(project: string): Promise<Limits>;
+  limits(project: string): Limits;
+  /** Spec v30: a running project's resolved agent instructions and skills, master defaults with its overrides on top. */
+  agentSources(project: string): AgentSources;
+  /** A role's `AGENT.md` for a running project; throws when the role has none, so it can't run. */
+  instructions(project: string, role: string): Instructions;
 }
 
 export function defaultEngineHome(): string {
@@ -197,7 +204,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   const projects: Project[] = listed.map((p) => ({
-    path: p, name: null, state: "stopped", warnings: [], real: null, manifest: null, limits: null, state_repo: null,
+    path: p, name: null, state: "stopped", warnings: [], real: null, manifest: null, limits: null, sources: null, state_repo: null,
     features: new Map(), sessions: null, listener: null, conns: new Set(), token: null,
   }));
 
@@ -220,41 +227,45 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     log.warn(`${p.name ?? p.path}: ${state === "disabled" ? "not running" : "stopped"}: ${reason}`);
   };
 
-  // Read once, and only when something needs them, so the engine's other work
-  // doesn't depend on the file; everything that does need them fails closed.
-  let defaultLimits: Promise<Limits> | null = null;
-  const defaults = () => (defaultLimits ??= readDefaultLimits(git, o.masterRepo));
+  const running = (name: string): Project => {
+    const p = projects.find((x) => x.manifest?.name === name && x.state === "running");
+    if (!p || !p.limits || !p.sources) throw new LimitsError(`No running project is named ${name}.`);
+    return p;
+  };
 
   /**
-   * Project manifest v1.4 (H-0087): a `limits:` block may only lower the
-   * master defaults. An invalid block, a value above the default, or defaults
-   * that can't be read stop the project and file a Security item.
+   * Spec v30 and Project manifest v1.4 (H-0087): the master commit that
+   * `factory.version` names gives the limit defaults, `AGENT.md` and skills;
+   * the project's own overrides, from its config repo's `main`, win over
+   * them, and its `limits:` may only lower the defaults. Anything that can't
+   * be resolved, or a value above a default, stops the project and files a
+   * Security item.
    */
-  async function checkLimits(p: Project): Promise<boolean> {
+  async function checkSources(p: Project): Promise<boolean> {
     const m = p.manifest!;
     let reason: string;
     let above: string[] = [];
     try {
-      const own = manifestLimits(m.raw);
-      if (!own) return true;
-      const merged = mergeLimits(await defaults(), own);
+      const masterCommit = await resolveFactoryVersion(git, o.masterRepo, m.factoryVersion);
+      const merged = mergeLimits(await readDefaultLimits(git, o.masterRepo, masterCommit), manifestLimits(m.raw));
       if (!merged.above.length) {
+        p.sources = await resolveAgentSources({ git, masterRepo: o.masterRepo, masterCommit, configRepo: p.real!, configCommit: m.commit, manifest: m.raw });
         p.limits = merged.limits;
         return true;
       }
       above = merged.above;
       reason = `the manifest's limits set ${above.join(", ")} above the master default`;
     } catch (e) {
-      reason = e instanceof LimitsError ? e.message : "the limits couldn't be checked";
+      reason = e instanceof ConfigError ? e.message : "the factory version's files couldn't be read";
     }
     stop(p, reason);
-    await alert(p, `limits:${m.commit}:${reason}`, {
-      title: above.length ? "Project manifest raises a limit above the master default" : "Project limits couldn't be checked",
+    await alert(p, `sources:${m.commit}:${reason}`, {
+      title: above.length ? "Project manifest raises a limit above the master default" : "Project's factory sources were refused",
       context: above.length
         ? `The manifest on main (${m.commit.slice(0, 12)}) sets ${above.join(", ")} above the master defaults in engine/config/limits.yaml. A project may only lower them (H-0087, F-007 SR-18).`
-        : `The engine refused to run this project: ${reason}`,
-      impact: "The project is stopped. No agent runs and no interview opens until the limits are fixed.",
-      confirm: above.length ? "Lower or remove those keys on main and restart the engine" : "Fix the limits and restart the engine",
+        : `The engine reads limits, agent instructions and skills from the master commit that factory.version names, and the project's overrides from its config repo's main (spec v30). It refused this project: ${reason}`,
+      impact: "The project is stopped. No agent runs and no interview opens until this is fixed on main.",
+      confirm: above.length ? "Lower or remove those keys on main and restart the engine" : "Fix it on main (or tag the master clone) and restart the engine",
       hold: "Keep the project stopped and find out who changed it",
       recommendation: above.length ? "B" : "A",
     });
@@ -290,7 +301,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       });
       continue;
     }
-    if (!(await checkLimits(p))) continue;
+    if (!(await checkSources(p))) continue;
     const pin = pins.get(p.real);
     const cmp = comparePin(pin, p.manifest);
     if (cmp.status !== "match") {
@@ -698,11 +709,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         await checkLocal(p);
       }
     },
-    async limits(project) {
-      const p = projects.find((x) => x.manifest?.name === project && x.state === "running");
-      if (!p) throw new LimitsError(`No running project is named ${project}.`);
-      p.limits ??= mergeLimits(await defaults(), null).limits;
-      return structuredClone(p.limits);
+    limits(project) {
+      return structuredClone(running(project).limits!);
+    },
+    agentSources(project) {
+      return running(project).sources!;
+    },
+    instructions(project, role) {
+      const i = running(project).sources!.instructions.get(role);
+      if (!i) throw new ConfigError(`The ${role} role has no AGENT.md in factory.version's master commit or in the project's overrides, so it may not run.`);
+      return i;
     },
     confirmProject: (projectPath, io) =>
       runConfirm({ masterRepo: o.masterRepo, projectPath, git, github, pins, os: osApi, clock, log, io }),
