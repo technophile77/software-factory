@@ -283,6 +283,17 @@ and bidi characters) stripped, plain text capped in size, with the address
 it came from. `WebSearch` stays. A Role policy change (Interfaces, Security;
 G1 #20, owner decision 2026-11-11).
 
+
+### H-0085 (draft, awaiting approval): engine CI workflow
+
+A new `.github/workflows/engine.yml`, so the engine's checks run on every pull
+request that touches `engine/`. It follows `extension.yml`: read-only token,
+runs on pull requests, pushes to main and weekly (S4.4), `npm ci
+--ignore-scripts`, then `npm audit --audit-level=high`, typecheck, build and
+the unit and acceptance tests. It runs on Linux, macOS and Windows, because
+the engine has platform code (named pipe ACL, peer checks, credential store).
+No secrets. The image scan (SR-19) joins it in milestone 2.
+
 ## 11. Readiness gate
 Run by the orchestrator, 2026-11-11, on spec v21.
 
