@@ -11,6 +11,7 @@ import { validateManifest } from "../src/config/manifest";
 import YAML from "yaml";
 import { MemoryCredentialStore } from "../src/secrets";
 import { MemoryLogger } from "../src/log";
+import { findOnPath } from "../src/fsutil";
 import { EngineHandle, EngineOptions, startEngine } from "../src/engine";
 import { nodeProgram, ownerOnly } from "./acceptance/support/platform";
 
@@ -31,6 +32,13 @@ export const GIT_ENV = {
   GIT_COMMITTER_NAME: "Test",
   GIT_COMMITTER_EMAIL: "test@example.invalid",
 };
+
+/** The git the engine itself would pick, so the tests run wherever git is installed. */
+export const GIT_PATH = (() => {
+  const p = findOnPath("git");
+  if (!p) throw new Error("git isn't on PATH");
+  return p;
+})();
 
 export function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, env: GIT_ENV, encoding: "utf8" }).trim();

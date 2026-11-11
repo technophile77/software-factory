@@ -22,7 +22,7 @@ import { FeatureInterview } from "./interview/feature";
 import { InterviewTools, createInterviewTools } from "./interview/tools";
 import { FileLogger, Logger } from "./log";
 import { OsApi, realOsApi } from "./os/ffi";
-import { Children, linuxParent } from "./proc";
+import { Children, osParent } from "./proc";
 import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryTokenName } from "./secrets";
 import { SecurityAlert, fileSecurityItem } from "./state/inbox";
 import { EngineRecord, RunRecord } from "./state/record";
@@ -136,7 +136,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const log = o.logger ?? new FileLogger(path.join(home, "logs"), clock);
   const osApi = o.os ?? realOsApi();
   const env = o.env ?? process.env;
-  const children = new Children(o.parentOf ?? linuxParent);
+  const children = new Children(o.parentOf ?? osParent(osApi));
   const gitPath = o.gitPath ?? findOnPath("git");
   if (!gitPath) throw new StartError("git isn't on PATH.");
   const git = new Git({ gitPath, homeDir: path.join(home, "git"), children, env });

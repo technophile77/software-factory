@@ -15,17 +15,17 @@ import { HttpGitHub, parseDeviceCode, parsePoll, startDeviceApproval } from "../
 import { Gitleaks, ScanError } from "../src/gitleaks";
 import { frameTurn } from "../src/interview/frame";
 import { MemoryLogger } from "../src/log";
-import { CredentialApi, FfiError, FUNCTIONS, Handle, OsApi, WindowsApi } from "../src/os/ffi";
+import { CredentialApi, FfiError, FUNCTIONS, Handle, OsApi, WindowsApi, realOsApi } from "../src/os/ffi";
 import { isOwnerOnlyPipe, isOwnerWritableOnly, ownerOnlyPipeSddl, parseSddl } from "../src/os/sddl";
-import { Children } from "../src/proc";
+import { Children, osParent } from "../src/proc";
 import { MemoryCredentialStore, OsCredentialStore, SecretError, factoryTokenName } from "../src/secrets";
 import { EngineRecord } from "../src/state/record";
 import { RunBook, transcriptSummary } from "../src/state/runs";
 import { StateRepo, checkStatePath } from "../src/state/state-repo";
 import { ChainError, canonical, checkAgainstHead, makeEntry, parseTranscript, serialize } from "../src/state/transcript";
 import { InterviewState } from "../src/interview/model";
-import { nodeProgram } from "./acceptance/support/platform";
-import { CLIENT_ID, FakeClock, FakeGitHub, OWNER_ID, fakeGitleaks, git, initRepo, manifestYaml, settle, tmpdir } from "./helpers";
+import { nodeProgram, ownerOnly } from "./acceptance/support/platform";
+import { CLIENT_ID, GIT_PATH, FakeClock, FakeGitHub, OWNER_ID, fakeGitleaks, git, initRepo, manifestYaml, settle, tmpdir } from "./helpers";
 
 const linuxOs: OsApi = {
   platform: "linux",
@@ -89,6 +89,29 @@ describe("secrets (SR-20, OQ-7)", () => {
     await expect(new OsCredentialStore(() => api).get("model-credential")).rejects.toThrow(/malformed/);
   });
 
+  it("AC-4 ancestry: each OS walks parents through its own lookup, and a missing lookup fails closed", () => {
+    const fake = (platform: NodeJS.Platform, parents: Record<number, number>) => ({
+      platform,
+      unix: () => ({ parentPid: (p: number) => parents[p] ?? null }),
+      windows: () => ({ parentPid: (p: number) => parents[p] ?? null }),
+    });
+    for (const platform of ["darwin", "win32"] as const) {
+      // A grandchild of the engine, by ancestry.
+      const kids = new Children(osParent(fake(platform, { 900: 800, 800: process.pid })));
+      expect(kids.startedByEngine(900)).toBe(true);
+      expect(new Children(osParent(fake(platform, { 900: 1 }))).startedByEngine(900)).toBe(false);
+      const blind = osParent({ platform, unix: () => ({}), windows: () => ({}) });
+      expect(() => new Children(blind).startedByEngine(900)).toThrow();
+    }
+  });
+
+  it.runIf(process.platform === "darwin" || process.platform === "win32")("the real parent lookup reports this process's parent", () => {
+    const os = realOsApi();
+    const api = process.platform === "win32" ? os.windows() : os.unix();
+    expect(api.parentPid!(process.pid)).toBe(process.ppid);
+    expect(api.parentPid!(2 ** 31 - 2)).toBeNull();
+  });
+
   it("the FFI module declares a fixed list of functions per OS", () => {
     expect(Object.keys(FUNCTIONS)).toEqual(["linux", "darwin", "win32"]);
     expect(FUNCTIONS.linux["libc.so.6"]).toEqual(["geteuid", "getsockopt"]);
@@ -135,6 +158,26 @@ describe("SDDL (SR-15, SR-13 on Windows)", () => {
     expect(isOwnerWritableOnly(`O:${me}D:(A;OICIIO;GA;;;CO)(A;;FA;;;${me})`, me)).toBe(true);
     expect(isOwnerWritableOnly(`O:${me}D:(A;;ZZ;;;${me})`, me)).toBe(false);
     expect(parseSddl(`O:SYD:(A;;GA;;;BA)`).owner).toBe("S-1-5-18");
+  });
+
+  it("machine-relative aliases resolve only to the current user, as Windows writes it", () => {
+    // The Windows runner's built-in Administrator: Windows writes its SID as LA.
+    const admin = "S-1-5-21-1111111111-2222222222-3333333333-500";
+    const runner = "O:LAD:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;LA)";
+    expect(isOwnerWritableOnly(runner, admin, "LA")).toBe(true);
+    expect(isOwnerOnlyPipe("O:LAD:P(A;;GA;;;LA)", admin, "LA")).toBe(true);
+    // Without knowing how Windows writes the user, LA can't be trusted.
+    expect(isOwnerWritableOnly(runner, admin)).toBe(false);
+    expect(isOwnerWritableOnly(runner, admin, admin)).toBe(false);
+    // Another machine- or domain-relative principal stays unresolved: never the owner, never trusted to write.
+    expect(isOwnerWritableOnly(runner.replace("O:LA", "O:LG"), admin, "LA")).toBe(false);
+    expect(isOwnerWritableOnly(`O:LAD:(A;;FA;;;LA)(A;;FW;;;DU)`, admin, "LA")).toBe(false);
+    expect(isOwnerWritableOnly(`O:LAD:(A;;FA;;;LA)(A;;FR;;;DU)`, admin, "LA")).toBe(true);
+    expect(isOwnerOnlyPipe("O:LAD:P(A;;GA;;;DA)", admin, "LA")).toBe(false);
+    expect(parseSddl("O:LGD:(A;;FA;;;DA)", { sid: admin, token: "LA" })).toMatchObject({ owner: "unresolved:LG", aces: [{ sid: "unresolved:DA" }] });
+    // A user Windows writes as a plain SID is unaffected.
+    expect(isOwnerWritableOnly(`O:${me}D:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;${me})`, me, me)).toBe(true);
+    expect(parseSddl("O:BUD:(A;;FA;;;AU)").aces[0]!.sid).toBe("S-1-5-11");
   });
 });
 
@@ -355,7 +398,7 @@ describe("git (SR-11)", () => {
     expect(fs.existsSync(marker)).toBe(false);
     const fake = fakeGitleaks(path.join(root, "bin"));
     const children = new Children();
-    const g = new Git({ gitPath: "/usr/bin/git", homeDir: path.join(root, "home"), children });
+    const g = new Git({ gitPath: GIT_PATH, homeDir: path.join(root, "home"), children });
     const scanner = new Gitleaks({ binary: fake.path, workDir: path.join(root, "gl"), children, expectSha256: fake.sha256 });
     const state = new StateRepo(g, scanner, repo, new MemoryLogger(), path.join(root, "tmp"));
     await state.ensureWorktree();
@@ -376,7 +419,7 @@ describe("git (SR-11)", () => {
     fs.mkdirSync(path.join(repo, ".factory"));
     const children = new Children();
     const fake = fakeGitleaks(path.join(root, "bin"));
-    const g = new Git({ gitPath: "/usr/bin/git", homeDir: path.join(root, "home"), children });
+    const g = new Git({ gitPath: GIT_PATH, homeDir: path.join(root, "home"), children });
     const state = new StateRepo(g, new Gitleaks({ binary: fake.path, workDir: path.join(root, "gl"), children, expectSha256: fake.sha256 }), repo, new MemoryLogger(), path.join(root, "tmp"));
     await expect(state.ensureWorktree()).rejects.toThrow(/not this repo's factory\/state worktree/);
   });
@@ -409,16 +452,19 @@ describe("project paths file and manifest (SR-13, H-0080, H-0081)", () => {
   it("accepts only `projects: [{ path }]`, owned by the owner, not a link", () => {
     const root = tmpdir();
     const f = path.join(root, "factory-projects.local.yaml");
+    // The real OS checks: mode and uid on Unix, owner and ACL (through the FFI module) on Windows.
+    const host = process.platform === "win32" ? realOsApi() : linuxOs;
     fs.writeFileSync(f, "projects:\n  - path: /a\n", { mode: 0o600 });
-    expect(readPathsFile(root, linuxOs)).toEqual(["/a"]);
+    ownerOnly(f);
+    expect(readPathsFile(root, host)).toEqual(["/a"]);
     for (const bad of ["projects:\n  - path: /a\n    owner: 1\n", "projects: []\nsettings: {}\n", "projects: x\n", "[", "a: &x 1\nb: *x\n"]) {
       fs.writeFileSync(f, bad);
-      expect(() => readPathsFile(root, linuxOs)).toThrow(ConfigError);
+      expect(() => readPathsFile(root, host)).toThrow(ConfigError);
     }
     fs.rmSync(f);
     fs.writeFileSync(path.join(root, "real.yaml"), "projects: []\n", { mode: 0o600 });
     fs.symlinkSync(path.join(root, "real.yaml"), f);
-    expect(() => readPathsFile(root, linuxOs)).toThrow(/symbolic link/);
+    expect(() => readPathsFile(root, host)).toThrow(/symbolic link/);
   });
 
   it("on Windows, checks the owner and ACL through the FFI module", () => {

@@ -35,6 +35,7 @@ export async function listenPipe(o: {
 }): Promise<Listener> {
   const name = o.name ?? pipeName();
   const sid = o.os.currentUserSid();
+  const token = o.os.currentUserSddlToken?.();
   const sddl = ownerOnlyPipeSddl(sid);
   let closed = false;
   const open = new Set<() => void>();
@@ -43,7 +44,7 @@ export async function listenPipe(o: {
     const h = o.os.createPipe(name, sddl, first);
     let ok = false;
     try {
-      ok = isOwnerOnlyPipe(o.os.handleSddl(h), sid);
+      ok = isOwnerOnlyPipe(o.os.handleSddl(h), sid, token);
     } catch {
       ok = false;
     }

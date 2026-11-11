@@ -32,7 +32,7 @@ export function readPathsFile(masterRepo: string, os: OsApi): string[] {
     let ok = false;
     try {
       const w = os.windows();
-      ok = isOwnerWritableOnly(w.fileSddl(file), w.currentUserSid());
+      ok = isOwnerWritableOnly(w.fileSddl(file), w.currentUserSid(), w.currentUserSddlToken?.());
     } catch {
       ok = false;
     }

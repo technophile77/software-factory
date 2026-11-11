@@ -10,8 +10,9 @@ import { PinStore } from "../src/config/pins";
 import { Git } from "../src/git";
 import { Children } from "../src/proc";
 import { realOsApi } from "../src/os/ffi";
+import { grantWrite } from "./acceptance/support/platform";
 import {
-  OWNER_ID, ORG_ID, OTHER_ID, advanceSoon, RpcClient, World, engineJson, git, initRepo, makeWorld, manifestYaml, start,
+  GIT_PATH, OWNER_ID, ORG_ID, OTHER_ID, advanceSoon, RpcClient, World, engineJson, git, initRepo, makeWorld, manifestYaml, start,
 } from "./helpers";
 
 let engines: EngineHandle[] = [];
@@ -46,12 +47,15 @@ describe("engine start (FR-1 to FR-4)", () => {
     const e = await boot(w);
     expect(e.projects[0]).toMatchObject({ name: "acme", state: "running" });
     const file = path.join(w.config, ".factory", "engine.json");
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     const ej = engineJson(w);
     expect(ej).toEqual({ version: SERVED_CHANNEL_VERSION, path: e.projects[0]!.channel, pid: process.pid });
     expect(SERVED_CHANNEL_VERSION).toBe("1.2");
-    expect(fs.statSync(ej.path).mode & 0o777).toBe(0o600);
-    expect(fs.statSync(path.join(w.config, ".factory")).mode & 0o077).toBe(0);
+    // POSIX modes only: on Windows the pipe's ACL is read back by the engine itself (SR-15, units: SDDL).
+    if (process.platform !== "win32") {
+      expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+      expect(fs.statSync(ej.path).mode & 0o777).toBe(0o600);
+      expect(fs.statSync(path.join(w.config, ".factory")).mode & 0o077).toBe(0);
+    }
     // engine.json is never committed on factory/state
     expect(git(w.config, "ls-tree", "-r", "--name-only", "factory/state")).not.toContain("engine.json");
     const c = await connect(w);
@@ -169,7 +173,7 @@ describe("pinned keys (SR-5, AC-20)", () => {
     const confirm = () => {
       const run = confirmProject({
         masterRepo: w.master, projectPath: w.config, github: w.github, pins: new PinStore(w.home), os: realOsApi(),
-        git: new Git({ gitPath: "/usr/bin/git", homeDir: path.join(w.root, "githome"), children: new Children() }),
+        git: new Git({ gitPath: GIT_PATH, homeDir: path.join(w.root, "githome"), children: new Children() }),
         clock: w.clock, log: w.log, io: { say: (l) => void said.push(l), ask: async () => typed },
       });
       let done = false;
@@ -204,8 +208,14 @@ describe("pinned keys (SR-5, AC-20)", () => {
 describe("SR-13 project paths", () => {
   it("refuses a group-writable paths file", async () => {
     const w = makeWorld();
-    fs.chmodSync(path.join(w.master, "factory-projects.local.yaml"), 0o620);
-    await expect(start(w)).rejects.toThrow(/group- or world-writable/);
+    const file = path.join(w.master, "factory-projects.local.yaml");
+    if (process.platform === "win32") {
+      grantWrite(file, ["S-1-5-32-545"]);
+      await expect(start(w)).rejects.toThrow(/writable by nobody else/);
+    } else {
+      fs.chmodSync(file, 0o620);
+      await expect(start(w)).rejects.toThrow(/group- or world-writable/);
+    }
   });
 
   it("refuses the master repo, or a clone of it, as a config repo, without writing into it", async () => {

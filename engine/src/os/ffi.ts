@@ -33,10 +33,17 @@ export interface UnixApi {
   geteuid(): number;
   /** SO_PEERCRED (Linux) or getpeereid + LOCAL_PEERPID (macOS) on a connected Unix socket. */
   peerCred(fd: number): PeerCred;
+  /** A live process's parent pid, or null if it has gone (macOS: proc_pidinfo; Linux reads /proc instead). */
+  parentPid?(pid: number): number | null;
 }
 
 export interface WindowsApi {
   currentUserSid(): string;
+  /**
+   * How Windows writes the current user's SID in SDDL: the SID, or an alias
+   * such as LA when the user is the machine's built-in Administrator.
+   */
+  currentUserSddlToken?(): string;
   /** CreateNamedPipeW with the given SDDL as its security descriptor. */
   createPipe(name: string, sddl: string, first: boolean): Handle;
   /** The pipe's owner and DACL, read back from the kernel object, as SDDL. */
@@ -47,6 +54,8 @@ export interface WindowsApi {
   connectPipe(h: Handle): Promise<void>;
   pipeClientPid(h: Handle): number;
   processUserSid(pid: number): string;
+  /** A live process's parent pid from a Toolhelp snapshot, or null if it isn't running. */
+  parentPid?(pid: number): number | null;
   /** Bytes waiting; throws once the client has gone. Never blocks. */
   pipeAvailable(h: Handle): number;
   readPipe(h: Handle, n: number): Buffer;
@@ -69,7 +78,7 @@ export const FUNCTIONS = {
     "libglib-2.0.so.0": ["g_error_free"],
   },
   darwin: {
-    "/usr/lib/libSystem.B.dylib": ["geteuid", "getpeereid", "getsockopt"],
+    "/usr/lib/libSystem.B.dylib": ["geteuid", "getpeereid", "getsockopt", "proc_pidinfo"],
     "/System/Library/Frameworks/Security.framework/Security": [
       "SecKeychainFindGenericPassword", "SecKeychainAddGenericPassword", "SecKeychainItemModifyAttributesAndData",
       "SecKeychainItemFreeContent", "SecKeychainItemDelete",
@@ -80,6 +89,7 @@ export const FUNCTIONS = {
     "kernel32.dll": [
       "CreateNamedPipeW", "ConnectNamedPipe", "DisconnectNamedPipe", "GetNamedPipeClientProcessId", "PeekNamedPipe",
       "ReadFile", "WriteFile", "FlushFileBuffers", "CloseHandle", "OpenProcess", "GetCurrentProcess", "LocalFree",
+      "CreateToolhelp32Snapshot", "Process32FirstW", "Process32NextW",
     ],
     "advapi32.dll": [
       "OpenProcessToken", "GetTokenInformation", "ConvertSidToStringSidW", "GetSecurityInfo", "GetNamedSecurityInfoW",
@@ -119,6 +129,8 @@ const SOL_SOCKET_LINUX = 1;
 const SO_PEERCRED = 17;
 const SOL_LOCAL = 0;
 const LOCAL_PEERPID = 2;
+const PROC_PIDTBSDINFO = 3;
+const PROC_BSDINFO_SIZE = 136;
 
 function linuxApi(): UnixApi {
   const f = lib("linux", "libc.so.6");
@@ -146,8 +158,24 @@ function darwinApi(): UnixApi {
   const geteuid = f("uint32 geteuid()");
   const getpeereid = f("int getpeereid(int fd, _Out_ uint32 *uid, _Out_ uint32 *gid)");
   const getsockopt = f("int getsockopt(int fd, int level, int name, _Out_ int32 *val, _Inout_ uint32 *len)");
+  // struct proc_bsdinfo starts with five uint32s: flags, status, xstatus, pid, ppid. Only that head is
+  // declared; the call is given the full size so the kernel's copy stays inside the buffer.
+  const bsd = koffi.struct("factory_proc_bsdinfo_head", {
+    pbi_flags: "uint32", pbi_status: "uint32", pbi_xstatus: "uint32", pbi_pid: "uint32", pbi_ppid: "uint32",
+    rest: koffi.array("uint8", PROC_BSDINFO_SIZE - 20),
+  });
+  const proc_pidinfo = f("int proc_pidinfo(int pid, int flavor, uint64 arg, _Out_ factory_proc_bsdinfo_head *buf, int size)");
   return {
     geteuid: () => guard("geteuid", () => geteuid() as number),
+    parentPid(pid) {
+      if (!Number.isInteger(pid) || pid <= 0) throw new FfiError("bad pid");
+      const out: Array<{ pbi_pid: number; pbi_ppid: number } | null> = [null];
+      const n = guard("proc_pidinfo", () => proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, out, koffi.sizeof(bsd)) as number);
+      // 0 means the process is gone (ESRCH) or not visible; a short or mismatched answer is a failure.
+      if (n === 0) return null;
+      if (n !== PROC_BSDINFO_SIZE || !out[0] || out[0].pbi_pid !== pid) throw new FfiError("proc_pidinfo");
+      return out[0].pbi_ppid;
+    },
     peerCred(fd) {
       if (!Number.isInteger(fd) || fd < 0) throw new FfiError("no socket descriptor");
       const uid: Array<number | null> = [null];
@@ -183,6 +211,7 @@ const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 const TOKEN_QUERY = 0x8;
 const TOKEN_USER_CLASS = 1;
 const ERROR_PIPE_CONNECTED = 535;
+const TH32CS_SNAPPROCESS = 0x2;
 
 function windowsApi(): WindowsApi {
   const k = lib("win32", "kernel32.dll");
@@ -190,6 +219,10 @@ function windowsApi(): WindowsApi {
   koffi.alias("factory_DWORD", "uint32");
   const HANDLE = koffi.pointer("factory_HANDLE", koffi.opaque());
   koffi.struct("factory_SECURITY_ATTRIBUTES", { nLength: "uint32", lpSecurityDescriptor: "void *", bInheritHandle: "int32" });
+  const PE32 = koffi.struct("factory_PROCESSENTRY32W", {
+    dwSize: "uint32", cntUsage: "uint32", th32ProcessID: "uint32", th32DefaultHeapID: "uintptr_t", th32ModuleID: "uint32",
+    cntThreads: "uint32", th32ParentProcessID: "uint32", pcPriClassBase: "int32", dwFlags: "uint32", szExeFile: koffi.array("uint16", 260),
+  });
   void HANDLE;
 
   const CreateNamedPipeW = k("factory_HANDLE __stdcall CreateNamedPipeW(str16 name, uint32 openMode, uint32 pipeMode, uint32 maxInst, uint32 outBuf, uint32 inBuf, uint32 timeout, factory_SECURITY_ATTRIBUTES *sa)");
@@ -204,6 +237,9 @@ function windowsApi(): WindowsApi {
   const OpenProcess = k("factory_HANDLE __stdcall OpenProcess(uint32 access, int32 inherit, uint32 pid)");
   const GetCurrentProcess = k("factory_HANDLE __stdcall GetCurrentProcess()");
   const LocalFree = k("void * __stdcall LocalFree(void *p)");
+  const CreateToolhelp32Snapshot = k("factory_HANDLE __stdcall CreateToolhelp32Snapshot(uint32 flags, uint32 pid)");
+  const Process32FirstW = k("int32 __stdcall Process32FirstW(factory_HANDLE snap, _Inout_ factory_PROCESSENTRY32W *pe)");
+  const Process32NextW = k("int32 __stdcall Process32NextW(factory_HANDLE snap, _Inout_ factory_PROCESSENTRY32W *pe)");
   const OpenProcessToken = a("int32 __stdcall OpenProcessToken(factory_HANDLE p, uint32 access, _Out_ factory_HANDLE *token)");
   const GetTokenInformation = a("int32 __stdcall GetTokenInformation(factory_HANDLE token, int32 cls, void *buf, uint32 len, _Out_ uint32 *ret)");
   const ConvertSidToStringSidW = a("int32 __stdcall ConvertSidToStringSidW(void *sid, _Out_ void **str)");
@@ -253,6 +289,36 @@ function windowsApi(): WindowsApi {
 
   return {
     currentUserSid: () => guard("current user SID", () => tokenUserSid(GetCurrentProcess())),
+    parentPid(pid) {
+      if (!Number.isInteger(pid) || pid <= 0) throw new FfiError("bad pid");
+      return guard("process snapshot", () => {
+        const snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (invalid(snap)) throw new FfiError("CreateToolhelp32Snapshot");
+        try {
+          // Windows checks dwSize against the struct it fills, so a layout mismatch fails the call.
+          const pe: Array<Record<string, unknown>> = [{ dwSize: koffi.sizeof(PE32) }];
+          // A snapshot always lists at least the System process, so an empty first answer is a failure.
+          if (!Process32FirstW(snap, pe)) throw new FfiError("Process32FirstW");
+          for (let ok = 1; ok; ok = Process32NextW(snap, pe) as number) {
+            if (pe[0]!.th32ProcessID === pid) return pe[0]!.th32ParentProcessID as number;
+          }
+          return null;
+        } finally {
+          CloseHandle(snap);
+        }
+      });
+    },
+    currentUserSddlToken: () =>
+      guard("current user SDDL token", () => {
+        const sid = tokenUserSid(GetCurrentProcess());
+        // A round trip through Windows' own converter shows which alias, if any, it uses for this SID.
+        const sd: unknown[] = [null];
+        const size = [0];
+        if (!StringToSd(`O:${sid}D:`, SDDL_REVISION_1, sd, size) || !sd[0]) throw new FfiError("security descriptor");
+        const m = /^O:([A-Z]{2}|S-1-[0-9-]+)D:/.exec(sdToSddl(sd[0], "owner SDDL"));
+        if (!m) throw new FfiError("owner SDDL");
+        return m[1]!;
+      }),
     createPipe(name, sddl, first) {
       return guard("CreateNamedPipeW", () => {
         const sd: unknown[] = [null];

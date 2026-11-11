@@ -20,7 +20,7 @@ export class Children {
     this.live.delete(pid);
   }
 
-  /** True if `pid` is one of ours or, where /proc shows ancestry, a descendant of this engine. */
+  /** True if `pid` is one of ours or a descendant of this engine. */
   startedByEngine(pid: number, enginePid = process.pid): boolean {
     if (this.live.has(pid)) return true;
     let cur = pid;
@@ -32,6 +32,22 @@ export class Children {
     }
     return false;
   }
+}
+
+/**
+ * How the channel walks a peer's ancestry on this OS: /proc on Linux,
+ * proc_pidinfo on macOS, a Toolhelp snapshot on Windows. A failed FFI call
+ * throws, and the channel refuses the peer (SR-15).
+ */
+export function osParent(os: { platform: NodeJS.Platform; unix(): { parentPid?(pid: number): number | null }; windows(): { parentPid?(pid: number): number | null } }): (pid: number) => number | null {
+  if (os.platform === "darwin" || os.platform === "win32") {
+    return (pid) => {
+      const api = os.platform === "win32" ? os.windows() : os.unix();
+      if (!api.parentPid) throw new Error("no parent lookup on this OS");
+      return api.parentPid(pid);
+    };
+  }
+  return linuxParent;
 }
 
 export function linuxParent(pid: number): number | null {

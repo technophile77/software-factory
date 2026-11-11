@@ -7,7 +7,7 @@ import { MemoryLogger } from "../src/log";
 import { Children } from "../src/proc";
 import { StateRepo } from "../src/state/state-repo";
 import { GitHttp } from "./git-http";
-import { FACTORY_TOKEN, RpcClient, World, engineJson, git, makeWorld, start, tmpdir } from "./helpers";
+import { FACTORY_TOKEN, GIT_PATH, RpcClient, World, engineJson, git, makeWorld, start, tmpdir } from "./helpers";
 
 let engines: EngineHandle[] = [];
 let servers: GitHttp[] = [];
@@ -87,7 +87,7 @@ describe("remote factory/state (GS-4: SR-1, SR-11)", () => {
     const root = tmpdir();
     const repo = path.join(root, "r");
     git(root, "init", "-q", repo);
-    const g = new Git({ gitPath: "/usr/bin/git", homeDir: path.join(root, "h"), children: new Children() });
+    const g = new Git({ gitPath: GIT_PATH, homeDir: path.join(root, "h"), children: new Children() });
     const s = new StateRepo(g, { scan: async () => [] } as never, repo, new MemoryLogger(), path.join(root, "t"));
     git(repo, "remote", "add", "origin", "x");
     const url = async (u: string, base = "https://github.com") => {
