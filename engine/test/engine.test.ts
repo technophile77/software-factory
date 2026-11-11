@@ -5,8 +5,13 @@ import { EngineHandle, StartError } from "../src/engine";
 import { EngineRecord } from "../src/state/record";
 import { RunBook } from "../src/state/runs";
 import { SERVED_CHANNEL_VERSION } from "../src/constants";
+import { confirmProject } from "../src/config/confirm";
+import { PinStore } from "../src/config/pins";
+import { Git } from "../src/git";
+import { Children } from "../src/proc";
+import { realOsApi } from "../src/os/ffi";
 import {
-  ORG_ID, OTHER_ID, RpcClient, World, engineJson, git, initRepo, makeWorld, manifestYaml, start,
+  OWNER_ID, ORG_ID, OTHER_ID, advanceSoon, RpcClient, World, engineJson, git, initRepo, makeWorld, manifestYaml, start,
 } from "./helpers";
 
 let engines: EngineHandle[] = [];
@@ -153,6 +158,39 @@ describe("pinned keys (SR-5, AC-20)", () => {
     expect(e.projects[0]!.reason).toMatch(/change to owner/);
     const item = git(w.config, "show", `factory/state:${securityItems(w)[0]}`);
     expect(item).toContain("Pinned owner keys changed");
+  });
+
+  it("confirm: the owner types the name and approves as the previously pinned owner; then the project runs", async () => {
+    const w = makeWorld();
+    fs.writeFileSync(path.join(w.config, "factory-project.yaml"), manifestYaml({ ownerId: OTHER_ID }));
+    git(w.config, "commit", "-qam", "swap owner");
+    const said: string[] = [];
+    let typed = "wrong";
+    const confirm = () => {
+      const run = confirmProject({
+        masterRepo: w.master, projectPath: w.config, github: w.github, pins: new PinStore(w.home), os: realOsApi(),
+        git: new Git({ gitPath: "/usr/bin/git", homeDir: path.join(w.root, "githome"), children: new Children() }),
+        clock: w.clock, log: w.log, io: { say: (l) => void said.push(l), ask: async () => typed },
+      });
+      let done = false;
+      void run.finally(() => (done = true));
+      return (async () => {
+        for (let i = 0; i < 20 && !done; i++) await advanceSoon(w, 5000);
+        return run;
+      })();
+    };
+    expect(await confirm()).toBe(false);
+    expect(w.github.deviceCalls).toBe(0);
+    expect(said.join("\n")).toMatch(/Changed keys: owner/);
+    typed = "acme";
+    w.github.approver = OTHER_ID;
+    expect(await confirm()).toBe(false);
+    expect((await boot(w)).projects[0]!.state).toBe("stopped");
+    await engines.pop()!.stop();
+    w.github.approver = OWNER_ID;
+    expect(await confirm()).toBe(true);
+    expect(new PinStore(w.home).get(fs.realpathSync(w.config))!.owner.github_id).toBe(OTHER_ID);
+    expect((await boot(w)).projects[0]!.state).toBe("running");
   });
 
   it("an unmerged edit in the working tree changes nothing", async () => {

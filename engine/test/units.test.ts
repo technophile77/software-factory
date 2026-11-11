@@ -1,0 +1,506 @@
+import * as fs from "node:fs";
+import * as http from "node:http";
+import * as path from "node:path";
+import { describe, expect, it } from "vitest";
+import YAML from "yaml";
+import { serve } from "../src/channel/framing";
+import { listenPipe } from "../src/channel/windows";
+import { SessionManager } from "../src/channel/sessions";
+import { credentialKind } from "../src/config/authorize";
+import { validateManifest } from "../src/config/manifest";
+import { ConfigError, readPathsFile } from "../src/config/paths-file";
+import { comparePin, pinnedKeys } from "../src/config/pins";
+import { Git, overrideArgs } from "../src/git";
+import { HttpGitHub, parseDeviceCode, parsePoll, startDeviceApproval } from "../src/github";
+import { Gitleaks, ScanError } from "../src/gitleaks";
+import { frameTurn } from "../src/interview/frame";
+import { MemoryLogger } from "../src/log";
+import { CredentialApi, FfiError, FUNCTIONS, Handle, OsApi, WindowsApi } from "../src/os/ffi";
+import { isOwnerOnlyPipe, isOwnerWritableOnly, ownerOnlyPipeSddl, parseSddl } from "../src/os/sddl";
+import { Children } from "../src/proc";
+import { MemoryCredentialStore, OsCredentialStore, SecretError, factoryTokenName } from "../src/secrets";
+import { EngineRecord } from "../src/state/record";
+import { RunBook, transcriptSummary } from "../src/state/runs";
+import { StateRepo, checkStatePath } from "../src/state/state-repo";
+import { ChainError, canonical, checkAgainstHead, makeEntry, parseTranscript, serialize } from "../src/state/transcript";
+import { InterviewState } from "../src/interview/model";
+import { CLIENT_ID, FakeClock, FakeGitHub, OWNER_ID, fakeGitleaks, git, initRepo, manifestYaml, settle, tmpdir } from "./helpers";
+
+const linuxOs: OsApi = {
+  platform: "linux",
+  unix: () => ({ geteuid: () => process.geteuid!(), peerCred: () => ({ uid: 0, pid: 1 }) }),
+  windows: () => {
+    throw new FfiError("x");
+  },
+  credentials: () => {
+    throw new FfiError("x");
+  },
+};
+
+describe("secrets (SR-20, OQ-7)", () => {
+  class FakeApi implements CredentialApi {
+    store = new Map<string, Buffer>();
+    fail = false;
+    read(s: string, a: string) {
+      if (this.fail) throw new FfiError("read");
+      return this.store.get(`${s}|${a}`) ?? null;
+    }
+    write(s: string, a: string, v: Buffer) {
+      if (this.fail) throw new FfiError("write");
+      this.store.set(`${s}|${a}`, Buffer.from(v));
+    }
+    remove(s: string, a: string) {
+      return this.store.delete(`${s}|${a}`);
+    }
+  }
+
+  it("stores under the factory's own service name, only for the fixed secret names", async () => {
+    const api = new FakeApi();
+    const s = new OsCredentialStore(() => api);
+    await s.set("model-credential", "sk-ant-oat01-x");
+    await s.set(factoryTokenName("acme"), "ghp_x");
+    expect([...api.store.keys()]).toEqual(["software-factory-engine|model-credential", "software-factory-engine|factory-token/acme"]);
+    expect(await s.get("model-credential")).toBe("sk-ant-oat01-x");
+    await expect(s.get("anything-else")).rejects.toThrow(SecretError);
+    await expect(s.set("model-credential", "two words")).rejects.toThrow(SecretError);
+    await expect(s.set("model-credential", "")).rejects.toThrow(SecretError);
+    expect(() => factoryTokenName("../x")).toThrow(SecretError);
+    expect(await s.delete("model-credential")).toBe(true);
+    expect(await s.get("model-credential")).toBeNull();
+  });
+
+  it("fails closed when the OS store fails, and never echoes the secret", async () => {
+    const api = new FakeApi();
+    api.fail = true;
+    const s = new OsCredentialStore(() => api);
+    await expect(s.get("model-credential")).rejects.toThrow("The OS credential store couldn't be read.");
+    const e = await s.set("model-credential", "sk-ant-oat01-secretvalue").catch((x: Error) => x);
+    expect((e as Error).message).not.toContain("secretvalue");
+    const throwing = new OsCredentialStore(() => {
+      throw new FfiError("libsecret missing");
+    });
+    await expect(throwing.get("model-credential")).rejects.toThrow(SecretError);
+  });
+
+  it("refuses a malformed stored value", async () => {
+    const api = new FakeApi();
+    api.store.set("software-factory-engine|model-credential", Buffer.from("bad value\n"));
+    await expect(new OsCredentialStore(() => api).get("model-credential")).rejects.toThrow(/malformed/);
+  });
+
+  it("the FFI module declares a fixed list of functions per OS", () => {
+    expect(Object.keys(FUNCTIONS)).toEqual(["linux", "darwin", "win32"]);
+    expect(FUNCTIONS.linux["libc.so.6"]).toEqual(["geteuid", "getsockopt"]);
+    const src = fs.readFileSync(path.join(__dirname, "..", "src", "os", "ffi.ts"), "utf8");
+    for (const f of fs.readdirSync(path.join(__dirname, "..", "src"), { recursive: true }) as string[]) {
+      if (!f.endsWith(".ts") || f.endsWith(path.join("os", "ffi.ts"))) continue;
+      expect(fs.readFileSync(path.join(__dirname, "..", "src", f), "utf8")).not.toMatch(/from "koffi"/);
+    }
+    expect(src).toMatch(/import koffi from "koffi"/);
+  });
+
+  it("model credential kind follows ADR 0012: an API key in the environment wins", () => {
+    expect(credentialKind({ ANTHROPIC_API_KEY: "x" }, "sk-ant-oat01-x")).toBe("api_key");
+    expect(credentialKind({}, "sk-ant-oat01-x")).toBe("subscription");
+    expect(credentialKind({}, "sk-ant-api03-x")).toBe("api_key");
+    expect(credentialKind({}, "something")).toBeNull();
+    expect(credentialKind({ CLAUDE_CODE_OAUTH_TOKEN: "x" }, null)).toBe("subscription");
+  });
+
+  it("MemoryCredentialStore has the same name rules", async () => {
+    await expect(new MemoryCredentialStore().set("x", "y")).rejects.toThrow(SecretError);
+  });
+});
+
+describe("SDDL (SR-15, SR-13 on Windows)", () => {
+  const me = "S-1-5-21-1-2-3-1001";
+  it("accepts only a protected, owner-only pipe DACL", () => {
+    expect(ownerOnlyPipeSddl(me)).toBe(`D:P(A;;GA;;;${me})`);
+    expect(isOwnerOnlyPipe(`O:${me}D:P(A;;FA;;;${me})`, me)).toBe(true);
+    expect(isOwnerOnlyPipe(`D:(A;;FA;;;${me})`, me)).toBe(false);
+    expect(isOwnerOnlyPipe(`D:P(A;;FA;;;${me})(A;;FR;;;WD)`, me)).toBe(false);
+    expect(isOwnerOnlyPipe(`D:P(A;;FA;;;${me})(A;;FR;;;S-1-1-0)`, me)).toBe(false);
+    expect(isOwnerOnlyPipe("D:P", me)).toBe(false);
+    expect(isOwnerOnlyPipe(`D:P(XA;;FA;;;${me})`, me)).toBe(false);
+    expect(isOwnerOnlyPipe("garbage", me)).toBe(false);
+    expect(() => ownerOnlyPipeSddl("x)(A;;GA;;;WD")).toThrow();
+  });
+
+  it("a file writable only by the owner, SYSTEM and Administrators", () => {
+    expect(isOwnerWritableOnly(`O:${me}D:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;${me})(A;;0x1200a9;;;BU)`, me)).toBe(true);
+    expect(isOwnerWritableOnly(`O:${me}D:(A;;FA;;;${me})(A;;FW;;;BU)`, me)).toBe(false);
+    expect(isOwnerWritableOnly(`O:${me}D:(A;;FA;;;${me})(A;;CCDC;;;AU)`, me)).toBe(false);
+    expect(isOwnerWritableOnly(`O:BAD:(A;;FA;;;${me})`, me)).toBe(false);
+    expect(isOwnerWritableOnly(`O:${me}D:(A;OICIIO;GA;;;CO)(A;;FA;;;${me})`, me)).toBe(true);
+    expect(isOwnerWritableOnly(`O:${me}D:(A;;ZZ;;;${me})`, me)).toBe(false);
+    expect(parseSddl(`O:SYD:(A;;GA;;;BA)`).owner).toBe("S-1-5-18");
+  });
+});
+
+describe("Windows pipe listener through a fake WindowsApi", () => {
+  const me = "S-1-5-21-1-2-3-1001";
+  function fakeWin(o: { sddl?: string; clientSid?: string; clientPid?: number } = {}) {
+    const connects: Array<() => void> = [];
+    const inbox: Buffer[] = [];
+    const written: Buffer[] = [];
+    let closed = 0;
+    const api: WindowsApi = {
+      currentUserSid: () => me,
+      createPipe: () => ({}) as Handle,
+      handleSddl: () => o.sddl ?? `D:P(A;;FA;;;${me})`,
+      fileSddl: () => "",
+      connectPipe: () => new Promise<void>((r) => connects.push(r)),
+      pipeClientPid: () => o.clientPid ?? 777,
+      processUserSid: () => o.clientSid ?? me,
+      pipeAvailable: () => inbox.reduce((n, b) => n + b.length, 0),
+      readPipe: () => Buffer.concat(inbox.splice(0)),
+      writePipe: (_h, d) => void written.push(d),
+      closePipe: () => void closed++,
+    };
+    return { api, connects, inbox, written, closed: () => closed };
+  }
+
+  it("refuses to serve when the ACL read back isn't owner-only", async () => {
+    const f = fakeWin({ sddl: `D:P(A;;FA;;;${me})(A;;FR;;;WD)` });
+    await expect(listenPipe({ os: f.api, children: new Children(), log: new MemoryLogger(), onConnection: () => undefined })).rejects.toThrow(/ACL/);
+  });
+
+  it("serves an owner client and refuses another user's", async () => {
+    for (const [sid, served] of [[me, true], ["S-1-5-21-9-9-9-500", false]] as const) {
+      const f = fakeWin({ clientSid: sid });
+      const log = new MemoryLogger();
+      let conns = 0;
+      const l = await listenPipe({
+        name: "\\\\.\\pipe\\software-factory-test", os: f.api, children: new Children(), log,
+        onConnection: (c) => {
+          conns++;
+          serve(c, async () => ({ ok: true }), () => undefined);
+        },
+      });
+      f.connects.shift()!();
+      await settle();
+      if (served) {
+        f.inbox.push(Buffer.from('{"jsonrpc":"2.0","id":1,"method":"x"}\n'));
+        await new Promise((r) => setTimeout(r, 40));
+        expect(Buffer.concat(f.written).toString()).toBe('{"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n');
+      } else {
+        expect(log.text()).toMatch(/isn't the owner/);
+      }
+      expect(conns).toBe(served ? 1 : 0);
+      await l.close();
+    }
+  });
+});
+
+describe("GitHub device flow (SR-23, ADR 0014)", () => {
+  const good = { device_code: "a".repeat(40), user_code: "WDJB-MJHT", verification_uri: "https://github.com/login/device", expires_in: 900, interval: 5 };
+
+  it("validates every field of the device code answer", () => {
+    expect(parseDeviceCode(good)).toEqual({ deviceCode: good.device_code, userCode: "WDJB-MJHT", verificationUri: good.verification_uri, expiresIn: 900, interval: 5 });
+    for (const bad of [
+      { user_code: "wdjb-mjht" }, { user_code: "WDJBMJHT" }, { verification_uri: "https://github.com/login/device/" },
+      { verification_uri: "https://evil.example/login/device" }, { expires_in: 901 }, { expires_in: 0 }, { interval: "5" },
+      { device_code: "x y" }, { device_code: undefined },
+    ]) {
+      expect(() => parseDeviceCode({ ...good, ...bad })).toThrow();
+    }
+  });
+
+  it("reads poll answers and refuses unknown errors and malformed tokens", () => {
+    expect(parsePoll({ error: "authorization_pending" })).toEqual({ kind: "pending" });
+    expect(parsePoll({ error: "slow_down", interval: 10 })).toEqual({ kind: "slow_down", interval: 10 });
+    expect(parsePoll({ error: "access_denied" })).toEqual({ kind: "denied" });
+    expect(parsePoll({ error: "expired_token" })).toEqual({ kind: "expired" });
+    expect(parsePoll({ access_token: "gho_abc", token_type: "bearer" })).toEqual({ kind: "token", token: "gho_abc" });
+    expect(() => parsePoll({ access_token: "a b" })).toThrow();
+    expect(() => parsePoll({ error: "unsupported_grant_type" })).toThrow();
+    expect(() => parsePoll(null)).toThrow();
+  });
+
+  it("talks to a fake GitHub over HTTP: no scope, numeric id compared, token never logged", async () => {
+    const seen: Array<{ url: string; body: string; auth?: string }> = [];
+    const srv = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (d) => (body += d));
+      req.on("end", () => {
+        seen.push({ url: req.url!, body, auth: req.headers.authorization });
+        res.setHeader("content-type", "application/json");
+        if (req.url === "/login/device/code") return res.end(JSON.stringify(good));
+        if (req.url === "/login/oauth/access_token") return res.end(JSON.stringify({ access_token: "gho_secretvalue", token_type: "bearer" }));
+        if (req.url === "/user") return res.end(JSON.stringify({ id: OWNER_ID, login: "someone-else-named-like-owner" }));
+        if (req.url === "/repos/example-org/acme-web") return res.end(JSON.stringify({ owner: { id: 5 }, private: true }));
+        res.statusCode = 404;
+        res.end("{}");
+      });
+    });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    const base = `http://127.0.0.1:${(srv.address() as { port: number }).port}`;
+    const log = new MemoryLogger();
+    const gh = new HttpGitHub({ webBase: base, apiBase: base, log });
+    const clock = new FakeClock();
+    const ac = new AbortController();
+    const p = await startDeviceApproval({ github: gh, clientId: CLIENT_ID, ownerId: OWNER_ID, clock, signal: ac.signal, log, approvalId: "t#1" });
+    expect(p.userCode).toBe("WDJB-MJHT");
+    await clock.advance(5000);
+    for (let i = 0; i < 50 && seen.length < 3; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(await p.result).toEqual({ approved: true });
+    expect(seen[0]).toMatchObject({ url: "/login/device/code", body: `client_id=${encodeURIComponent(CLIENT_ID)}` });
+    expect(seen[1]!.body).toContain("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code");
+    expect(seen[2]).toMatchObject({ url: "/user", auth: "Bearer gho_secretvalue" });
+    expect(log.text()).not.toContain("gho_secretvalue");
+    expect(log.text()).not.toContain(good.device_code);
+    expect(await gh.repo("example-org", "acme-web", "t")).toEqual({ status: 200, ownerId: 5, private: true });
+    expect(await gh.repo("example-org", "missing", "t")).toEqual({ status: 404 });
+    srv.close();
+    expect(() => new HttpGitHub({ webBase: "http://github.com", log })).toThrow(/https/);
+  });
+
+  it("fails closed when GitHub is unreachable", async () => {
+    const gh = new HttpGitHub({ webBase: "http://127.0.0.1:1", apiBase: "http://127.0.0.1:1", log: new MemoryLogger() });
+    await expect(gh.requestDeviceCode(CLIENT_ID)).rejects.toThrow(/unreachable/);
+  });
+
+  it("a code that expires before approval fails", async () => {
+    const gh = new FakeGitHub();
+    gh.deviceAnswer = { expiresIn: 10, interval: 5 };
+    const clock = new FakeClock();
+    const p = await startDeviceApproval({ github: gh, clientId: CLIENT_ID, ownerId: OWNER_ID, clock, signal: new AbortController().signal, log: new MemoryLogger(), approvalId: "x" });
+    await clock.advance(15_000);
+    expect(await p.result).toEqual({ approved: false, reason: "expired" });
+  });
+
+  it("sessions never share approvals across projects (SR-16)", async () => {
+    const gh = new FakeGitHub();
+    const clock = new FakeClock();
+    const a = new SessionManager("a", { githubId: OWNER_ID, oauthClientId: CLIENT_ID }, gh, clock, new MemoryLogger());
+    const b = new SessionManager("b", { githubId: OWNER_ID, oauthClientId: CLIENT_ID }, gh, clock, new MemoryLogger());
+    const s = await a.open("F-001", false);
+    gh.approver = OWNER_ID;
+    await clock.advance(5000);
+    for (let i = 0; i < 20; i++) await settle();
+    expect(a.approved(s.session).feature).toBe("F-001");
+    expect(() => b.get(s.session)).toThrow(/Unknown or expired/);
+  });
+});
+
+describe("gitleaks (Gate 1 component review 5)", () => {
+  it("runs dir mode with exactly the approved flags, from an empty folder, without GITLEAKS_* variables", async () => {
+    const root = tmpdir();
+    const fake = fakeGitleaks(path.join(root, "bin"));
+    process.env.GITLEAKS_CONFIG = "/tmp/evil.toml";
+    const g = new Gitleaks({ binary: fake.path, workDir: path.join(root, "work"), children: new Children(), expectSha256: fake.sha256, timeoutS: 60 });
+    const r = await g.scan([{ sha: "a".repeat(40), content: Buffer.from("hello") }]);
+    delete process.env.GITLEAKS_CONFIG;
+    expect(r).toEqual({ clean: true });
+    const args = fs.readFileSync(fake.argsLog, "utf8").trim().split("\n");
+    const staging = args[1]!;
+    expect(args).toEqual([
+      "dir", staging, "--config", path.join(root, "work", "gitleaks.toml"), "--gitleaks-ignore-path", path.join(root, "work", "ignore-empty"),
+      "--ignore-gitleaks-allow", "--max-archive-depth", "0", "--redact", "--report-format", "json", "--report-path", "-",
+      "--exit-code", "99", "--no-banner", "--no-color", "--log-level", "error", "--timeout", "60",
+    ]);
+    expect(fs.readFileSync(path.join(root, "work", "gitleaks.toml"), "utf8")).toBe("[extend]\nuseDefault = true\n");
+    expect(fs.readFileSync(path.join(root, "bin", "cwd.log"), "utf8").trim()).toBe(path.join(root, "work", "cwd-empty"));
+    expect(fs.readFileSync(path.join(root, "bin", "env.log"), "utf8")).not.toMatch(/GITLEAKS_/);
+    expect(fs.existsSync(staging)).toBe(false);
+  });
+
+  it("exit 99 blocks and names the blob; any other exit fails closed", async () => {
+    const root = tmpdir();
+    const fake = fakeGitleaks(path.join(root, "bin"));
+    const g = new Gitleaks({ binary: fake.path, workDir: path.join(root, "work"), children: new Children(), expectSha256: fake.sha256 });
+    const hit = await g.scan([{ sha: "b".repeat(40), content: Buffer.from("FAKE-SECRET-1") }, { sha: "c".repeat(40), content: Buffer.from("ok") }]);
+    expect(hit).toEqual({ clean: false, blobs: ["b".repeat(40)], rules: ["generic-api-key"] });
+    fs.writeFileSync(fake.failFlag, "");
+    await expect(g.scan([{ sha: "d".repeat(40), content: Buffer.from("x") }])).rejects.toThrow(ScanError);
+  });
+
+  it("refuses a binary that isn't the pinned build, or the wrong version", async () => {
+    const root = tmpdir();
+    const fake = fakeGitleaks(path.join(root, "bin"));
+    await expect(new Gitleaks({ binary: fake.path, workDir: path.join(root, "w"), children: new Children() }).verify()).rejects.toThrow(/pinned/);
+    await expect(new Gitleaks({ binary: fake.path, workDir: path.join(root, "w"), children: new Children(), expectSha256: "0".repeat(64) }).verify()).rejects.toThrow(/pinned/);
+    fs.writeFileSync(fake.path, "#!/bin/sh\necho 8.30.0\n", { mode: 0o755 });
+    const sha = (await import("../src/fsutil")).sha256Hex(fs.readFileSync(fake.path));
+    await expect(new Gitleaks({ binary: fake.path, workDir: path.join(root, "w"), children: new Children(), expectSha256: sha }).verify()).rejects.toThrow(/version/);
+    expect(() => new Gitleaks({ binary: "gitleaks", workDir: path.join(root, "w"), children: new Children() })).toThrow(/absolute/);
+  });
+});
+
+describe("git (SR-11)", () => {
+  it("every command carries the overrides", () => {
+    const a = overrideArgs("/h", "/a");
+    expect(a).toEqual(expect.arrayContaining(["core.hooksPath=/h", "core.fsmonitor=false", "protocol.file.allow=never", "protocol.allow=never", "credential.helper="]));
+  });
+
+  it("AC-18: a .husky/pre-commit and a repo hooksPath never run on the engine's commits", async () => {
+    const root = tmpdir();
+    const repo = path.join(root, "repo");
+    initRepo(repo, { "a.txt": "a" });
+    const marker = path.join(root, "ran");
+    fs.mkdirSync(path.join(repo, ".husky"));
+    for (const h of ["pre-commit", "post-commit", "reference-transaction", "post-checkout"]) {
+      fs.writeFileSync(path.join(repo, ".husky", h), `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o755 });
+      fs.writeFileSync(path.join(repo, ".git", "hooks", h), `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o755 });
+    }
+    // The traps are armed only after the fixture's own commit, which would otherwise fire them.
+    fs.writeFileSync(path.join(repo, ".gitattributes"), "* filter=evil diff=evil\n");
+    git(repo, "add", ".gitattributes");
+    git(repo, "-c", "core.hooksPath=/dev/null", "commit", "-qm", "attrs", "--no-verify");
+    git(repo, "config", "core.hooksPath", ".husky");
+    git(repo, "config", "core.fsmonitor", `touch ${marker}`);
+    git(repo, "config", "filter.evil.clean", `touch ${marker}`);
+    git(repo, "config", "filter.evil.smudge", `touch ${marker}`);
+    expect(fs.existsSync(marker)).toBe(false);
+    const fake = fakeGitleaks(path.join(root, "bin"));
+    const children = new Children();
+    const g = new Git({ gitPath: "/usr/bin/git", homeDir: path.join(root, "home"), children });
+    const scanner = new Gitleaks({ binary: fake.path, workDir: path.join(root, "gl"), children, expectSha256: fake.sha256 });
+    const state = new StateRepo(g, scanner, repo, new MemoryLogger(), path.join(root, "tmp"));
+    await state.ensureWorktree();
+    await state.commit([{ path: "inbox/decision/D-0001.md", content: "x" }], "D-0001: test");
+    expect(fs.existsSync(marker)).toBe(false);
+    expect(git(repo, "show", "factory/state:inbox/decision/D-0001.md")).toBe("x");
+  });
+
+  it("refuses unsafe state paths", () => {
+    for (const p of ["../x", "/x", "a/../b", ".git/config", "a/.GIT/x", "a\\b", "", "a//b"]) expect(() => checkStatePath(p)).toThrow();
+    expect(() => checkStatePath("interviews/F-001/transcript.jsonl")).not.toThrow();
+  });
+
+  it("refuses an existing .factory that isn't the factory/state worktree", async () => {
+    const root = tmpdir();
+    const repo = path.join(root, "repo");
+    initRepo(repo, { "a.txt": "a" });
+    fs.mkdirSync(path.join(repo, ".factory"));
+    const children = new Children();
+    const fake = fakeGitleaks(path.join(root, "bin"));
+    const g = new Git({ gitPath: "/usr/bin/git", homeDir: path.join(root, "home"), children });
+    const state = new StateRepo(g, new Gitleaks({ binary: fake.path, workDir: path.join(root, "gl"), children, expectSha256: fake.sha256 }), repo, new MemoryLogger(), path.join(root, "tmp"));
+    await expect(state.ensureWorktree()).rejects.toThrow(/not this repo's factory\/state worktree/);
+  });
+});
+
+describe("transcript chain (SR-17, SR-22)", () => {
+  const e1 = makeEntry(null, { type: "a", text: "x" }, "t1");
+  const e2 = makeEntry(e1, { type: "b", text: "**md** <img src=x>" }, "t2");
+
+  it("parses its own output and checks every link", () => {
+    const text = serialize([e1, e2]);
+    expect(text.split("\n")[1]).toContain('"text":"**md** <img src=x>"');
+    expect(parseTranscript(text)).toEqual([e1, e2]);
+    expect(() => parseTranscript(text.replace('"x"', '"y"'))).toThrow(ChainError);
+    expect(() => parseTranscript(serialize([e2]))).toThrow(ChainError);
+    expect(() => makeEntry(null, { type: "a", seq: 9 } as never, "t")).toThrow(ChainError);
+    expect(canonical({ b: 1, a: [{ d: 1, c: 2 }] })).toBe('{"a":[{"c":2,"d":1}],"b":1}');
+  });
+
+  it("accepts only what the engine wrote: no extension, truncation or rewrite", () => {
+    expect(() => checkAgainstHead([e1, e2], { seq: 2, head: e2.hash })).not.toThrow();
+    expect(() => checkAgainstHead([e1, e2], { seq: 1, head: e1.hash })).toThrow(/didn't write/);
+    expect(() => checkAgainstHead([e1], { seq: 2, head: e2.hash })).toThrow(/shorter/);
+    expect(() => checkAgainstHead([e1, e2], null)).toThrow(/no record/);
+    expect(() => checkAgainstHead([], null)).not.toThrow();
+  });
+});
+
+describe("project paths file and manifest (SR-13, H-0080, H-0081)", () => {
+  it("accepts only `projects: [{ path }]`, owned by the owner, not a link", () => {
+    const root = tmpdir();
+    const f = path.join(root, "factory-projects.local.yaml");
+    fs.writeFileSync(f, "projects:\n  - path: /a\n", { mode: 0o600 });
+    expect(readPathsFile(root, linuxOs)).toEqual(["/a"]);
+    for (const bad of ["projects:\n  - path: /a\n    owner: 1\n", "projects: []\nsettings: {}\n", "projects: x\n", "[", "a: &x 1\nb: *x\n"]) {
+      fs.writeFileSync(f, bad);
+      expect(() => readPathsFile(root, linuxOs)).toThrow(ConfigError);
+    }
+    fs.rmSync(f);
+    fs.writeFileSync(path.join(root, "real.yaml"), "projects: []\n", { mode: 0o600 });
+    fs.symlinkSync(path.join(root, "real.yaml"), f);
+    expect(() => readPathsFile(root, linuxOs)).toThrow(/symbolic link/);
+  });
+
+  it("on Windows, checks the owner and ACL through the FFI module", () => {
+    const root = tmpdir();
+    fs.writeFileSync(path.join(root, "factory-projects.local.yaml"), "projects: []\n");
+    const me = "S-1-5-21-1-2-3-1001";
+    const win = (sddl: string): OsApi => ({ ...linuxOs, platform: "win32", windows: () => ({ currentUserSid: () => me, fileSddl: () => sddl }) as unknown as WindowsApi });
+    expect(readPathsFile(root, win(`O:${me}D:(A;;FA;;;${me})`))).toEqual([]);
+    expect(() => readPathsFile(root, win(`O:${me}D:(A;;FA;;;${me})(A;;FW;;;BU)`))).toThrow(/writable by nobody else/);
+  });
+
+  it("validates the H-0080 keys exactly", () => {
+    const ok = YAML.parse(manifestYaml());
+    expect(validateManifest(ok, "c").owner).toEqual({ github_id: OWNER_ID, oauth_client_id: CLIENT_ID });
+    const variants: Array<[string, (m: Record<string, any>) => void]> = [
+      ["enabled", (m) => delete m.enabled],
+      ["enabled", (m) => (m.enabled = "yes")],
+      ["owner", (m) => delete m.owner],
+      ["owner", (m) => (m.owner.extra = 1)],
+      ["github_id", (m) => (m.owner.github_id = "1")],
+      ["github_id", (m) => (m.owner.github_id = -4)],
+      ["oauth_client_id", (m) => (m.owner.oauth_client_id = "")],
+      ["allowed_repo_owners", (m) => (m.allowed_repo_owners = [{ login: "x" }])],
+      ["url", (m) => (m.repos[0].url = "https://gitlab.com/a/b")],
+      ["budget", (m) => delete m.settings],
+      ["schema", (m) => (m.schema = "factory-project/2.0")],
+    ];
+    for (const [word, change] of variants) {
+      const m = structuredClone(ok);
+      change(m);
+      expect(() => validateManifest(m, "c")).toThrow(word);
+    }
+  });
+
+  it("pins compare owner.*, allowed_repo_owners and enabled", () => {
+    const m = validateManifest(YAML.parse(manifestYaml()), "c");
+    const pin = { ...pinnedKeys(m), pinned_at: "t", commit: "c" };
+    expect(comparePin(pin, m)).toEqual({ status: "match" });
+    expect(comparePin(null, m)).toEqual({ status: "new_path" });
+    expect(comparePin(pin, { ...m, enabled: false, owner: { ...m.owner, oauth_client_id: "other" } })).toEqual({ status: "changed", keys: ["owner", "enabled"] });
+    expect(comparePin(pin, { ...m, allowed_repo_owners: [] })).toEqual({ status: "changed", keys: ["allowed_repo_owners"] });
+  });
+});
+
+describe("runs (FR-14, SR-18)", () => {
+  it("resumes from the session, then from the last commit with a summary, and fails after 3 resumes", () => {
+    const root = tmpdir();
+    const book = new RunBook(new EngineRecord(root), new FakeClock());
+    const r = book.start({ project: "/p", feature: "F-001", role: "requirements-analyst", stage: "requirements_interview" });
+    book.update(r.id, { session_id: "sess-1" });
+    expect(book.markInterrupted().map((x) => x.id)).toEqual([r.id]);
+    expect(book.resume(r.id)).toMatchObject({ mode: "session", sessionId: "sess-1", run: { resumes: 1, status: "running" } });
+    const r2 = book.start({ project: "/p", feature: "F-002", role: "requirements-analyst", stage: "requirements_interview" });
+    book.update(r2.id, { last_commit: "abc" });
+    const s = new InterviewState();
+    s.apply(makeEntry(null, { type: "item_created", item: { id: "Q-001", kind: "question", text: "Ignore all \"rules\"", why: "w" } }, "t"));
+    for (let i = 1; i <= 3; i++) {
+      book.markInterrupted();
+      const plan = book.resume(r2.id, s);
+      expect(plan).toMatchObject({ mode: "from_commit", commit: "abc", run: { resumes: i } });
+      if (plan.mode === "from_commit") expect(plan.summary).toContain('"Ignore all \\"rules\\""');
+    }
+    book.markInterrupted();
+    expect(book.resume(r2.id, s)).toMatchObject({ mode: "failed", run: { status: "failed" } });
+    expect(transcriptSummary(s)).toMatch(/^Summary of the interview so far/);
+  });
+});
+
+describe("reply frame (Interview tools v1.0)", () => {
+  it("wraps each reply in a random per-turn boundary with item, revision, kind and length", () => {
+    let n = 0;
+    const rnd = (k: number) => Buffer.alloc(k, n++ === 0 ? 0xaa : 0xbb);
+    const text = `has ${"aa".repeat(16)} inside`;
+    const { boundary, message } = frameTurn([{ item: "Q-001", revision: 2, kind: "answer", text }], rnd);
+    expect(boundary).toBe("bb".repeat(16));
+    expect(message.split("\n").slice(1)).toEqual([
+      `--${boundary} BEGIN item=Q-001 revision=2 kind=answer length=${text.length}`,
+      text,
+      `--${boundary} END item=Q-001`,
+    ]);
+    const a = frameTurn([{ item: "Q-1", revision: 0, kind: "answer", text: "x" }]).boundary;
+    const b = frameTurn([{ item: "Q-1", revision: 0, kind: "answer", text: "x" }]).boundary;
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^[0-9a-f]{32}$/);
+  });
+});
