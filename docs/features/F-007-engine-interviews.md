@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 23
+- **Spec version:** 24
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -311,7 +311,7 @@ Asked one at a time in the interview. None is assumed.
 | OQ-6 | Which base image, pinned by digest. | Architecture, Security | Decided: Docker's official Node LTS image on Debian slim, pinned by digest, with its S4.1 review and CVE scanning (owner, decision card, 2026-11-11) |
 | OQ-7 | How the model credential reaches a container and where the engine keeps it (subscription token from `claude setup-token`, or an API key), and where the factory token is stored. | Security | Decided: the OS credential store (Windows Credential Manager, macOS Keychain, Linux Secret Service) through koffi; the owner enters each secret once with an engine command (owner, decision card, 2026-11-11) |
 | OQ-8 | The analyst-to-engine tools: names, parameters and results. | Interfaces | Decided: H-0082 approved (owner, decision card, 2026-11-11) |
-| OQ-9 | Test tools for the engine: Vitest, as the extension uses, or Node's built-in runner. | Architecture | Decided: Vitest, as the extension uses (owner, decision card, 2026-11-11) |
+| OQ-9 | Test tools for the engine: Vitest, as the extension uses, or Node's built-in runner. | Architecture | Decided: Vitest, as the extension uses (owner, decision card, 2026-11-11); coverage by `@vitest/coverage-v8`, pinned to match Vitest, dev dependency only, subject to an S4.1 review (owner, decision card, 2026-11-11) |
 
 | OQ-10 | One engine serves several projects, but the channel has no project field (G1 #11). Keep feature ids unique across all projects (no contract change), or add a `project` parameter to the channel? | Interfaces | Decided: feature ids unique across all of the engine's projects; no channel change (owner, decision card, 2026-11-11) |
 | OQ-11 | Which secrets scanner the engine uses before each commit (G1 #18): an existing tool after its S4.1 review, or patterns of our own in the engine. | Architecture, Security | Decided: gitleaks, pinned by version and checksum, after its S4.1 review (owner, decision card, 2026-11-11) |
@@ -366,3 +366,4 @@ section 9.
 | 21 | 2026-11-11 | OQ-4: five components approved with pins; readiness gate passed | Owner, 2026-11-11 (decision card); orchestrator (gate) |
 | 22 | 2026-11-11 | FR-4 clarified: the engine reports channel 1.2 until the advisor increment | Owner, 2026-11-11 (decision card) |
 | 23 | 2026-11-11 | H-0084: channel error code -32008 `refused` | Owner, 2026-11-11 (decision card) |
+| 24 | 2026-11-11 | OQ-9 follow-up: test coverage by `@vitest/coverage-v8`, pinned, dev only | Owner, 2026-11-11 (decision card) |
