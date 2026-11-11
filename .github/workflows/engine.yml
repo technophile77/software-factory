@@ -73,5 +73,13 @@ jobs:
           test -n "$digest" && test -n "$tag"
           docker buildx build --load --build-arg "BASE_IMAGE=$tag@$digest" \
             --tag factory-agent:ci --file "$ctx/agent.Dockerfile" "$ctx"
+      # Owner decision 2026-11-11: only a CVE with a fix fails the job;
+      # unfixed base-image ones are listed. Exit 1 means "found some", so
+      # anything above it is a scanner error and fails.
       - name: Scan the agent image
-        run: '"$RUNNER_TEMP/osv-scanner" scan image --config engine/osv-scanner.toml factory-agent:ci'
+        run: |
+          rc=0
+          "$RUNNER_TEMP/osv-scanner" scan image --config engine/osv-scanner.toml \
+            --format json --output-file "$RUNNER_TEMP/image-scan.json" factory-agent:ci || rc=$?
+          test "$rc" -le 1
+          python3 -I scripts/osv_fixable.py "$RUNNER_TEMP/image-scan.json"

@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 36
+- **Spec version:** 37
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -104,7 +104,7 @@ Drafted from the requirements above; each is refined in the interview.
   CVEs in CI (S4.4).
 - Pins from the S4.1 reviews (Gate 1): koffi 3.3.6, the Claude Agent SDK
   0.3.311 with the Claude Code 2.1.311 its manifest names (upgraded only
-  together), and `node:26.13.0-trixie-slim` by digest. A lockfile with
+  together), and `node:26.13.1-trixie-slim` by digest (26.13.0 until spec v37). A lockfile with
   integrity hashes; `npm ci --ignore-scripts` on the host; Claude Code's
   `postinstall` only in the image build, with the binary's SHA-256 checked
   against the SDK manifest. Each bump is a new S4.1 check (G1 #22).
@@ -356,7 +356,9 @@ change-controlled files:
    - Build the agent image the way the engine does (`docker buildx build
      --load`, the same Dockerfile and context, `BASE_IMAGE` read from the
      engine's pin), then `osv-scanner scan image` on it.
-   - Any finding fails the job. A finding judged not reachable goes into an
+   - Any lockfile finding fails the job. For the image, only a finding with
+     a fix fails it; unfixed base-image CVEs are listed in each run (owner
+     decision 2026-11-11, spec v37), via `scripts/osv_fixable.py`. A finding judged not reachable goes into an
      `engine/osv-scanner.toml` ignore entry with a reason and an expiry date
      of at most 90 days. That file is change-controlled, so each entry needs
      the owner's approval.
@@ -481,3 +483,4 @@ section 9.
 | 34 | 2026-11-11 | Gate 2 M3: this increment assumes a single-user host; defending against other local user accounts (engine home ACL on Windows, Docker pipe server identity, `ProgramData` plugin path, Unix socket owner) is deferred to Alpha and must be fixed before promotion | Owner, 2026-11-11 (decision card) |
 | 35 | 2026-11-11 | H-0088 drafted: OSV-Scanner on both lockfiles and the agent image, actions pinned by SHA, SR-13 placeholder and paths-file checks | Owner chose to add now (decision card); values draft |
 | 36 | 2026-11-11 | H-0088 approved as drafted and applied | Owner, 2026-11-11 (decision card) |
+| 37 | 2026-11-11 | Image CVEs: CI fails only on those with a fix and lists the rest; base image moved to `node:26.13.1-trixie-slim` (Node security release 2026-11-10), index digest `sha256:e6bedef2…20bc` | Owner, 2026-11-11 (decision card) |
