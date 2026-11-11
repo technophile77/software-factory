@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 31
+- **Spec version:** 32
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -427,3 +427,4 @@ section 9.
 | 29 | 2026-11-11 | H-0087 approved: limit values, manifest v1.4 `limits` | Owner, 2026-11-11 (decision card) |
 | 30 | 2026-11-11 | Skills, `AGENT.md` and limit defaults come from the master commit that `factory.version` names; a project's `agents.override` / `skills.override` (read from its config repo's `main`) win over them, and a factory pull never changes them | Owner, 2026-11-11 (decision card; thread message) |
 | 31 | 2026-11-11 | `research_web` counts against the item being researched, else the open question, and always against the per-session cap | Owner, 2026-11-11 (decision card) |
+| 32 | 2026-11-11 | Until F-002 is wired: analyst `claude-opus-5-5`, web reader `claude-haiku-5-5`, set in the master defaults file `engine/config/models.yaml`; per-project choice arrives with F-002's `settings.agents.<role>.rung` | Owner, 2026-11-11 (decision card) |
