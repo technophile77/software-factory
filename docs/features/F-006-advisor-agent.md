@@ -3,7 +3,7 @@
 - **Id:** F-006
 - **Status:** Approved (readiness gate passed 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10 (split out of F-005)
-- **Spec version:** 6
+- **Spec version:** 7
 
 ## 1. Objective and business purpose
 Some questions the factory puts to the owner are hard and cross-cutting, and
@@ -107,7 +107,7 @@ Interview answers (owner):
 | FR-8 | The advisor's output has four fixed sections: Findings (each with a source; web findings marked untrusted), Options (two to four, each with trade-offs), Recommendation (with reasoning and a confidence of low, medium or high), Risks and unknowns. Output that doesn't match is rejected and the owner is told the call failed. |
 | FR-9 | The output is shown to the owner word for word after F-005 SR-2/SR-10 stripping, as encoded text (SR-2), and labelled as the advisor's: in an interview beside the question, in the inbox in the same item. The caller cannot edit or summarize it. |
 | FR-10 | The advice is recorded: in the interview transcript for interview calls, in the inbox item's history and body for inbox calls. |
-| FR-11 | The F-005 `spec-interview` skill offers "ask the advisor" on every question, and shows advisor proposals for the owner to approve or decline. |
+| FR-11 | The F-005 `spec-interview` skill offers "ask the advisor" on every question, and shows advisor proposals for the owner to approve or decline. Following F-005 OQ-3 (no escalation until F-006 exists), the client offers and sends advisor replies only when `engine.json` reports channel version 1.2 or later. |
 
 ## 4. Acceptance criteria
 | Id | Given / When / Then | Covers |
@@ -229,3 +229,4 @@ All approved by the owner as drafted, 2026-11-10 (decision card):
 | 4 | 2026-11-10 | Owner approved SR-1, SR-3, SR-7 (A-3 narrowed to the current feature's transcript) and SR-9 (FR-7 shell becomes its own Security decision) | Owner, 2026-11-10 (card) |
 | 5 | 2026-11-10 | Hygiene items H-0060 to H-0064 approved as drafted; readiness gate passed (all Q answered, A-1..A-3 and SR decisions approved, nothing deferred) | Owner, 2026-11-10 (card) |
 | 6 | 2026-11-10 | Amendments from Gate 2 and validation approved as drafted: H-0075 (channel v1.2 advisor fields, limits, budget flag, advice revision and hash), H-0076 (advisor reads nothing under `.factory/`), H-0077 (orchestrator takes no action from advice; advisor never quotes secrets) | Owner, 2026-11-10 (card) |
+| 7 | 2026-11-11 | FR-11 states the client's channel-version check, which applies the owner's F-005 OQ-3 answer (test round 2 O5) | Owner's F-005 OQ-3 answer |
