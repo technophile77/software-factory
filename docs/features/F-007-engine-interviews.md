@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 29
+- **Spec version:** 30
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -425,3 +425,4 @@ section 9.
 | 27 | 2026-11-11 | Agent SDK peers: `legacy-peer-deps` in `engine/.npmrc` plus zod 4.6.7; other peers not installed | Owner, 2026-11-11 (decision card) |
 | 28 | 2026-11-11 | Limits live in master defaults, projects may only lower them; H-0087 drafts the file, manifest v1.4 `limits:` and values | Owner, 2026-11-11 (decision card, location); values draft |
 | 29 | 2026-11-11 | H-0087 approved: limit values, manifest v1.4 `limits` | Owner, 2026-11-11 (decision card) |
+| 30 | 2026-11-11 | Skills, `AGENT.md` and limit defaults come from the master commit that `factory.version` names; a project's `agents.override` / `skills.override` (read from its config repo's `main`) win over them, and a factory pull never changes them | Owner, 2026-11-11 (decision card; thread message) |
