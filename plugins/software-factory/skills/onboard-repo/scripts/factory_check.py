@@ -1121,6 +1121,36 @@ def _inside(path):
     return ".." not in re.split(r"[\\/]", path)
 
 
+
+def _is_id(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _check_owner_keys(data):
+    """Project manifest v1.3: optional here, but typed when present, so a
+    placeholder left in by mistake is caught before the engine refuses it."""
+    errors = []
+    if "enabled" in data and not isinstance(data["enabled"], bool):
+        errors.append("enabled must be true or false")
+    if "owner" in data:
+        owner = data["owner"]
+        if not isinstance(owner, dict):
+            errors.append("owner must be a mapping with github_id and oauth_client_id")
+        else:
+            if not _is_id(owner.get("github_id")):
+                errors.append("owner.github_id must be the owner's numeric GitHub id")
+            if not isinstance(owner.get("oauth_client_id"), str) or not owner["oauth_client_id"].strip():
+                errors.append("owner.oauth_client_id must be the OAuth app's client id")
+    if "allowed_repo_owners" in data:
+        allowed = data["allowed_repo_owners"]
+        if not isinstance(allowed, list) or not allowed:
+            errors.append("allowed_repo_owners must list at least one account")
+        else:
+            for i, entry in enumerate(allowed):
+                if not isinstance(entry, dict) or not _is_id(entry.get("id")) or not isinstance(entry.get("login"), str):
+                    errors.append(f"allowed_repo_owners[{i}] must have a login and a numeric id")
+    return errors
+
 def validate_manifest(data, master=None):
     errors = []
     if not isinstance(data, dict):
@@ -1154,6 +1184,7 @@ def validate_manifest(data, master=None):
                 errors.append(f"repos[{i}].maturity must be one of {', '.join(LEVELS)}")
             elif r.get("maturity"):
                 repo_levels.append(r["maturity"])
+    errors += _check_owner_keys(data)
     maturity = data.get("maturity")
     if maturity not in LEVELS:
         errors.append(f"maturity must be one of {', '.join(LEVELS)}")
@@ -1221,8 +1252,9 @@ CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.
                      ".gitmodules", ".vscode/**", ".devcontainer/**"]
 POLICY_KEYS = {"tools": {"allow"}, "read": {"allow", "deny"}, "write": {"allow", "deny"},
                "commands": {"allow"}, "network": {"allow"}}
-AGENT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill"}
-FILE_TOOLS = AGENT_TOOLS - {"WebFetch", "WebSearch"}
+# fetch_page is the engine's own page fetch, which strips hidden content (Role policy v2.5).
+AGENT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill", "fetch_page"}
+FILE_TOOLS = AGENT_TOOLS - {"WebFetch", "WebSearch", "fetch_page"}
 # Role policy v2.2: no agent reads these, whatever its allow list says. The
 # channel file would let an agent answer the owner's interview (F-005 SR-14).
 SECRET_FILES = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks",
@@ -1437,7 +1469,7 @@ def validate_policy(data, agents):
             # Open web content must never reach an agent that can see project files (F-005 SR-17).
             if "*" in ((rule.get("network") or {}).get("allow") or []) and tools & FILE_TOOLS:
                 errors.append(f"policy for {role} in {where} allows any host but has file tools "
-                              f"({', '.join(sorted(tools & FILE_TOOLS))}); only a WebFetch/WebSearch-only role may")
+                              f"({', '.join(sorted(tools & FILE_TOOLS))}); only a role with web tools alone may")
             missing = [f for f in SECRET_FILES if f not in set((rule.get("read") or {}).get("deny") or [])]
             if missing:
                 errors.append(f"policy for {role} in {where} must deny reading {', '.join(missing)}")

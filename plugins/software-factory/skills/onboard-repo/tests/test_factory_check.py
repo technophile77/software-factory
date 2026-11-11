@@ -1140,3 +1140,37 @@ class ThirdGateRegressions(Base):
     def test_m28_bracket_classes_anywhere_in_a_bracket(self):
         self.assertTrue(fc._escapes_worktree(".factory/[x[:punct:]][x[:punct:]]/CLAUDE.md"))
 
+
+
+class OwnerKeysV13(unittest.TestCase):
+    """Project manifest v1.3 (H-0080): owner keys are optional but typed."""
+
+    BASE = Manifest.VALID
+
+    def errors(self, extra):
+        return fc.validate_manifest(fc.parse_yaml(self.BASE + extra))
+
+    def test_valid_owner_keys(self):
+        extra = ("enabled: false\nowner:\n  github_id: 12345\n  oauth_client_id: Iv1.example\n"
+                 "allowed_repo_owners:\n  - { login: acme, id: 678 }\n")
+        self.assertEqual(self.errors(extra), [])
+
+    def test_placeholders_left_in_are_caught(self):
+        extra = ("owner:\n  github_id: <numeric id>\n  oauth_client_id: <client id>\n"
+                 "allowed_repo_owners:\n  - { login: <login>, id: <numeric id> }\n")
+        errs = self.errors(extra)
+        self.assertTrue(any("owner.github_id" in e for e in errs), errs)
+        self.assertTrue(any("allowed_repo_owners[0]" in e for e in errs), errs)
+
+    def test_enabled_must_be_boolean(self):
+        self.assertTrue(any("enabled must be" in e for e in self.errors('enabled: "yes"\n')))
+
+    def test_empty_allow_list_refused(self):
+        self.assertTrue(any("at least one account" in e for e in self.errors("allowed_repo_owners: []\n")))
+
+    def test_template_has_placeholders_only(self):
+        template = read(os.path.join(SKILL, "templates", "factory-project.yaml"))
+        self.assertIn("enabled: false", template)
+        for line in template.splitlines():
+            if "github_id" in line or "oauth_client_id" in line:
+                self.assertIn("<", line, line)

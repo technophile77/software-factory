@@ -24,6 +24,9 @@ Inbox item v1.1 (H-0062), Engine control channel v1.3 (H-0063, amended by
 H-0075) and Role policy v2.4 (H-0061, amended by H-0076) for F-006 approved
 by the owner 2026-11-10 (decision card, as drafted); the channel and policy
 versions were renumbered from v1.2 and v2.3 when F-006 merged with main.
+Project manifest v1.3 (H-0080), Role policy v2.5 (H-0083) and the new
+Interview tools v1.0 (H-0082) for F-007 approved by the owner 2026-11-11
+(decision card, as drafted after Security Gate 1).
 
 ## Contract entry format
 
@@ -342,10 +345,10 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
-## Role policy — v2.4
+## Role policy — v2.5
 
 - Status: Approved (v2.2); v2.3 draft, awaiting owner approval (H-0040);
-  v2.4 approved (H-0061, H-0076)
+  v2.4 approved (H-0061, H-0076); v2.5 approved (H-0083)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
@@ -353,7 +356,8 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   request rule approved in substance by the owner, 2026-11-10 (F-006 SR-7,
   card); v2.4 approved by the owner, 2026-11-10 (H-0061 and amendment
   H-0076, the advisor denied all of `.factory/`; decision card, as drafted;
-  renumbered from v2.3 when merged with main)
+  renumbered from v2.3 when merged with main); v2.5 approved by the owner,
+  2026-11-11 (H-0083, F-007 Security Gate 1 #20; decision card)
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
   Security decision. v2.0 moved the policy from `.factory/policy/roles.yaml`
@@ -369,15 +373,18 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   and no role can be requested, so earlier manifests need no change.
   Amendment H-0076 tightens the advisor's extra denies to all of
   `.factory/`; a manifest with an `advisor` role must replace its four
-  inbox and transcript denies with the two new entries.
+  inbox and transcript denies with the two new entries. v2.5 adds the
+  engine tool `fetch_page` and gives it to the web reader in place of
+  `WebFetch`; a manifest with a `web-reader` role must make that swap.
 
 **Location:** the `policy:` key of the project manifest (change-controlled),
 with optional per-repo overrides under `repos[].policy`. Effective policy
 for a repo: the project's roles, where a repo override's `allow` lists
 replace the project's and its `deny` lists are added to the project's.
 Each role has five sections: `tools` (the agent's built-in tools: `Read`,
-`Grep`, `Glob`, `Edit`, `Write`, `Bash`, `WebFetch`, `WebSearch`, and from
-v2.2 `Skill`, which loads only the master factory's shared skills), `read`,
+`Grep`, `Glob`, `Edit`, `Write`, `Bash`, `WebFetch`, `WebSearch`, from
+v2.2 `Skill`, which loads only the master factory's shared skills, and from
+v2.5 the engine tool `fetch_page`), `read`,
 `write`, `commands` (programs `Bash` may run) and `network`. Every role must
 list at least one tool. Every role with a file tool (`Read`, `Grep`, `Glob`,
 `Edit`, `Write`, `Bash`, `Skill`) must list at least one read glob. Every role
@@ -433,12 +440,17 @@ interpreter or command wrapper. That is a guard rail; the container is the
 boundary. Build and test tools run repo code by design, so arguments are
 not restricted. A repo override may not add tools.
 `network.allow` lists host names. From v2.2 the single entry `"*"` means any
-host, and is allowed only for a role whose tools are `WebFetch` and
-`WebSearch` alone, so open web content never reaches an agent that can see
+host, and is allowed only for a role whose tools are only `fetch_page`,
+`WebFetch` and `WebSearch`, so open web content never reaches an agent that can see
 project files (F-005 SR-17).
 
 **Web reader (v2.2, optional role).** Fetches and summarizes web pages for
-another agent. The engine strips hidden content (HTML comments, script and
+another agent. From v2.5 it fetches only through the engine tool
+`fetch_page { url }`, which returns `{ url, text, truncated }`: fetched
+through the egress proxy under its address rules, size capped, as plain
+text with the address it came from. Claude Code's `WebFetch` processes a
+page inside the agent, where the engine can't strip it, so the reader
+doesn't have it. The engine strips hidden content (HTML comments, script and
 style, hidden elements, zero-width and bidi characters, metadata) before the
 reader sees a page; the reader returns plain text with the source address,
 which the caller treats as untrusted data. The engine logs every address and
@@ -447,7 +459,7 @@ search. Its policy is fixed:
 ```yaml
     web-reader:
       tools:
-        allow: ["WebFetch", "WebSearch"]
+        allow: ["fetch_page", "WebSearch"]
       read:
         allow: []
         deny: [<the secret files above>]
@@ -596,12 +608,15 @@ section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.2
+## Project manifest — v1.3
 
-- Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014)
+- Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014);
+  v1.3 approved (H-0080)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
   adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
-  `complexity` and `settings.agents` (F-002 A-6, A-8)
+  `complexity` and `settings.agents` (F-002 A-6, A-8); v1.3 adds `enabled`,
+  `owner` and `allowed_repo_owners` (ADR 0012, F-007 OQ-2; owner, decision
+  card, 2026-11-11)
 - Used by: engine (resolves effective config), owner (edits it), VS Code extension (later)
 - Compatibility: adding an optional key is non-breaking; renaming or removing one is breaking.
 
@@ -617,7 +632,30 @@ the preset used only for initial calibration) and
 ladder; the engine refuses a rung that doesn't exist in the pinned factory
 version or is below the role's floor). Both change only through hygiene
 items (F-002). The manifest is the only record of repo and project maturity
-levels. `schema` stays `factory-project/1.0`: v1.1 and v1.2 only add optional keys.
+levels. `schema` stays `factory-project/1.0`: v1.1 to v1.3 only add optional keys.
+
+**Owner and authorization keys (v1.3).** The owner's own values live here,
+in the project's config repo, never in the master factory repo, which ships
+placeholders only (owner, 2026-11-11):
+
+```yaml
+enabled: false                 # ADR 0012; onboarding writes false
+owner:
+  github_id: <numeric id>      # the only account whose device approval opens an interview (ADR 0014)
+  oauth_client_id: <client id> # the owner's OAuth app, device flow, no scopes, no secret
+allowed_repo_owners:           # accounts whose repos this project may work on (ADR 0012)
+  - { login: <login>, id: <numeric id> }   # the engine checks the id; the login is for people
+```
+
+The keys are optional for validation, but the engine refuses to run a
+project that lacks `enabled` or `owner`. `enabled` is a boolean;
+`github_id` and each `id` are positive integers; `oauth_client_id` is a
+non-empty string. Every `repos[].url` must be owned by an
+`allowed_repo_owners` id, checked against GitHub's answer for the repo,
+not the URL text. The engine reads the manifest from the config repo's
+`main` commit and pins `owner.*`, `allowed_repo_owners` and `enabled`;
+a change to them needs the owner's confirmation and a device approval by
+the previously pinned owner (F-007 SR-5).
 
 **Protected defaults:** `security-review` and the six core agents (orchestrator,
 requirements-analyst, software-developer, test-engineer, security-reviewer,
@@ -733,3 +771,54 @@ config repo's `factory/state` branch.
   }]
 }
 ```
+
+---
+
+## Interview tools — v1.0
+
+- Status: Approved
+- Owner decision: F-007 OQ-8, H-0082, tightened by Security Gate 1 #10;
+  owner, decision card, 2026-11-11
+- Used by: engine (serves them), requirements analyst (calls them)
+- Compatibility: adding a tool or an optional parameter is non-breaking;
+  changing a parameter, a result or a limit is breaking.
+
+The engine gives the requirements analyst these tools in its session,
+through an in-process MCP server named `factory`. They are the analyst's
+only way to reach the owner. Text fields are stored and shown as written,
+and are data to the engine.
+
+| Tool | Params | Result |
+|---|---|---|
+| `interview_ask` | `{ text, why, suggested?, options?: [string], findings?: [{ text, source }] }` | `{ item }`; a new question, status `open` |
+| `interview_propose_assumption` | `{ text, why }` | `{ item }`; `open` until the owner approves or rejects it |
+| `interview_revise` | `{ item, text, why, suggested?, options?, findings? }` | `{ revision }`; answers a `more_info` reply: a new revision, back to `open` |
+| `research_web` | `{ query }` | `{ summary, sources: [string] }` from the web reader, labelled untrusted |
+| `interview_spec_ready` | `{ spec_path, spec_version }` | `{ checks: [{ name, passed, evidence }] }` |
+
+Rules:
+- The server is built per session with its project and feature fixed. No
+  tool takes a feature; `item` must belong to the session's feature, and
+  ids match the channel's id pattern.
+- One question at a time: `interview_ask` is refused with `one_at_a_time`
+  while an earlier question is `open` and not deferred. Assumptions don't
+  count against this.
+- Limits: `text` up to 4,000 characters, `why` up to 2,000, up to 8
+  `options` of up to 200, up to 20 `findings` with `text` up to 2,000 and
+  `source` an `https` URL up to 2,000; `query` one line up to 400;
+  `spec_version` a non-negative integer; unknown keys refused. Over a limit
+  is `invalid`.
+- Caps: at most 5 open assumptions, 200 items per feature, and a
+  per-question and per-session cap on `research_web`; over a cap is
+  `limit`, and the owner is told.
+- `spec_path` must be the session's own `docs/features/F-nnn-*.md`, resolved
+  by the Role policy path rule.
+- The analyst's turn ends after it asks. Each owner reply reaches it as the
+  next turn's message, wrapped by the engine between two lines carrying a
+  random per-turn boundary, with the item, revision, reply kind and the
+  text's length, and the owner's text unchanged between them. Nothing else
+  in a turn's message comes from the owner.
+- `research_web` sends only the query; the engine logs it against the item.
+- Errors: `one_at_a_time`, `invalid`, `limit`, `unknown_item`,
+  `wrong_status` (for example revising an item that had no `more_info`
+  reply).

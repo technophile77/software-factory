@@ -1,9 +1,9 @@
 # Feature: Run spec interviews on the real engine
 
 - **Id:** F-007
-- **Status:** Draft (Security Gate 1 done; requirements folded in; owner questions OQ-10, OQ-11 and the H-0080 to H-0083 drafts open)
+- **Status:** In review (all owner questions answered; contract changes approved; readiness gate next)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 18
+- **Spec version:** 19
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -200,11 +200,12 @@ expiry, and never enters a container.
 - The master repo ships only templates and placeholders; no owner's real
   values are ever committed to it (owner, 2026-11-11).
 
-The three changes below are drafts for the owner. Each is a
-change-controlled edit, applied only after approval, through its hygiene
-item.
+The four changes below were approved by the owner on 2026-11-11 (decision
+card, as drafted after Gate 1) and applied in `docs/interface-contracts.md`,
+the onboarding template and checker, `.gitignore` and the web reader's
+AGENT.md.
 
-### H-0080 (draft): Project manifest v1.3, owner and authorization keys
+### H-0080 (approved): Project manifest v1.3, owner and authorization keys
 Adds optional keys; non-breaking. The engine refuses to run a project that
 lacks `owner` or `enabled` (FR-2).
 
@@ -221,12 +222,12 @@ allowed_repo_owners:           # accounts whose repos this project may work on (
 GitHub's answer for the repo, not the URL text. The onboarding template gets
 placeholders only.
 
-### H-0081 (draft): `.gitignore` in the master repo
+### H-0081 (approved): `.gitignore` in the master repo
 Add `/factory-projects.local.yaml`: the list of the user's config repo
 clones, `projects: [{ path: <absolute path> }]`, with no settings. The engine
 refuses a path that isn't a Git work tree with a valid manifest.
 
-### H-0082 (draft): Interview tools v1.0 (OQ-8), a new contract
+### H-0082 (approved): Interview tools v1.0 (OQ-8), a new contract
 The engine gives the analyst these tools in its session (an in-process MCP
 server named `factory`). They are the analyst's only way to reach the owner.
 Every call is checked against the session's own feature; text fields are
@@ -267,7 +268,7 @@ Rules:
   `wrong_status` (for example revising an item that had no `more_info`
   reply).
 
-### H-0083 (draft): Role policy v2.5, web reader fetches through the engine
+### H-0083 (approved): Role policy v2.5, web reader fetches through the engine
 The web reader's `tools` lose `WebFetch` and gain the engine tool
 `fetch_page { url }` → `{ url, text, truncated }`: fetched through the proxy
 under SR-8, hidden content (comments, scripts, hidden elements, zero-width
@@ -295,7 +296,7 @@ Asked one at a time in the interview. None is assumed.
 | OQ-5 | How the engine drives containers: the `docker` command line (no new library) or a Docker API library. And the egress proxy: written in the engine with Node's own modules, or an existing proxy image. | Architecture, Security | Containers: decided, the `docker` command line, no Docker library (owner, decision card, 2026-11-11). Proxy: decided, our own small proxy on Node's built-in modules, allowing only listed hosts on port 443 and logging each connection (owner, decision card, 2026-11-11) |
 | OQ-6 | Which base image, pinned by digest. | Architecture, Security | Decided: Docker's official Node LTS image on Debian slim, pinned by digest, with its S4.1 review and CVE scanning (owner, decision card, 2026-11-11) |
 | OQ-7 | How the model credential reaches a container and where the engine keeps it (subscription token from `claude setup-token`, or an API key), and where the factory token is stored. | Security | Decided: the OS credential store (Windows Credential Manager, macOS Keychain, Linux Secret Service) through koffi; the owner enters each secret once with an engine command (owner, decision card, 2026-11-11) |
-| OQ-8 | The analyst-to-engine tools: names, parameters and results. | Interfaces | Drafted as H-0082 (section 10), for the owner's review |
+| OQ-8 | The analyst-to-engine tools: names, parameters and results. | Interfaces | Decided: H-0082 approved (owner, decision card, 2026-11-11) |
 | OQ-9 | Test tools for the engine: Vitest, as the extension uses, or Node's built-in runner. | Architecture | Decided: Vitest, as the extension uses (owner, decision card, 2026-11-11) |
 
 | OQ-10 | One engine serves several projects, but the channel has no project field (G1 #11). Keep feature ids unique across all projects (no contract change), or add a `project` parameter to the channel? | Interfaces | Decided: feature ids unique across all of the engine's projects; no channel change (owner, decision card, 2026-11-11) |
@@ -346,3 +347,4 @@ section 9.
 | 16 | 2026-11-11 | Gate 1 #20 decided (engine `fetch_page`, H-0083). All Gate 1 findings folded in: SR-1 to SR-23, sensitive data and external services, AC-14 to AC-21, pins in constraints, H-0082 limits and caps. OQ-10, OQ-11 added | Owner, 2026-11-11 (decision card, #20); rest drafts |
 | 17 | 2026-11-11 | OQ-10: feature ids unique across projects, no channel change | Owner, 2026-11-11 (decision card) |
 | 18 | 2026-11-11 | OQ-11: gitleaks as the secrets scanner | Owner, 2026-11-11 (decision card) |
+| 19 | 2026-11-11 | H-0080 to H-0083 approved and applied | Owner, 2026-11-11 (decision card) |
