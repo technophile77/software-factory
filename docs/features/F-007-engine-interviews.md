@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 21
+- **Spec version:** 22
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -57,7 +57,7 @@ proxy.
 | FR-1 | The engine is a TypeScript Node process in `engine/` (ADR 0001, 0003), started by a command. One engine serves all enabled projects on the machine. |
 | FR-2 | At start it loads each enabled project's manifest from its config repo, which holds the owner's GitHub id, the OAuth client id and the allow list (OQ-2, H-0080). The engine finds the config repos from a git-ignored file in the user's clone of the master repo that lists their paths and holds no settings (owner, 2026-11-11; the `.gitignore` entry is hygiene item H-0081). It refuses to run a project whose manifest fails validation, whose repo isn't reachable with the factory token, or whose owner isn't on the allow list (ADR 0012). A refusal files a Security item and stops only that project. |
 | FR-3 | It refuses to start when its model credentials don't match a project's billing mode (ADR 0012). |
-| FR-4 | It serves Engine control channel v1.3 on a Unix socket or Windows named pipe with every access rule of the contract, and writes `engine.json` as the contract says. Advisor reply kinds return `kind_not_allowed` until the advisor increment, and `engine.json` reports the channel version it serves, so the skill doesn't offer the advisor (F-006 FR-11). |
+| FR-4 | It serves Engine control channel v1.3 on a Unix socket or Windows named pipe with every access rule of the contract, and writes `engine.json` as the contract says. Advisor reply kinds return `kind_not_allowed` until the advisor increment, and `engine.json` and `engine.status` report channel version `1.2` until the advisor increment, so the skill doesn't offer the advisor (F-006 FR-11; owner, decision card, 2026-11-11). |
 | FR-5 | `feature.start` assigns the next feature id, creates `feature/F-nnn-name` from `main` (ADR 0005) and queues the interview. New features enter only this way (ADR 0012). |
 | FR-6 | `interview.*` follow channel v1.3 and the interview rules: session lock by token, takeover, revisions, reply ids, deferred items once per session, `wait_s`, error codes. |
 | FR-7 | Every interview session needs the owner's GitHub device approval before any reply is accepted, exactly as ADR 0014 sets out: no scopes, no client secret, owner id check, token discarded, fail closed, 30-minute idle and 2-hour limits, every GitHub field validated (SR-23). |
@@ -362,3 +362,4 @@ section 9.
 | 19 | 2026-11-11 | H-0080 to H-0083 approved and applied | Owner, 2026-11-11 (decision card) |
 | 20 | 2026-11-11 | gitleaks review folded in (pin 8.30.1, blob-only scanning) | — (review) |
 | 21 | 2026-11-11 | OQ-4: five components approved with pins; readiness gate passed | Owner, 2026-11-11 (decision card); orchestrator (gate) |
+| 22 | 2026-11-11 | FR-4 clarified: the engine reports channel 1.2 until the advisor increment | Owner, 2026-11-11 (decision card) |
