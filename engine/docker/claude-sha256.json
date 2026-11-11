@@ -1,0 +1,6 @@
+{
+  "source": "manifest.json of @anthropic-ai/claude-agent-sdk 0.3.311 (claudeCodeVersion 2.1.311)",
+  "version": "2.1.311",
+  "linux-x64": "86dc1fcc69498159eaf15f446613e847010f9036bfbbdffd4c49350be8489ada",
+  "linux-arm64": "2e2496c9a8065df93acb0fca2d341f59a6b8777649b2e025ab8c9bcd5eef61f3"
+}

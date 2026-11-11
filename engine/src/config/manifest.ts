@@ -17,6 +17,8 @@ export interface Manifest {
   allowed_repo_owners: RepoOwner[];
   repos: Array<{ name: string; url: string; owner: string; repo: string }>;
   billingMode: "subscription" | "tokens";
+  /** The parsed document, from which a session's Role policy is resolved when it starts. */
+  raw?: unknown;
 }
 
 const MAX_MANIFEST = 1024 * 1024;
@@ -102,5 +104,6 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
     allowed_repo_owners: allowed,
     repos,
     billingMode: mode as "subscription" | "tokens",
+    raw: doc,
   };
 }

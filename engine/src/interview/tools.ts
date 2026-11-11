@@ -82,6 +82,16 @@ export interface ToolContext {
   reportFor(result: { specPath: string; specVersion: number; checks: Check[]; passed: boolean }): Promise<Change[]>;
   /** Told once the result is committed; a pass ends the analyst's run. */
   onSpecReady?(passed: boolean): void;
+  /** The web reader (milestone 2). Without it, research_web answers `unavailable`. */
+  research?: ResearchConfig;
+}
+
+export interface ResearchConfig {
+  /** Runs one web reader session with only the query (Interview tools v1.0). */
+  run(query: string): Promise<{ summary: string; sources: string[] }>;
+  /** Caps from change-controlled config (H-0082); the engine has no defaults. */
+  perQuestion: number;
+  perSession: number;
 }
 
 export interface InterviewTools {
@@ -95,10 +105,11 @@ export interface InterviewTools {
 /**
  * The analyst's tools as plain functions, bound to one feature: no tool takes
  * a feature, and every item must be that feature's (Interview tools v1.0).
- * The MCP server that exposes them to an agent session comes in milestone 2.
+ * agent/factory-tools.ts exposes them to an agent session as MCP tools.
  */
 export function createInterviewTools(ctx: ToolContext): InterviewTools {
   const f = ctx.feature;
+  let sessionResearch = 0;
 
   async function run<T>(name: string, body: () => Promise<T>): Promise<ToolResult<T>> {
     try {
@@ -155,14 +166,31 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
         return { revision: await f.revise(id, c) };
       }),
 
-    research_web: (args) =>
-      run("research_web", async () => {
+    research_web: async (args) => {
+      // Recording the request holds the feature; the reader's session doesn't, so replies keep flowing meanwhile.
+      const asked = await run("research_web", async () => {
         const a = obj(args, ["query"]);
         const q = str(a.query, "query", L.query)!;
         if (/[\r\n\u2028\u2029]/.test(q)) fail("invalid", "query must be one line.");
-        // The web reader runs in its own container, which comes in milestone 2.
-        return fail("unavailable", "Web research isn't available in this engine version.");
-      }),
+        const r = ctx.research;
+        if (!r) return fail("unavailable", "Web research isn't available in this engine version.");
+        // Logged against the item being researched, else the open question.
+        const item = f.researching() ?? f.openQuestion() ?? null;
+        if (item && item.research_calls >= r.perQuestion) await capReached("research per question", item.id);
+        if (sessionResearch >= r.perSession) await capReached("research per session");
+        sessionResearch++;
+        await f.append([{ type: "research_requested", query: q, ...(item ? { item: item.id } : {}) }], "research requested");
+        return q;
+      });
+      if (!asked.ok) return asked;
+      try {
+        const res = await ctx.research!.run(asked.result);
+        return { ok: true, result: { summary: res.summary, sources: res.sources } };
+      } catch (e) {
+        ctx.log.warn(`${f.id}: research failed: ${(e as Error).message.slice(0, 200)}`);
+        return { ok: false, error: { code: "unavailable", message: "The web reader couldn't finish; try again later." } };
+      }
+    },
 
     interview_spec_ready: (args) =>
       run("interview_spec_ready", async () => {

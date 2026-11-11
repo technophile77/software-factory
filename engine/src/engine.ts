@@ -19,7 +19,7 @@ import { Git } from "./git";
 import { GitHubClient, HttpGitHub, checkBase } from "./github";
 import { Gitleaks, SecretsScanner } from "./gitleaks";
 import { FeatureInterview } from "./interview/feature";
-import { InterviewTools, createInterviewTools } from "./interview/tools";
+import { InterviewTools, ResearchConfig, createInterviewTools } from "./interview/tools";
 import { FileLogger, Logger } from "./log";
 import { OsApi, realOsApi } from "./os/ffi";
 import { Children, osParent } from "./proc";
@@ -107,8 +107,11 @@ export interface EngineHandle {
   /** The SR-5 confirm command, with this engine's GitHub, clock and logger. A confirmed project runs after a restart. */
   confirmProject(projectPath: string, io: ConfirmIo): Promise<boolean>;
   feature(id: string): FeatureInterview | null;
-  /** The analyst's tools for one feature, reading the spec from `worktree` (the analyst's checkout). */
-  interviewTools(feature: string, worktree: string, facts?: RunFacts): InterviewTools;
+  /**
+   * The analyst's tools for one feature, reading the spec from `worktree` (the
+   * analyst's checkout). `research` is the web reader for research_web.
+   */
+  interviewTools(feature: string, worktree: string, facts?: RunFacts, research?: ResearchConfig): InterviewTools;
 }
 
 export function defaultEngineHome(): string {
@@ -598,7 +601,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       for (const p of projects) if (p.state === "running" && p.features.has(fid)) return p.features.get(fid)!;
       return null;
     },
-    interviewTools(fid, worktree, facts = {}) {
+    interviewTools(fid, worktree, facts = {}, research) {
       const f = handle.feature(fid);
       const p = projects.find((x) => x.features.get(fid) === f);
       if (!f || !p) throw new Error(`unknown feature ${fid}`);
@@ -607,6 +610,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         feature: f,
         worktree,
         log,
+        ...(research ? { research } : {}),
         onSpecReady: (passed) => {
           if (passed && !dead && record.run(runId)?.status === "running") runs.finish(runId, "complete");
         },
