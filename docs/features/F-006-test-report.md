@@ -89,3 +89,87 @@ Seeds of the final runs: spec-interview advice/reply 107027958/2528770751 (3.11)
 - **O2, `ask_advisor` and `interview.state`.** `ask_advisor` leaves the question `open` with the same revision, so after a dropped connection `interview.state` can't show that the call was recorded. "At most one call" then depends on the engine honoring `reply_id`, as with F-005 O1 (re-deferral). The client does resend with the same `reply_id` (tested). The engine feature should test the engine half.
 - **O3, malformed advice.** The contract doesn't say whether a client should refuse malformed `advice` or skip it. My test accepts either, as long as nothing unsafe is shown and there is no traceback.
 - **O4, developer edits during the run.** SKILL.md changed twice while my suites ran (560d6b20ce96, then 84060a666aff). I re-ran my suite and the F-005 skill-text tests on the final text. Both pass.
+
+## Round 2: H-0075, H-0076, Gate 2 #3 and #4, and the v1.2 gate
+
+- **Commit tested:** **`c94c594`** (branch head), with my round 2 test changes uncommitted on top (committed with this section). Product hashes, the same before and after the runs: `interview_client.py` 5557eec5952e, `SKILL.md` d8499906215c, `factory_check.py` f66d94eb00cb
+- **Contracts:** Engine control channel v1.2 with amendment **H-0075**, and Role policy v2.3 with amendment **H-0076**. Both are drafts awaiting the owner, so these tests follow the draft text. If the owner changes the drafts, the tests change with them
+- **Sources, as before:** the amended contract text, F-006 spec v5, `F-006-security-gate2.md` findings #3 and #4, and F-005 OQ-3. I didn't read the developer's diff. I read SKILL.md's recovery paragraph only after T5 failed, to classify it
+- **Result:** **all pass, 0 unexplained skips**, on each of Python 3.11, 3.12 and 3.13
+
+| Suite | Result |
+|---|---|
+| F-006 client (`spec-interview/tests/test_acceptance_f006.py`) | 84 run, 84 passed, on 3.11, 3.12 and 3.13. That is 47 from round 1, 27 new, and the 10 SKILL.md checks re-run by `SkillTextRound2` |
+| onboard-repo, all suites (includes my F-006 file, now 17 tests: 13 + 4 new) | 296 run, 295 passed, 1 skipped (python3.10 not installed, as before), on 3.11, 3.12 and 3.13 |
+| F-005 acceptance (regression) | 154 run, 154 passed (Python 3.13) |
+| Developer's `test_interview_client.py` | 118 run, 118 passed |
+| `python3 scripts/check_docs.py` | All docs checks passed |
+
+Seeds: spec-interview advice/reply 3597998465/2085981503 (3.11), 1429430233/2192220980 (3.12), 1048915831/3753878895 (3.13). onboard-repo 1078974714, 2217143067 and 4019714345. All passed.
+
+**Detection check.** I ran the round 2 suite against the round 1 product (`8abb039`'s client and SKILL.md). Ten of the new tests fail there (20 failures with subtests): the four Gate 2 #3 and #4 and v1.2-gate tests, the failed reason, the revision label, the two hash tests, and the three limits/budget tests. The other new tests pass on both, because round 1 already refused those items. They now guard against regressions.
+
+### Test fixes (test code)
+
+| # | What | Fix |
+|---|---|---|
+| T4 | My harness wrote `engine.json` with `"version": "1.1"` (inherited from the F-005 harness), so the client correctly refused every advisor reply. 116 failures (15 tests with subtests) | `F6Base` now writes `"1.2"`. `V12GateOnOldEngine` keeps a 1.1 engine.json on purpose, to test the gate |
+| T5 | `ADVISOR_EXTRA_DENY` in `onboard-repo/tests/test_acceptance.py` still held the four pre-H-0076 denies. 3 failures and 8 errors there and in my F-006 file | Now `[".factory/**", "**/.factory/**"]`, copied from the amended contract. I own that constant |
+| T6 | `SkillTextRound2.test_gate2_4_…` first looked for one sentence holding `ask_advisor` and "ask the owner". SKILL.md says both, in consecutive sentences of the same paragraph | The test reads that paragraph instead. It requires `CLIENT next`, a look for the call (running, done or failed), never sending `ask_advisor` again, and asking the owner first. Nothing is dropped |
+
+### New tests
+
+In `spec-interview/tests/test_acceptance_f006.py`:
+
+- **`H0075ProposalShape` (5):**
+  - A proposal carrying `suggested`, `options`, `findings` or `advice` is refused, with none of it shown.
+  - `about` on a question or an assumption is refused.
+  - `advice` on an assumption or a proposal is refused.
+  - A proposal without `about` is refused.
+  - A proposal with exactly the contract's fields plus `advisor_call` is accepted.
+- **`H0075AdviceEntry` (8):**
+  - Text on a `running` or `failed` entry is never shown.
+  - A `done` entry with empty, whitespace-only or invisible-only text is never shown as empty advice.
+  - A failed call's `reason` is shown. A hostile `reason` is cleaned and kept inside a fence.
+  - Advice is labelled with the revision it was asked about (spec section 6).
+  - A matching `sha256` gives no warning, including for text with zero-width and bidi characters. The hash is over the stored text, not the cleaned text.
+  - A mismatched hash is told to the owner (SR-4).
+  - A malformed hash (upper case, 63 characters, non-hex, a number, a trailing newline) is never taken as a match.
+- **`GateTwo3WebQueries` (4):**
+  - A missing `web_queries` is shown as "not reported".
+  - `[]` is shown as none sent.
+  - The two displays differ, and a missing list is never shown as "none".
+- **`H0075AdvisorCall` (4):**
+  - The limits (turns, tokens, time, web calls) are shown with a proposal and with a question.
+  - `over_budget: true` is told to the owner before any choice, with nothing sent and no call started.
+  - `over_budget: false` gives no budget warning.
+  - Bad limits are never shown raw: a negative number, a string with an escape, a boolean, missing keys, a missing or non-boolean `over_budget`, or `advisor_call` not an object.
+- **`H0075OneDecision` (2):**
+  - A second `approve_advisor` or `decline_advisor` at the same revision gets `stale`, so only one call starts.
+  - `next` with `wait_s: 20` returns at once on a question whose call is running, after one `interview.next`.
+- **`V12GateOnOldEngine` (2):**
+  - With `engine.json` version `"1.1"`, `ask_advisor`, `approve_advisor` and `decline_advisor` are refused before connecting, and nothing is sent (F-005 OQ-3).
+  - `answer` still works against a 1.1 engine.
+- **`SkillTextRound2` (2, plus the 10 earlier SKILL.md checks re-run):**
+  - Limits and budget are shown beside the advisor choices, with no extra confirmation (H-0075, AC-4).
+  - Gate 2 #4: a lost `ask_advisor` is recovered through `CLIENT next`, as described under T6.
+
+In `onboard-repo/tests/test_acceptance_f006.py`, **`H0076FactoryDenied` (4):**
+- The template denies `.factory/**` and `**/.factory/**`.
+- A manifest with only the four pre-H-0076 denies is refused. Adding the new two makes it valid.
+- Narrower denies don't stand in for either new entry: `.factory/advice/**`, `.factory/*` and `.factory/**/*.md` are each refused in its place.
+- A repo override with an empty deny list still leaves `.factory/**` denied in that repo's effective policy.
+
+### Criteria map changes
+
+- **SR-4:** client half now tested, through the hash comparison. The engine-only file is still deferred.
+- **SR-8 and A-1:** client half now tested: the limits and the budget flag are shown before the choice. Caps and enforcement are still deferred to the engine.
+- **SR-1:** missing and empty web-query lists are now told apart (Gate 2 #3).
+- **Section 6, revision change:** client half now tested.
+- **AC-8 and SR-7:** the policy half now includes H-0076.
+- Everything else is as in round 1. The engine-side parts of AC-1 to AC-9, AC-5, AC-6, AC-7 and AC-11's fake callers stay deferred to the engine feature.
+
+### Observations
+
+- **O5, the v1.2 gate isn't in the contract text.** "Clients send advisor replies only when `engine.json` says version 1.2 or later" comes from F-005 OQ-3 and the coordinator's description of H-0075. The amended channel section still describes `engine.json` as `{ "version": "1.1", … }` and says nothing about this gate. I tested it from OQ-3. The H-0075 text should state it before the owner approves the amendment (Interfaces).
+- **O6, error name.** The client gives the version refusal its own code (`advisor_unsupported` in SKILL.md). The test checks only that the refusal is clean and that nothing is sent.

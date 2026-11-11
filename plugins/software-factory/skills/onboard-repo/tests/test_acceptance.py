@@ -1066,10 +1066,10 @@ CORE_ROLES = ["orchestrator", "requirements-analyst", "software-developer", "tes
               "security-reviewer", "validation-judge"]
 CONTRACT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill"}
 SUPPORT_ROLES = ["web-reader", "advisor"]
-# Copied from interface-contracts.md, Role policy v2.3 (H-0061): the advisor's fixed policy.
+# Copied from interface-contracts.md, Role policy v2.3 (H-0061) as amended by H-0076: the advisor's
+# fixed policy. H-0076 replaced the four inbox and transcript denies with all of .factory/.
 ADVISOR_TOOLS = ["Read", "Grep", "Glob", "Skill"]
-ADVISOR_EXTRA_DENY = [".factory/inbox/**", "**/.factory/inbox/**", ".factory/interviews/**",
-                      "**/.factory/interviews/**"]
+ADVISOR_EXTRA_DENY = [".factory/**", "**/.factory/**"]
 ADVISOR_REQUESTERS = ["requirements-analyst", "orchestrator"]
 # Copied from interface-contracts.md, Role policy v2.2 (H-0023).
 SECRET_GLOBS = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks",

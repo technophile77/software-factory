@@ -5,7 +5,8 @@ interface-contracts.md Role policy v2.3 (H-0061). They add to the nine
 H-0061 tests in test_acceptance.py (`RolePolicyV23`) only what those don't
 cover: the rules in each repo's effective policy, repo overrides that try to
 widen the advisor, the "can't show it is inside" glob rule, the shell rule
-(FR-7), and the request rule's exact spelling.
+(FR-7), and the request rule's exact spelling. Round 2 adds the H-0076
+amendment (the advisor denied all of .factory/).
 
 Run: python3 -m unittest discover -s plugins/software-factory/skills/onboard-repo/tests -p 'test_acceptance_f006.py' -v
 The property test prints its seed; set F006_POLICY_SEED to replay one.
@@ -156,6 +157,52 @@ class F006AdvisorGlobsInside(PolicyBase):
             with self.subTest(n=n, glob=glob, seed=seed):
                 self.assertRejected(self.with_analyst(["docs/**", "src/**"], [glob]),
                                     f"seed {seed}: advisor glob {glob}")
+
+
+OLD_V23_DENY = [".factory/inbox/**", "**/.factory/inbox/**", ".factory/interviews/**", "**/.factory/interviews/**"]
+
+
+class H0076FactoryDenied(PolicyBase):
+    """Role policy v2.3 amendment H-0076: the advisor reads nothing under
+    .factory/; a manifest must replace the four inbox and transcript denies
+    with `.factory/**` and `**/.factory/**`."""
+
+    def test_h0076_template_denies_all_of_factory(self):
+        deny = self.advisor(self.manifest())["read"]["deny"]
+        for path in (".factory/**", "**/.factory/**"):
+            self.assertIn(path, deny)
+
+    def test_h0076_pre_amendment_denies_refused(self):
+        data = self.manifest()
+        deny = self.advisor(data)["read"]["deny"]
+        for path in (".factory/**", "**/.factory/**"):
+            deny.remove(path)
+        deny.extend(OLD_V23_DENY)
+        self.assertRejected(data, "advisor with only the four pre-H-0076 denies")
+        # The old entries next to the new ones are harmless.
+        deny.extend([".factory/**", "**/.factory/**"])
+        self.assertAccepted(data, "the new denies plus the old ones")
+
+    def test_h0076_narrower_factory_denies_do_not_stand_in(self):
+        # Denying advice, runs or tuning one by one is not "all of .factory/".
+        for extra in ([".factory/advice/**", "**/.factory/advice/**"],
+                      [".factory/*", "**/.factory/*"],
+                      [".factory/**/*.md", "**/.factory/**/*.md"]):
+            for missing in (".factory/**", "**/.factory/**"):
+                with self.subTest(extra=extra, missing=missing):
+                    data = self.manifest()
+                    deny = self.advisor(data)["read"]["deny"]
+                    deny.remove(missing)
+                    deny.extend(extra)
+                    self.assertRejected(data, f"advisor lacks {missing}, has {extra}")
+
+    def test_h0076_override_cannot_drop_it_in_one_repo(self):
+        # Deny lists only add up in an override, so a repo can't lift it; and a
+        # project policy without it is refused even if every repo adds it.
+        data = self.manifest()
+        self.override(data, "advisor")["read"] = {"allow": ["docs/**"], "deny": []}
+        self.assertIn(".factory/**", fc.effective_policy(data, data["repos"][0]["name"])["advisor"]["read"]["deny"])
+        self.assertAccepted(data, "override with an empty deny list")
 
 
 class F006MayRequestSpelling(PolicyBase):

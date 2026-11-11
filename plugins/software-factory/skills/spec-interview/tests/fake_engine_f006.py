@@ -14,8 +14,15 @@ What the contract leaves open is chosen here as plainly as possible, and the
 tests don't depend on it: `ask_advisor` leaves the question's status and
 revision as they were (the question "stays open while the advisor works",
 spec 2.3), and the reply's `status` is the item's status afterwards.
+
+Round 2 adds amendment H-0075 (awaiting the owner): advice entries carry
+`revision` and, when done, `sha256`; a failed call carries `reason`; a
+decided proposal answers `stale` (already so here: only open, deferred or
+researching items take replies). `advice_queries = None` leaves
+`web_queries` out (the engine didn't report them).
 """
 import copy
+import hashlib
 import time
 
 from test_acceptance import ID_RE, FakeEngine, RpcError, now_iso
@@ -39,6 +46,11 @@ VALID_ADVICE = (
 )
 
 
+def sha256_hex(text):
+    """H-0075: lowercase hex SHA-256 of the UTF-8 bytes of the stored advice."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def proposal(iid, about, why="The question cross-cuts budgets and sandboxing.", status="open", **kw):
     item = {"id": iid, "revision": 0, "kind": "advisor_proposal",
             "text": f"Ask the advisor about {about}?", "why": why, "about": about, "status": status}
@@ -60,7 +72,8 @@ class AdvisorEngine(FakeEngine):
         q = self.item(feature, qid)
         call = f"A-{len(self.advisor_calls) + 1:04d}"
         self.advisor_calls.append({"call": call, "question": qid, "via": via, "reply_id": rid, "at": now_iso()})
-        q.setdefault("advice", []).append({"call": call, "status": "running",
+        # H-0075: `revision` is the question's revision the call was asked about.
+        q.setdefault("advice", []).append({"call": call, "status": "running", "revision": q["revision"],
                                            "_ready_at": time.monotonic() + self.advisor_s})
         return call
 
@@ -77,10 +90,13 @@ class AdvisorEngine(FakeEngine):
                     a.pop("_ready_at", None)
                     if self.advice_fails:
                         a["status"] = "failed"
+                        a["reason"] = "output did not have the four sections"
                     else:
                         a["status"] = "done"
                         a["text"] = self.advice_text
-                        a["web_queries"] = list(self.advice_queries)
+                        a["sha256"] = sha256_hex(self.advice_text)
+                        if self.advice_queries is not None:
+                            a["web_queries"] = list(self.advice_queries)
 
     @staticmethod
     def _wire(item):

@@ -29,7 +29,7 @@ import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_acceptance as f5  # noqa: E402  (F-005 harness; nothing in it is edited)
-from fake_engine_f006 import VALID_ADVICE, AdvisorEngine, proposal  # noqa: E402
+from fake_engine_f006 import VALID_ADVICE, AdvisorEngine, proposal, sha256_hex  # noqa: E402
 
 question, assumption = f5.question, f5.assumption
 all_strings, unsafe_chars, fenced_spans = f5.all_strings, f5.unsafe_chars, f5.fenced_spans
@@ -68,11 +68,15 @@ def unfenced_lines(display):
 
 
 class F6Base(f5.Base):
+    # A v1.2 engine: the client sends advisor replies only to one (F-005
+    # OQ-3, F-006 1: no escalation before F-006 is built).
+    engine_version = "1.2"
+
     def start_engine(self, state=None):
         engine = AdvisorEngine(state)
         self.addCleanup(engine.cleanup)
         if self.layout == "state":
-            self.write_engine_json(engine.path)
+            self.write_engine_json(engine.path, version=self.engine_version)
         return engine
 
     def reply(self, tok, iid, kind, text, *, revision=0, status="open", **extra):
@@ -749,6 +753,323 @@ class SkillTextF006(unittest.TestCase):
                                                r"(askuserquestion|question) picker", re.I))
         self.assertRegex(self.flat, re.compile(r"no other tools", re.I))
 
+
+# ---------------------------------------------------------------------------
+# Round 2: Engine control channel v1.2 amendment H-0075 (awaiting the owner),
+# F-006 Security Gate 2 #3 and #4, and the v1.2 gate (F-005 OQ-3)
+# ---------------------------------------------------------------------------
+
+LIMITS = {"turns": 40, "tokens": 200000, "time_s": 900, "web_calls": 12}
+OVER_BUDGET = re.compile(r"(?i)(over|exceed|past|beyond|above)[^\n]*budget")
+
+
+class H0075ProposalShape(F6Base):
+    """H-0075: "An advisor_proposal carries only id, revision, kind, about, text, why,
+    status, plus advisor_call; never suggested, options, findings or advice.
+    about appears only on proposals. advice appears only on questions.
+    Clients refuse an item that breaks this."
+    """
+
+    def test_h0075_proposal_with_question_fields_refused(self):
+        extras = {"suggested": "Approve it", "options": ["Approve", "Decline"],
+                  "findings": [{"text": "PLANTED finding", "source": "repo:x"}],
+                  "advice": [{"call": "A-0001", "status": "done", "text": "PLANTED advice"}]}
+        for key, value in extras.items():
+            with self.subTest(field=key):
+                self.engine.add_feature("F-1", "t", [proposal("P1", "Q1", **{key: value})])
+                tok = self.open_session()
+                res = self.client("next", {"session": tok})
+                self.assertCleanFailure(res)
+                self.assertNotIn("PLANTED", res.stdout)
+                self.assertNotIn("Approve it", res.stdout)
+                self.client("close", {"session": tok})
+
+    def test_h0075_about_only_on_proposals(self):
+        for item in (question("Q1", about="Q2"), assumption("A1", about="Q2")):
+            with self.subTest(kind=item["kind"]):
+                self.engine.add_feature("F-1", "t", [item])
+                tok = self.open_session()
+                self.assertCleanFailure(self.client("next", {"session": tok}))
+                self.client("close", {"session": tok})
+
+    def test_h0075_advice_only_on_questions(self):
+        entry = [{"call": "A-0001", "status": "done", "text": "PLANTED advice"}]
+        for item in (assumption("A1", advice=entry), proposal("P1", "Q1", advice=entry)):
+            with self.subTest(kind=item["kind"]):
+                self.engine.add_feature("F-1", "t", [item])
+                tok = self.open_session()
+                res = self.client("next", {"session": tok})
+                self.assertCleanFailure(res)
+                self.assertNotIn("PLANTED", res.stdout)
+                self.client("close", {"session": tok})
+
+    def test_h0075_proposal_without_about_refused(self):
+        item = proposal("P1", "Q1")
+        del item["about"]
+        self.engine.add_feature("F-1", "t", [item])
+        tok = self.open_session()
+        self.assertCleanFailure(self.client("next", {"session": tok}))
+
+    def test_h0075_proposal_with_only_contract_fields_accepted(self):
+        self.engine.add_feature("F-1", "t", [proposal("P1", "Q1", advisor_call={"limits": LIMITS,
+                                                                                 "over_budget": False})])
+        tok = self.open_session()
+        out = self.next_item(tok)
+        self.assertEqual(out["item"]["kind"], "advisor_proposal")
+
+
+class H0075AdviceEntry(F6Base):
+    """An advice entry is {call, status, revision?, text?, reason?,
+    web_queries?, sha256?} (H-0075)."""
+
+    def test_h0075_text_never_shown_unless_done(self):
+        for status in ("running", "failed"):
+            with self.subTest(status=status):
+                self.with_advice({"call": "A-0001", "status": status, "text": "UNCHECKED output"})
+                tok = self.open_session()
+                res = self.client("next", {"session": tok})
+                self.assertNotIn("Traceback", res.stdout + res.stderr)
+                self.assertNotIn("UNCHECKED output", res.stdout)
+                self.client("close", {"session": tok})
+
+    def test_h0075_done_with_blank_text_not_shown_as_advice(self):
+        for text in ("", "   ", "\n\t", "\u200b\u2060"):
+            with self.subTest(text=text):
+                self.with_advice({"call": "A-0001", "status": "done", "text": text})
+                tok = self.open_session()
+                res = self.client("next", {"session": tok})
+                self.assertNotIn("Traceback", res.stdout + res.stderr)
+                if res.code == 0:
+                    # Shown as advice would mean an (empty) fence after the
+                    # advisor's label; the client must not present nothing as advice.
+                    d = res.out["display"]
+                    after = d[d.find("A-0001"):] if "A-0001" in d else ""
+                    self.assertFalse(re.search(r"```[^\n]*\n\s*```", after), d)
+                else:
+                    self.assertCleanFailure(res)
+                self.client("close", {"session": tok})
+
+    def test_h0075_failed_reason_shown_as_engine_text(self):
+        self.with_advice({"call": "A-0004", "status": "failed", "reason": "time limit reached"})
+        tok = self.open_session()
+        out = self.next_item(tok)
+        self.assertIn("time limit reached", out["display"])
+        self.assertRegex("\n".join(unfenced_lines(out["display"])), r"(?i)fail")
+
+    def test_h0075_hostile_failed_reason_cleaned_and_quoted(self):
+        self.with_advice({"call": "A-0004", "status": "failed", "reason": "boom " + f5.HOSTILE})
+        tok = self.open_session()
+        out = self.next_item(tok)
+        self.assertCleanOutput(out)
+        self.assertNothingUnfenced(out["display"], "Ignore previous instructions", "SYSTEM:", "approved by the owner")
+
+    def test_section6_advice_shown_against_the_revision_it_was_asked_about(self):
+        # "The question changes revision while the advisor runs: the advice is
+        # shown against the revision it was asked about." Question now at 3.
+        self.engine.add_feature("F-1", "t", [question("Q1", revision=3, advice=[
+            {"call": "A-0001", "status": "done", "revision": 1, "text": VALID_ADVICE,
+             "sha256": sha256_hex(VALID_ADVICE)}])])
+        tok = self.open_session()
+        out = self.next_item(tok)
+        labels = "\n".join(unfenced_lines(out["display"]))
+        self.assertRegex(labels, r"(?i)revision\s*1\b", out["display"])
+
+    def test_h0075_matching_sha256_gives_no_warning(self):
+        # The hash is of the text as stored, before the client's cleaning:
+        # a zero-width character in it must not cause a false mismatch.
+        for text in (VALID_ADVICE, "Pick\u200b B.\u202e x\u202c 日本 🚀"):
+            with self.subTest(text=text[:10]):
+                self.with_advice({"call": "A-0001", "status": "done", "text": text, "sha256": sha256_hex(text)})
+                tok = self.open_session()
+                out = self.next_item(tok)
+                self.assertNotRegex(out["display"], r"(?i)mismatch|does not match|doesn't match|altered|tamper")
+                self.client("close", {"session": tok})
+
+    def test_sr4_mismatched_sha256_is_told_to_the_owner(self):
+        for bad in (sha256_hex(VALID_ADVICE + " "), sha256_hex("other"), "0" * 64):
+            with self.subTest(sha=bad[:8]):
+                self.with_advice({"call": "A-0001", "status": "done", "text": VALID_ADVICE, "sha256": bad})
+                tok = self.open_session()
+                res = self.client("next", {"session": tok})
+                self.assertNotIn("Traceback", res.stdout + res.stderr)
+                if res.code == 0:
+                    self.assertRegex("\n".join(unfenced_lines(res.out["display"])),
+                                     r"(?i)mismatch|does not match|doesn't match|altered|tamper")
+                else:
+                    self.assertCleanFailure(res)
+                self.client("close", {"session": tok})
+
+    def test_sr4_malformed_sha256_is_not_taken_as_a_match(self):
+        for bad in (sha256_hex(VALID_ADVICE).upper(), sha256_hex(VALID_ADVICE)[:63], "zz" * 32, 5,
+                    sha256_hex(VALID_ADVICE) + "\n"):
+            with self.subTest(sha=repr(bad)[:12]):
+                self.with_advice({"call": "A-0001", "status": "done", "text": VALID_ADVICE, "sha256": bad})
+                tok = self.open_session()
+                res = self.client("next", {"session": tok})
+                self.assertNotIn("Traceback", res.stdout + res.stderr)
+                if res.code == 0:
+                    self.assertRegex("\n".join(unfenced_lines(res.out["display"])),
+                                     r"(?i)mismatch|does not match|doesn't match|altered|tamper|invalid|malformed")
+                else:
+                    self.assertCleanFailure(res)
+                self.client("close", {"session": tok})
+
+
+class GateTwo3WebQueries(F6Base):
+    """Gate 2 #3 and H-0075: `[]` means none were sent; a missing field means
+    the engine did not report them. The owner must be able to tell them apart."""
+
+    def display_for(self, **extra):
+        entry = {"call": "A-0001", "status": "done", "text": VALID_ADVICE}
+        entry.update(extra)
+        self.with_advice(entry)
+        tok = self.open_session()
+        out = self.next_item(tok)
+        self.client("close", {"session": tok})
+        return "\n".join(unfenced_lines(out["display"]))
+
+    def test_gate2_3_missing_web_queries_said_not_reported(self):
+        labels = self.display_for()
+        self.assertRegex(labels, r"(?i)not reported|did not report|didn't report|no report|unreported")
+
+    def test_gate2_3_empty_web_queries_said_none(self):
+        labels = self.display_for(web_queries=[])
+        self.assertRegex(labels, r"(?i)\bnone\b|no (web )?(queries|searches)")
+        self.assertNotRegex(labels, r"(?i)not reported|did not report|didn't report|unreported")
+
+    def test_gate2_3_missing_and_empty_differ(self):
+        self.assertNotEqual(self.display_for(), self.display_for(web_queries=[]))
+
+    def test_gate2_3_missing_not_claimed_as_none(self):
+        labels = self.display_for()
+        self.assertNotRegex(labels, r"(?i)web queries sent[^\n]*\bnone\b")
+
+
+class H0075AdvisorCall(F6Base):
+    """advisor_call: {limits: {turns, tokens, time_s, web_calls}, over_budget}
+    on a question or proposal; "Clients show them beside the 'Ask the advisor'
+    choice and the proposal ... there is no extra confirmation step"."""
+
+    def check_limits(self, display):
+        self.assertIn("40", display)
+        self.assertRegex(display, r"200[ ,\u202f]?000|200k|200 ?K")
+        self.assertRegex(display, r"\b900\b|15 ?min")
+        self.assertIn("12", display)
+
+    def test_h0075_limits_shown_with_a_proposal(self):
+        self.engine.add_feature("F-1", "t", [proposal("P1", "Q1", advisor_call={"limits": LIMITS,
+                                                                                 "over_budget": False})])
+        tok = self.open_session()
+        out = self.next_item(tok)
+        self.check_limits(out["display"])
+        self.assertNotRegex(out["display"], OVER_BUDGET)
+
+    def test_h0075_limits_shown_with_a_question(self):
+        self.engine.add_feature("F-1", "t", [question("Q1", advisor_call={"limits": LIMITS, "over_budget": False})])
+        tok = self.open_session()
+        out = self.next_item(tok)
+        self.check_limits(out["display"])
+
+    def test_a1_over_budget_told_before_choosing(self):
+        for item in (proposal("P1", "Q1", advisor_call={"limits": LIMITS, "over_budget": True}),
+                     question("Q1", advisor_call={"limits": LIMITS, "over_budget": True})):
+            with self.subTest(kind=item["kind"]):
+                self.engine.add_feature("F-1", "t", [item])
+                tok = self.open_session()
+                n = len(self.engine.requests)
+                out = self.next_item(tok)
+                self.assertRegex("\n".join(unfenced_lines(out["display"])), OVER_BUDGET)
+                # Shown only; nothing is sent and no call starts.
+                self.assertEqual(self.engine.methods()[n:], ["interview.next"])
+                self.assertEqual(self.engine.advisor_calls, [])
+                self.client("close", {"session": tok})
+
+    def test_h0075_bad_limits_never_shown_raw(self):
+        bads = [{"limits": dict(LIMITS, turns=-5), "over_budget": False},
+                {"limits": dict(LIMITS, tokens="lots\x1b[2J"), "over_budget": False},
+                {"limits": dict(LIMITS, time_s=True), "over_budget": False},
+                {"limits": {"turns": 4}, "over_budget": False},
+                {"limits": LIMITS, "over_budget": "no"},
+                {"limits": LIMITS},
+                "40 turns"]
+        for n, bad in enumerate(bads):
+            with self.subTest(case=n):
+                self.engine.add_feature("F-1", "t", [proposal("P1", "Q1", advisor_call=bad)])
+                tok = self.open_session()
+                res = self.client("next", {"session": tok})
+                self.assertNotIn("Traceback", res.stdout + res.stderr)
+                self.assertNotIn("\x1b", res.stdout)
+                if res.code == 0:
+                    self.assertNotIn("-5", res.out["display"])
+                    self.assertNotIn("lots", res.out["display"])
+                else:
+                    self.assertCleanFailure(res)
+                self.client("close", {"session": tok})
+
+
+class H0075OneDecision(F6Base):
+    def test_h0075_second_decision_on_a_proposal_is_stale(self):
+        self.engine.add_feature("F-1", "t", [question("Q1"), proposal("P1", "Q1")])
+        tok = self.open_session()
+        self.assertOk(self.reply(tok, "P1", "approve_advisor", "Approve"))
+        for kind in ("approve_advisor", "decline_advisor"):
+            with self.subTest(kind=kind):
+                err = self.assertCleanFailure(self.reply(tok, "P1", kind, "again"))
+                self.assertEqual((err["code"], err.get("name")), (-32002, "stale"))
+        self.assertEqual(len(self.engine.advisor_calls), 1)
+
+    def test_h0075_next_does_not_wait_for_a_running_call(self):
+        self.engine.advisor_s = 30
+        self.engine.add_feature("F-1", "t", [question("Q1")])
+        tok = self.open_session()
+        self.assertOk(self.reply(tok, "Q1", "ask_advisor", "Ask the advisor"))
+        n = len(self.engine.requests)
+        res = self.client("next", {"session": tok, "wait_s": 20})
+        out = self.assertOk(res)
+        self.assertLess(res.elapsed, 10)
+        self.assertEqual(self.engine.methods()[n:], ["interview.next"])
+        self.assertEqual(out["item"]["advice"][0]["status"], "running")
+
+
+class V12GateOnOldEngine(F6Base):
+    """F-005 OQ-3 / F-006 1: no escalation before F-006 is built. Against an
+    engine.json of version 1.1, the client sends no advisor reply."""
+
+    engine_version = "1.1"
+
+    def test_oq3_advisor_replies_refused_by_a_v11_engine(self):
+        self.engine.add_feature("F-1", "t", [question("Q1"), proposal("P1", "Q1")])
+        tok = self.open_session()
+        for iid, kind in (("Q1", "ask_advisor"), ("P1", "approve_advisor"), ("P1", "decline_advisor")):
+            with self.subTest(kind=kind):
+                self.assertRefusedBeforeConnecting(self.reply(tok, iid, kind, "x"))
+        self.assertEqual(self.engine.advisor_calls, [])
+        self.assertEqual(self.engine.calls("interview.reply"), [])
+
+    def test_oq3_v11_kinds_still_work_on_a_v11_engine(self):
+        self.engine.add_feature("F-1", "t", [question("Q1")])
+        tok = self.open_session()
+        self.assertEqual(self.assertOk(self.reply(tok, "Q1", "answer", "A"))["status"], "answered")
+
+
+class SkillTextRound2(SkillTextF006):
+    def test_h0075_limits_and_budget_before_choosing_no_extra_confirmation(self):
+        self.sentence(r"(limit|budget)", r"advis", why="limits and budget shown beside the advisor choices")
+        self.sentence(r"(no (extra|further|separate|second) (confirmation|approval)|itself the approval)",
+                      why="no extra confirmation step (H-0075, AC-4)")
+
+    def test_gate2_4_lost_ask_advisor_recovers_through_next(self):
+        # Gate 2 #4: state can't show a recorded ask_advisor; the skill looks
+        # at the question's advice through `next` for a call that wasn't there
+        # before, and never resends without the owner. Checked per paragraph.
+        paras = [re.sub(r"\s+", " ", p) for p in re.split(r"\n\s*\n", self.text)]
+        hits = [p for p in paras if re.search(r"ask_advisor", p) and re.search(r"(lost|no json|killed|fails)", p, re.I)
+                and re.search(r"CLIENT next", p)]
+        self.assertTrue(hits, "no paragraph on recovering a lost ask_advisor through `CLIENT next`")
+        para = hits[0]
+        self.assertRegex(para, r"(?i)running|advice|advisor call")
+        self.assertRegex(para, r"(?i)ask (the owner )?before sending|ask the owner|only if the owner")
+        self.assertRegex(para, r"(?i)never send `?ask_advisor`? again|never resend|not (re)?send")
 
 if __name__ == "__main__":
     unittest.main()
