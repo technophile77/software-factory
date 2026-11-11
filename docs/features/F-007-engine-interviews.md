@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Draft (requirements interview in progress)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 14
+- **Spec version:** 15
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -234,8 +234,8 @@ five are decided.
 | #1 | Where the egress proxy runs | Decided: a sidecar container from the pinned base image, the only member of the agents' internal Docker network with a route out (owner, decision card, 2026-11-11) |
 | #4 | How the model credential reaches a session | Decided: a credential gateway in the proxy; agents get a dummy key; if a subscription token can't pass a gateway, the owner is asked before any fallback (owner, decision card, 2026-11-11) |
 | #7 | Guarding owner-key changes before signed owner actions | Decided: manifest read from `main`; `owner.*`, `allowed_repo_owners` and `enabled` pinned; a change stops the project until the owner confirms it and approves a device sign-in as the previously pinned owner; replaced by signatures in increment 3 (owner, decision card, 2026-11-11) |
-| #19 | Residual risk of the OS credential store | Asked |
-| #20 | Web reader page fetching | Open |
+| #19 | Residual risk of the OS credential store | Decided: accepted as residual risk, narrowed by scoped, expiring tokens, a spending limit on any API key and a factory-only store name (owner, decision card, 2026-11-11) |
+| #20 | Web reader page fetching | Asked |
 
 ## 13. Increments (first one chosen by the owner, OQ-1; later order open)
 1. **This feature:** engine core, channel, phone approval, analyst and web
@@ -266,3 +266,4 @@ five are decided.
 | 12 | 2026-11-11 | Gate 1 #1: proxy as a sidecar container on an internal network | Owner, 2026-11-11 (decision card) |
 | 13 | 2026-11-11 | Gate 1 #4: model credential through a gateway in the proxy | Owner, 2026-11-11 (decision card) |
 | 14 | 2026-11-11 | Gate 1 #7: owner keys pinned, changes confirmed by the previous owner | Owner, 2026-11-11 (decision card) |
+| 15 | 2026-11-11 | Gate 1 #19: OS credential store residual risk accepted with scoped tokens | Owner, 2026-11-11 (decision card) |
