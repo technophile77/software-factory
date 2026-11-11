@@ -12,7 +12,7 @@ import YAML from "yaml";
 import { MemoryCredentialStore } from "../src/secrets";
 import { MemoryLogger } from "../src/log";
 import { EngineHandle, EngineOptions, startEngine } from "../src/engine";
-import { nodeProgram, ownFile } from "./acceptance/support/platform";
+import { nodeProgram, ownerOnly } from "./acceptance/support/platform";
 
 // Fixtures hold placeholders only (SR-13): example ids, example orgs, fake tokens.
 export const OWNER_ID = 1000001;
@@ -216,7 +216,7 @@ export function makeWorld(o: { manifest?: string; pinned?: boolean } = {}): Worl
   initRepo(config, { "factory-project.yaml": manifest, "README.md": "config\n" }, "https://github.com/example-org/acme-config");
   fs.writeFileSync(path.join(master, "factory-projects.local.yaml"), `projects:\n  - path: ${config}\n`, { mode: 0o600 });
   fs.chmodSync(path.join(master, "factory-projects.local.yaml"), 0o600);
-  ownFile(path.join(master, "factory-projects.local.yaml"));
+  ownerOnly(path.join(master, "factory-projects.local.yaml"));
   fs.mkdirSync(worktree, { recursive: true });
   const w: World = {
     root, master, config, home, worktree,

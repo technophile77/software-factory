@@ -18,14 +18,18 @@ export const WINDOWS_ENV: Record<string, string> = Object.fromEntries(
 const SYSTEM32 = join(process.env.SystemRoot ?? "C:\\Windows", "System32");
 let userSid: string | undefined;
 
-/** Makes the current user the owner of `file` on Windows. An elevated
- * administrator's new files belong to BUILTIN\Administrators on Windows
- * Server (the CI runners), and SR-13 wants the owner's own SID. */
-export function ownFile(file: string) {
+/** On Windows, gives `file` the owner and ACL SR-13 asks for: owned by the
+ * current user, writable only by them, SYSTEM and Administrators. Files made
+ * in the temp folder otherwise inherit its ACL, and an elevated
+ * administrator's files belong to BUILTIN\Administrators on Windows Server
+ * (the CI runners). */
+export function ownerOnly(file: string) {
   if (process.platform !== "win32") return;
   userSid ??= /S-1-[0-9-]+/.exec(execFileSync(join(SYSTEM32, "whoami.exe"), ["/user", "/fo", "csv", "/nh"], { encoding: "utf8" }))?.[0];
   if (!userSid) throw new Error("whoami didn't report the current user's SID");
-  execFileSync(join(SYSTEM32, "icacls.exe"), [file, "/setowner", `*${userSid}`], { stdio: "pipe" });
+  const icacls = join(SYSTEM32, "icacls.exe");
+  execFileSync(icacls, [file, "/setowner", `*${userSid}`], { stdio: "pipe" });
+  execFileSync(icacls, [file, "/inheritance:r", "/grant:r", `*${userSid}:(F)`, "*S-1-5-18:(F)", "*S-1-5-32-544:(F)"], { stdio: "pipe" });
 }
 
 /** Grants `sids` write access to `file`: Windows's form of a group- or

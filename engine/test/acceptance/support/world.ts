@@ -33,7 +33,7 @@ import {
 import { drive, FakeClock, realDelay } from "./clock";
 import { FakeGitHub } from "./fake-github";
 import { FakeGitleaks, GitWrapper } from "./fake-tools";
-import { ownFile, WINDOWS_ENV } from "./platform";
+import { ownerOnly, WINDOWS_ENV } from "./platform";
 import { RpcClient, rpcOnce, type RpcResponse } from "./rpc";
 
 /** The host's git, by absolute path, so the fixtures never run the logging
@@ -285,6 +285,9 @@ export class World {
   engine?: EngineHandle;
   envOverrides: Record<string, string | undefined> = {};
   gitleaksSha?: string;
+  /** Run the engine's git through the logging wrapper. Each wrapped call
+   * starts a Node process, which makes long runs several times slower. */
+  logGit = true;
   readonly sessionTokens: string[] = [];
 
   private constructor(tls?: { key: string; cert: string }) {
@@ -335,7 +338,7 @@ export class World {
     const body = "projects:\n" + paths.map((p) => `  - path: ${JSON.stringify(p)}\n`).join("");
     writeFileSync(this.projectsFile, body);
     chmodSync(this.projectsFile, mode);
-    ownFile(this.projectsFile);
+    ownerOnly(this.projectsFile);
   }
 
   addProject(s: ProjectSpec, i = this.projects.length): Project {
@@ -397,7 +400,8 @@ export class World {
   }
 
   manifestText(p: Project, s: ProjectSpec = {}): string {
-    const template = readFileSync(TEMPLATE, "utf8");
+    // A Windows checkout may have CRLF line endings.
+    const template = readFileSync(TEMPLATE, "utf8").replace(/\r\n/g, "\n");
     const policy = template.slice(template.indexOf("\npolicy:\n") + 1, template.indexOf("\nnotes:"));
     const allowed = s.allowed ?? [{ login: p.repoOwner, id: p.repoOwnerId }];
     let text =
@@ -447,7 +451,7 @@ export class World {
       github: { webBaseUrl: this.gh.webBaseUrl, apiBaseUrl: this.gh.apiBaseUrl },
       credentialStore: this.store,
       gitleaks: { path: this.gitleaks.path, sha256: this.gitleaksSha ?? this.gitleaks.sha256 },
-      gitPath: this.gitw.path,
+      gitPath: this.logGit ? this.gitw.path : REAL_GIT,
       paths: {
         masterRepo: this.master,
         stateDir: this.stateDir,
