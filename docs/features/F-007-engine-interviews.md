@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 33
+- **Spec version:** 34
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -429,3 +429,4 @@ section 9.
 | 31 | 2026-11-11 | `research_web` counts against the item being researched, else the open question, and always against the per-session cap | Owner, 2026-11-11 (decision card) |
 | 32 | 2026-11-11 | Until F-002 is wired: analyst `claude-opus-5-5`, web reader `claude-haiku-5-5`, set in the master defaults file `engine/config/models.yaml`; per-project choice arrives with F-002's `settings.agents.<role>.rung` | Owner, 2026-11-11 (decision card) |
 | 33 | 2026-11-11 | Gate 2 M1: the credential gateway refuses server-side tools and passes only allow-listed `anthropic-beta` values | Owner, 2026-11-11 (decision card) |
+| 34 | 2026-11-11 | Gate 2 M3: this increment assumes a single-user host; defending against other local user accounts (engine home ACL on Windows, Docker pipe server identity, `ProgramData` plugin path, Unix socket owner) is deferred to Alpha and must be fixed before promotion | Owner, 2026-11-11 (decision card) |
