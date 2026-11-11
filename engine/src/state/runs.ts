@@ -35,7 +35,7 @@ export type ResumePlan =
 export class RunBook {
   constructor(private readonly record: EngineRecord, private readonly clock: Clock) {}
 
-  start(r: Pick<RunRecord, "project" | "feature" | "role" | "stage">): RunRecord {
+  start(r: Pick<RunRecord, "project" | "feature" | "role" | "stage" | "worktree">): RunRecord {
     const run: RunRecord = { ...r, id: `R-${crypto.randomBytes(6).toString("hex")}`, status: "running", started_at: iso(this.clock.now()), resumes: 0 };
     this.record.putRun(run);
     return run;

@@ -151,6 +151,7 @@ export class FakeGitHub implements GitHubClient {
   slowDownOnce = false;
   tokensIssued: string[] = [];
   deviceDown = false;
+  webBase?: string;
 
   async requestDeviceCode(clientId: string): Promise<DeviceCode> {
     this.deviceCalls++;

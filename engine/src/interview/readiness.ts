@@ -163,7 +163,7 @@ export function readinessChecks(input: {
   checks.push({
     name: "transcript_intact",
     passed: input.chainIntact,
-    evidence: input.chainIntact ? "The transcript matches the engine's own chain." : "The transcript has entries the engine didn't write; the checks can't rely on it.",
+    evidence: input.chainIntact ? "The transcript matches the engine's own chain." : "The transcript, here or on the remote, has entries the engine didn't write; the checks can't rely on it.",
   });
 
   const unresolved = state.list("question").filter((q) => q.status === "open" || q.status === "deferred" || q.status === "researching");

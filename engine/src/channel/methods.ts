@@ -1,5 +1,5 @@
 import { Clock } from "../clock";
-import { ID_RE, MAX_NEXT_WAIT_S, RPC } from "../constants";
+import { ID_RE, MAX_NEXT_WAIT_S, REFUSED_MESSAGE, RPC } from "../constants";
 import { FeatureInterview, InterviewError } from "../interview/feature";
 import { wire } from "../interview/model";
 import { SecretFound } from "../state/state-repo";
@@ -14,6 +14,8 @@ export interface ProjectChannel {
   /** One of this project's features, or null (also null for an id two projects share, SR-16). */
   feature(id: string): FeatureInterview | null;
   startFeature(request: string): Promise<string>;
+  /** Files the Security item behind a -32008 for a secret the scan found (H-0084). */
+  secretRefused(where: string, found: SecretFound, feature?: string): Promise<void>;
 }
 
 export interface EngineControl {
@@ -90,7 +92,10 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
         try {
           return { feature: await project.startFeature(p.request) };
         } catch (e) {
-          if (e instanceof SecretFound) throw new RpcError(RPC.refused, "The request looks like it holds a secret, so it was not recorded.");
+          if (e instanceof SecretFound) {
+            await project.secretRefused("feature.start", e);
+            throw new RpcError(RPC.refused, REFUSED_MESSAGE);
+          }
           throw e;
         }
       }
@@ -105,7 +110,8 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
         only(p, ["feature", "takeover"]);
         const f = feature(p.feature);
         if (p.takeover !== undefined && typeof p.takeover !== "boolean") throw new RpcError(RPC.invalidParams, "takeover must be true or false.");
-        if (!f.chainIntact) throw new RpcError(RPC.refused, "This feature's transcript was changed outside the engine; see the Security item.");
+        // The Security item was filed when the tampering was found.
+        if (!f.chainIntact) throw new RpcError(RPC.refused, REFUSED_MESSAGE);
         return project.sessions.open(f.id, p.takeover === true);
       }
       case "interview.awaitApproval":
@@ -132,10 +138,14 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
           return await f.reply({ item, revision: p.revision, reply_id: replyId, kind: p.kind, text: p.text }, s.shown);
         } catch (e) {
           if (e instanceof InterviewError) {
-            const code = { stale: RPC.stale, unknown: RPC.unknown, kind: RPC.kindNotAllowed, tampered: RPC.refused }[e.code];
+            if (e.code === "tampered") throw new RpcError(RPC.refused, REFUSED_MESSAGE);
+            const code = { stale: RPC.stale, unknown: RPC.unknown, kind: RPC.kindNotAllowed }[e.code];
             throw new RpcError(code, e.message);
           }
-          if (e instanceof SecretFound) throw new RpcError(RPC.refused, "The reply looks like it holds a secret, so it was not recorded.");
+          if (e instanceof SecretFound) {
+            await project.secretRefused("interview.reply", e, f.id);
+            throw new RpcError(RPC.refused, REFUSED_MESSAGE);
+          }
           throw e;
         }
       }

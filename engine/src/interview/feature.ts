@@ -45,6 +45,8 @@ export class FeatureInterview {
   readonly changed = new EventEmitter();
   /** False once the transcript holds entries the engine didn't write (SR-17). */
   chainIntact = true;
+  /** True once the remote factory/state was found holding interview changes the engine refused (SR-17 on fetch). */
+  remoteRefused = false;
   paused = false;
   private entries: Entry[] = [];
   private readonly firstResults = new Map<string, ReplyResult>();
@@ -86,9 +88,16 @@ export class FeatureInterview {
       added.push(prev);
     }
     const all = [...this.entries, ...added];
-    const commit = await this.deps.persist(this.id, serialize(all), extra, `${this.id}: ${message}`);
-    this.entries = all;
     const last = all[all.length - 1]!;
+    this.deps.record.setPending(this.chainKey, { seq: last.seq, head: last.hash });
+    let commit: string;
+    try {
+      commit = await this.deps.persist(this.id, serialize(all), extra, `${this.id}: ${message}`);
+    } catch (e) {
+      this.deps.record.setPending(this.chainKey, null);
+      throw e;
+    }
+    this.entries = all;
     this.deps.record.setChain(this.chainKey, { seq: last.seq, head: last.hash });
     for (const e of added) this.state.apply(e);
     this.changed.emit("change", commit);

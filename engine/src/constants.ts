@@ -23,8 +23,6 @@ export const RPC = {
   methodNotFound: -32601,
   invalidParams: -32602,
   internal: -32603,
-  /** Implementation-defined (JSON-RPC server range): a refusal outside the contract's own codes. */
-  refused: -32000,
   busy: -32001,
   stale: -32002,
   unknown: -32003,
@@ -32,7 +30,12 @@ export const RPC = {
   kindNotAllowed: -32005,
   approvalPending: -32006,
   approvalFailed: -32007,
+  /** A security refusal (H-0084). The message is always REFUSED_MESSAGE; the reason goes in a Security item. */
+  refused: -32008,
 } as const;
+
+/** The one message -32008 carries, so a refusal never tells the client what was found or where. */
+export const REFUSED_MESSAGE = "Refused for a security reason. The reason is in a Security inbox item.";
 
 /** Channel v1.1 waits. */
 export const MAX_NEXT_WAIT_S = 600;

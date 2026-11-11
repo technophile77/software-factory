@@ -34,6 +34,8 @@ export interface GitHubClient {
   pollToken(clientId: string, deviceCode: string): Promise<PollResult>;
   userId(token: string): Promise<number>;
   repo(owner: string, name: string, token: string): Promise<RepoInfo>;
+  /** GitHub's web and git base. Absent means https://github.com. */
+  readonly webBase?: string;
 }
 
 const MAX_BODY = 64 * 1024;
@@ -42,7 +44,7 @@ const DEVICE_CODE_RE = /^[A-Za-z0-9_-]{16,256}$/;
 const TOKEN_RE = /^[A-Za-z0-9_.-]{1,512}$/;
 const CLIENT_ID_RE = /^[A-Za-z0-9_.-]{1,100}$/;
 
-function checkBase(base: string): string {
+export function checkBase(base: string): string {
   const u = new URL(base);
   const loopback = u.hostname === "127.0.0.1" || u.hostname === "localhost" || u.hostname === "[::1]";
   // Plain http only for a fake GitHub on this machine; real GitHub is https with Node's default TLS checks.
@@ -88,6 +90,10 @@ export function parsePoll(body: unknown): PollResult {
 
 export class HttpGitHub implements GitHubClient {
   private readonly web: string;
+  /** Where GitHub's web and git endpoints are; pushes and fetches go nowhere else. */
+  get webBase(): string {
+    return this.web;
+  }
   private readonly api: string;
   private readonly log: Logger;
 

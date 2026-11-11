@@ -11,6 +11,12 @@ import { ensureOwnerDir, writeFileAtomic } from "../fsutil";
 export interface ChainHead {
   seq: number;
   head: string;
+  /**
+   * The head an append is about to commit. A kill between the commit and the
+   * record update leaves the transcript one append ahead of `head`; this is
+   * how the engine knows that append was its own (AC-12).
+   */
+  pending?: { seq: number; head: string };
 }
 
 export type RunStatus = "running" | "interrupted" | "complete" | "failed";
@@ -29,6 +35,8 @@ export interface RunRecord {
   session_id?: string;
   /** The last commit the engine made for the run (ADR 0012: resume from here). */
   last_commit?: string;
+  /** The analyst's checkout, so a resumed run starts where it was. */
+  worktree?: string;
   reason?: string;
 }
 
@@ -68,6 +76,15 @@ export class EngineRecord {
 
   setChain(key: string, head: ChainHead): void {
     this.data.chains[key] = head;
+    this.save();
+  }
+
+  /** Records the head an append is about to commit, before it is committed. */
+  setPending(key: string, pending: { seq: number; head: string } | null): void {
+    const cur = this.data.chains[key] ?? { seq: 0, head: "" };
+    const next: ChainHead = { seq: cur.seq, head: cur.head };
+    if (pending) next.pending = pending;
+    this.data.chains[key] = next;
     this.save();
   }
 

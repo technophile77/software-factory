@@ -88,12 +88,15 @@ export function parseTranscript(text: string): Entry[] {
  * with every entry the engine appends, so an entry past the recorded head,
  * or any change before it, was written by someone else (SR-17).
  */
-export function checkAgainstHead(entries: Entry[], head: ChainHead | null): void {
-  if (!head) {
+export function checkAgainstHead(entries: Entry[], head: ChainHead | null): "head" | "pending" {
+  const pending = head?.pending;
+  if (pending && entries.length === pending.seq && entries[pending.seq - 1]?.hash === pending.head) return "pending";
+  if (!head || head.seq === 0) {
     if (entries.length) throw new ChainError("the transcript has entries this engine has no record of");
-    return;
+    return "head";
   }
   if (entries.length < head.seq) throw new ChainError("the transcript is shorter than the engine's record");
   if (entries[head.seq - 1]?.hash !== head.head) throw new ChainError("the transcript doesn't match the engine's record");
   if (entries.length > head.seq) throw new ChainError("the transcript has entries the engine didn't write");
+  return "head";
 }
