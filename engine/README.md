@@ -19,6 +19,7 @@ Milestone 2 adds the parts that run agents, each tested with fakes:
 | `src/proxy/` | the sidecar proxy and credential gateway (SR-6 to SR-9), on Node built-ins only; bundled to `dist/proxy.js` |
 | `src/agent/` | session options (SR-10), the container spawn, SR-18 caps, the `factory` MCP tools, `fetch_page`, the web reader, the worktree commit and end-of-session write check (FR-9, FR-11) |
 | `docker/` | the agent image: base image by digest, Claude Code 2.1.311 checked against the Agent SDK manifest, no npm in the final stage |
+| `config/limits.yaml` | the session, container and interview limits (H-0087), change-controlled. The engine reads it from the master clone's `HEAD` commit, never the working tree. A project's manifest `limits:` may only lower a value; a higher one stops the project and files a Security item |
 
 Session code is written against `src/agent/sdk.ts`, the part of the Agent
 SDK's surface the engine uses; `src/agent/sdk-binding.ts` maps it onto the
@@ -136,6 +137,7 @@ The handle offers:
 | `interviewTools(feature, worktree, facts?)` | The analyst's five tools. The first call starts the feature's analyst run |
 | `sync()` | Fetches `factory/state` and checks every transcript against the engine's chain (SR-17). Interview changes on the remote that the engine didn't make are not adopted: a Security item is filed and the feature's readiness checks fail. A local transcript edit closes the feature. Other remote changes that fast-forward are adopted |
 | `confirmProject(path, io)` | The SR-5 confirm command, using this engine's GitHub, clock and logger. A confirmed project runs after a restart |
+| `limits(project)` | A running project's effective limits (H-0087): the master defaults, lowered by the manifest's `limits:`. It throws if the defaults can't be read |
 | `stop()` | Shuts down: ends sessions, frees the sockets, removes `engine.json` |
 | `crash()` | Stops as a kill would. It commits and writes nothing more and leaves `engine.json`, but frees the sockets so a new `startEngine` can run in the same process (AC-12) |
 | `stopped` | Resolves once stopped |

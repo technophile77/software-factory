@@ -41,7 +41,7 @@ describe.skipIf(!ON)("agent containers on a real Docker daemon (AC-8, AC-13 to A
     const agentImageId = await buildAgentImage(docker, path.join(__dirname, "..", "docker"), work, "docker-test");
     group = new SessionGroup({
       docker, runId: `R-${Date.now().toString(16)}`, project: "docker-test", agentImageId, proxyImageId, proxyScript,
-      agentLimits: LIMITS, proxyLimits: LIMITS, maxPageBytes: 1 << 20, credential: { kind: "api_key", value: PLACEHOLDER }, log,
+      agentLimits: { "requirements-analyst": LIMITS, "web-reader": LIMITS }, proxyLimits: LIMITS, maxPageBytes: 1 << 20, credential: { kind: "api_key", value: PLACEHOLDER }, log,
     });
     await group.open();
     const wt = tmpdir();

@@ -322,3 +322,71 @@ describe("shutdown", () => {
     expect(fs.existsSync(path.join(w.config, ".factory", "engine.json"))).toBe(false);
   });
 });
+
+describe("limits (H-0087, Project manifest v1.4)", () => {
+  const SHIPPED = fs.readFileSync(path.join(__dirname, "..", "config", "limits.yaml"), "utf8");
+  function ship(w: World, text = SHIPPED) {
+    fs.mkdirSync(path.join(w.master, "engine", "config"), { recursive: true });
+    fs.writeFileSync(path.join(w.master, "engine", "config", "limits.yaml"), text);
+    git(w.master, "add", "engine/config/limits.yaml");
+    git(w.master, "commit", "-qm", "limits");
+  }
+  const lowered = "limits:\n  analyst:\n    turns: 100\n    cpus: 1.5\n  worktree_commit:\n    max_file_mib: 0.5\n";
+
+  it("a project's lower values replace the defaults key by key; the rest stay", async () => {
+    const w = makeWorld({ manifest: manifestYaml({ extra: lowered }) });
+    ship(w);
+    const e = await boot(w);
+    expect(e.projects[0]!.state).toBe("running");
+    const l = await e.limits("acme");
+    expect(l.analyst).toMatchObject({ turns: 100, cpus: 1.5, output_tokens: 500000, memory_mib: 2048 });
+    expect(l.worktree_commit).toEqual({ max_files: 200, max_total_mib: 5, max_file_mib: 0.5 });
+    expect(l.web_reader.turns).toBe(30);
+    expect(securityItems(w)).toHaveLength(0);
+  });
+
+  it("a value above the default stops the project and files one Security item", async () => {
+    const w = makeWorld({ manifest: manifestYaml({ extra: "limits:\n  analyst:\n    turns: 301\n  proxy:\n    pids: 64\n" }) });
+    ship(w);
+    const e = await boot(w);
+    expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringContaining("analyst.turns") });
+    expect(e.projects[0]!.reason).not.toContain("proxy.pids");
+    expect(securityItems(w)).toHaveLength(1);
+    const item = git(w.config, "show", `factory/state:${securityItems(w)[0]}`);
+    expect(item).toContain("category: Security");
+    expect(item).toContain("analyst.turns");
+    await expect(e.limits("acme")).rejects.toThrow(/No running project/);
+  });
+
+  it("an invalid block stops the project with a Security item", async () => {
+    const w = makeWorld({ manifest: manifestYaml({ extra: "limits:\n  analyst:\n    turns: many\n" }) });
+    ship(w);
+    const e = await boot(w);
+    expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringContaining("analyst.turns") });
+    expect(securityItems(w)).toHaveLength(1);
+  });
+
+  it("fails closed: a project with limits stops when the master defaults are missing or invalid", async () => {
+    const a = makeWorld({ manifest: manifestYaml({ extra: lowered }) });
+    expect((await boot(a)).projects[0]).toMatchObject({ state: "stopped", reason: expect.stringContaining("missing") });
+    expect(securityItems(a)).toHaveLength(1);
+    const b = makeWorld({ manifest: manifestYaml({ extra: lowered }) });
+    ship(b, SHIPPED.replace("pids: 64", "pids: 0"));
+    expect((await boot(b)).projects[0]).toMatchObject({ state: "stopped", reason: expect.stringContaining("proxy.pids") });
+  });
+
+  it("without a block the project runs on the defaults, read from HEAD and never the working tree", async () => {
+    const w = makeWorld();
+    const e = await boot(w);
+    expect(e.projects[0]!.state).toBe("running");
+    // Uncommitted, so not read: with no defaults there are no limits for a session.
+    fs.mkdirSync(path.join(w.master, "engine", "config"), { recursive: true });
+    fs.writeFileSync(path.join(w.master, "engine", "config", "limits.yaml"), SHIPPED);
+    await expect(e.limits("acme")).rejects.toThrow(/missing/);
+    const w2 = makeWorld();
+    ship(w2);
+    fs.writeFileSync(path.join(w2.master, "engine", "config", "limits.yaml"), SHIPPED.replace("turns: 300", "turns: 9000"));
+    const e2 = await boot(w2);
+    expect((await e2.limits("acme")).analyst.turns).toBe(300);
+  });
+});

@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { commitWorktree } from "../src/agent/worktree-commit";
+import { WorktreeLimits, commitWorktree } from "../src/agent/worktree-commit";
 import { rejectSession, writeBreaches } from "../src/agent/write-check";
 import { Git } from "../src/git";
 import type { SecretsScanner } from "../src/gitleaks";
@@ -149,9 +149,9 @@ describe("worktree commit (FR-11 with the FR-9 check)", () => {
     const gitDir = git(wt, "rev-parse", "--absolute-git-dir");
     const base = git(wt, "rev-parse", "HEAD");
     const policy = effectiveRole(policyDoc(), "requirements-analyst");
-    const input = (scanner = cleanScanner) => ({
+    const input = (scanner = cleanScanner, lim: Partial<WorktreeLimits> = {}) => ({
       git: testGit(), gitDir, worktree: wt, branch: "feature/F-001-x", base, policy, scanner,
-      tmpDir: path.join(tmpdir(), "t"), message: "analyst session", limits: { maxFiles: 1000, maxBytes: 1 << 20 },
+      tmpDir: path.join(tmpdir(), "t"), message: "analyst session", limits: { maxFiles: 1000, maxTotalBytes: 1 << 20, maxFileBytes: 1 << 20, ...lim },
     });
     return { main, wt, base, input };
   }
@@ -194,5 +194,44 @@ describe("worktree commit (FR-11 with the FR-9 check)", () => {
     const hit: SecretsScanner = { scan: async (blobs) => ({ clean: false, blobs: blobs.map((b) => b.sha), rules: ["generic"] }) };
     await expect(commitWorktree(input(hit))).rejects.toBeInstanceOf(SecretFound);
     expect(git(wt, "rev-parse", "feature/F-001-x")).toBe(base);
+  });
+
+  it("H-0087: a change over a cap commits nothing and names the cap", async () => {
+    const { wt, base, input } = setup();
+    const feat = (n: string) => path.join(wt, "docs/features", n);
+    fs.writeFileSync(feat("a.md"), "a\n");
+    fs.writeFileSync(feat("b.md"), "b\n");
+    expect(await commitWorktree(input(cleanScanner, { maxFiles: 1 }))).toEqual({ status: "over_limit", cap: "files changed" });
+    fs.rmSync(feat("b.md"));
+    fs.rmSync(feat("F-001-x.md"));
+    // A removed file counts as a changed one.
+    expect(await commitWorktree(input(cleanScanner, { maxFiles: 1 }))).toEqual({ status: "over_limit", cap: "files changed" });
+    fs.writeFileSync(feat("F-001-x.md"), "spec\n");
+    fs.writeFileSync(feat("a.md"), "x".repeat(101));
+    expect(await commitWorktree(input(cleanScanner, { maxFileBytes: 100 }))).toEqual({ status: "over_limit", cap: "largest file" });
+    fs.writeFileSync(feat("b.md"), "y".repeat(100));
+    expect(await commitWorktree(input(cleanScanner, { maxFileBytes: 101, maxTotalBytes: 200 }))).toEqual({ status: "over_limit", cap: "total size" });
+    expect(git(wt, "rev-parse", "feature/F-001-x")).toBe(base);
+    // Exactly at each cap is within it.
+    expect((await commitWorktree(input(cleanScanner, { maxFiles: 2, maxFileBytes: 101, maxTotalBytes: 201 }))).status).toBe("committed");
+  });
+
+  it("H-0087: unchanged files don't count, however large", async () => {
+    const { wt, input } = setup();
+    // README.md is in the base and stays as it is; a same-size rewrite still counts.
+    expect(await commitWorktree(input(cleanScanner, { maxFiles: 1, maxFileBytes: 1, maxTotalBytes: 1 }))).toEqual({ status: "unchanged" });
+    fs.writeFileSync(path.join(wt, "docs/features/F-001-x.md"), "Spec\n");
+    expect(await commitWorktree(input(cleanScanner, { maxFiles: 1, maxFileBytes: 4 }))).toEqual({ status: "over_limit", cap: "largest file" });
+    expect((await commitWorktree(input(cleanScanner, { maxFiles: 1, maxFileBytes: 5, maxTotalBytes: 5 }))).status).toBe("committed");
+  });
+
+  it("AC-9 still holds past a cap: a write or a removal outside the rules rejects the session", async () => {
+    const { wt, input } = setup();
+    fs.writeFileSync(path.join(wt, "docs/features/a.md"), "a\n");
+    fs.writeFileSync(path.join(wt, "evil.sh"), "x\n");
+    expect(await commitWorktree(input(cleanScanner, { maxFiles: 1 }))).toEqual({ status: "rejected", breaches: [{ path: "evil.sh", reason: "not_allowed" }] });
+    fs.rmSync(path.join(wt, "evil.sh"));
+    fs.rmSync(path.join(wt, "README.md"));
+    expect(await commitWorktree(input(cleanScanner, { maxFiles: 1 }))).toEqual({ status: "rejected", breaches: [{ path: "README.md", reason: "not_allowed" }] });
   });
 });

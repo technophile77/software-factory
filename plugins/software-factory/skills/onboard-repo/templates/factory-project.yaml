@@ -17,6 +17,17 @@ enabled: false                # ADR 0012: work starts only when the owner switch
 # allowed_repo_owners:             # accounts whose repos this project may work on
 #   - { login: <login>, id: <numeric id> }
 
+# Session limits (Project manifest v1.4, H-0087). Optional. The defaults are in
+# the master factory's engine/config/limits.yaml, with the same sections and
+# keys. A project may only lower values: the engine takes the lower of the two,
+# and refuses the project, with a Security item, if any value here is higher.
+# limits:
+#   analyst:
+#     turns: 150
+#     wall_time_minutes: 120
+#   worktree_commit:
+#     max_files: 100
+
 repos:
   - name: <repo-name>
     url: https://github.com/<owner>/<repo>

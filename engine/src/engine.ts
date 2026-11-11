@@ -9,6 +9,7 @@ import { Listener, listenUnix } from "./channel/unix";
 import { listenPipe } from "./channel/windows";
 import { Clock, iso, systemClock } from "./clock";
 import { AuthorizationError, authorizeProject, billingMismatch } from "./config/authorize";
+import { Limits, LimitsError, manifestLimits, mergeLimits, readDefaultLimits } from "./config/limits";
 import { Manifest, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin } from "./config/pins";
@@ -82,6 +83,8 @@ export interface ProjectStatus {
 interface Project extends ProjectStatus {
   real: string | null;
   manifest: Manifest | null;
+  /** H-0087 effective limits, once known; see EngineHandle.limits. */
+  limits: Limits | null;
   state_repo: StateRepo | null;
   features: Map<string, FeatureInterview>;
   sessions: SessionManager | null;
@@ -112,6 +115,12 @@ export interface EngineHandle {
    * analyst's checkout). `research` is the web reader for research_web.
    */
   interviewTools(feature: string, worktree: string, facts?: RunFacts, research?: ResearchConfig): InterviewTools;
+  /**
+   * H-0087: a running project's effective limits, the master defaults lowered
+   * by its manifest's `limits:`. Throws LimitsError when the defaults can't be
+   * read or checked, so no session or container starts without them.
+   */
+  limits(project: string): Promise<Limits>;
 }
 
 export function defaultEngineHome(): string {
@@ -188,7 +197,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   const projects: Project[] = listed.map((p) => ({
-    path: p, name: null, state: "stopped", warnings: [], real: null, manifest: null, state_repo: null,
+    path: p, name: null, state: "stopped", warnings: [], real: null, manifest: null, limits: null, state_repo: null,
     features: new Map(), sessions: null, listener: null, conns: new Set(), token: null,
   }));
 
@@ -210,6 +219,47 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     p.reason = reason;
     log.warn(`${p.name ?? p.path}: ${state === "disabled" ? "not running" : "stopped"}: ${reason}`);
   };
+
+  // Read once, and only when something needs them, so the engine's other work
+  // doesn't depend on the file; everything that does need them fails closed.
+  let defaultLimits: Promise<Limits> | null = null;
+  const defaults = () => (defaultLimits ??= readDefaultLimits(git, o.masterRepo));
+
+  /**
+   * Project manifest v1.4 (H-0087): a `limits:` block may only lower the
+   * master defaults. An invalid block, a value above the default, or defaults
+   * that can't be read stop the project and file a Security item.
+   */
+  async function checkLimits(p: Project): Promise<boolean> {
+    const m = p.manifest!;
+    let reason: string;
+    let above: string[] = [];
+    try {
+      const own = manifestLimits(m.raw);
+      if (!own) return true;
+      const merged = mergeLimits(await defaults(), own);
+      if (!merged.above.length) {
+        p.limits = merged.limits;
+        return true;
+      }
+      above = merged.above;
+      reason = `the manifest's limits set ${above.join(", ")} above the master default`;
+    } catch (e) {
+      reason = e instanceof LimitsError ? e.message : "the limits couldn't be checked";
+    }
+    stop(p, reason);
+    await alert(p, `limits:${m.commit}:${reason}`, {
+      title: above.length ? "Project manifest raises a limit above the master default" : "Project limits couldn't be checked",
+      context: above.length
+        ? `The manifest on main (${m.commit.slice(0, 12)}) sets ${above.join(", ")} above the master defaults in engine/config/limits.yaml. A project may only lower them (H-0087, F-007 SR-18).`
+        : `The engine refused to run this project: ${reason}`,
+      impact: "The project is stopped. No agent runs and no interview opens until the limits are fixed.",
+      confirm: above.length ? "Lower or remove those keys on main and restart the engine" : "Fix the limits and restart the engine",
+      hold: "Keep the project stopped and find out who changed it",
+      recommendation: above.length ? "B" : "A",
+    });
+    return false;
+  }
 
   // Phase 1: paths, manifests from main, pinned keys (FR-2, SR-5, SR-13).
   for (const p of projects) {
@@ -240,6 +290,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       });
       continue;
     }
+    if (!(await checkLimits(p))) continue;
     const pin = pins.get(p.real);
     const cmp = comparePin(pin, p.manifest);
     if (cmp.status !== "match") {
@@ -646,6 +697,12 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         await checkRemote(p);
         await checkLocal(p);
       }
+    },
+    async limits(project) {
+      const p = projects.find((x) => x.manifest?.name === project && x.state === "running");
+      if (!p) throw new LimitsError(`No running project is named ${project}.`);
+      p.limits ??= mergeLimits(await defaults(), null).limits;
+      return structuredClone(p.limits);
     },
     confirmProject: (projectPath, io) =>
       runConfirm({ masterRepo: o.masterRepo, projectPath, git, github, pins, os: osApi, clock, log, io }),

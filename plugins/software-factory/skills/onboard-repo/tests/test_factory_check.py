@@ -1174,3 +1174,54 @@ class OwnerKeysV13(unittest.TestCase):
         for line in template.splitlines():
             if "github_id" in line or "oauth_client_id" in line:
                 self.assertIn("<", line, line)
+
+
+class LimitsV14(unittest.TestCase):
+    """Project manifest v1.4 (H-0087): an optional `limits` block, known keys, positive numbers."""
+
+    BASE = Manifest.VALID
+    MASTER_LIMITS = os.path.join(SKILL, "..", "..", "..", "..", "engine", "config", "limits.yaml")
+
+    def errors(self, extra):
+        return fc.validate_manifest(fc.parse_yaml(self.BASE + extra))
+
+    def test_absent_is_fine(self):
+        self.assertEqual(self.errors(""), [])
+
+    def test_lowered_values_pass(self):
+        extra = ("limits:\n  analyst:\n    turns: 100\n    cpus: 1.5\n    dollars: 5\n"
+                 "  proxy:\n    memory_mib: 128\n  worktree_commit:\n    max_file_mib: 0.5\n")
+        self.assertEqual(self.errors(extra), [])
+
+    def test_unknown_section_and_key(self):
+        errs = self.errors("limits:\n  advisor:\n    turns: 1\n  proxy:\n    turns: 1\n")
+        self.assertTrue(any("limits.advisor is not a known section" in e for e in errs), errs)
+        self.assertTrue(any("limits.proxy.turns is not a known key" in e for e in errs), errs)
+
+    def test_values_must_be_positive_numbers_of_the_right_kind(self):
+        for value, key in (("0", "turns"), ("-3", "turns"), ("many", "turns"), ("2.5", "turns"),
+                           ("true", "pids"), ("0", "cpus"), ("0.0", "cpus"), ("lots", "memory_mib"), ("[1]", "cpus")):
+            with self.subTest(key=key, value=value):
+                errs = self.errors(f"limits:\n  analyst:\n    {key}: {value}\n")
+                self.assertTrue(any(f"limits.analyst.{key} must be" in e for e in errs), errs)
+
+    def test_block_and_section_must_be_mappings(self):
+        self.assertTrue(any("limits must be a mapping" in e for e in self.errors("limits: 5\n")))
+        self.assertTrue(any("limits.proxy must be a mapping" in e for e in self.errors("limits:\n  proxy: 1\n")))
+
+    @unittest.skipUnless(os.path.exists(MASTER_LIMITS), "not inside the master factory repo")
+    def test_keys_match_the_master_defaults(self):
+        master = fc.parse_yaml(read(self.MASTER_LIMITS))
+        self.assertEqual({s: set(v) for s, v in master.items()}, {s: set(v) for s, v in fc.LIMIT_KEYS.items()})
+        self.assertEqual(fc._check_limits({"limits": master}), [])
+
+    def test_template_example_is_commented_and_valid(self):
+        lines = read(os.path.join(SKILL, "templates", "factory-project.yaml")).splitlines()
+        start = lines.index("# limits:")
+        block = []
+        for line in lines[start:]:
+            if not line.startswith("# "):
+                break
+            block.append(line[2:])
+        self.assertIn("lower", "\n".join(lines[start - 4:start]))
+        self.assertEqual(self.errors("\n".join(block) + "\n"), [])

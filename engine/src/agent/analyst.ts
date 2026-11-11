@@ -10,7 +10,7 @@ import { research } from "./web-reader";
 import type { Breach } from "./write-check";
 import type { WorktreeCommitResult } from "./worktree-commit";
 
-/** SR-18 and H-0082 values, from change-controlled config. The engine has no defaults for any of them. */
+/** SR-18 values from engine/config/limits.yaml (H-0087), built by config/limits.ts. The engine has no defaults for any of them. */
 export interface AgentLimitsConfig {
   analyst: SessionCaps;
   reader: SessionCaps;
@@ -109,6 +109,7 @@ export async function runAnalystSession(i: AnalystRunInput): Promise<{ outcome: 
     }
     const commit = await i.commit(analyst);
     if (commit.status === "rejected") await i.onBreach(commit.breaches);
+    else if (commit.status === "over_limit") i.log.warn(`analyst ${agent.name}: nothing committed, the change is over the worktree ${commit.cap} cap.`);
     return { outcome, commit };
   } finally {
     await i.group.close();

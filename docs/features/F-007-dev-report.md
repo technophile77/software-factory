@@ -433,3 +433,39 @@ Results on Linux (this container): typecheck is clean, the build passes (`dist/p
   3. The engine's spawn ignores the SDK's `command`, which is that host binary's path; the unit test confirms that's what the SDK passes. It runs `docker exec … /opt/claude/claude` in the session's container instead.
   4. No other SDK function that starts the CLI is called.
 - **SR-10, checked against the SDK:** a real `query()` against a stand-in spawn shows that SDK 0.3.311 passes SR-10 as `--setting-sources=`, `--strict-mcp-config` and `--permission-mode=default`. The container spawn now refuses to start without the first two, and refuses `--permission-mode=bypassPermissions`. It also lets the SDK's protocol variable `CLAUDE_CODE_SDK_READS_SESSION_STATE` through.
+
+### Session limits (H-0087, owner decision, 2026-11-11)
+
+This settles blocked decision 2 above.
+
+- **The file:** `engine/config/limits.yaml` holds the spec v29 §10 values exactly. The spec gives the values; the section and key names are mine, with units in the names:
+  - sections `analyst`, `web_reader`, `proxy`, `research_web`, `fetch_page`, `research_result` and `worktree_commit`;
+  - keys such as `turns`, `output_tokens`, `dollars`, `wall_time_minutes`, `cpus`, `memory_mib`, `pids` and `tmp_mib`.
+- **Where it is read from:** the master clone's `HEAD` commit through `git cat-file`, never the working tree. This is the same rule as the manifest, which is read from `main`.
+  - The file must hold every key. Each value must be a positive finite number, and whole where the key needs it. Unknown sections and keys are refused.
+  - The engine has no built-in values. If the file is missing or invalid, nothing that needs limits can run.
+- **When it is read:** only when something needs it. That is a project whose manifest has `limits:`, or a call to `handle.limits(project)`. The engine still starts without the file, because its other work doesn't use it, and the acceptance fixtures' master repo has no such file.
+- **The manifest block (v1.4):** it is checked in phase 1, after the manifest and before the pins.
+  - The engine takes the lower of the project's value and the default, key by key.
+  - The project is stopped and a Security item is filed if any of these holds: a value is above the default, the block is invalid, or the defaults can't be read. The item names the keys; it is filed once per main commit and reason.
+- **Consumers (`src/config/limits.ts`):**
+  - SR-18 session caps for the analyst and the reader. `dollars` applies only in tokens mode, so a subscription project's session has no budget cap.
+  - Container limits per role. `GroupConfig.agentLimits` is now keyed by role, and a role without an entry gets no container. The proxy has its own limits.
+  - `research_web` per question and per session.
+  - `fetch_page`: the proxy's byte cap and the characters returned.
+  - Research summary length and the number of sources.
+  - The worktree commit.
+- **Worktree commit:** the caps now count changed files only: files changed (deletions included), total size, and largest file.
+  - A file whose size or mode differs from its base entry meets the caps before it is read. Once a cap is passed, nothing more is read.
+  - The result is `over_limit` with the cap's name, and nothing is committed. The analyst logs which cap.
+  - The write rules are still checked on every changed path, so a breach past a cap still rejects the session and files its Security item (AC-9).
+- **Onboarding plugin:** `factory_check.py` checks an optional `limits` block: known sections and keys, mappings, and positive numbers, whole where needed. Its parser returns decimals as text, so decimal text counts as a number.
+  - A test keeps its key table equal to `engine/config/limits.yaml`.
+  - The template has a commented example saying projects may only lower values.
+  - The checker doesn't compare values with the master defaults; the engine does.
+- **Tests:**
+  - `test/limits.test.ts`: the shipped values, parse refusals, the merge, reading from `HEAD`, and each converter.
+  - `test/engine.test.ts`: lowered values, a value above the default, an invalid block, missing or invalid defaults, and `HEAD` versus the working tree.
+  - `test/agent.test.ts`: per-role container limits.
+  - `test/policy.test.ts`: each worktree cap, unchanged files, and breaches past a cap.
+  - The onboarding suite gains the `LimitsV14` class.

@@ -28,7 +28,8 @@ export interface GroupConfig {
   proxyImageId: string;
   /** The bundled proxy (dist/proxy.js) on the host, mounted read-only. */
   proxyScript: string;
-  agentLimits: ContainerLimits;
+  /** H-0087, by role name. A role without an entry gets no container. */
+  agentLimits: Record<string, ContainerLimits>;
   proxyLimits: ContainerLimits;
   maxPageBytes: number;
   credential: ModelCredential;
@@ -209,6 +210,8 @@ export class SessionGroup {
   /** An agent container for one session, with its own proxy credential bound to its role (SR-7). */
   async startAgent(policy: RolePolicy, worktree: string | null, o: { sessionVolume?: boolean } = {}): Promise<AgentContainer> {
     if (!this.proxy) throw new DockerError("the group isn't open");
+    const limits = Object.prototype.hasOwnProperty.call(this.c.agentLimits, policy.role) ? this.c.agentLimits[policy.role] : undefined;
+    if (!limits) throw new DockerError(`no container limits for the ${policy.role} role`);
     const n = ++this.seq;
     const name = dockerName(this.c.runId.toLowerCase(), policy.role, String(n));
     const cred = crypto.randomBytes(32).toString("base64url");
@@ -240,7 +243,7 @@ export class SessionGroup {
       user: AGENT_USER,
       networks: [this.internal],
       mounts,
-      limits: this.c.agentLimits,
+      limits,
       envNames: Object.keys(values),
       workdir: cwd,
       interactive: false,

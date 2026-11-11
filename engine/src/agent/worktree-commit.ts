@@ -6,12 +6,16 @@ import type { Git } from "../git";
 import type { SecretsScanner } from "../gitleaks";
 import type { RolePolicy } from "../policy/role-policy";
 import { SecretFound } from "../state/state-repo";
-import { Breach, writeBreaches } from "./write-check";
+import { Breach, pathBreach, writeBreaches } from "./write-check";
 
+/** H-0087: caps on what one session may change. */
 export interface WorktreeLimits {
   maxFiles: number;
-  maxBytes: number;
+  maxTotalBytes: number;
+  maxFileBytes: number;
 }
+
+export type WorktreeCap = "files changed" | "total size" | "largest file";
 
 export interface WorktreeCommitInput {
   git: Git;
@@ -30,10 +34,20 @@ export interface WorktreeCommitInput {
 export type WorktreeCommitResult =
   | { status: "unchanged" }
   | { status: "committed"; commit: string; paths: string[] }
-  | { status: "rejected"; breaches: Breach[] };
+  | { status: "rejected"; breaches: Breach[] }
+  /** Nothing is committed; `cap` says which limit the change went over (SR-18). */
+  | { status: "over_limit"; cap: WorktreeCap };
 
-interface Entry {
+interface BaseEntry {
   mode: string;
+  sha: string;
+  size: number;
+}
+
+interface Changed {
+  path: string;
+  mode: string;
+  sha: string;
   content: Buffer;
 }
 
@@ -45,44 +59,89 @@ function blobSha(content: Buffer, algo: "sha1" | "sha256"): string {
   return crypto.createHash(algo).update(`blob ${content.length}\0`).update(content).digest("hex");
 }
 
+function readNoFollow(full: string): Buffer {
+  const fd = fs.openSync(full, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+  try {
+    return fs.readFileSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /**
  * Reads the worktree as the container left it, without following a link and
  * without git, so no attribute, filter or config from the worktree applies
  * (SR-11). Links are taken as links; anything else that isn't a file or a
  * folder is a breach.
+ *
+ * The H-0087 caps count changed files only. A file whose size or mode differs
+ * from its base entry has changed, so it meets the caps before it is read;
+ * once a cap is passed nothing more is read, which bounds the engine's memory
+ * whatever the agent wrote. The walk still finishes, so a breach anywhere is
+ * still found.
  */
-function walk(root: string, limits: WorktreeLimits, breaches: Breach[]): Map<string, Entry> {
-  const out = new Map<string, Entry>();
-  let bytes = 0;
+function walk(root: string, base: Map<string, BaseEntry>, format: "sha1" | "sha256", limits: WorktreeLimits, breaches: Breach[]) {
+  const seen = new Set<string>();
+  const changed: Changed[] = [];
+  // Every changed path, kept past a cap so the write rules still see them all.
+  const touched: Array<{ path: string; mode: string }> = [];
+  let total = 0;
+  let over: WorktreeCap | null = null;
+  const change = (r: string, mode: string, size: number, read: () => Buffer) => {
+    const count = touched.push({ path: r, mode });
+    total += size;
+    if (!over && size > limits.maxFileBytes) over = "largest file";
+    if (!over && count > limits.maxFiles) over = "files changed";
+    if (!over && total > limits.maxTotalBytes) over = "total size";
+    if (over) return;
+    const content = read();
+    changed.push({ path: r, mode, sha: blobSha(content, format), content });
+  };
   const visit = (dir: string, rel: string) => {
     for (const name of fs.readdirSync(dir)) {
       if (rel === "" && name === ".git") continue;
       const full = path.join(dir, name);
       const r = rel ? `${rel}/${name}` : name;
       const st = fs.lstatSync(full);
-      if (st.isDirectory()) visit(full, r);
-      else if (st.isSymbolicLink()) out.set(r, { mode: "120000", content: Buffer.from(fs.readlinkSync(full), "utf8") });
-      else if (st.isFile()) {
-        bytes += st.size;
-        if (out.size >= limits.maxFiles || bytes > limits.maxBytes) throw new WorktreeError("the worktree is over its size limits");
-        const fd = fs.openSync(full, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
-        try {
-          out.set(r, { mode: process.platform !== "win32" && st.mode & 0o111 ? "100755" : "100644", content: fs.readFileSync(fd) });
-        } finally {
-          fs.closeSync(fd);
-        }
-      } else breaches.push({ path: r, reason: "not_allowed" });
+      if (st.isDirectory()) {
+        visit(full, r);
+        continue;
+      }
+      let mode: string;
+      let size: number;
+      let read: () => Buffer;
+      if (st.isSymbolicLink()) {
+        const target = Buffer.from(fs.readlinkSync(full), "utf8");
+        [mode, size, read] = ["120000", target.length, () => target];
+      } else if (st.isFile()) {
+        [mode, size, read] = [process.platform !== "win32" && st.mode & 0o111 ? "100755" : "100644", st.size, () => readNoFollow(full)];
+      } else {
+        breaches.push({ path: r, reason: "not_allowed" });
+        continue;
+      }
+      seen.add(r);
+      const was = base.get(r);
+      if (!was || was.mode !== mode || was.size !== size) {
+        change(r, mode, size, read);
+        continue;
+      }
+      // Same size and mode: only the content tells, and it is no bigger than the base blob.
+      const content = read();
+      if (blobSha(content, format) !== was.sha) change(r, mode, size, () => content);
     }
   };
   visit(root, "");
-  return out;
+  const removed = [...base.keys()].filter((p) => !seen.has(p) && base.get(p)!.mode !== "160000");
+  if (!over && touched.length + removed.length > limits.maxFiles) over = "files changed";
+  return { changed, touched, removed, over: over as WorktreeCap | null };
 }
 
 /**
  * FR-11 with the FR-9 check in front: the agent's changes become one commit
  * on its branch only if every changed path is within the role's write rules,
- * no symlink is new or changed, the worktree's `.git` link is untouched, and
- * the secrets scan is clean. Otherwise nothing is committed.
+ * no symlink is new or changed, the worktree's `.git` link is untouched, the
+ * change is within the H-0087 caps, and the secrets scan is clean. Otherwise
+ * nothing is committed.
  */
 export async function commitWorktree(i: WorktreeCommitInput): Promise<WorktreeCommitResult> {
   const g = (args: string[]) => ["--git-dir", i.gitDir, "--work-tree", i.worktree, ...args];
@@ -97,23 +156,27 @@ export async function commitWorktree(i: WorktreeCommitInput): Promise<WorktreeCo
     breaches.push({ path: ".git", reason: "not_allowed" });
   }
   const format = (await i.git.out(i.worktree, g(["rev-parse", "--show-object-format"]))) === "sha256" ? "sha256" : "sha1";
-  const files = walk(i.worktree, i.limits, breaches);
-  const base = new Map<string, { mode: string; sha: string }>();
-  const tree = await i.git.run(i.worktree, g(["ls-tree", "-r", "-z", "--full-tree", i.base]));
+  const base = new Map<string, BaseEntry>();
+  const tree = await i.git.run(i.worktree, g(["ls-tree", "-r", "-z", "-l", "--full-tree", i.base]));
   for (const line of tree.stdout.toString("utf8").split("\0")) {
-    const m = /^(\d{6}) \w+ ([0-9a-f]{40,64})\t(.*)$/s.exec(line);
-    if (m) base.set(m[3]!, { mode: m[1]!, sha: m[2]! });
+    const m = /^(\d{6}) \w+ ([0-9a-f]{40,64}) +(\d+|-)\t(.*)$/s.exec(line);
+    if (m) base.set(m[4]!, { mode: m[1]!, sha: m[2]!, size: m[3] === "-" ? -1 : Number(m[3]) });
   }
-
-  const changed: Array<{ path: string; mode: string; sha: string; content: Buffer }> = [];
-  for (const [p, e] of files) {
-    const sha = blobSha(e.content, format);
-    const was = base.get(p);
-    if (!was || was.sha !== sha || was.mode !== e.mode) changed.push({ path: p, mode: e.mode, sha, content: e.content });
+  const { changed, touched, removed, over } = walk(i.worktree, base, format, i.limits, breaches);
+  if (touched.length === 0 && removed.length === 0 && breaches.length === 0) return { status: "unchanged" };
+  if (over) {
+    // No commit to check, so the rules are checked on the paths: a breach still files its Security item (AC-9).
+    for (const t of touched) {
+      const b = pathBreach(t.path, base.get(t.path)?.mode ?? "000000", t.mode, i.policy);
+      if (b) breaches.push(b);
+    }
+    for (const p of removed) {
+      const b = pathBreach(p, base.get(p)!.mode, null, i.policy);
+      if (b) breaches.push(b);
+    }
   }
-  const removed = [...base.keys()].filter((p) => !files.has(p) && base.get(p)!.mode !== "160000");
-  if (changed.length === 0 && removed.length === 0 && breaches.length === 0) return { status: "unchanged" };
   if (breaches.length) return { status: "rejected", breaches };
+  if (over) return { status: "over_limit", cap: over };
 
   const result = await i.scanner.scan(changed.filter((c) => c.mode !== "120000").map((c) => ({ sha: c.sha, content: c.content })));
   if (!result.clean) {

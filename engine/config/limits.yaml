@@ -1,0 +1,40 @@
+# Session, container and interview limits: owner decision H-0087 (F-007
+# SR-18). Change-controlled. The engine reads this file from the master
+# clone's HEAD commit; a project's manifest `limits:` block may only lower
+# these values, never raise them. MiB is 1,048,576 bytes.
+analyst:
+  turns: 300
+  output_tokens: 500000
+  dollars: 15 # API key (tokens) mode only
+  wall_time_minutes: 240
+  cpus: 2
+  memory_mib: 2048
+  pids: 256
+  tmp_mib: 512
+web_reader:
+  turns: 30
+  output_tokens: 60000
+  dollars: 1 # API key (tokens) mode only
+  wall_time_minutes: 10
+  cpus: 1
+  memory_mib: 1024
+  pids: 128
+  tmp_mib: 256
+proxy:
+  cpus: 0.5
+  memory_mib: 256
+  pids: 64
+  tmp_mib: 16
+research_web:
+  per_question: 3
+  per_session: 20
+fetch_page:
+  max_download_mib: 2
+  max_chars: 50000
+research_result:
+  summary_chars: 2000
+  max_sources: 8
+worktree_commit:
+  max_files: 200
+  max_total_mib: 5
+  max_file_mib: 1

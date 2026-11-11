@@ -10,7 +10,7 @@ import type { AgentSdk, SdkMessage, SessionOptions, UserTurn } from "../src/agen
 import { CLAUDE_BIN, CONTAINER_FLAGS, SessionCaps, containerSpawn, hostRelative, runSession, sessionOptions, toolGate } from "../src/agent/session";
 import { DockerCli, DockerError, dockerName, isLocalEndpoint, localEndpoints, pickEndpoint } from "../src/docker/cli";
 import { BASE_IMAGE, agentBuildArgs } from "../src/docker/image";
-import { ContainerSpec, bindSourceMatches, inspectMismatches, runArgs } from "../src/docker/plan";
+import { ContainerLimits, ContainerSpec, bindSourceMatches, inspectMismatches, runArgs } from "../src/docker/plan";
 import type { InterviewTools } from "../src/interview/tools";
 import { MemoryLogger } from "../src/log";
 import { effectiveRole } from "../src/policy/role-policy";
@@ -233,10 +233,10 @@ class FakeDocker {
   }
 }
 
-function group(docker: FakeDocker, log = new MemoryLogger()) {
+function group(docker: FakeDocker, log = new MemoryLogger(), agentLimits: Record<string, ContainerLimits> = { "requirements-analyst": LIMITS, "web-reader": LIMITS }) {
   return new SessionGroup({
     docker: docker as unknown as DockerCli, runId: "R-0a1b2c", project: "demo", agentImageId: IMG, proxyImageId: `sha256:${"b".repeat(64)}`,
-    proxyScript: "/opt/engine/dist/proxy.js", agentLimits: LIMITS, proxyLimits: { ...LIMITS, cpus: 0.5 }, maxPageBytes: 1 << 20,
+    proxyScript: "/opt/engine/dist/proxy.js", agentLimits, proxyLimits: { ...LIMITS, cpus: 0.5 }, maxPageBytes: 1 << 20,
     credential: { kind: "api_key", value: "sk-ant-api03-placeholder" }, log, platform: "linux", sleep: async () => undefined,
   });
 }
@@ -276,6 +276,27 @@ describe("session group (SR-6, SR-7, SR-9, SR-14)", () => {
     expect(b.cred).not.toBe(a.cred);
     const proxyIn = d.spawned[0]!.child.sent();
     expect(proxyIn.filter((m) => m.t === "grant").map((m) => [m.role, m.allow])).toEqual([["requirements-analyst", []], ["web-reader", ["*"]]]);
+  });
+
+  it("H-0087: each role's container gets that role's limits; a role without limits gets no container", async () => {
+    const d = new FakeDocker();
+    const small = { cpus: 1, memoryBytes: 1024 ** 3, pids: 128, tmpBytes: 256 * 1024 ** 2 };
+    const g = group(d, new MemoryLogger(), { "requirements-analyst": LIMITS, "web-reader": small });
+    await g.open();
+    const flag = (args: string[], f: string) => args[args.indexOf(f) + 1];
+    await g.startAgent(analyst, tmpdir());
+    await g.startAgent(reader, null);
+    const runs = d.calls.filter((c) => c.args[0] === "run").map((c) => c.args);
+    expect(runs.map((a) => [flag(a, "--cpus"), flag(a, "--memory"), flag(a, "--pids-limit")])).toEqual([
+      ["1.5", `${LIMITS.memoryBytes}b`, "256"],
+      ["1", `${small.memoryBytes}b`, "128"],
+    ]);
+    const proxy = d.spawned[0]!.args;
+    expect([flag(proxy, "--cpus"), flag(proxy, "--pids-limit")]).toEqual(["0.5", "256"]);
+
+    const bare = group(new FakeDocker(), new MemoryLogger(), { "requirements-analyst": LIMITS });
+    await bare.open();
+    await expect(bare.startAgent(reader, null)).rejects.toThrow(/no container limits for the web-reader role/);
   });
 
   it("stops a container that fails its check and revokes its credential; no session starts", async () => {

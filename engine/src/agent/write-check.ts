@@ -32,10 +32,17 @@ export async function writeBreaches(git: Git, repo: string, base: string, head: 
     const m = /^:(\d{6}) (\d{6}) [0-9a-f]+ [0-9a-f]+ ([A-Z])\d*$/.exec(meta);
     if (!m) throw new Error("unexpected diff-tree output");
     const [, oldMode, newMode, status] = m;
-    if (newMode === SYMLINK || (oldMode === SYMLINK && status !== "D")) out.push({ path: file, reason: "symlink" });
-    else if (!allowedBy(policy.write, file)) out.push({ path: file, reason: "not_allowed" });
+    const b = pathBreach(file, oldMode!, status === "D" ? null : newMode!, policy);
+    if (b) out.push(b);
   }
   return out;
+}
+
+/** One changed path against the rules; `newMode` is null for a deletion and `oldMode` "000000" for an addition. */
+export function pathBreach(file: string, oldMode: string, newMode: string | null, policy: RolePolicy): Breach | null {
+  if (newMode === SYMLINK || (oldMode === SYMLINK && newMode !== null)) return { path: file, reason: "symlink" };
+  if (!allowedBy(policy.write, file)) return { path: file, reason: "not_allowed" };
+  return null;
 }
 
 /**
