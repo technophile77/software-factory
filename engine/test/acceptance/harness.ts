@@ -1,148 +1,192 @@
 // The one place that knows how the developer's engine is started and driven
-// in-process. Everything else in this suite talks to the engine only through
-// the control channel, files, the fake GitHub server and the fake gitleaks.
-// When the real API differs, adapt this file and nothing else
-// (docs/features/F-007-test-plan.md, "Harness assumptions").
+// in-process (engine/src/index.ts, engine README "In-process API"). Everything
+// else in this suite talks to the engine only through the control channel,
+// files, the fake GitHub server and the fake gitleaks.
+// See docs/features/F-007-test-plan.md, "Harness assumptions", and the
+// F-007 test report for the seams the API doesn't offer yet.
 
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Injected clock. The engine must take all time from it: now(), timers,
- * device-flow polling, the 30-minute idle and 2-hour session limits, and
- * `wait_s`. Tests advance it by hand. */
+/** The clock the suite drives. The engine's Clock is `{ now, sleep(ms, signal?) }`. */
 export interface Clock {
   now(): number;
-  setTimeout(fn: () => void, ms: number): unknown;
-  clearTimeout(handle: unknown): void;
-  sleep(ms: number): Promise<void>;
+  sleep(ms: number, signal?: AbortSignal): Promise<void>;
 }
 
-/** Injected OS credential store (SR-20). The real one goes through koffi. */
+/** The engine's CredentialStore. */
 export interface CredentialStore {
-  get(name: string): Promise<string | undefined>;
+  get(name: string): Promise<string | null>;
   set(name: string, value: string): Promise<void>;
-  delete(name: string): Promise<void>;
+  delete(name: string): Promise<boolean>;
 }
 
-/** The interview tools (Interview tools v1.0) as engine functions, one object
- * per session with its project and feature fixed. Milestone 2 serves the same
- * functions to the analyst through the in-process MCP server `factory`. */
+/** The interview tools of one feature, called by name. */
 export interface InterviewTools {
   call(tool: string, args: unknown): Promise<unknown>;
 }
 
-/** Where the engine hands work to the requirements analyst. Milestone 2
- * replaces the test's fake with an Agent SDK session in a container. */
-export interface AnalystSeam {
-  start(ctx: AnalystStart): void | Promise<void>;
-  /** One turn's message: the owner's reply wrapped in the engine's frame. */
-  turn(ctx: { feature: string; message: string }): void | Promise<void>;
-}
-export interface AnalystStart {
-  project?: string;
-  feature: string;
-  /** The analyst's worktree on the host (its branch of the feature). */
-  worktree: string;
-  tools: InterviewTools;
-  resume?: boolean;
-}
-
 export interface EngineOptions {
   clock: Clock;
-  /** The engine's whole environment; it must not read process.env. */
   env: Record<string, string>;
-  github: {
-    /** Stands for https://github.com (device flow and git over HTTPS). */
-    webBaseUrl: string;
-    /** Stands for https://api.github.com (`GET /user`, `GET /repos/...`). */
-    apiBaseUrl: string;
-  };
+  github: { webBaseUrl: string; apiBaseUrl: string };
   credentialStore: CredentialStore;
-  /** Absolute path of the gitleaks binary and the SHA-256 it must have (the
-   * test pin replaces the release pin). */
   gitleaks: { path: string; sha256: string };
-  /** Absolute path of `git`. */
   gitPath: string;
   paths: {
-    /** The owner's clone of the master factory repo. */
+    /** The owner's clone of the master repo; holds factory-projects.local.yaml. */
     masterRepo: string;
-    /** `factory-projects.local.yaml` in that clone (H-0081). */
-    projectsFile: string;
-    /** Engine-only state outside every repo: pinned keys, chain heads. */
+    /** Engine home: pinned keys, engine record, logs (`<stateDir>/logs`). */
     stateDir: string;
-    /** Owner-only log folder. */
-    logDir: string;
-    /** Where the engine makes its owner-only socket directory. */
     runtimeDir: string;
-    /** Local clone of each managed repo, by its `repos[].url`. */
-    repoClones: Record<string, string>;
   };
-  analyst: AnalystSeam;
 }
 
 export interface ProjectState {
-  /** Config repo path as listed in the projects file. */
   path: string;
-  name?: string;
-  /** "running" when the project runs; anything else means it doesn't. */
+  name?: string | null;
   state: string;
+  reason?: string;
 }
 
 export interface ConfirmResult {
-  /** Device sign-in the owner must approve, when the engine asks for one. */
   approval?: { user_code: string; verification_uri: string; expires_at: string };
-  /** Settles when the confirmation succeeds (resolves) or fails (rejects). */
   done: Promise<unknown>;
 }
 
+/** What the suite needs from a running engine. */
 export interface EngineHandle {
-  /** Graceful stop, as `engine.shutdown`. */
   stop(): Promise<void>;
-  /** Stop as if the process were killed: no shutdown bookkeeping. */
+  /** Stop as if the process were killed. */
   crash(): Promise<void>;
-  /** Each listed project and whether it runs. */
   projects(): Promise<ProjectState[]>;
-  /** The engine command where the owner confirms new or changed pinned keys
-   * (SR-5). */
+  /** The SR-5 confirmation command, run in-process against the fake GitHub. */
   confirmProject(configRepoPath: string): Promise<ConfirmResult>;
-  /** Optional: fetch `factory/state` now. Without it the suite restarts the
-   * engine, which must fetch at start. */
+  /** The analyst's tools for a feature, reading the spec from `worktree`. */
+  interviewTools(feature: string, worktree: string): InterviewTools;
+  /** The analyst's next turn message (owner replies, framed), or null. */
+  takeTurn(feature: string): Promise<string | null>;
   sync?(): Promise<void>;
-  /** Optional: resolve once queued commits and pushes are done. */
   flush?(): Promise<void>;
 }
 
-/** Credential store names the fixtures seed. */
+/** Credential names the engine reads (README, "secret set"). */
 export const CREDENTIAL_NAMES = {
-  model: "software-factory/model-credential",
-  factoryToken: "software-factory/factory-token",
+  model: "model-credential",
+  factoryToken: (project: string) => `factory-token/${project}`,
 };
 
 const ENTRY = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
 
 export const ENGINE_NOT_AVAILABLE = "engine not available";
 
-type StartEngine = (o: EngineOptions) => Promise<EngineHandle>;
+/** A seam the suite needs and the engine's API doesn't offer. Tests that hit
+ * it fail with this message, never pass. */
+export class MissingSeam extends Error {
+  constructor(what: string) {
+    super(`missing seam: ${what}`);
+  }
+}
 
-export async function loadStartEngine(): Promise<StartEngine> {
+async function load(): Promise<Record<string, any>> {
   if (!existsSync(ENTRY)) {
     throw new Error(`${ENGINE_NOT_AVAILABLE}: ${ENTRY} does not exist (F-007 milestone 1 not on this branch)`);
   }
-  let mod: Record<string, unknown>;
   try {
-    mod = (await import(/* @vite-ignore */ ENTRY)) as Record<string, unknown>;
+    return (await import(/* @vite-ignore */ ENTRY)) as Record<string, any>;
   } catch (e) {
     throw new Error(`${ENGINE_NOT_AVAILABLE}: loading ${ENTRY} failed: ${(e as Error).message}`);
   }
-  if (typeof mod.startEngine !== "function") {
-    throw new Error(`${ENGINE_NOT_AVAILABLE}: ${ENTRY} has no startEngine export`);
-  }
-  return mod.startEngine as StartEngine;
 }
 
-export async function startEngine(options: EngineOptions): Promise<EngineHandle> {
-  const start = await loadStartEngine();
-  return start(options);
+export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
+  const mod = await load();
+  if (typeof mod.startEngine !== "function") throw new Error(`${ENGINE_NOT_AVAILABLE}: no startEngine export`);
+  const real = await mod.startEngine({
+    masterRepo: o.paths.masterRepo,
+    engineHome: o.paths.stateDir,
+    runtimeDir: o.paths.runtimeDir,
+    gitleaks: { path: o.gitleaks.path, expectSha256: o.gitleaks.sha256 },
+    gitPath: o.gitPath,
+    credentials: o.credentialStore,
+    github: { webBase: o.github.webBaseUrl, apiBase: o.github.apiBaseUrl },
+    clock: o.clock,
+    env: o.env,
+    push: true,
+  });
+  return {
+    stop: () => real.stop(),
+    crash: async () => {
+      throw new MissingSeam("EngineHandle has no way to stop as if killed (AC-12); stop() runs the shutdown path");
+    },
+    projects: async () => real.projects as ProjectState[],
+    confirmProject: (projectPath) => confirmCommand(o, projectPath),
+    interviewTools: (feature, worktree) => {
+      const t = real.interviewTools(feature, worktree);
+      return {
+        call: async (tool: string, args: unknown) => {
+          if (typeof t[tool] !== "function") throw Object.assign(new Error(`no tool ${tool}`), { code: "no_such_tool" });
+          return t[tool](args);
+        },
+      };
+    },
+    takeTurn: async (feature) => {
+      const f = real.feature(feature);
+      if (!f) return null;
+      const turn = await f.takeTurn();
+      return turn ? turn.message : null;
+    },
+  };
+}
+
+/**
+ * The SR-5 `factory-engine confirm` command. The in-process API doesn't offer
+ * it and the CLI can't be pointed at a fake GitHub or clock, so this builds
+ * it exactly as engine/src/cli.ts does, swapping only the GitHub base URLs
+ * and the clock. The owner's answer to "type the project name" is the name
+ * the prompt shows; the device code is the one the command tells the owner.
+ */
+async function confirmCommand(o: EngineOptions, projectPath: string): Promise<ConfirmResult> {
+  const src = (p: string) => fileURLToPath(new URL(`../../src/${p}.ts`, import.meta.url));
+  const [{ confirmProject }, { PinStore }, { Git }, { HttpGitHub }, { FileLogger }, { realOsApi }, { Children }] = await Promise.all(
+    ["config/confirm", "config/pins", "git", "github", "log", "os/ffi", "proc"].map((m) => import(/* @vite-ignore */ src(m))),
+  );
+  const log = new FileLogger(join(o.paths.stateDir, "logs"), o.clock, () => undefined);
+  const said: string[] = [];
+  let codeSeen: (c: string) => void = () => undefined;
+  const code = new Promise<string>((r) => (codeSeen = r));
+  const done: Promise<unknown> = confirmProject({
+    masterRepo: o.paths.masterRepo,
+    projectPath,
+    git: new Git({ gitPath: o.gitPath, homeDir: join(o.paths.stateDir, "git"), children: new Children() }),
+    github: new HttpGitHub({ webBase: o.github.webBaseUrl, apiBase: o.github.apiBaseUrl, log }),
+    pins: new PinStore(o.paths.stateDir),
+    os: realOsApi(),
+    clock: o.clock,
+    log,
+    io: {
+      say: (line: string) => {
+        said.push(line);
+        const m = /\b([A-Z0-9]{4}-[A-Z0-9]{4})\b/.exec(line);
+        if (m) codeSeen(m[1]);
+      },
+      ask: async (q: string) => /\(([^)]+)\) to confirm/.exec(q)?.[1] ?? "",
+    },
+  }).then((ok: boolean) => {
+    if (!ok) throw new Error(`not confirmed: ${said.join(" | ")}`);
+    return ok;
+  });
+  done.catch(() => undefined);
+  const first = await Promise.race([code.then((c) => ({ c })), done.then(() => ({ c: undefined }), () => ({ c: undefined }))]);
+  return {
+    approval: first.c ? { user_code: first.c, verification_uri: "https://github.com/login/device", expires_at: "" } : undefined,
+    done,
+  };
+}
+
+export function logDir(stateDir: string) {
+  return join(stateDir, "logs");
 }
 
 /** Normalized result of an interview tool call: the contract's error names
@@ -152,8 +196,9 @@ export type ToolOutcome = { ok: true; value: any } | { ok: false; code: string; 
 export async function callTool(tools: InterviewTools, tool: string, args: unknown): Promise<ToolOutcome> {
   try {
     const v: any = await tools.call(tool, args);
-    if (v && typeof v === "object" && v.error && typeof v.error.code === "string") {
-      return { ok: false, code: v.error.code, message: String(v.error.message ?? "") };
+    if (v && typeof v === "object" && v.ok === true && "result" in v) return { ok: true, value: v.result };
+    if (v && typeof v === "object" && v.ok === false && v.error) {
+      return { ok: false, code: String(v.error.code), message: String(v.error.message ?? "") };
     }
     return { ok: true, value: v };
   } catch (e: any) {

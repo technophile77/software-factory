@@ -30,8 +30,19 @@ export class FakeClock implements Clock {
     this.timers = this.timers.filter((x) => x.id !== handle);
   }
 
-  sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => this.setTimeout(resolve, ms));
+  /** Resolves after `ms` of fake time, or early when `signal` aborts. */
+  sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      if (signal?.aborted) return resolve();
+      const id = this.setTimeout(done, ms);
+      const self = this;
+      function done() {
+        signal?.removeEventListener("abort", done);
+        self.clearTimeout(id);
+        resolve();
+      }
+      signal?.addEventListener("abort", done, { once: true });
+    });
   }
 
   /** Moves time forward, firing due timers in order and letting real I/O run

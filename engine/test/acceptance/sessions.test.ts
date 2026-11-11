@@ -185,6 +185,8 @@ describe("Items, revisions, replies (channel v1.1)", () => {
     expect(first.result).toBeDefined();
     const st1 = await w.ok("interview.state", { feature, item: item.id });
     await w.settle();
+    // The analyst picks up the first reply's turn before the repeats.
+    await waitFor(() => w!.analyst.turnsFor(feature).some((t) => t.message.includes("first words")), 10_000, "the first turn");
     const turns = w.analyst.turnsFor(feature).length;
     const transcript = w.transcriptText(w.projects[0], feature);
     const again = await w.reply(session, item, "answer", "first words", id);

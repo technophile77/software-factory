@@ -22,8 +22,7 @@ import {
   CREDENTIAL_NAMES,
   callTool,
   startEngine,
-  type AnalystSeam,
-  type AnalystStart,
+  logDir,
   type CredentialStore,
   type EngineHandle,
   type EngineOptions,
@@ -40,8 +39,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = join(HERE, "..", "..", "..", "..");
 const TEMPLATE = join(REPO_ROOT, "plugins/software-factory/skills/onboard-repo/templates/factory-project.yaml");
 
+/** The fixtures' own git. It never runs repo hooks or fsmonitor, so markers
+ * in the git-safety tests can only come from the engine. */
 export function git(cwd: string, ...args: string[]): string {
-  return execFileSync(REAL_GIT, args, {
+  return execFileSync(REAL_GIT, ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args], {
     cwd,
     encoding: "utf8",
     maxBuffer: 256 * 1024 * 1024,
@@ -85,7 +86,7 @@ export class MemoryCredentialStore implements CredentialStore {
   readonly accessed: string[] = [];
   async get(name: string) {
     this.accessed.push(name);
-    return this.values.get(name);
+    return this.values.get(name) ?? null;
   }
   async set(name: string, value: string) {
     this.accessed.push(name);
@@ -93,41 +94,85 @@ export class MemoryCredentialStore implements CredentialStore {
   }
   async delete(name: string) {
     this.accessed.push(name);
-    this.values.delete(name);
+    return this.values.delete(name);
   }
 }
 
-export class FakeAnalyst implements AnalystSeam {
-  readonly starts: AnalystStart[] = [];
+export interface AnalystSession {
+  feature: string;
+  worktree: string;
+  tools: InterviewTools;
+}
+
+/** Plays the requirements analyst: takes the feature's tools from the engine,
+ * gives it a worktree of the feature branch, and pulls each turn message the
+ * engine has for it. */
+export class FakeAnalyst {
+  readonly starts: AnalystSession[] = [];
   readonly turns: Array<{ feature: string; message: string }> = [];
+  readonly errors: unknown[] = [];
   /** Runs on each turn, e.g. to revise an item after `more_info`. */
   onTurn?: (feature: string, message: string, tools: InterviewTools) => void | Promise<void>;
+  private timer?: NodeJS.Timeout;
+  private polling = false;
 
-  start(ctx: AnalystStart) {
-    this.starts.push(ctx);
-  }
+  constructor(private world: World) {}
 
-  readonly errors: unknown[] = [];
-
-  turn(ctx: { feature: string; message: string }) {
-    this.turns.push(ctx);
-    const s = this.latest(ctx.feature);
-    const handler = this.onTurn;
-    // The analyst acts after the engine hands over the turn, as a separate
-    // session would, so an engine that awaits this call can't deadlock.
-    if (handler && s) {
-      setImmediate(() => {
-        Promise.resolve(handler(ctx.feature, ctx.message, s.tools)).catch((e) => this.errors.push(e));
-      });
-    }
-  }
-
-  latest(feature: string): AnalystStart | undefined {
+  latest(feature: string): AnalystSession | undefined {
     return [...this.starts].reverse().find((s) => s.feature === feature);
   }
 
-  async session(feature: string, timeoutMs = 10_000): Promise<AnalystStart> {
-    return waitFor(() => this.latest(feature), timeoutMs, `the engine to start the analyst for ${feature}`);
+  /** The analyst's session for a feature, made on first use for the running engine. */
+  async session(feature: string): Promise<AnalystSession> {
+    const e = this.world.engine;
+    if (!e) throw new Error("no engine running");
+    const have = this.latest(feature);
+    if (have && have.tools && (have as any).engine === e) {
+      this.ensurePolling();
+      return have;
+    }
+    const worktree = have?.worktree ?? this.world.analystWorktree(feature);
+    const s: AnalystSession & { engine?: unknown } = { feature, worktree, tools: e.interviewTools(feature, worktree) };
+    Object.defineProperty(s, "engine", { value: e, enumerable: false });
+    this.starts.push(s);
+    this.ensurePolling();
+    return s;
+  }
+
+  private ensurePolling() {
+    if (this.timer) return;
+    this.timer = setInterval(() => void this.poll(), 20);
+  }
+
+  private async poll() {
+    if (this.polling) return;
+    this.polling = true;
+    try {
+      const e = this.world.engine;
+      if (!e) return;
+      for (const feature of new Set(this.starts.map((s) => s.feature))) {
+        const message = await e.takeTurn(feature).catch(() => null);
+        if (!message) continue;
+        this.turns.push({ feature, message });
+        const handler = this.onTurn;
+        const s = this.latest(feature);
+        if (handler && s) Promise.resolve(handler(feature, message, s.tools)).catch((err) => this.errors.push(err));
+      }
+    } finally {
+      this.polling = false;
+    }
+  }
+
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+  }
+
+  /** Stops polling and waits for a poll in flight, so the suite never calls
+   * an engine that is stopping. Polling resumes on the next session(). */
+  async quiesce() {
+    this.stop();
+    while (this.polling) await realDelay(5);
   }
 
   turnsFor(feature: string) {
@@ -177,7 +222,7 @@ export class World {
   readonly store = new MemoryCredentialStore();
   readonly gitleaks: FakeGitleaks;
   readonly gitw: GitWrapper;
-  readonly analyst = new FakeAnalyst();
+  readonly analyst: FakeAnalyst = new FakeAnalyst(this);
   readonly projects: Project[] = [];
   readonly master: string;
   readonly projectsFile: string;
@@ -196,7 +241,7 @@ export class World {
   private constructor(tls?: { key: string; cert: string }) {
     this.root = mkdtempSync(join(tmpdir(), `f007-${++counter}-`));
     chmodSync(this.root, 0o755);
-    for (const d of ["git", "bin", "home", "state", "logs", "run", "markers", "clones", "config", "outside"]) {
+    for (const d of ["git", "bin", "home", "state", "run", "markers", "clones", "config", "outside", "worktrees"]) {
       mkdirSync(join(this.root, d), { recursive: true });
     }
     this.gh = new FakeGitHub(this.clock, join(this.root, "git"), tls);
@@ -206,13 +251,12 @@ export class World {
     this.home = join(this.root, "home");
     writeFileSync(join(this.home, ".gitconfig"), "[user]\n\tname = Owner\n\temail = owner@example.invalid\n");
     this.stateDir = join(this.root, "state");
-    this.logDir = join(this.root, "logs");
+    this.logDir = logDir(this.stateDir);
     this.runtimeDir = join(this.root, "run");
     this.markers = join(this.root, "markers");
     this.master = join(this.root, "master");
     this.projectsFile = join(this.master, "factory-projects.local.yaml");
     this.store.values.set(CREDENTIAL_NAMES.model, this.modelCredential);
-    this.store.values.set(CREDENTIAL_NAMES.factoryToken, this.factoryToken);
   }
 
   static async create(
@@ -258,13 +302,17 @@ export class World {
       repo,
       url: `https://github.com/${repoOwner}/${repo}`,
       configRepo: join(this.root, "config", name),
-      clone: join(this.root, "clones", `${repoOwner}-${repo}`),
+      // The engine keeps .factory, engine.json and feature branches in the
+      // listed config repo, so the project's repo is that one clone.
+      clone: join(this.root, "config", name),
       bare: join(this.root, "git", repoOwner, `${repo}.git`),
     };
     this.gh.addUser(p.ownerId, p.ownerLogin);
+    this.store.values.set(CREDENTIAL_NAMES.factoryToken(name), this.factoryToken);
     this.gh.addRepo(repoOwner, repo, p.repoOwnerId, !s.publicRepo);
 
-    // Managed repo: bare remote with main and factory/state, plus a local clone.
+    // The repo on the fake GitHub, with main (holding the manifest) and
+    // factory/state, and the owner's clone of it, which the projects file lists.
     mkdirSync(dirname(p.bare), { recursive: true });
     git(this.root, "init", "-q", "--bare", "-b", "main", p.bare);
     const seed = join(this.root, "seed-" + rand(4));
@@ -277,6 +325,7 @@ export class World {
       writeFileSync(join(seed, "docs", "features", `${f}-existing.md`), `# Feature: existing\n\n- **Id:** ${f}\n`);
     }
     writeFileSync(join(seed, "docs", "features", ".keep"), "");
+    writeFileSync(join(seed, "factory-project.yaml"), this.manifestText(p, s));
     git(seed, "add", "-A");
     git(seed, "commit", "-q", "-m", "initial");
     for (const f of s.existingFeatures ?? []) git(seed, "branch", `feature/${f}-existing`);
@@ -292,13 +341,6 @@ export class World {
     git(p.clone, "remote", "set-url", "origin", this.gh.gitUrl(repoOwner, repo));
     git(p.clone, "config", "user.name", "Owner");
     git(p.clone, "config", "user.email", "owner@example.invalid");
-
-    // Config repo with the manifest committed on main.
-    mkdirSync(p.configRepo, { recursive: true });
-    git(p.configRepo, "init", "-q", "-b", "main");
-    writeFileSync(join(p.configRepo, "factory-project.yaml"), this.manifestText(p, s));
-    git(p.configRepo, "add", "-A");
-    git(p.configRepo, "commit", "-q", "-m", "manifest");
 
     this.projects.push(p);
     return p;
@@ -358,13 +400,9 @@ export class World {
       gitPath: this.gitw.path,
       paths: {
         masterRepo: this.master,
-        projectsFile: this.projectsFile,
         stateDir: this.stateDir,
-        logDir: this.logDir,
         runtimeDir: this.runtimeDir,
-        repoClones: Object.fromEntries(this.projects.map((p) => [p.url, p.clone])),
       },
-      analyst: this.analyst,
     };
   }
 
@@ -373,22 +411,32 @@ export class World {
   async boot(opts: { confirm?: boolean } = {}): Promise<EngineHandle> {
     this.engine = await startEngine(this.options());
     if (opts.confirm ?? true) {
+      let confirmed = false;
       for (const p of this.projects) {
         if (await this.isRunning(p)) continue;
         try {
-          await this.confirm(p, p.ownerId);
+          await this.confirm(p, p.ownerId, false);
+          confirmed = true;
         } catch {
           // A project the engine refuses stays stopped; the test checks that.
         }
       }
+      // The confirm command says to restart the engine to run the project.
+      if (confirmed) {
+        await this.stop();
+        this.engine = await startEngine(this.options());
+      }
     }
-    return this.engine;
+    return this.engine!;
   }
 
-  async confirm(p: Project, asUserId: number): Promise<void> {
+  /** Runs the SR-5 confirm command, approves its sign-in as `asUserId`, and
+   * restarts the engine, as the command tells the owner to. */
+  async confirm(p: Project, asUserId: number, restart = true): Promise<void> {
     const r = await this.engine!.confirmProject(p.configRepo);
     if (r.approval) this.gh.approve(r.approval.user_code, asUserId);
     await drive(this.clock, Promise.resolve(r.done), { maxMs: 1000 * 1000 });
+    if (restart) await this.restart();
   }
 
   async isRunning(p: Project): Promise<boolean> {
@@ -398,6 +446,7 @@ export class World {
 
   async stop() {
     if (this.engine) {
+      await this.analyst.quiesce();
       const e = this.engine;
       this.engine = undefined;
       await e.stop();
@@ -461,6 +510,17 @@ export class World {
     const r = await drive(this.clock, this.rpc("interview.awaitApproval", { session: open.session, wait_s: 900 }, 120_000));
     if (!r.result?.approved) throw new Error(`approval failed: ${JSON.stringify(r)}`);
     return open.session;
+  }
+
+  /** A checkout of the feature branch for the analyst, as milestone 2's
+   * session would get. */
+  analystWorktree(feature: string): string {
+    const p = this.projectOf(feature) ?? this.projects[0];
+    const ref = git(p.clone, "for-each-ref", "--format=%(refname:short)", `refs/heads/feature/${feature}-*`).trim().split("\n")[0];
+    if (!ref) throw new Error(`no feature branch for ${feature}`);
+    const dir = join(this.root, "worktrees", `${feature}-${rand(3)}`);
+    git(p.clone, "worktree", "add", "-q", "--detach", dir, ref);
+    return dir;
   }
 
   async tools(feature: string): Promise<InterviewTools> {
@@ -535,6 +595,7 @@ export class World {
   }
 
   async cleanup() {
+    this.analyst.stop();
     try {
       await this.stop();
     } catch {

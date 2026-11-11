@@ -222,7 +222,8 @@ describe("Gitleaks review: the exact invocation (condition 1 and 2)", () => {
 describe("SR-17: hash chain over the transcript", () => {
   async function readinessAfterSync(world: World, feature: string) {
     await world.sync();
-    await world.approvedSession(feature);
+    // The analyst's tools need no channel session; the engine may refuse
+    // sessions on a tampered feature, which SR-17 allows.
     const s = await world.analyst.session(feature);
     const rel = specPath(feature);
     writeSpec(s.worktree, rel, specText(feature));
