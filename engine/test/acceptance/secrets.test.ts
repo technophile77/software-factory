@@ -84,9 +84,11 @@ describe("SR-1: secrets stay out of logs, Git, inbox items, argument lists and p
   it("[SC-3] G1 #15: logs live in an owner-only folder (0700, files 0600) and hold no reply text", async () => {
     w = await World.create();
     const { replyText } = await fullRun(w);
-    expect(statSync(w.logDir).mode & 0o777).toBe(0o700);
+    // Windows has no mode bits to check; the reply-text check still runs there.
+    const modes = process.platform !== "win32";
+    if (modes) expect(statSync(w.logDir).mode & 0o777).toBe(0o700);
     for (const f of listFiles(w.logDir)) {
-      expect(statSync(f).mode & 0o777, f).toBe(0o600);
+      if (modes) expect(statSync(f).mode & 0o777, f).toBe(0o600);
       expect(readFileSync(f, "utf8").includes(replyText), `reply text in ${f}`).toBe(false);
     }
   });

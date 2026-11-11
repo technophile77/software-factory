@@ -4,13 +4,19 @@ import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { readinessCheck } from "./harness";
 import { askAndFetch, answerOne, interviewReady } from "./support/flows";
 import { LEAK_MARKER } from "./support/fake-tools";
 import { allObjects, committedTranscript, jsonStrings, reachable, transcriptCommits, transcriptFiles } from "./support/inspect";
 import { specPath, specText, writeSpec } from "./support/spec";
 import { git, rand, waitFor, World } from "./support/world";
+
+/** True if `p` is `dir` or inside it. */
+function within(p: string, dir: string): boolean {
+  const rel = relative(dir, p);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
 
 let w: World | undefined;
 afterEach(async () => {
@@ -148,7 +154,7 @@ describe("Gitleaks review: the exact invocation (condition 1 and 2)", () => {
     for (const r of scans) {
       const a = r.argv;
       expect(a[0]).toBe("dir");
-      expect(a[1]!.startsWith("/")).toBe(true);
+      expect(isAbsolute(a[1]!)).toBe(true);
       const pair = (f: string) => a[a.indexOf(f) + 1];
       for (const f of ["--config", "--gitleaks-ignore-path", "--timeout"]) expect(a).toContain(f);
       expect(a).toContain("--ignore-gitleaks-allow");
@@ -175,10 +181,11 @@ describe("Gitleaks review: the exact invocation (condition 1 and 2)", () => {
     const repos = [w.master, ...w.projects.flatMap((p) => [p.clone, p.configRepo, p.bare])];
     for (const r of w.gitleaks.scans()) {
       const s = r.staging!;
-      expect(s.mode).toBe(0o700);
+      // Windows has no mode bits; the engine skips the chmod there (gitleaks.ts).
+      if (process.platform !== "win32") expect(s.mode).toBe(0o700);
       for (const repo of repos) {
-        expect(s.dir.startsWith(repo + "/")).toBe(false);
-        expect(r.cwd.startsWith(repo + "/") || r.cwd === repo).toBe(false);
+        expect(within(s.dir, repo) && s.dir !== repo).toBe(false);
+        expect(within(r.cwd, repo)).toBe(false);
       }
       expect(s.files.length).toBeGreaterThan(0);
       for (const f of s.files) {

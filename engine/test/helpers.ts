@@ -12,6 +12,7 @@ import YAML from "yaml";
 import { MemoryCredentialStore } from "../src/secrets";
 import { MemoryLogger } from "../src/log";
 import { EngineHandle, EngineOptions, startEngine } from "../src/engine";
+import { nodeProgram, ownFile } from "./acceptance/support/platform";
 
 // Fixtures hold placeholders only (SR-13): example ids, example orgs, fake tokens.
 export const OWNER_ID = 1000001;
@@ -80,24 +81,29 @@ export function manifestYaml(o: { name?: string; enabled?: boolean; ownerId?: nu
 /** A stand-in for gitleaks: same flags, finds "FAKE-SECRET-" in staged blobs. */
 export function fakeGitleaks(dir: string): { path: string; sha256: string; argsLog: string; failFlag: string } {
   fs.mkdirSync(dir, { recursive: true });
-  const p = path.join(dir, "gitleaks");
   const argsLog = path.join(dir, "args.log");
   const failFlag = path.join(dir, "fail");
-  fs.writeFileSync(p, `#!/bin/sh
-here=$(dirname "$0")
-if [ "$1" = "version" ]; then echo "8.30.1"; exit 0; fi
-printf '%s\\n' "$@" > "$here/args.log"
-pwd > "$here/cwd.log"
-env > "$here/env.log"
-if [ -e "$here/fail" ]; then exit 1; fi
-dir="$2"
-hits=""
-for f in "$dir"/*; do
-  if grep -q 'FAKE-SECRET-' "$f"; then hits="$hits{\\"File\\":\\"$f\\",\\"RuleID\\":\\"generic-api-key\\",\\"Secret\\":\\"REDACTED\\"},"; fi
-done
-if [ -n "$hits" ]; then echo "[\${hits%,}]"; exit 99; fi
-echo "[]"; exit 0
-`, { mode: 0o755 });
+  const p = nodeProgram(path.join(dir, "gitleaks"), String.raw`
+const fs = require("fs"), path = require("path");
+const here = ${JSON.stringify(dir)};
+const argv = process.argv.slice(2);
+// Writes to a pipe are asynchronous on Windows: exit only once it is flushed.
+const finish = (code, out) => process.stdout.write(out, () => process.exit(code));
+function scan() {
+  fs.writeFileSync(path.join(here, "args.log"), argv.map((a) => a + "\n").join(""));
+  fs.writeFileSync(path.join(here, "cwd.log"), process.cwd() + "\n");
+  fs.writeFileSync(path.join(here, "env.log"), Object.entries(process.env).map(([k, v]) => k + "=" + v + "\n").join(""));
+  if (fs.existsSync(path.join(here, "fail"))) process.exit(1);
+  const hits = [];
+  for (const f of fs.readdirSync(argv[1])) {
+    const file = path.join(argv[1], f);
+    if (fs.readFileSync(file, "latin1").includes("FAKE-SECRET-")) hits.push({ File: file, RuleID: "generic-api-key", Secret: "REDACTED" });
+  }
+  finish(hits.length ? 99 : 0, JSON.stringify(hits) + "\n");
+}
+if (argv[0] === "version") finish(0, "8.30.1\n");
+else scan();
+`);
   const sha256 = crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
   return { path: p, sha256, argsLog, failFlag };
 }
@@ -210,6 +216,7 @@ export function makeWorld(o: { manifest?: string; pinned?: boolean } = {}): Worl
   initRepo(config, { "factory-project.yaml": manifest, "README.md": "config\n" }, "https://github.com/example-org/acme-config");
   fs.writeFileSync(path.join(master, "factory-projects.local.yaml"), `projects:\n  - path: ${config}\n`, { mode: 0o600 });
   fs.chmodSync(path.join(master, "factory-projects.local.yaml"), 0o600);
+  ownFile(path.join(master, "factory-projects.local.yaml"));
   fs.mkdirSync(worktree, { recursive: true });
   const w: World = {
     root, master, config, home, worktree,

@@ -17,6 +17,10 @@ afterEach(async () => {
 });
 
 const isRoot = process.getuid?.() === 0;
+// On Windows the channel is a named pipe guarded by an ACL (channel/windows.ts):
+// no mode bits or socket file to inspect, so those tests check it is a pipe.
+const isWindows = process.platform === "win32";
+const isPipe = (p: string) => p.startsWith("\\\\.\\pipe\\");
 
 /** Connects to the socket as another user and asks for engine.status.
  * The engine runs in this test process and refuses its own descendants, so
@@ -57,6 +61,10 @@ describe("Channel transport and access (AC-4, FR-4, SR-15 on Linux)", () => {
     w = await World.create();
     await w.boot();
     const sock = w.socket();
+    if (isWindows) {
+      expect(isPipe(sock)).toBe(true);
+      return;
+    }
     const st = lstatSync(sock);
     expect(st.isSocket()).toBe(true);
     expect(st.mode & 0o777).toBe(0o600);
@@ -76,7 +84,9 @@ describe("Channel transport and access (AC-4, FR-4, SR-15 on Linux)", () => {
       started = false;
       if (/engine not available/.test((e as Error).message)) throw e;
     }
-    if (started) {
+    if (started && isWindows) {
+      expect(isPipe(w.socket())).toBe(true);
+    } else if (started) {
       const sock = w.socket();
       expect(lstatSync(sock).mode & 0o077).toBe(0);
       expect(statSync(dirname(sock)).mode & 0o077).toBe(0);
@@ -101,7 +111,10 @@ describe("Channel transport and access (AC-4, FR-4, SR-15 on Linux)", () => {
     expect(await probeAs(65534, sock)).not.toBe("result");
   });
 
-  it("[CH-4] AC-4: a process the engine started (its gitleaks run) is refused on the channel", async () => {
+  // On Windows the fake gitleaks is a launcher .exe that starts Node, so the
+  // probe is the engine's grandchild, and the engine looks up ancestry only on
+  // Linux (proc.ts linuxParent). Real gitleaks connects, if ever, as a direct child.
+  it.skipIf(isWindows)("[CH-4] AC-4: a process the engine started (its gitleaks run) is refused on the channel", async () => {
     w = await World.create();
     w.gitleaks.control({ probeEngineJson: w.engineJsonPath() });
     await answerOne(w);
@@ -300,6 +313,8 @@ describe("Files the channel depends on", () => {
     w = await World.create();
     await w.boot();
     await w.restart();
+    expect(existsSync(w.engineJsonPath())).toBe(true);
+    if (isWindows) return;
     expect(mode(w.engineJsonPath())).toBe(0o600);
     expect(mode(join(w.project().clone, ".factory")) & 0o022).toBe(0);
   });

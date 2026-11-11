@@ -1,10 +1,11 @@
 // Fake programs the engine runs on the host: gitleaks and a logging `git`
-// wrapper. Both are Node scripts with an absolute interpreter path, so they
+// wrapper. Both are Node scripts run by this Node's absolute path, so they
 // work even when the engine clears PATH.
 
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { nodeProgram } from "./platform";
 
 /** Text a staged blob must contain for the fake scanner to report a leak. */
 export const LEAK_MARKER = "FAKE-LEAK-";
@@ -45,8 +46,9 @@ try { run.cwdEntries = fs.readdirSync(process.cwd()); } catch {}
 function finish(code, out) {
   run.exit = code;
   fs.appendFileSync(LOG, JSON.stringify(run) + "\n");
-  if (out) process.stdout.write(out);
-  process.exit(code);
+  // Writes to a pipe are asynchronous on Windows: exit only once it is flushed.
+  if (out) process.stdout.write(out, () => process.exit(code));
+  else process.exit(code);
 }
 async function probe() {
   if (!control.probeEngineJson) return;
@@ -99,14 +101,12 @@ export class FakeGitleaks {
   readonly controlPath: string;
 
   constructor(dir: string) {
-    this.path = join(dir, "gitleaks");
     this.logPath = join(dir, "gitleaks-runs.jsonl");
     this.controlPath = join(dir, "gitleaks-control.json");
     const body = GITLEAKS_SCRIPT.replace("__LOG__", JSON.stringify(this.logPath))
       .replace("__CONTROL__", JSON.stringify(this.controlPath))
       .replace("__MARKER__", JSON.stringify(LEAK_MARKER));
-    writeFileSync(this.path, `#!${process.execPath}\n${body}`);
-    chmodSync(this.path, 0o755);
+    this.path = nodeProgram(join(dir, "gitleaks"), body);
   }
 
   get sha256(): string {
@@ -151,14 +151,11 @@ export class GitWrapper {
   readonly logPath: string;
 
   constructor(dir: string, realGit: string) {
-    this.path = join(dir, "git");
     this.logPath = join(dir, "git-calls.jsonl");
-    writeFileSync(
-      this.path,
-      `#!${process.execPath}\n` +
-        GIT_WRAPPER.replace("__LOG__", JSON.stringify(this.logPath)).replace("__REAL__", JSON.stringify(realGit)),
+    this.path = nodeProgram(
+      join(dir, "git"),
+      GIT_WRAPPER.replace("__LOG__", JSON.stringify(this.logPath)).replace("__REAL__", JSON.stringify(realGit)),
     );
-    chmodSync(this.path, 0o755);
   }
 
   calls(): GitCall[] {

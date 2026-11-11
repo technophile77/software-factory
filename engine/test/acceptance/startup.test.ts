@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { existsSync, lstatSync, renameSync, symlinkSync, chmodSync, chownSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { grantWrite } from "./support/platform";
 import { git, mode, REPO_ROOT, World } from "./support/world";
 
 let w: World | undefined;
@@ -12,6 +13,9 @@ afterEach(async () => {
 });
 
 const isRoot = process.getuid?.() === 0;
+// Windows has no mode bits; the engine protects its files and pipe with ACLs
+// there (channel/windows.ts, config/paths-file.ts).
+const isWindows = process.platform === "win32";
 
 /** Passes when the engine refuses to start, or starts with no project running. */
 async function expectNothingRuns(world: World) {
@@ -36,13 +40,14 @@ describe("AC-1 / FR-1 / FR-4: start with a valid master config and one enabled p
     expect(await w.isRunning(p)).toBe(true);
     const ej = w.engineJsonPath(p);
     expect(existsSync(ej)).toBe(true);
-    expect(mode(ej)).toBe(0o600);
+    if (!isWindows) expect(mode(ej)).toBe(0o600);
     const j = w.engineJson(p);
     // FR-4 (spec v22): the engine serves v1.3 but reports 1.2 until the
     // advisor increment, so the skill doesn't offer the advisor.
     expect(j.version).toBe("1.2");
     expect(j.pid).toBe(process.pid);
-    expect(lstatSync(j.path).isSocket()).toBe(true);
+    if (isWindows) expect(j.path.startsWith("\\\\.\\pipe\\")).toBe(true);
+    else expect(lstatSync(j.path).isSocket()).toBe(true);
     const st = await w.ok("engine.status");
     expect(st.version).toBe("1.2");
     expect(typeof st.uptime_s).toBe("number");
@@ -55,7 +60,7 @@ describe("AC-1 / FR-1 / FR-4: start with a valid master config and one enabled p
     await w.boot();
     const fdir = join(w.project().clone, ".factory");
     expect(git(fdir, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("factory/state");
-    expect(mode(fdir) & 0o022).toBe(0);
+    if (!isWindows) expect(mode(fdir) & 0o022).toBe(0);
   });
 
   it("[ST-3] FR-2: the master repo ships no owner values; the projects file is git-ignored and untracked (H-0081)", () => {
@@ -169,13 +174,16 @@ describe("SR-13: the project paths file and the paths it lists", () => {
     await expectNothingRuns(w);
   });
 
+  // On Windows the same files are made by granting write to Users (S-1-5-32-545)
+  // and Everyone (S-1-1-0).
   it.each([
-    ["group-writable", 0o620],
-    ["world-writable", 0o602],
-    ["group- and world-writable", 0o666],
-  ])("[ST-13] SR-13: a %s projects file is refused", async (_n, m) => {
+    ["group-writable", 0o620, ["S-1-5-32-545"]],
+    ["world-writable", 0o602, ["S-1-1-0"]],
+    ["group- and world-writable", 0o666, ["S-1-5-32-545", "S-1-1-0"]],
+  ])("[ST-13] SR-13: a %s projects file is refused", async (_n, m, sids) => {
     w = await World.create();
-    chmodSync(w.projectsFile, m);
+    if (isWindows) grantWrite(w.projectsFile, sids);
+    else chmodSync(w.projectsFile, m);
     await expectNothingRuns(w);
   });
 

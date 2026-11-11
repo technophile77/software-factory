@@ -33,6 +33,7 @@ import {
 import { drive, FakeClock, realDelay } from "./clock";
 import { FakeGitHub } from "./fake-github";
 import { FakeGitleaks, GitWrapper } from "./fake-tools";
+import { ownFile, WINDOWS_ENV } from "./platform";
 import { RpcClient, rpcOnce, type RpcResponse } from "./rpc";
 
 /** The host's git, by absolute path, so the fixtures never run the logging
@@ -85,6 +86,7 @@ export function git(cwd: string, ...args: string[]): string {
       GIT_COMMITTER_NAME: "Fixture",
       GIT_COMMITTER_EMAIL: "fixture@example.invalid",
       GIT_TERMINAL_PROMPT: "0",
+      ...WINDOWS_ENV,
     },
   });
 }
@@ -333,6 +335,7 @@ export class World {
     const body = "projects:\n" + paths.map((p) => `  - path: ${JSON.stringify(p)}\n`).join("");
     writeFileSync(this.projectsFile, body);
     chmodSync(this.projectsFile, mode);
+    ownFile(this.projectsFile);
   }
 
   addProject(s: ProjectSpec, i = this.projects.length): Project {

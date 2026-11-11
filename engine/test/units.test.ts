@@ -24,6 +24,7 @@ import { RunBook, transcriptSummary } from "../src/state/runs";
 import { StateRepo, checkStatePath } from "../src/state/state-repo";
 import { ChainError, canonical, checkAgainstHead, makeEntry, parseTranscript, serialize } from "../src/state/transcript";
 import { InterviewState } from "../src/interview/model";
+import { nodeProgram } from "./acceptance/support/platform";
 import { CLIENT_ID, FakeClock, FakeGitHub, OWNER_ID, fakeGitleaks, git, initRepo, manifestYaml, settle, tmpdir } from "./helpers";
 
 const linuxOs: OsApi = {
@@ -320,9 +321,9 @@ describe("gitleaks (Gate 1 component review 5)", () => {
     const fake = fakeGitleaks(path.join(root, "bin"));
     await expect(new Gitleaks({ binary: fake.path, workDir: path.join(root, "w"), children: new Children() }).verify()).rejects.toThrow(/pinned/);
     await expect(new Gitleaks({ binary: fake.path, workDir: path.join(root, "w"), children: new Children(), expectSha256: "0".repeat(64) }).verify()).rejects.toThrow(/pinned/);
-    fs.writeFileSync(fake.path, "#!/bin/sh\necho 8.30.0\n", { mode: 0o755 });
-    const sha = (await import("../src/fsutil")).sha256Hex(fs.readFileSync(fake.path));
-    await expect(new Gitleaks({ binary: fake.path, workDir: path.join(root, "w"), children: new Children(), expectSha256: sha }).verify()).rejects.toThrow(/version/);
+    const older = nodeProgram(path.join(root, "bin", "gitleaks-older"), 'process.stdout.write("8.30.0\\n");');
+    const sha = (await import("../src/fsutil")).sha256Hex(fs.readFileSync(older));
+    await expect(new Gitleaks({ binary: older, workDir: path.join(root, "w"), children: new Children(), expectSha256: sha }).verify()).rejects.toThrow(/version/);
     expect(() => new Gitleaks({ binary: "gitleaks", workDir: path.join(root, "w"), children: new Children() })).toThrow(/absolute/);
   });
 });
