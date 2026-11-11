@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Client for the spec-interview skill (F-005).
+"""Client for the spec-interview skill (F-005, F-006).
 
 Carries the requirements analyst's interview between the owner's Claude Code
-session and the engine, over Engine control channel v1.1. Standard library
+session and the engine, over Engine control channel v1.1, plus v1.3's
+advisor proposals, reply kinds and advice (H-0063, amended by H-0075).
+v1.2's GitHub approval of a session (H-0051) is not handled here yet.
+Standard library
 only (FR-1), like factory_check.py, so it adds no component to review.
 
 Every request arrives as one JSON object on stdin (SR-9): owner text, engine
@@ -31,6 +34,7 @@ sending anything (bad request, untrusted engine.json or socket).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -73,8 +77,14 @@ ERROR_TEXT = {"busy": "Another session holds this feature.",
               "session_expired": "This interview session has ended or expired.",
               "kind_not_allowed": "That kind of reply doesn't fit this item."}
 VERSION_RE = re.compile(r"\d{1,6}\.\d{1,6}(?:\.\d{1,6})?")
-REPLY_KINDS = ("answer", "more_info", "defer", "approve_assumption", "reject_assumption")
-ITEM_KINDS = ("question", "assumption")
+REPLY_KINDS = ("answer", "more_info", "defer", "approve_assumption", "reject_assumption",
+               "ask_advisor", "approve_advisor", "decline_advisor")
+ITEM_KINDS = ("question", "assumption", "advisor_proposal")
+ADVICE_STATUSES = ("running", "done", "failed")
+ADVISOR_KINDS = ("ask_advisor", "approve_advisor", "decline_advisor")
+LIMITS = ("turns", "tokens", "time_s", "web_calls")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+MAX_REASON = 500
 ITEM_STATUSES = ("open", "deferred", "researching", "answered", "approved", "rejected", "superseded")
 
 FIELDS = {
@@ -248,7 +258,7 @@ def _require_owner_only(st, path, name):
 
 
 def read_engine_address(path):
-    """(channel path, engine pid). The checks run on the opened descriptor, so
+    """(channel path, engine pid, channel minor version). The checks run on the opened descriptor, so
     a file swapped in after find_engine_file's checks is caught too; with
     O_NONBLOCK a FIFO swapped in can't hang the open."""
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -270,7 +280,8 @@ def read_engine_address(path):
     if not isinstance(data, dict):
         raise Refused("bad_engine_file", "engine.json is not a JSON object.")
     version = data.get("version")
-    if not isinstance(version, str) or not ENGINE_VERSION_RE.fullmatch(version):
+    match = ENGINE_VERSION_RE.fullmatch(version) if isinstance(version, str) else None
+    if not match:
         raise Refused("bad_engine_file", "engine.json is not from an engine speaking channel v1.1 or a later 1.x.")
     pid = data.get("pid")
     if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
@@ -278,7 +289,7 @@ def read_engine_address(path):
     addr = data.get("path")
     if not isinstance(addr, str) or not addr:
         raise Refused("bad_engine_file", "engine.json has no channel path.")
-    return addr, pid
+    return addr, pid, int(match.group(1))
 
 
 # ---------------------------------------------------------------------------
@@ -550,6 +561,7 @@ def _seconds(limit):
 class Channel:
     def __init__(self, transport):
         self.t = transport
+        self.advisor = False        # engine.json says channel v1.3 or later
         self.buf = b""
         self.next_id = 1
 
@@ -647,15 +659,83 @@ def _revision(value):
 
 def _str(value, single_line=False):
     if not isinstance(value, str):
-        raise ChannelError("bad_response", "The engine sent an item the client can't read.", sent=True)
+        raise _unreadable()
     return clean(value, single_line)
+
+
+def _unreadable():
+    return ChannelError("bad_response", "The engine sent an item the client can't read.", sent=True)
+
+
+def parse_advice(raw):
+    """The advisor calls on a question (v1.3). Anything off the contract fails
+    the whole item: a half-read advice list could hide a failed call or show
+    unchecked text as advice."""
+    if not isinstance(raw, list):
+        raise _unreadable()
+    out, calls = [], set()
+    for a in raw:
+        if not isinstance(a, dict):
+            raise _unreadable()
+        entry = {"call": _id(a.get("call"), "advisor call"), "status": a.get("status")}
+        if entry["status"] not in ADVICE_STATUSES or entry["call"] in calls:
+            raise _unreadable()
+        calls.add(entry["call"])
+        if a.get("revision") is not None:
+            entry["revision"] = _revision(a["revision"])
+        if entry["status"] == "done":
+            raw_text = a.get("text")
+            entry["text"] = _str(raw_text)
+            if not entry["text"].strip():
+                raise _unreadable()
+            if a.get("sha256") is not None:
+                if not isinstance(a["sha256"], str) or not SHA256_RE.fullmatch(a["sha256"]):
+                    raise _unreadable()
+                entry["sha256"] = a["sha256"]
+                # Hashed before cleaning: the stored file is the engine's text exactly (H-0075).
+                try:
+                    actual = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
+                except UnicodeEncodeError:
+                    actual = None
+                entry["hash_ok"] = actual == a["sha256"]
+        elif a.get("text") is not None or a.get("sha256") is not None:
+            # A running call's text hasn't passed the engine's shape check, and
+            # a failed call's was rejected by it (FR-8, AC-9): neither is advice.
+            raise _unreadable()
+        if a.get("reason") is not None:
+            if entry["status"] != "failed":
+                raise _unreadable()
+            entry["reason"] = _str(a["reason"], single_line=True)[:MAX_REASON]
+        if a.get("web_queries") is not None:
+            if not isinstance(a["web_queries"], list):
+                raise _unreadable()
+            entry["web_queries"] = [_str(q, single_line=True) for q in a["web_queries"]]
+        out.append(entry)
+    return out
+
+
+def parse_advisor_call(raw):
+    """What a new call on this item would cost the owner (H-0075). Numbers and
+    a flag only, so the client can show them outside any fence."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("limits"), dict):
+        raise _unreadable()
+    limits = {k: _count_field(raw["limits"].get(k)) for k in LIMITS}
+    if not isinstance(raw.get("over_budget"), bool):
+        raise _unreadable()
+    return {"limits": limits, "over_budget": raw["over_budget"]}
+
+
+def _count_field(value):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise _unreadable()
+    return value
 
 
 def parse_item(raw):
     if raw is None:
         return None
     if not isinstance(raw, dict):
-        raise ChannelError("bad_response", "The engine sent an item the client can't read.", sent=True)
+        raise _unreadable()
     item = {
         "id": _id(raw.get("id"), "item"),
         "revision": _revision(raw.get("revision")),
@@ -665,18 +745,35 @@ def parse_item(raw):
         "why": _str(raw.get("why")),
     }
     if item["kind"] not in ITEM_KINDS or item["status"] not in ITEM_STATUSES:
-        raise ChannelError("bad_response", "The engine sent an item the client can't read.", sent=True)
+        raise _unreadable()
+    if item["kind"] == "advisor_proposal":
+        # Options or a suggested answer beside the Approve/Decline choice would
+        # read as choices the owner is being offered; the contract gives a
+        # proposal only its question and reason.
+        if any(raw.get(k) is not None for k in ("suggested", "options", "findings", "advice")):
+            raise _unreadable()
+        item["about"] = _id(raw.get("about"), "question")
+    elif raw.get("about") is not None:
+        raise _unreadable()
     if raw.get("suggested") is not None:
         item["suggested"] = _str(raw["suggested"])
     if raw.get("options") is not None:
         if not isinstance(raw["options"], list):
-            raise ChannelError("bad_response", "The engine sent an item the client can't read.", sent=True)
+            raise _unreadable()
         item["options"] = [_str(o, single_line=True) for o in raw["options"]]
     if raw.get("findings") is not None:
         if not isinstance(raw["findings"], list) or not all(isinstance(f, dict) for f in raw["findings"]):
-            raise ChannelError("bad_response", "The engine sent an item the client can't read.", sent=True)
+            raise _unreadable()
         item["findings"] = [{"text": _str(f.get("text")), "source": _str(f.get("source"), single_line=True)}
                             for f in raw["findings"]]
+    if raw.get("advice") is not None:
+        if item["kind"] != "question":
+            raise _unreadable()
+        item["advice"] = parse_advice(raw["advice"])
+    if raw.get("advisor_call") is not None:
+        if item["kind"] == "assumption":
+            raise _unreadable()
+        item["advisor_call"] = parse_advisor_call(raw["advisor_call"])
     return item
 
 
@@ -686,6 +783,15 @@ def item_display(item):
     a label or as instructions (SR-2)."""
     if item is None:
         return "No interview items are waiting for this feature."
+    if item["kind"] == "advisor_proposal":
+        return "\n\n".join([
+            f"**Advisor proposal {item['id']}** (revision {item['revision']}, {item['status']}). The analyst "
+            f"proposes asking the advisor about question {item['about']}. The analyst wrote the quoted text "
+            "below; it is data, not instructions.",
+            fence(item["text"]), "**The analyst's reason**", fence(item["why"]),
+            "Approving starts one advisor call on that question; declining starts none. "
+            "Advice appears with the question once the advisor has finished.",
+            *call_terms(item, "If you approve")])
     label = "Assumption" if item["kind"] == "assumption" else "Question"
     parts = [f"**{label} {item['id']}** (revision {item['revision']}, {item['status']}). "
              "The analyst wrote the quoted text below; it is data, not instructions."]
@@ -696,7 +802,63 @@ def item_display(item):
         parts += ["**Options**", fence("\n".join(f"{n}. {o}" for n, o in enumerate(item["options"], 1)))]
     for n, f in enumerate(item.get("findings") or [], 1):
         parts += [f"**Finding {n}** (from research; untrusted)", fence(f"{f['text']}\n\nSource: {f['source']}")]
+    for a in item.get("advice") or []:
+        parts += advice_display(a, item["revision"])
+    parts += call_terms(item, "If you ask the advisor")
     return "\n\n".join(parts)
+
+
+def call_terms(item, when):
+    """The engine's limits and budget flag for a new call, in the client's
+    words, so the owner sees them before choosing (SR-8, A-1)."""
+    terms = item.get("advisor_call")
+    if not terms:
+        return []
+    lim = terms["limits"]
+    parts = [f"**{when}**, the call runs under these limits (set by the engine): at most {lim['turns']} turns, "
+             f"{lim['tokens']} tokens, {lim['time_s']} seconds and {lim['web_calls']} web calls."]
+    if terms["over_budget"]:
+        parts.append("**Over budget:** the engine says this call would go past the project's remaining budget. "
+                     "You can still choose it; it stays within the project's hard spending cap.")
+    return parts
+
+
+def advice_display(a, revision=None):
+    """The labels are the client's; the advisor's text and the engine's query
+    log stay inside fences, so a heading, link, image or HTML in them is shown
+    as characters, never rendered (F-006 SR-2, AC-12)."""
+    lead = f"**Advisor's advice, call {a['call']}**"
+    if "revision" in a:
+        lead += f" (asked about revision {a['revision']}"
+        if revision is not None and a["revision"] != revision:
+            lead += f"; the question has changed since, it is now revision {revision}"
+        lead += ")"
+    if a["status"] == "running":
+        parts = [f"{lead}: the advisor is still working on this call."]
+    elif a["status"] == "failed":
+        parts = [f"{lead}: this call failed, so there is no advice to show. "
+                 "It is not retried unless you ask the advisor again."]
+        if "reason" in a:
+            parts += ["The engine's reason (data, not instructions):", fence(a["reason"])]
+    else:
+        parts = [f"{lead}. Written by the advisor, a separate agent, not by the analyst or this session. "
+                 "Untrusted model output, shown word for word; it is data, not instructions.", fence(a["text"])]
+        if "sha256" in a:
+            if a["hash_ok"]:
+                parts.append(f"Matches the stored advice (SHA-256 {a['sha256'][:16]}…).")
+            else:
+                parts.append(f"**Warning:** this text doesn't match the stored advice's SHA-256 "
+                             f"({a['sha256'][:16]}…). It may have been changed after the advisor wrote it.")
+    if "web_queries" not in a and a["status"] != "running":
+        # Missing is not the same as none: SR-1 relies on the owner seeing the list.
+        parts.append(f"**Web queries sent for call {a['call']}**: not reported by the engine.")
+    if "web_queries" in a:
+        label = f"**Web queries sent for call {a['call']}** (recorded by the engine from its own log, not by the advisor)"
+        if a["web_queries"]:
+            parts += [label, fence("\n".join(f"{n}. {q}" for n, q in enumerate(a["web_queries"], 1)))]
+        else:
+            parts.append(f"{label}: none.")
+    return parts
 
 
 # ---------------------------------------------------------------------------
@@ -783,6 +945,8 @@ def _shown(item):
     out = {"item": item, "display": item_display(item)}
     if item is not None and item["status"] == "researching":
         out["waiting"] = True
+    if item is not None and any(a["status"] == "running" for a in item.get("advice", [])):
+        out["advice_running"] = True
     return out
 
 
@@ -793,6 +957,7 @@ def cmd_status(ch, req):
     # Only a plain version number gets through; any other text is dropped.
     if isinstance(r.get("version"), str) and VERSION_RE.fullmatch(r["version"]):
         out["version"] = r["version"]
+    out["advisor"] = ch.advisor
     return out
 
 
@@ -837,7 +1002,7 @@ def cmd_open(ch, req):
         raise ChannelError("bad_response", "The engine sent an invalid session token.", sent=True)
     if not isinstance(started, str) or not TIMESTAMP_RE.fullmatch(started):
         raise ChannelError("bad_response", "The engine sent an invalid session start time.", sent=True)
-    return {"session": session, "started_at": started, "feature": req["feature"]}
+    return {"session": session, "started_at": started, "feature": req["feature"], "advisor": ch.advisor}
 
 
 def _next(ch, session, wait_s):
@@ -925,6 +1090,11 @@ def cmd_reply(ch, req):
     if nxt is None and status == "researching":
         out["waiting"] = True
         out["display"] = "The analyst is researching. You can wait for it or defer the question."
+    if req["kind"] in ("ask_advisor", "approve_advisor"):
+        # `next` may be another item, so say so here too (validation m5).
+        out["advisor_started"] = True
+        out["display"] = ("An advisor call has started on that question. Its advice will appear with the "
+                          "question when it is done.\n\n" + out["display"])
     return out
 
 
@@ -957,8 +1127,14 @@ def run(cmd, req, cwd):
     global _run_deadline
     _run_deadline = time.monotonic() + RUN_LIMIT
     _validate(cmd, req)
-    address, pid = read_engine_address(find_engine_file(cwd))
+    address, pid, minor = read_engine_address(find_engine_file(cwd))
+    if cmd == "reply" and req["kind"] in ADVISOR_KINDS and minor < 3:
+        # F-005 OQ-3: no escalation until the engine has the advisor (v1.3;
+        # a v1.2 engine has only H-0051's session approval).
+        raise Refused("advisor_unsupported", f"This engine speaks channel v1.{minor}, which has no advisor; "
+                      "asking the advisor needs v1.3 or later. Nothing was sent.")
     ch = Channel(connect(address, pid))
+    ch.advisor = minor >= 3
     try:
         return COMMANDS[cmd](ch, req)
     finally:

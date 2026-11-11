@@ -43,9 +43,9 @@ Agents should continue working on unrelated tasks while awaiting human decisions
 
 ## 2. Agent Architecture
 
-The initial factory will have six primary agent roles (2.1 to 2.6). Two
-support roles were added later (2.7 and 2.8); they advise and file inbox
-items, and never change code, specs, or configuration.
+The initial factory will have six primary agent roles (2.1 to 2.6). Three
+support roles were added later (2.7 to 2.9); they advise, the first two file
+inbox items, and none of them changes code, specs, or configuration.
 
 ### 2.1 Orchestrator
 
@@ -216,6 +216,20 @@ The context hygiene agent:
 - Reviews agent instructions and skills for duplication, size, content that should become a shared skill, and skills agents should have used but did not.
 - Runs after each pull request stage, on any change to an instruction file, and on the owner's request.
 - Files Configuration hygiene items only. It never edits a file.
+
+### 2.9 Advisor
+
+Responsibility: Give the owner a stronger second opinion on a hard question.
+
+The advisor:
+
+- Runs only when the owner approves it: on a proposal from the requirements analyst during an interview, on the owner's own request in an interview, or through an "Ask the advisor first" action on a decision inbox item the orchestrator filed.
+- Always runs on the strongest model at high effort.
+- Gets the question, its options and pointers to the relevant files, never the caller's recommendation, so its view is independent.
+- Researches read only, and reaches the web only through the web reader.
+- Returns findings with sources, options with trade-offs, a recommendation with its confidence, and risks, shown to the owner word for word.
+
+It never answers for the owner, files inbox items, or changes anything (feature F-006).
 
 ## 3. Feature Development Lifecycle
 

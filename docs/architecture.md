@@ -10,8 +10,8 @@ These are requirements, not choices:
 - The owner's control surface is **VS Code**, with three inboxes: Decisions,
   Testing, and Configuration hygiene.
 - Code is written through **Claude Code**.
-- There are **six primary agent roles**, two advisory support roles
-  (project evaluator, context hygiene) and a web reader that fetches pages
+- There are **six primary agent roles**, three advisory support roles
+  (project evaluator, context hygiene, advisor) and a web reader that fetches pages
   for the analyst (F-005), with separate responsibilities
   (`agent-responsibilities.md`). The developer, test engineer, security
   reviewer, and validation judge must work independently of each other.
