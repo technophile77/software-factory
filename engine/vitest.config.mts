@@ -9,5 +9,7 @@ export default defineConfig({
       { extends: false, test: { name: "unit", include: ["test/*.test.ts"], testTimeout: 30_000 } },
       "test/acceptance/vitest.config.mts",
     ],
+    // Reported only; CI doesn't gate on a threshold.
+    coverage: { provider: "v8", include: ["src/**"], reporter: ["text-summary", "html"], reportsDirectory: "coverage" },
   },
 });
