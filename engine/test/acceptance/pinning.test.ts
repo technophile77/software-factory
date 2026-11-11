@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 async function confirmExpectingFailure(world: World, asUserId: number) {
-  const p = world.projects[0];
+  const p = world.project();
   let failed = false;
   try {
     const r = await world.engine!.confirmProject(p.configRepo);
@@ -27,7 +27,7 @@ async function confirmExpectingFailure(world: World, asUserId: number) {
 describe("AC-20 / SR-5: a change to a pinned key stops the project", () => {
   it("[PIN-1] AC-20: a changed owner id stops the project and files a Security item; approval by the new id doesn't restart it; approval by the previously pinned owner does", async () => {
     w = await World.create();
-    const p = w.projects[0];
+    const p = w.project();
     await w.boot();
     expect(await w.isRunning(p)).toBe(true);
     await w.stop();
@@ -54,7 +54,7 @@ describe("AC-20 / SR-5: a change to a pinned key stops the project", () => {
     ["enabled (false, then true again)", null],
   ])("[PIN-2] SR-5: a change to %s stops the project until the previous owner confirms", async (_n, edit) => {
     w = await World.create();
-    const p = w.projects[0];
+    const p = w.project();
     await w.boot();
     await w.stop();
     const before = w.securityItems().length;
@@ -80,7 +80,7 @@ describe("AC-20 / SR-5: a change to a pinned key stops the project", () => {
 
   it("[PIN-3] SR-5: a denied confirmation sign-in leaves the project stopped (fail closed)", async () => {
     w = await World.create();
-    const p = w.projects[0];
+    const p = w.project();
     await w.boot();
     await w.stop();
     w.commitManifest(p, (t) => t.replace(/github_id: \d+/, "github_id: 3003"));
@@ -100,7 +100,7 @@ describe("AC-20 / SR-5: a change to a pinned key stops the project", () => {
     const added = w.addProject({ name: "new" });
     w.writeProjectsFile(w.projects.map((x) => x.configRepo));
     await w.boot({ confirm: false });
-    expect(await w.isRunning(w.projects[0])).toBe(true);
+    expect(await w.isRunning(w.project())).toBe(true);
     expect(await w.isRunning(added)).toBe(false);
     expect(w.securityItems().length).toBeGreaterThan(before);
   });
@@ -109,6 +109,6 @@ describe("AC-20 / SR-5: a change to a pinned key stops the project", () => {
     w = await World.create();
     await w.boot();
     await w.restart();
-    expect(await w.isRunning(w.projects[0])).toBe(true);
+    expect(await w.isRunning(w.project())).toBe(true);
   });
 });

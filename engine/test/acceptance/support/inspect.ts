@@ -3,7 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { listFiles, REAL_GIT, tryGit, type Project } from "./world";
+import { BASE_PATH, listFiles, REAL_GIT, tryGit, type Project } from "./world";
 
 /** Every object in a repo, decompressed, as text. */
 export function allObjects(repo: string): string {
@@ -12,7 +12,7 @@ export function allObjects(repo: string): string {
       cwd: repo,
       encoding: "latin1",
       maxBuffer: 512 * 1024 * 1024,
-      env: { PATH: "/usr/bin:/bin" },
+      env: { PATH: BASE_PATH },
     });
   } catch {
     return "";

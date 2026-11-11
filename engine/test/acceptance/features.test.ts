@@ -21,7 +21,7 @@ describe("AC-5 / FR-5: feature.start", () => {
   it("[FS-1] AC-5: feature.start gives a feature id, a feature/F-nnn-name branch from main exists, and interview.list shows the feature", async () => {
     w = await World.create();
     await w.boot();
-    const p = w.projects[0];
+    const p = w.project();
     const f = await w.startFeature("Let people export their data as CSV");
     expect(f).toMatch(/^F-\d{3,}$/);
     const local = featureBranch(p.clone, f);
@@ -44,7 +44,7 @@ describe("AC-5 / FR-5: feature.start", () => {
     const a = await w.startFeature("First");
     const b = await w.startFeature("Second");
     expect(a).not.toBe(b);
-    expect(featureBranch(w.projects[0].clone, b) ?? featureBranch(w.projects[0].bare, b)).toBeDefined();
+    expect(featureBranch(w.project().clone, b) ?? featureBranch(w.project().bare, b)).toBeDefined();
   });
 
   it.each([
@@ -54,9 +54,9 @@ describe("AC-5 / FR-5: feature.start", () => {
   ])("[FS-3] FR-5: feature.start with %s is -32602 and creates nothing", async (_n, params) => {
     w = await World.create();
     await w.boot();
-    const before = git(w.projects[0].clone, "for-each-ref", "refs/heads/feature/");
+    const before = git(w.project().clone, "for-each-ref", "refs/heads/feature/");
     expectRpcError(await w.rpc("feature.start", params), ERR.invalidParams);
-    expect(git(w.projects[0].clone, "for-each-ref", "refs/heads/feature/")).toBe(before);
+    expect(git(w.project().clone, "for-each-ref", "refs/heads/feature/")).toBe(before);
   });
 
   it("[FS-4] channel v1.1: interview.open and interview.state on an unknown or malformed feature are -32003 / -32602", async () => {

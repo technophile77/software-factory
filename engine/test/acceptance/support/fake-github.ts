@@ -285,7 +285,7 @@ export class FakeGitHub {
 
 function userCode(): string {
   const a = "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789";
-  const pick = () => a[randomBytes(1)[0] % a.length];
+  const pick = () => a[randomBytes(1)[0]! % a.length];
   let s = "";
   for (let i = 0; i < 8; i++) s += (i === 4 ? "-" : "") + pick();
   return s;

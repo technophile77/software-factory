@@ -29,20 +29,22 @@ async function expectNothingRuns(world: World) {
 }
 
 describe("AC-1 / FR-1 / FR-4: start with a valid master config and one enabled project", () => {
-  it("[ST-1] AC-1: engine.json exists with mode 0600, the served channel version 1.3, the listener pid, and engine.status answers", async () => {
+  it("[ST-1] AC-1: engine.json exists with mode 0600, the reported channel version 1.2, the listener pid, and engine.status answers", async () => {
     w = await World.create();
     await w.boot();
-    const p = w.projects[0];
+    const p = w.project();
     expect(await w.isRunning(p)).toBe(true);
     const ej = w.engineJsonPath(p);
     expect(existsSync(ej)).toBe(true);
     expect(mode(ej)).toBe(0o600);
     const j = w.engineJson(p);
-    expect(j.version).toBe("1.3");
+    // FR-4 (spec v22): the engine serves v1.3 but reports 1.2 until the
+    // advisor increment, so the skill doesn't offer the advisor.
+    expect(j.version).toBe("1.2");
     expect(j.pid).toBe(process.pid);
     expect(lstatSync(j.path).isSocket()).toBe(true);
     const st = await w.ok("engine.status");
-    expect(typeof st.version).toBe("string");
+    expect(st.version).toBe("1.2");
     expect(typeof st.uptime_s).toBe("number");
     expect(st.uptime_s).toBeGreaterThanOrEqual(0);
     expect(Array.isArray(st.features)).toBe(true);
@@ -51,7 +53,7 @@ describe("AC-1 / FR-1 / FR-4: start with a valid master config and one enabled p
   it("[ST-2] FR-1 / ADR 0009: factory/state is checked out at .factory/, which is not group- or world-writable", async () => {
     w = await World.create();
     await w.boot();
-    const fdir = join(w.projects[0].clone, ".factory");
+    const fdir = join(w.project().clone, ".factory");
     expect(git(fdir, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("factory/state");
     expect(mode(fdir) & 0o022).toBe(0);
   });
@@ -67,7 +69,7 @@ describe("AC-2 / FR-2: authorization against the allow list, per project", () =>
   it("[ST-4] AC-2: a project whose repo owner (by GitHub's answer) is not on the allow list doesn't run, a Security item is filed, the other project runs", async () => {
     w = await World.create([{ name: "bad" }, { name: "good" }]);
     await w.boot();
-    const [bad, good] = w.projects;
+    const [bad, good] = [w.project(0), w.project(1)];
     expect(await w.isRunning(bad)).toBe(true);
     await w.stop();
     const before = w.securityItems().length;
@@ -91,10 +93,10 @@ describe("AC-2 / FR-2: authorization against the allow list, per project", () =>
     await w.stop();
     const before = w.securityItems().length;
     w.gh.repos.clear();
-    w.gh.addRepo(w.projects[1].repoOwner, w.projects[1].repo, w.projects[1].repoOwnerId);
+    w.gh.addRepo(w.project(1).repoOwner, w.project(1).repo, w.project(1).repoOwnerId);
     await w.boot({ confirm: false });
-    expect(await w.isRunning(w.projects[0])).toBe(false);
-    expect(await w.isRunning(w.projects[1])).toBe(true);
+    expect(await w.isRunning(w.project())).toBe(false);
+    expect(await w.isRunning(w.project(1))).toBe(true);
     expect(w.securityItems().length).toBeGreaterThan(before);
   });
 
@@ -104,8 +106,8 @@ describe("AC-2 / FR-2: authorization against the allow list, per project", () =>
       { name: "fine" },
     ]);
     await w.boot();
-    expect(await w.isRunning(w.projects[0])).toBe(false);
-    expect(await w.isRunning(w.projects[1])).toBe(true);
+    expect(await w.isRunning(w.project())).toBe(false);
+    expect(await w.isRunning(w.project(1))).toBe(true);
     expect(w.securityItems().length).toBeGreaterThan(0);
   });
 
@@ -154,7 +156,7 @@ describe("AC-3 / FR-3: model credential against the billing mode", () => {
   it("[ST-11] FR-3: the same setup without the variable starts (control for ST-10)", async () => {
     w = await World.create([{ budgetMode: "subscription" }]);
     await w.boot();
-    expect(await w.isRunning(w.projects[0])).toBe(true);
+    expect(await w.isRunning(w.project())).toBe(true);
   });
 });
 
@@ -186,66 +188,66 @@ describe("SR-13: the project paths file and the paths it lists", () => {
   it("[ST-15] SR-13: a relative listed path is refused; the other listed project runs", async () => {
     w = await World.create([{ name: "rel" }, { name: "abs" }]);
     const rel = join("..", "config", "rel");
-    w.writeProjectsFile([rel, w.projects[1].configRepo]);
+    w.writeProjectsFile([rel, w.project(1).configRepo]);
     await w.boot();
-    expect(await w.isRunning(w.projects[0])).toBe(false);
-    expect(await w.isRunning(w.projects[1])).toBe(true);
+    expect(await w.isRunning(w.project())).toBe(false);
+    expect(await w.isRunning(w.project(1))).toBe(true);
   });
 
   it("[ST-16] SR-13: a listed path that is a symlink is refused", async () => {
     w = await World.create([{ name: "linked" }, { name: "plain" }]);
     const link = join(w.root, "outside", "link-to-config");
-    symlinkSync(w.projects[0].configRepo, link);
-    w.writeProjectsFile([link, w.projects[1].configRepo]);
+    symlinkSync(w.project().configRepo, link);
+    w.writeProjectsFile([link, w.project(1).configRepo]);
     await w.boot();
     const all = await w.engine!.projects();
     expect(all.some((x) => x.path === link && x.state === "running")).toBe(false);
-    expect(await w.isRunning(w.projects[0])).toBe(false);
-    expect(await w.isRunning(w.projects[1])).toBe(true);
+    expect(await w.isRunning(w.project())).toBe(false);
+    expect(await w.isRunning(w.project(1))).toBe(true);
   });
 
   it("[ST-17] SR-13: a listed path that isn't a Git work tree is refused", async () => {
     w = await World.create([{ name: "ok" }]);
     const notGit = join(w.root, "outside", "not-a-repo");
     mkdirSync(notGit);
-    writeFileSync(join(notGit, "factory-project.yaml"), w.manifestText(w.projects[0]));
-    w.writeProjectsFile([notGit, w.projects[0].configRepo]);
+    writeFileSync(join(notGit, "factory-project.yaml"), w.manifestText(w.project()));
+    w.writeProjectsFile([notGit, w.project().configRepo]);
     await w.boot();
     const all = await w.engine!.projects();
     expect(all.some((x) => x.path === notGit && x.state === "running")).toBe(false);
-    expect(await w.isRunning(w.projects[0])).toBe(true);
+    expect(await w.isRunning(w.project())).toBe(true);
   });
 
   it("[ST-18] SR-13: the master repo itself listed as a project is refused, even with a valid manifest on main", async () => {
     w = await World.create([{ name: "ok" }]);
-    writeFileSync(join(w.master, "factory-project.yaml"), w.manifestText(w.projects[0]));
+    writeFileSync(join(w.master, "factory-project.yaml"), w.manifestText(w.project()));
     git(w.master, "add", "factory-project.yaml");
     git(w.master, "commit", "-q", "-m", "owner values in the master repo");
-    w.writeProjectsFile([w.master, w.projects[0].configRepo]);
+    w.writeProjectsFile([w.master, w.project().configRepo]);
     await w.boot();
     const all = await w.engine!.projects();
     expect(all.some((x) => x.path === w!.master && x.state === "running")).toBe(false);
-    expect(await w.isRunning(w.projects[0])).toBe(true);
+    expect(await w.isRunning(w.project())).toBe(true);
   });
 
   it("[ST-19] SR-13: a clone of the master repo (same root commit) listed as a project is refused", async () => {
     w = await World.create([{ name: "ok" }]);
     const clone = join(w.root, "outside", "master-clone");
     git(w.root, "clone", "-q", w.master, clone);
-    writeFileSync(join(clone, "factory-project.yaml"), w.manifestText(w.projects[0]));
+    writeFileSync(join(clone, "factory-project.yaml"), w.manifestText(w.project()));
     git(clone, "add", "factory-project.yaml");
     git(clone, "-c", "user.name=x", "-c", "user.email=x@x.invalid", "commit", "-q", "-m", "manifest");
     git(clone, "remote", "set-url", "origin", "https://github.com/someone/innocent-name");
-    w.writeProjectsFile([clone, w.projects[0].configRepo]);
+    w.writeProjectsFile([clone, w.project().configRepo]);
     await w.boot();
     const all = await w.engine!.projects();
     expect(all.some((x) => x.path === clone && x.state === "running")).toBe(false);
-    expect(await w.isRunning(w.projects[0])).toBe(true);
+    expect(await w.isRunning(w.project())).toBe(true);
   });
 
   it("[ST-20] SR-5 / FR-2: the manifest is read from the config repo's main commit, never the working tree or another branch", async () => {
     w = await World.create();
-    const p = w.projects[0];
+    const p = w.project();
     await w.boot();
     await w.stop();
     const before = w.securityItems().length;

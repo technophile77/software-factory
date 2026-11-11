@@ -15,8 +15,8 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { devNull, tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CREDENTIAL_NAMES,
@@ -27,6 +27,7 @@ import {
   type EngineHandle,
   type EngineOptions,
   type InterviewTools,
+  type ResumedRun,
   type ToolOutcome,
 } from "../harness";
 import { drive, FakeClock, realDelay } from "./clock";
@@ -34,7 +35,36 @@ import { FakeGitHub } from "./fake-github";
 import { FakeGitleaks, GitWrapper } from "./fake-tools";
 import { RpcClient, rpcOnce, type RpcResponse } from "./rpc";
 
-export const REAL_GIT = "/usr/bin/git";
+/** The host's git, by absolute path, so the fixtures never run the logging
+ * wrapper or anything a test puts on PATH. FACTORY_TEST_GIT overrides it. */
+export const REAL_GIT = findGit();
+
+function findGit(): string {
+  const override = process.env.FACTORY_TEST_GIT;
+  if (override) return override;
+  try {
+    const out =
+      process.platform === "win32"
+        ? execFileSync("where.exe", ["git"], { encoding: "utf8" })
+        : execFileSync("/bin/sh", ["-c", "command -v git"], { encoding: "utf8" });
+    const first = out.split(/\r?\n/).map((l) => l.trim()).find(Boolean);
+    if (first) return first;
+  } catch {
+    // Not found: the error below says how to point the suite at git.
+  }
+  throw new Error("git not found on PATH; install it or set FACTORY_TEST_GIT to its absolute path");
+}
+
+/** A minimal PATH for fixture processes: git's own folder first, then the
+ * system's. */
+export const BASE_PATH = [
+  ...new Set([
+    dirname(REAL_GIT),
+    ...(process.platform === "win32"
+      ? [join(process.env.SystemRoot ?? "C:\\Windows", "System32"), process.env.SystemRoot ?? "C:\\Windows"]
+      : ["/usr/bin", "/bin"]),
+  ]),
+].join(delimiter);
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = join(HERE, "..", "..", "..", "..");
 const TEMPLATE = join(REPO_ROOT, "plugins/software-factory/skills/onboard-repo/templates/factory-project.yaml");
@@ -42,12 +72,12 @@ const TEMPLATE = join(REPO_ROOT, "plugins/software-factory/skills/onboard-repo/t
 /** The fixtures' own git. It never runs repo hooks or fsmonitor, so markers
  * in the git-safety tests can only come from the engine. */
 export function git(cwd: string, ...args: string[]): string {
-  return execFileSync(REAL_GIT, ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args], {
+  return execFileSync(REAL_GIT, ["-c", `core.hooksPath=${devNull}`, "-c", "core.fsmonitor=false", ...args], {
     cwd,
     encoding: "utf8",
     maxBuffer: 256 * 1024 * 1024,
     env: {
-      PATH: "/usr/bin:/bin",
+      PATH: BASE_PATH,
       HOME: cwd,
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_AUTHOR_NAME: "Fixture",
@@ -109,6 +139,8 @@ export interface AnalystSession {
  * engine has for it. */
 export class FakeAnalyst {
   readonly starts: AnalystSession[] = [];
+  /** Runs the engine handed back to resume at start (FR-14), in order. */
+  readonly resumes: ResumedRun[] = [];
   readonly turns: Array<{ feature: string; message: string }> = [];
   readonly errors: unknown[] = [];
   /** Runs on each turn, e.g. to revise an item after `more_info`. */
@@ -137,6 +169,21 @@ export class FakeAnalyst {
     this.starts.push(s);
     this.ensurePolling();
     return s;
+  }
+
+  /** The engine's resumeAnalyst: continue the run with the tools it gives.
+   * The engine calls this while starting, before the world holds its handle,
+   * so `adopt` ties the session to that engine afterwards. */
+  resume(r: ResumedRun) {
+    this.resumes.push(r);
+    this.starts.push({ feature: r.feature, worktree: r.worktree, tools: r.tools });
+    this.ensurePolling();
+  }
+
+  adopt(e: EngineHandle) {
+    for (const s of this.starts) {
+      if (!Object.prototype.hasOwnProperty.call(s, "engine")) Object.defineProperty(s, "engine", { value: e, enumerable: false });
+    }
   }
 
   private ensurePolling() {
@@ -381,7 +428,7 @@ export class World {
   options(): EngineOptions {
     const env: Record<string, string> = {
       HOME: this.home,
-      PATH: `${join(this.root, "bin")}:/usr/bin:/bin`,
+      PATH: [join(this.root, "bin"), BASE_PATH].join(delimiter),
       LANG: "C.UTF-8",
       TMPDIR: join(this.root, "run"),
       GITLEAKS_CONFIG: join(this.root, "outside", "evil-gitleaks.toml"),
@@ -403,6 +450,7 @@ export class World {
         stateDir: this.stateDir,
         runtimeDir: this.runtimeDir,
       },
+      resumeAnalyst: (r) => this.analyst.resume(r),
     };
   }
 
@@ -410,6 +458,7 @@ export class World {
    * holds for a first confirmation (new path, SR-5) as its manifest owner. */
   async boot(opts: { confirm?: boolean } = {}): Promise<EngineHandle> {
     this.engine = await startEngine(this.options());
+    this.analyst.adopt(this.engine);
     if (opts.confirm ?? true) {
       let confirmed = false;
       for (const p of this.projects) {
@@ -425,6 +474,7 @@ export class World {
       if (confirmed) {
         await this.stop();
         this.engine = await startEngine(this.options());
+        this.analyst.adopt(this.engine);
       }
     }
     return this.engine!;
@@ -468,15 +518,15 @@ export class World {
     await realDelay(300);
   }
 
-  engineJsonPath(p: Project = this.projects[0]) {
+  engineJsonPath(p: Project = this.project()) {
     return join(p.clone, ".factory", "engine.json");
   }
 
-  engineJson(p: Project = this.projects[0]): { version: string; path: string; pid: number } {
+  engineJson(p: Project = this.project()): { version: string; path: string; pid: number } {
     return JSON.parse(readFileSync(this.engineJsonPath(p), "utf8"));
   }
 
-  socket(p: Project = this.projects[0]): string {
+  socket(p: Project = this.project()): string {
     return this.engineJson(p).path;
   }
 
@@ -505,7 +555,7 @@ export class World {
   async approvedSession(feature: string, asUserId?: number): Promise<string> {
     const open = await this.ok("interview.open", { feature });
     this.sessionTokens.push(open.session);
-    const p = this.projectOf(feature) ?? this.projects[0];
+    const p = this.projectOf(feature) ?? this.project();
     this.gh.approve(open.approval.user_code, asUserId ?? p.ownerId);
     const r = await drive(this.clock, this.rpc("interview.awaitApproval", { session: open.session, wait_s: 900 }, 120_000));
     if (!r.result?.approved) throw new Error(`approval failed: ${JSON.stringify(r)}`);
@@ -515,7 +565,7 @@ export class World {
   /** A checkout of the feature branch for the analyst, as milestone 2's
    * session would get. */
   analystWorktree(feature: string): string {
-    const p = this.projectOf(feature) ?? this.projects[0];
+    const p = this.projectOf(feature) ?? this.project();
     const ref = git(p.clone, "for-each-ref", "--format=%(refname:short)", `refs/heads/feature/${feature}-*`).trim().split("\n")[0];
     if (!ref) throw new Error(`no feature branch for ${feature}`);
     const dir = join(this.root, "worktrees", `${feature}-${rand(3)}`);
@@ -545,6 +595,13 @@ export class World {
 
   async reply(session: string, item: { id: string; revision: number }, kind: string, text = "", replyId = rand(8)) {
     return this.rpc("interview.reply", { session, item: item.id, revision: item.revision, reply_id: replyId, kind, text });
+  }
+
+  /** The world's i-th project; throws if the world was built with fewer. */
+  project(i = 0): Project {
+    const p = this.projects[i];
+    if (!p) throw new Error(`world has no project ${i}`);
+    return p;
   }
 
   /** Which project a feature landed in, by its branch. */

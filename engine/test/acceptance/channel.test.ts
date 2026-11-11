@@ -171,7 +171,7 @@ describe("Framing (channel v1.1): one JSON-RPC message per line, UTF-8, \\n, at 
     const closedOrAnswered = await Promise.race([c.waitClosed(10_000), c.waitLine(10_000).then(() => true)]);
     expect(closedOrAnswered, "engine neither answered nor closed an over-long line").toBe(true);
     if (!c.closed) {
-      const msg = JSON.parse(c.lines[0]);
+      const msg = JSON.parse(c.lines[0]!);
       expect([ERR.parse, ERR.invalidRequest]).toContain(msg.error?.code);
     }
     c.close();
@@ -186,7 +186,7 @@ describe("Framing (channel v1.1): one JSON-RPC message per line, UTF-8, \\n, at 
       try {
         c.write(raw);
         await waitFor(() => c.lines.length >= 1, 5000, `a response to ${raw.trim()}`);
-        return JSON.parse(c.lines[0]);
+        return JSON.parse(c.lines[0]!);
       } finally {
         c.close();
       }
@@ -301,6 +301,6 @@ describe("Files the channel depends on", () => {
     await w.boot();
     await w.restart();
     expect(mode(w.engineJsonPath())).toBe(0o600);
-    expect(mode(join(w.projects[0].clone, ".factory")) & 0o022).toBe(0);
+    expect(mode(join(w.project().clone, ".factory")) & 0o022).toBe(0);
   });
 });

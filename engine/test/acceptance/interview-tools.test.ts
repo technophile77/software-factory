@@ -76,7 +76,7 @@ describe("AC-7 / FR-10: questions and replies pass word for word", () => {
       const turn = await waitFor(() => w!.analyst.turnsFor(feature).find((x) => x.message.includes(t)), 10_000, "turn");
       boundaries.push(frameAround(turn.message, t).shared);
     }
-    expect(boundaries[0].some((b) => boundaries[1].includes(b))).toBe(false);
+    expect(boundaries[0]!.some((b) => boundaries[1]!.includes(b))).toBe(false);
   });
 
   it("[IT-4] FR-10: the engine never answers for the owner; a suggested answer stays a suggestion", async () => {

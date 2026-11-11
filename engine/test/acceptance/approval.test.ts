@@ -62,7 +62,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
   it("[AP-3] FR-7: the owner's approval opens the session, and GET /user is called with the device token", async () => {
     w = await World.create();
     const { open } = await openFeature(w);
-    w.gh.approve(open.approval.user_code, w.projects[0].ownerId);
+    w.gh.approve(open.approval.user_code, w.project().ownerId);
     const r = await await_(w, open.session);
     expect(r.result).toEqual({ approved: true });
     expect((await w.rpc("interview.next", { session: open.session })).result).toBeDefined();
@@ -73,7 +73,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
   it("[AP-4] ADR 0014: the owner is matched by numeric id, never by login", async () => {
     w = await World.create();
     const { open } = await openFeature(w);
-    const owner = w.projects[0];
+    const owner = w.project();
     // An impostor with the owner's login but another id.
     w.gh.addUser(8888, owner.ownerLogin);
     w.gh.approve(open.approval.user_code, 8888);
@@ -83,7 +83,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
   it("[AP-5] SR-23: a /user answer whose id is a string, even the owner's digits, is refused", async () => {
     w = await World.create();
     const { open } = await openFeature(w);
-    const owner = w.projects[0];
+    const owner = w.project();
     w.gh.userBody.set(owner.ownerId, { id: String(owner.ownerId), login: owner.ownerLogin });
     w.gh.approve(open.approval.user_code, owner.ownerId);
     expectRpcError(await await_(w, open.session), ERR.approvalFailed);
@@ -101,10 +101,13 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
     const { open } = await openFeature(w);
     const pending = w.rpc("interview.awaitApproval", { session: open.session, wait_s: 900 }, 120_000);
     await w.clock.advance(901_000);
-    w.gh.approve(open.approval.user_code, w.projects[0].ownerId);
+    w.gh.approve(open.approval.user_code, w.project().ownerId);
     const r = await drive(w.clock, pending, { maxMs: 2_000_000 });
     expect(r.result?.approved).not.toBe(true);
-    const r2 = await w.rpc("interview.awaitApproval", { session: open.session, wait_s: 1 });
+    // The engine sees the expiry at its next poll, which may still be ahead
+    // on the fake clock (on a slow runner the first wait can end on its own
+    // 900 s cap first), so drive the clock until the session settles.
+    const r2 = await drive(w.clock, w.rpc("interview.awaitApproval", { session: open.session, wait_s: 900 }, 120_000), { maxMs: 2_000_000 });
     expect([ERR.approvalFailed, ERR.session]).toContain(r2.error?.code);
   });
 
@@ -115,7 +118,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
     w = await World.create();
     const { open } = await openFeature(w);
     w.gh.outage = outage;
-    w.gh.approve(open.approval.user_code, w.projects[0].ownerId);
+    w.gh.approve(open.approval.user_code, w.project().ownerId);
     expectRpcError(await await_(w, open.session), ERR.approvalFailed);
   });
 
@@ -123,7 +126,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
     w = await World.create();
     const { open } = await openFeature(w);
     const d = w.gh.device(open.approval.user_code);
-    expect(d.clientId).toBe(w.projects[0].clientId);
+    expect(d.clientId).toBe(w.project().clientId);
     expect(d.scope === undefined || d.scope === "").toBe(true);
     expect(d.sentSecret).toBe(false);
   });
@@ -138,7 +141,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
     await w.ok("interview.close", { session: s1 });
     const open2 = await w.ok("interview.open", { feature: f });
     expect(w.gh.devices.length).toBe(before + 2);
-    expect(open2.approval.user_code).not.toBe(w.gh.devices[before].userCode);
+    expect(open2.approval.user_code).not.toBe(w.gh.devices[before]!.userCode);
     expectRpcError(await w.rpc("interview.next", { session: open2.session }), ERR.approvalPending);
   });
 
@@ -181,7 +184,7 @@ describe("SR-23: every device-flow field from GitHub is validated", () => {
     expect(r.result.approval.user_code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
     expect(r.result.approval.verification_uri).toBe(VERIFICATION_URI);
     const d = w.gh.lastDevice();
-    if (d) w.gh.approve(d.userCode, w.projects[0].ownerId);
+    if (d) w.gh.approve(d.userCode, w.project().ownerId);
     expectRpcError(await await_(w, r.result.session), ERR.approvalFailed);
   });
 
@@ -217,13 +220,13 @@ describe("SR-23: every device-flow field from GitHub is validated", () => {
       await realDelay(5);
       await w.clock.advance(1000);
     }
-    w.gh.approve(open.approval.user_code, w.projects[0].ownerId);
+    w.gh.approve(open.approval.user_code, w.project().ownerId);
     expect((await drive(w.clock, pending)).result).toEqual({ approved: true });
     expect(d.polls.length).toBeGreaterThanOrEqual(3);
     // First gap at least 7 s; after slow_down (answered on the first poll) at least 12 s.
-    expect(d.polls[0] - d.issuedAt).toBeGreaterThanOrEqual(7000);
-    expect(d.polls[1] - d.polls[0]).toBeGreaterThanOrEqual(12_000);
-    for (let i = 2; i < d.polls.length; i++) expect(d.polls[i] - d.polls[i - 1]).toBeGreaterThanOrEqual(12_000);
+    expect(d.polls[0]! - d.issuedAt).toBeGreaterThanOrEqual(7000);
+    expect(d.polls[1]! - d.polls[0]!).toBeGreaterThanOrEqual(12_000);
+    for (let i = 2; i < d.polls.length; i++) expect(d.polls[i]! - d.polls[i - 1]!).toBeGreaterThanOrEqual(12_000);
   });
 
   it.each([
@@ -242,7 +245,7 @@ describe("SR-23: every device-flow field from GitHub is validated", () => {
       await realDelay(5);
       await w.clock.advance(1000);
     }
-    const gaps = [d.polls[0] - d.issuedAt, ...d.polls.slice(1).map((t, i) => t - d.polls[i])].filter((g) => !Number.isNaN(g));
+    const gaps = [d.polls[0]! - d.issuedAt, ...d.polls.slice(1).map((t, i) => t - d.polls[i]!)].filter((g) => !Number.isNaN(g));
     for (const g of gaps) expect(g).toBeGreaterThanOrEqual(5000);
   });
 
@@ -265,7 +268,7 @@ describe("SR-23: every device-flow field from GitHub is validated", () => {
       if (/engine not available/.test((e as Error).message)) throw e;
       started = false;
     }
-    if (!started || !(await w.isRunning(w.projects[0]))) {
+    if (!started || !(await w.isRunning(w.project()))) {
       // The repo check against GitHub already failed closed.
       return;
     }
@@ -273,7 +276,7 @@ describe("SR-23: every device-flow field from GitHub is validated", () => {
     const r = await w.rpc("interview.open", { feature });
     if (r.error) return;
     const d = w.gh.lastDevice();
-    if (d) w.gh.approve(d.userCode, w.projects[0].ownerId);
+    if (d) w.gh.approve(d.userCode, w.project().ownerId);
     expectRpcError(await await_(w, r.result.session), ERR.approvalFailed);
   });
 });

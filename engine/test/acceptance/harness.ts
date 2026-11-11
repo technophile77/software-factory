@@ -41,6 +41,26 @@ export interface EngineOptions {
     stateDir: string;
     runtimeDir: string;
   };
+  /** Called at start for each interrupted analyst run the engine resumes (FR-14). */
+  resumeAnalyst?: (r: ResumedRun) => void;
+}
+
+/** A run in the engine record (FR-14 bookkeeping). */
+export interface RunInfo {
+  id: string;
+  feature: string;
+  role: string;
+  status: string;
+  resumes: number;
+  reason?: string;
+  [k: string]: unknown;
+}
+
+export interface ResumedRun {
+  feature: string;
+  worktree: string;
+  tools: InterviewTools;
+  plan: { mode: string; run: RunInfo };
 }
 
 export interface ProjectState {
@@ -61,6 +81,8 @@ export interface EngineHandle {
   /** Stop as if the process were killed. */
   crash(): Promise<void>;
   projects(): Promise<ProjectState[]>;
+  /** Every run in the engine record. */
+  runs(): Promise<RunInfo[]>;
   /** The SR-5 confirmation command, run in-process against the fake GitHub. */
   confirmProject(configRepoPath: string): Promise<ConfirmResult>;
   /** The analyst's tools for a feature, reading the spec from `worktree`. */
@@ -114,23 +136,21 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     clock: o.clock,
     env: o.env,
     push: true,
+    resumeAnalyst: o.resumeAnalyst
+      ? (r: { feature: string; worktree: string; tools: Record<string, any>; plan: ResumedRun["plan"] }) =>
+          o.resumeAnalyst!({ ...r, tools: toolsByName(r.tools) })
+      : undefined,
   });
   return {
     stop: () => real.stop(),
-    crash: async () => {
-      throw new MissingSeam("EngineHandle has no way to stop as if killed (AC-12); stop() runs the shutdown path");
-    },
+    crash: () => real.crash(),
     projects: async () => real.projects as ProjectState[],
-    confirmProject: (projectPath) => confirmCommand(o, projectPath),
-    interviewTools: (feature, worktree) => {
-      const t = real.interviewTools(feature, worktree);
-      return {
-        call: async (tool: string, args: unknown) => {
-          if (typeof t[tool] !== "function") throw Object.assign(new Error(`no tool ${tool}`), { code: "no_such_tool" });
-          return t[tool](args);
-        },
-      };
+    runs: async () => {
+      const { EngineRecord } = await import(/* @vite-ignore */ srcModule("state/record"));
+      return new EngineRecord(o.paths.stateDir).runs() as RunInfo[];
     },
+    confirmProject: (projectPath) => confirmCommand(o, projectPath),
+    interviewTools: (feature, worktree) => toolsByName(real.interviewTools(feature, worktree)),
     takeTurn: async (feature) => {
       const f = real.feature(feature);
       if (!f) return null;
@@ -140,6 +160,17 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   };
 }
 
+function toolsByName(t: Record<string, any>): InterviewTools {
+  return {
+    call: async (tool: string, args: unknown) => {
+      if (typeof t[tool] !== "function") throw Object.assign(new Error(`no tool ${tool}`), { code: "no_such_tool" });
+      return t[tool](args);
+    },
+  };
+}
+
+const srcModule = (p: string) => fileURLToPath(new URL(`../../src/${p}.ts`, import.meta.url));
+
 /**
  * The SR-5 `factory-engine confirm` command. The in-process API doesn't offer
  * it and the CLI can't be pointed at a fake GitHub or clock, so this builds
@@ -148,9 +179,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
  * the prompt shows; the device code is the one the command tells the owner.
  */
 async function confirmCommand(o: EngineOptions, projectPath: string): Promise<ConfirmResult> {
-  const src = (p: string) => fileURLToPath(new URL(`../../src/${p}.ts`, import.meta.url));
   const [{ confirmProject }, { PinStore }, { Git }, { HttpGitHub }, { FileLogger }, { realOsApi }, { Children }] = await Promise.all(
-    ["config/confirm", "config/pins", "git", "github", "log", "os/ffi", "proc"].map((m) => import(/* @vite-ignore */ src(m))),
+    ["config/confirm", "config/pins", "git", "github", "log", "os/ffi", "proc"].map((m) => import(/* @vite-ignore */ srcModule(m))),
   );
   const log = new FileLogger(join(o.paths.stateDir, "logs"), o.clock, () => undefined);
   const said: string[] = [];
@@ -169,7 +199,7 @@ async function confirmCommand(o: EngineOptions, projectPath: string): Promise<Co
       say: (line: string) => {
         said.push(line);
         const m = /\b([A-Z0-9]{4}-[A-Z0-9]{4})\b/.exec(line);
-        if (m) codeSeen(m[1]);
+        if (m) codeSeen(m[1]!);
       },
       ask: async (q: string) => /\(([^)]+)\) to confirm/.exec(q)?.[1] ?? "",
     },

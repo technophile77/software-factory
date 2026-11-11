@@ -97,12 +97,12 @@ describe("SR-1: secrets stay out of logs, Git, inbox items, argument lists and p
     expect(w.store.accessed.length).toBeGreaterThan(0);
     const own = new Set([CREDENTIAL_NAMES.model, ...w.projects.map((p) => CREDENTIAL_NAMES.factoryToken(p.name))]);
     for (const name of w.store.accessed) expect(own.has(name), name).toBe(true);
-    expect(w.store.accessed).toContain(CREDENTIAL_NAMES.factoryToken(w.projects[0].name));
+    expect(w.store.accessed).toContain(CREDENTIAL_NAMES.factoryToken(w.project().name));
   });
 
   it("[SC-5] SR-2: with no factory token in the store, no project runs (fail closed)", async () => {
     w = await World.create();
-    w.store.values.delete(CREDENTIAL_NAMES.factoryToken(w.projects[0].name));
+    w.store.values.delete(CREDENTIAL_NAMES.factoryToken(w.project().name));
     let started = true;
     try {
       await w.boot();
@@ -110,6 +110,6 @@ describe("SR-1: secrets stay out of logs, Git, inbox items, argument lists and p
       if (/engine not available/.test((e as Error).message)) throw e;
       started = false;
     }
-    if (started) expect(await w.isRunning(w.projects[0])).toBe(false);
+    if (started) expect(await w.isRunning(w.project())).toBe(false);
   });
 });

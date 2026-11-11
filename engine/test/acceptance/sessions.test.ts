@@ -47,7 +47,7 @@ describe("Session lock and takeover (channel v1.1, ADR 0014)", () => {
     const first = await w.ok("interview.open", { feature: f });
     const second = await w.ok("interview.open", { feature: f, takeover: true });
     expect(second.approval.user_code).not.toBe(first.approval.user_code);
-    w.gh.approve(first.approval.user_code, w.projects[0].ownerId);
+    w.gh.approve(first.approval.user_code, w.project().ownerId);
     for (let i = 0; i < 30; i++) {
       await realDelay(5);
       await w.clock.advance(1000);
@@ -188,7 +188,7 @@ describe("Items, revisions, replies (channel v1.1)", () => {
     // The analyst picks up the first reply's turn before the repeats.
     await waitFor(() => w!.analyst.turnsFor(feature).some((t) => t.message.includes("first words")), 10_000, "the first turn");
     const turns = w.analyst.turnsFor(feature).length;
-    const transcript = w.transcriptText(w.projects[0], feature);
+    const transcript = w.transcriptText(w.project(), feature);
     const again = await w.reply(session, item, "answer", "first words", id);
     expect(again.result).toEqual(first.result);
     const other = await w.reply(session, item, "defer", "second words", id);
@@ -196,7 +196,7 @@ describe("Items, revisions, replies (channel v1.1)", () => {
     await w.settle();
     expect(await w.ok("interview.state", { feature, item: item.id })).toEqual(st1);
     expect(w.analyst.turnsFor(feature).length).toBe(turns);
-    expect(w.transcriptText(w.projects[0], feature)).toBe(transcript);
+    expect(w.transcriptText(w.project(), feature)).toBe(transcript);
     expect(transcript).not.toContain("second words");
   });
 

@@ -6,7 +6,7 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { drive, FakeClock } from "./support/clock";
 import { LEAK_MARKER } from "./support/fake-tools";
-import { git, World } from "./support/world";
+import { BASE_PATH, git, World } from "./support/world";
 
 let w: World | undefined;
 afterEach(async () => {
@@ -29,7 +29,7 @@ const post = (url: string, body: Record<string, string>) =>
 describe("Fixture self-checks (no engine needed)", () => {
   it("[FX-1] a world has a master repo, a config repo with the manifest on main, and a managed clone with factory/state on its remote", async () => {
     w = await World.create();
-    const p = w.projects[0];
+    const p = w.project();
     const manifest = git(p.configRepo, "show", "main:factory-project.yaml");
     expect(manifest).toMatch(/^schema: factory-project\/1.0$/m);
     expect(manifest).toMatch(/requirements-analyst:/);
@@ -41,7 +41,7 @@ describe("Fixture self-checks (no engine needed)", () => {
 
   it("[FX-2] the fake GitHub runs the device flow and answers GET /user and GET /repos", async () => {
     w = await World.create();
-    const p = w.projects[0];
+    const p = w.project();
     const d = await post(`${w.gh.webBaseUrl}/login/device/code`, { client_id: p.clientId });
     expect(d.verification_uri).toBe("https://github.com/login/device");
     const poll = () =>
@@ -63,12 +63,12 @@ describe("Fixture self-checks (no engine needed)", () => {
 
   it("[FX-3] git over the fake's smart HTTP: clone works, a push needs the factory token through GIT_ASKPASS and is recorded", async () => {
     w = await World.create();
-    const p = w.projects[0];
+    const p = w.project();
     const dir = join(w.root, "fx3");
     const askpass = join(w.root, "askpass.sh");
     writeFileSync(askpass, `#!/bin/sh\necho "${w.factoryToken}"\n`);
     chmodSync(askpass, 0o755);
-    const env = { PATH: "/usr/bin:/bin", HOME: w.root, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1" };
+    const env = { PATH: BASE_PATH, HOME: w.root, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1" };
     // Async on purpose: the fake server runs in this process, so a sync git
     // call talking to it would block its event loop and deadlock.
     expect((await run(["clone", "-q", w.gh.gitUrl(p.repoOwner, p.repo), dir], { env })).status).toBe(0);
@@ -101,7 +101,7 @@ describe("Fixture self-checks (no engine needed)", () => {
     w = await World.create();
     const out = execFileSync(w.gitw.path, ["-c", "core.fsmonitor=false", "--version"], { encoding: "utf8" });
     expect(out).toMatch(/^git version/);
-    expect(w.gitw.calls()[0].argv).toEqual(["-c", "core.fsmonitor=false", "--version"]);
+    expect(w.gitw.calls()[0]!.argv).toEqual(["-c", "core.fsmonitor=false", "--version"]);
   });
 
   it("[FX-6] the fake clock fires timers in order and drive() advances until a promise settles", async () => {

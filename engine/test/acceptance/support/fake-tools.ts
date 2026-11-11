@@ -176,7 +176,7 @@ export function gitOverrides(call: GitCall): { config: Map<string, string>; subc
   const a = call.argv;
   let i = 0;
   for (; i < a.length; i++) {
-    const x = a[i];
+    const x = a[i]!;
     if (x === "-c") {
       const kv = a[++i] ?? "";
       const eq = kv.indexOf("=");
@@ -195,7 +195,7 @@ export function gitOverrides(call: GitCall): { config: Map<string, string>; subc
     if (key) config.set(key.toLowerCase(), call.env[`GIT_CONFIG_VALUE_${k}`] ?? "");
   }
   if (call.env.GIT_CONFIG_PARAMETERS) {
-    for (const m of call.env.GIT_CONFIG_PARAMETERS.matchAll(/'([^'=]+)'='([^']*)'/g)) config.set(m[1].toLowerCase(), m[2]);
+    for (const m of call.env.GIT_CONFIG_PARAMETERS.matchAll(/'([^'=]+)'='([^']*)'/g)) config.set(m[1]!.toLowerCase(), m[2]!);
   }
   return { config, subcommand: a[i], rest: a.slice(i + 1) };
 }
