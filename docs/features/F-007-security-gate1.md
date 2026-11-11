@@ -245,6 +245,21 @@ are the defaults built into the pinned binary. Never pass `--baseline-path`,
 working folder is an empty engine-owned folder, because it loads
 `./.gitleaksignore`.
 
+### 6. `@vitest/coverage-v8` (test coverage, dev only)
+
+- **Pin:** 5.1.0 exact, matching Vitest 5.1.0 (its peer dependency requires the
+  same version). Published 2026-11-02 with npm provenance (SLSA v1) and a
+  registry signature. Integrity
+  `sha512-OY9aShBQG5KOIw2zCo9fDoCHI9RHliNHJ//nM7m6jGg41Hyke9JOGWmeMlK74xYErsxMoK8mIB3gAeEyFVA7LA==`.
+- **What it adds:** 12 packages, all MIT, none with install scripts:
+  the plugin, `@bcoe/v8-coverage`, `ast-v8-to-istanbul`, `@vitest/istanbul-lib-coverage`,
+  `@vitest/istanbul-lib-report`, `magicast`, `tinyrainbow`, `js-tokens` and four
+  `@babel/*` parser packages. `npm audit` finds no known vulnerabilities.
+- **Exposure:** a dev dependency. It runs only in tests and CI, reads V8's own
+  coverage data, and is never in the engine bundle or any image.
+- **Verdict:** acceptable at Rapid prototype. No findings. Install with
+  `npm ci --ignore-scripts` as for the other dev dependencies.
+
 ## Threat model (S9.7)
 
 **System:** the owner's Claude Code session (skill and client) talks to the
