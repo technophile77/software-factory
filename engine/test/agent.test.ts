@@ -1,12 +1,10 @@
-import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { AnalystRunInput, SessionRefused, runAnalystSession } from "../src/agent/analyst";
 import { analystTools, fetchPageTool, toCallResult, UNTRUSTED_LABEL } from "../src/agent/factory-tools";
 import { DUMMY_KEY, ProxyClient, SessionGroup } from "../src/agent/sandbox";
-import type { AgentSdk, SdkMessage, SessionOptions, UserTurn } from "../src/agent/sdk";
+import type { AgentSdk } from "../src/agent/sdk";
 import { CLAUDE_BIN, CONTAINER_FLAGS, SessionCaps, containerSpawn, hostRelative, runSession, sessionOptions, toolGate } from "../src/agent/session";
 import { DockerCli, DockerError, dockerName, isLocalEndpoint, localEndpoints, pickEndpoint } from "../src/docker/cli";
 import { BASE_IMAGE, agentBuildArgs, skillsPluginDir, writeBuildContext } from "../src/docker/image";
@@ -15,6 +13,7 @@ import type { InterviewTools } from "../src/interview/tools";
 import { MemoryLogger } from "../src/log";
 import { effectiveRole } from "../src/policy/role-policy";
 import { Children } from "../src/proc";
+import { FakeChild, FakeDocker, fakeSdk, inspectFor, oneTurn } from "./fakes";
 import { tmpdir } from "./helpers";
 import { policyDoc } from "./policy-fixture";
 
@@ -106,29 +105,6 @@ function spec(over: Partial<ContainerSpec> = {}): ContainerSpec {
   };
 }
 
-/** What `docker inspect` would report for a container started with these arguments. */
-function inspectFor(args: string[], running = true): Record<string, unknown> {
-  const get = (f: string) => args[args.indexOf(f) + 1]!;
-  const all = (f: string) => args.flatMap((a, i) => (a === f ? [args[i + 1]!] : []));
-  const nets = all("--network").map((n) => (n.startsWith("name=") ? n.slice(5).split(",")[0]! : n));
-  const mounts = all("--mount").map((m) => {
-    const kv = Object.fromEntries(m.split(",").map((p) => p.split("=") as [string, string]));
-    return { Type: kv.type, Source: kv.source, Name: kv.type === "volume" ? kv.source : undefined, Destination: kv.target, RW: !m.includes("readonly") };
-  });
-  const [tmpPath, tmpOpts] = get("--tmpfs").split(/:(.*)/s) as [string, string];
-  return {
-    Name: `/${get("--name")}`, Image: args.find((a) => a.startsWith("sha256:")),
-    Config: { User: get("--user") }, State: { Running: running },
-    HostConfig: {
-      ReadonlyRootfs: args.includes("--read-only"), Privileged: false, CapDrop: [get("--cap-drop")], CapAdd: null,
-      SecurityOpt: [get("--security-opt")], NanoCpus: Math.round(Number(get("--cpus")) * 1e9), Memory: Number(get("--memory").slice(0, -1)),
-      PidsLimit: Number(get("--pids-limit")), Tmpfs: { [tmpPath]: tmpOpts }, NetworkMode: nets[0], LogConfig: { Type: get("--log-driver") }, Binds: null,
-    },
-    NetworkSettings: { Networks: Object.fromEntries(nets.map((n) => [n, {}])) },
-    Mounts: mounts,
-  };
-}
-
 describe("container plan and post-start check (FR-8, SR-14)", () => {
   it("runs non-root, read-only, no capabilities, no new privileges, limited, by image id, without a log file", () => {
     const a = runArgs(spec());
@@ -193,73 +169,6 @@ describe("container plan and post-start check (FR-8, SR-14)", () => {
   });
 });
 
-class FakeChild extends EventEmitter {
-  stdin = new PassThrough();
-  stdout = new PassThrough();
-  stderr = new PassThrough();
-  killed = false;
-  exitCode: number | null = null;
-  written: string[] = [];
-  constructor() {
-    super();
-    this.stdin.on("data", (d: Buffer) => this.written.push(...d.toString().split("\n").filter(Boolean)));
-  }
-  sent(): Array<Record<string, any>> {
-    return this.written.map((l) => JSON.parse(l));
-  }
-  kill(): boolean {
-    this.killed = true;
-    this.emit("exit", null, "SIGKILL");
-    return true;
-  }
-}
-
-/** Docker as the engine sees it: records each call and answers inspect from the arguments it was given. */
-class FakeDocker {
-  calls: Array<{ args: string[]; env?: Record<string, string> }> = [];
-  started = new Map<string, string[]>();
-  spawned: Array<{ args: string[]; env: Record<string, string>; child: FakeChild }> = [];
-  tamper: ((name: string, d: Record<string, any>) => void) | null = null;
-
-  async run(args: string[], o: { env?: Record<string, string> } = {}) {
-    this.calls.push({ args, ...(o.env ? { env: o.env } : {}) });
-    if (args[0] === "run") this.started.set(args[args.indexOf("--name") + 1]!, args);
-    return { code: 0, signal: null, stdout: Buffer.from(this.answer(args)), stderr: "", timedOut: false };
-  }
-  async out(args: string[]) {
-    return (await this.run(args)).stdout.toString().trim();
-  }
-  answer(args: string[]): string {
-    if (args[0] === "network" && args[1] === "inspect") {
-      const internal = args[2]!.endsWith("-int");
-      return JSON.stringify([{ Name: args[2], Internal: internal, Driver: "bridge", IPAM: { Config: [{ Subnet: internal ? "172.30.0.0/16" : "172.31.0.0/16" }] } }]);
-    }
-    if (args[0] === "container" && args[1] === "inspect") {
-      const a = this.started.get(args[2]!);
-      if (!a) throw new Error("no such container");
-      const d = inspectFor(a);
-      this.tamper?.(args[2]!, d);
-      return JSON.stringify([d]);
-    }
-    return "";
-  }
-  spawn(args: string[], env: Record<string, string> = {}) {
-    const child = new FakeChild();
-    this.spawned.push({ args, env, child });
-    if (args[0] === "run") {
-      this.started.set(args[args.indexOf("--name") + 1]!, args);
-      // The proxy: answers start with ready, as dist/proxy.js does.
-      child.stdin.on("data", (d: Buffer) => {
-        for (const line of d.toString().split("\n").filter(Boolean)) {
-          const m = JSON.parse(line);
-          if (m.t === "start") child.stdout.write(`${JSON.stringify({ t: "ready", address: "172.30.0.2", port: 3128 })}\n`);
-          if (m.t === "fetch") child.stdout.write(`${JSON.stringify({ t: "fetched", id: m.id, ok: true, url: m.url, status: 200, contentType: "text/html", body: Buffer.from("<p>hi</p>").toString("base64"), truncated: false })}\n`);
-        }
-      });
-    }
-    return child as never;
-  }
-}
 
 function group(docker: FakeDocker, log = new MemoryLogger(), agentLimits: Record<string, ContainerLimits> = { "requirements-analyst": LIMITS, "web-reader": LIMITS }) {
   return new SessionGroup({
@@ -463,27 +372,6 @@ describe("container spawn (SR-10)", () => {
   });
 });
 
-function fakeSdk(messages: SdkMessage[], hang = false): AgentSdk & { seen: SessionOptions[] } {
-  const seen: SessionOptions[] = [];
-  return {
-    seen,
-    createFactoryServer: (tools) => ({ tools: tools.map((t) => t.name) }),
-    query: ({ options }) => {
-      seen.push(options);
-      return (async function* () {
-        for (const m of messages) {
-          if (options.abortController.signal.aborted) return;
-          yield m;
-        }
-        if (hang) await new Promise((_r, rej) => options.abortController.signal.addEventListener("abort", () => rej(new Error("aborted"))));
-      })();
-    },
-  };
-}
-
-async function* oneTurn(): AsyncIterable<UserTurn> {
-  yield { type: "user", message: { role: "user", content: "go" }, parent_tool_use_id: null, session_id: "" };
-}
 
 describe("running a session under SR-18 caps", () => {
   const opts = () => sessionOptions({ policy: analyst, worktree: tmpdir(), instructions: "i", factoryServer: {}, factoryTools: [], caps: CAPS, skillsPluginDir: "/s", spawn: () => null as never, log: new MemoryLogger() }, new AbortController());

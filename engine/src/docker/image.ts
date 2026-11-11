@@ -89,6 +89,26 @@ export function agentBuildArgs(contextDir: string, iidFile: string, id: ImageIde
     "--file", path.join(contextDir, "agent.Dockerfile"), contextDir];
 }
 
+/**
+ * The project's agent image for its master commit and resolved skills: the
+ * one already tagged for them if its labels and user check out, else a fresh
+ * build. Docker reuses layers, so an unchanged identity costs one inspect.
+ */
+export async function ensureAgentImage(docker: DockerCli, engineDockerDir: string, workDir: string, ident: ImageIdentity, sources: Pick<AgentSources, "skills">): Promise<{ id: string; tag: string }> {
+  const tag = agentImageTag(ident);
+  const have = await docker.run(["image", "inspect", tag], { okCodes: [1] });
+  if (have.code === 0) {
+    const doc = JSON.parse(have.stdout.toString()) as unknown;
+    const img = Array.isArray(doc) ? doc[0] : doc;
+    const labels = isObj(img) && isObj(img.Config) && isObj(img.Config.Labels) ? img.Config.Labels : {};
+    if (isObj(img) && typeof img.Id === "string" && ID_RE.test(img.Id) && isObj(img.Config) && img.Config.User === "1000:1000"
+      && labels["factory.master_commit"] === ident.masterCommit && labels["factory.skills_sha256"] === ident.skillsDigest && labels["factory.project"] === ident.project) {
+      return { id: img.Id, tag };
+    }
+  }
+  return { id: await buildAgentImage(docker, engineDockerDir, workDir, ident, sources), tag };
+}
+
 export async function buildAgentImage(docker: DockerCli, engineDockerDir: string, workDir: string, ident: ImageIdentity, sources: Pick<AgentSources, "skills">): Promise<string> {
   await baseImageId(docker);
   const context = path.join(workDir, `agent-context-${ident.masterCommit.slice(0, 12)}-${ident.skillsDigest.slice(0, 12)}`);

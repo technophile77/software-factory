@@ -21,6 +21,14 @@ export function credentialKind(env: NodeJS.ProcessEnv, stored: string | null): C
   return null;
 }
 
+/** The credential the proxy's gateway uses, chosen in the same order as credentialKind. */
+export function modelCredentialFor(env: NodeJS.ProcessEnv, stored: string | null): { kind: CredentialKind; value: string } | null {
+  if (env.ANTHROPIC_API_KEY) return { kind: "api_key", value: env.ANTHROPIC_API_KEY };
+  if (env.CLAUDE_CODE_OAUTH_TOKEN) return { kind: "subscription", value: env.CLAUDE_CODE_OAUTH_TOKEN };
+  const kind = credentialKind({}, stored);
+  return kind && stored ? { kind, value: stored } : null;
+}
+
 /** FR-3: refuse when the credentials don't match the project's billing mode. Returns the reason, or null. */
 export function billingMismatch(mode: Manifest["billingMode"], project: string, env: NodeJS.ProcessEnv, stored: string | null): string | null {
   const kind = credentialKind(env, stored);

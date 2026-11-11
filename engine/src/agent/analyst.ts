@@ -33,6 +33,8 @@ export interface AnalystRunInput {
   skillsPluginDir?: string;
   model?: string;
   resume?: string;
+  /** "run" keeps the SDK session on the run's own volume, so a resume finds it. Default: a volume for this session only. */
+  sessionVolume?: boolean | "run";
   /** FR-3: the billing-mode check, run before each session (SR-18). Returns why not, or null. */
   billingCheck(): string | null;
   /** The analyst's tools for the feature, given the web reader to research with. */
@@ -71,7 +73,7 @@ export async function runAnalystSession(i: AnalystRunInput): Promise<{ outcome: 
   }
   await i.group.open();
   try {
-    const agent = await i.group.startAgent(analyst, i.worktree, { sessionVolume: true });
+    const agent = await i.group.startAgent(analyst, i.worktree, { sessionVolume: i.sessionVolume ?? true });
     let outcome: SessionOutcome;
     try {
       const researchCfg: ResearchConfig | undefined = reader && i.instructions.reader

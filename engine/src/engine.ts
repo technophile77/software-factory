@@ -2,16 +2,24 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { SessionRefused, runAnalystSession } from "./agent/analyst";
+import { AgentRuntime, TurnQueue, populateWorktree, prepareWorktree, sweepLeftovers } from "./agent/runtime";
+import { SessionGroup, runVolume } from "./agent/sandbox";
+import type { SessionOutcome } from "./agent/session";
+import { commitWorktree } from "./agent/worktree-commit";
+import { DockerError } from "./docker/cli";
+import { baseImageId, ensureAgentImage, skillsPluginDir } from "./docker/image";
+import { frameRequest } from "./interview/frame";
 import { Conn, notification, serve } from "./channel/framing";
 import { EngineControl, ProjectChannel, methods } from "./channel/methods";
 import { SessionManager } from "./channel/sessions";
 import { Listener, listenUnix } from "./channel/unix";
 import { listenPipe } from "./channel/windows";
 import { Clock, iso, systemClock } from "./clock";
-import { AuthorizationError, authorizeProject, billingMismatch } from "./config/authorize";
+import { AuthorizationError, authorizeProject, billingMismatch, modelCredentialFor } from "./config/authorize";
 import { AgentSources, Instructions, resolveAgentSources } from "./config/agent-sources";
 import { resolveFactoryVersion } from "./config/factory-source";
-import { Limits, LimitsError, manifestLimits, mergeLimits, readDefaultLimits } from "./config/limits";
+import { Limits, LimitsError, agentLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
 import { Manifest, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin } from "./config/pins";
@@ -29,8 +37,8 @@ import { Children, osParent } from "./proc";
 import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryTokenName } from "./secrets";
 import { SecurityAlert, fileSecurityItem } from "./state/inbox";
 import { EngineRecord, RunRecord } from "./state/record";
-import { ResumePlan, RunBook, RunFacts, agentReport } from "./state/runs";
-import { Change, StateRepo } from "./state/state-repo";
+import { ResumePlan, RunBook, RunFacts, RunUsage, agentReport } from "./state/runs";
+import { Change, SecretFound, StateRepo } from "./state/state-repo";
 import { ChainError, Entry, checkAgainstHead, parseTranscript, transcriptPath } from "./state/transcript";
 
 export class StartError extends Error {
@@ -69,6 +77,12 @@ export interface EngineOptions {
    * waits for the next interviewTools call for its feature.
    */
   resumeAnalyst?: (r: { feature: string; worktree: string; tools: InterviewTools; plan: ResumePlan }) => void;
+  /**
+   * Docker and the Agent SDK. With it, feature.start and every resume run the
+   * analyst in its container (FR-8), and leftovers of an earlier engine are
+   * swept at start. Without it no agent starts (and resumeAnalyst is called).
+   */
+  agents?: AgentRuntime;
 }
 
 export type ProjectState = "running" | "stopped" | "disabled";
@@ -560,6 +574,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           const f = newFeature(p, fid);
           await f.exclusive(() => f.append([{ type: "feature_started", feature: fid, title: title(request), branch, request }], "feature requested"));
           log.info(`${p.name}: ${fid} started on ${branch}`);
+          launchAnalyst(p, f);
           return fid;
         });
         startLock = run.catch(() => undefined);
@@ -589,7 +604,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       await p.state_repo!.commit([agentReport({
         feature: f.id, stage: INTERVIEW_STAGE, role: "requirements-analyst", n: await nextReport(p, f.id), commit: r.last_commit ?? "unknown",
         outcome: "partial",
-        summary: `Run ${r.id} was interrupted when the engine stopped. It resumes ${r.session_id ? "from its session" : "from its last commit with a summary of the transcript"}; no retry is counted (FR-14).`,
+        summary: `Run ${r.id} was interrupted (${(r.reason ?? "the engine stopped").slice(0, 300)}). It resumes ${r.session_id ? "from its session" : "from its last commit with a summary of the transcript"}; no retry is counted (FR-14).`,
         body: { spec_path: null, spec_version: null, open_assumptions: f.state.list("assumption").filter((a) => a.status === "open").map((a) => a.id) },
         facts: {},
       })], `${f.id}: run ${r.id} interrupted`);
@@ -597,6 +612,185 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     } catch (e) {
       log.warn(`${p.name}: the report for interrupted run ${r.id} wasn't committed (${(e as Error).message}).`);
     }
+  }
+
+  // -- Analyst runs (FR-8 to FR-11, FR-14, SR-18) --------------------------------
+
+  interface Job {
+    turns: TurnQueue | null;
+    done: Promise<void>;
+  }
+  const jobs = new Map<string, Job>();
+  /** Each run's image and skills, for its reports (proposal 0013). */
+  const runArtifacts = new Map<string, Array<{ kind: string; ref: string }>>();
+  const images = new Map<string, Promise<{ id: string; tag: string }>>();
+  let proxyImage: Promise<string> | null = null;
+  let shuttingDown = false;
+  const worktreeDir = (p: Project, fid: string) => path.join(home, "worktrees", sha256Hex(p.real!).slice(0, 16), fid);
+  const engineWords = (e: unknown) => (e instanceof ConfigError || e instanceof DockerError || e instanceof SessionRefused ? (e as Error).message.slice(0, 300) : "an internal error");
+
+  /** Tells the owner, in the transcript, why the analyst isn't working (AC-13). Engine words only. */
+  async function noteAnalyst(f: FeatureInterview, status: "stopped" | "waiting", reason: string): Promise<void> {
+    if (dead || !f.chainIntact) return;
+    await f.exclusive(() => f.append([{ type: "analyst_session", status, reason }], `analyst ${status}`)).catch(() => undefined);
+  }
+
+  function launchAnalyst(p: Project, f: FeatureInterview, plan?: ResumePlan): void {
+    const rt = o.agents;
+    if (!rt || dead || shuttingDown || jobs.has(f.id) || !f.chainIntact) return;
+    const job: Job = { turns: null, done: Promise.resolve() };
+    jobs.set(f.id, job);
+    job.done = runAnalyst(rt, p, f, job, plan)
+      .catch((e) => log.warn(`${f.id}: the analyst run stopped: ${engineWords(e)}`))
+      .finally(() => jobs.delete(f.id));
+  }
+
+  async function shared<T>(cache: Map<string, Promise<T>>, key: string, make: () => Promise<T>): Promise<T> {
+    let v = cache.get(key);
+    if (!v) {
+      v = make();
+      cache.set(key, v);
+      v.catch(() => cache.delete(key));
+    }
+    return v;
+  }
+
+  /**
+   * One analyst session for a feature, start to end: the worktree, the
+   * project's image for its factory.version commit and overrides, the run's
+   * containers, the SDK session under the project's limits with owner
+   * replies fed in as turns, then the commit and its checks. A session that
+   * can't start leaves the run interrupted, to resume at the next engine
+   * start; one that stops at a cap or on a breach fails the run and reports
+   * why. On shutdown the run stays open, so the next start resumes it.
+   */
+  async function runAnalyst(rt: AgentRuntime, p: Project, f: FeatureInterview, job: Job, plan?: ResumePlan): Promise<void> {
+    const m = p.manifest!;
+    const sources = p.sources!;
+    const limits = p.limits!;
+    const branch = f.state.branch;
+    const known = plan?.run ?? (analystRuns.get(f.id) ? record.run(analystRuns.get(f.id)!) : undefined);
+    const wt = await prepareWorktree(git, p.real!, known?.worktree ?? worktreeDir(p, f.id), branch, known?.git_dir);
+    const runId = analystRun(p, f.id, wt.path);
+    runs.update(runId, { git_dir: wt.gitDir });
+    let resumeId = plan?.mode === "session" ? plan.sessionId : undefined;
+    try {
+      const credential = modelCredentialFor(env, modelCredential);
+      if (!credential) throw new SessionRefused("no model credential is stored or set");
+      const analystMd = sources.instructions.get("requirements-analyst");
+      if (!analystMd) throw new SessionRefused("the requirements-analyst role has no AGENT.md at factory.version or in the project's overrides");
+      const readerMd = sources.instructions.get("web-reader");
+      const sdk = await rt.sdk();
+      const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
+      const image = await shared(images, `${ident.project}\0${ident.masterCommit}\0${ident.skillsDigest}`, () => ensureAgentImage(rt.docker, rt.dockerDir, path.join(home, "images"), ident, sources));
+      proxyImage ??= baseImageId(rt.docker);
+      proxyImage.catch(() => (proxyImage = null));
+      const proxyImageId = await proxyImage;
+      runArtifacts.set(runId, [
+        { kind: "image", ref: image.tag },
+        ...(sources.skills.get("requirements-analyst") ?? []).map((s) => ({ kind: "skill", ref: `${s.name} (${s.from}: ${s.path})` })),
+      ]);
+      if (resumeId) {
+        // The SDK session lives on the run's volume; without it the run starts again from its commit.
+        const v = await rt.docker.run(["volume", "inspect", runVolume(runId)], { okCodes: [1] });
+        if (v.code !== 0) resumeId = undefined;
+      }
+      const slugName = branch.replace(/^feature\//, "");
+      const intro = `You are working on ${f.id} on branch ${branch}, in /workspace. Write its spec at docs/features/${slugName}.md. Reach the owner only through your factory tools.`;
+      const first = resumeId
+        ? "The engine restarted. Continue where you left off; owner replies, if any, follow as further turns."
+        : [intro, frameRequest(f.id, f.state.request), ...(plan?.mode === "from_commit" && plan.summary ? [plan.summary] : [])].join("\n\n");
+      const turns = new TurnQueue(f, first);
+      job.turns = turns;
+      if (shuttingDown || dead) turns.close();
+      const base = await git.revParse(p.real!, `refs/heads/${branch}`);
+      if (!base) throw new SessionRefused(`the branch ${branch} is gone`);
+      const group = new SessionGroup({
+        docker: rt.docker, runId, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt.proxyScript,
+        agentLimits: roleContainerLimits(limits), proxyLimits: containerLimits(limits.proxy), maxPageBytes: maxPageBytes(limits),
+        credential, log, ...(rt.platform ? { platform: rt.platform } : {}), ...(rt.sleep ? { sleep: rt.sleep } : {}),
+      });
+      const facts: RunFacts = rt.model ? { model: rt.model } : {};
+      let r: Awaited<ReturnType<typeof runAnalystSession>>;
+      try {
+        r = await runAnalystSession({
+          sdk, docker: rt.docker, group, manifest: m.raw, worktree: wt.path,
+          instructions: { analyst: analystMd.text, ...(readerMd ? { reader: readerMd.text } : {}) },
+          limits: agentLimits(limits, m.billingMode), skillsPluginDir: skillsPluginDir("requirements-analyst"),
+          ...(rt.model ? { model: rt.model } : {}), ...(resumeId ? { resume: resumeId } : {}), sessionVolume: "run",
+          billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
+          tools: (research) => handle.interviewTools(f.id, wt.path, facts, research),
+          turns,
+          commit: async (policy) => (dead ? { status: "unchanged" } : commitWorktree({
+            git, gitDir: wt.gitDir, worktree: wt.path, branch, base, policy, scanner, tmpDir,
+            message: `${f.id}: analyst session (run ${runId})`, limits: worktreeLimits(limits),
+          })),
+          onSessionId: (id) => void (dead || runs.update(runId, { session_id: id })),
+          onBreach: async (breaches) => {
+            await alert(p, `breach:${runId}:${crypto.randomBytes(4).toString("hex")}`, {
+              title: "Analyst wrote outside its rules", feature: f.id,
+              context: `The engine rejected run ${runId}'s changes: ${breaches.slice(0, 20).map((b) => `${b.path || "(history)"} (${b.reason})`).join(", ")} (F-007 FR-9, AC-9). Nothing was committed.`,
+              impact: "The analyst's run is stopped and its worktree reset to the branch.",
+              confirm: "Look at the agent's instructions and restart the feature", hold: "Keep the feature stopped", recommendation: "B",
+            });
+          },
+          log,
+        });
+      } catch (e) {
+        if (e instanceof SecretFound) {
+          await populateWorktree(git, p.real!, base, wt.path, wt.gitDir);
+          await alert(p, `secret:${crypto.randomBytes(8).toString("hex")}`, {
+            title: "Analyst change refused: the secrets scan found a secret", feature: f.id,
+            context: `The engine didn't commit run ${runId}'s changes because gitleaks flagged them (F-007 FR-11). The worktree was reset to the branch.`,
+            impact: "The analyst's run is stopped.", confirm: "Rotate the secret if it was real", hold: "It was a false positive: no action", recommendation: "A",
+          });
+          await endRun(p, f, runId, "failed", "the secrets scan found a secret in its change", facts);
+          return;
+        }
+        throw e;
+      }
+      if (dead) return;
+      const { outcome, commit } = r;
+      if (commit.status === "committed") runs.update(runId, { last_commit: commit.commit });
+      if (commit.status === "rejected" || commit.status === "over_limit") await populateWorktree(git, p.real!, base, wt.path, wt.gitDir);
+      let failure: string | null = null;
+      if (commit.status === "rejected") failure = "it wrote outside the role's rules (Security item filed)";
+      else if (commit.status === "over_limit") failure = `its change went over the worktree ${commit.cap} cap`;
+      else if (outcome.status === "cap") failure = `it reached the ${outcome.reason} cap`;
+      else if (shuttingDown) return;
+      else if (outcome.status === "error") failure = `the session failed (${String(outcome.reason).slice(0, 200)})`;
+      else if (record.run(runId)?.status === "running") failure = "the session ended before the spec was ready";
+      if (failure) await endRun(p, f, runId, "failed", failure, { ...facts, usage: usage(outcome) });
+      else await endRun(p, f, runId, "complete", null, facts);
+    } catch (e) {
+      if (dead) return;
+      // No session ran: the run waits for the next engine start (AC-13).
+      const why = engineWords(e);
+      if (record.run(runId)?.status === "running") runs.interrupt(runId, why);
+      log.warn(`${f.id}: no analyst session started: ${why}`);
+      await noteAnalyst(f, "waiting", `No analyst session started: ${why}. The run resumes at the next engine start.`);
+    }
+  }
+
+  const usage = (o: SessionOutcome): RunUsage => ({ input_tokens: o.inputTokens, output_tokens: o.outputTokens, cost_usd: o.costUsd, duration_s: Math.round(o.durationMs / 1000) });
+
+  /** A run's end: its status, its session volume removed, and for a failure a report and a transcript note (SR-18). */
+  async function endRun(p: Project, f: FeatureInterview, runId: string, status: "complete" | "failed", why: string | null, facts: RunFacts): Promise<void> {
+    if (status === "failed" || record.run(runId)?.status === "running") runs.finish(runId, status, why ?? undefined);
+    await o.agents?.docker.run(["volume", "rm", "--force", runVolume(runId)], { okCodes: [1] }).catch(() => log.warn(`volume ${runVolume(runId)} wasn't removed`));
+    if (status !== "failed" || !why) return;
+    try {
+      await p.state_repo!.commit([agentReport({
+        feature: f.id, stage: INTERVIEW_STAGE, role: "requirements-analyst", n: await nextReport(p, f.id), commit: record.run(runId)?.last_commit ?? "unknown",
+        outcome: "partial", summary: `Run ${runId} stopped: ${why}.`,
+        body: { spec_path: null, spec_version: null, open_assumptions: f.state.list("assumption").filter((a) => a.status === "open").map((a) => a.id) },
+        facts, artifacts: runArtifacts.get(runId) ?? [],
+      })], `${f.id}: run ${runId} stopped`);
+      await pushState(p);
+    } catch (e) {
+      log.warn(`${p.name}: the report for run ${runId} wasn't committed (${(e as Error).message}).`);
+    }
+    await noteAnalyst(f, "stopped", `The analyst's run stopped: ${why}.`);
   }
 
   let done!: () => void;
@@ -617,7 +811,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     },
     resume: (fid) => {
       const fs_ = allFeatures().filter((f) => !fid || f.id === fid);
-      for (const f of fs_) f.paused = false;
+      for (const f of fs_) {
+        f.paused = false;
+        f.changed.emit("resumed");
+      }
       return fs_.map((f) => f.id);
     },
     shutdown: () => void handle.stop(),
@@ -675,6 +872,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         ...(research ? { research } : {}),
         onSpecReady: (passed) => {
           if (passed && !dead && record.run(runId)?.status === "running") runs.finish(runId, "complete");
+          // The analyst's session ends with its turn; its changes are then committed and checked.
+          if (passed) jobs.get(fid)?.turns?.close();
         },
         reportFor: async (r): Promise<Change[]> => {
           const n = await nextReport(p, fid);
@@ -690,12 +889,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
               open_assumptions: f.state.list("assumption").filter((a) => a.status === "open").map((a) => a.id),
             },
             facts,
+            artifacts: runArtifacts.get(runId) ?? [],
           })];
         },
       });
     },
     async crash() {
       dead = true;
+      for (const j of jobs.values()) j.turns?.close();
       for (const p of projects) {
         p.sessions?.closeAll();
         await p.listener?.close().catch(() => undefined);
@@ -724,6 +925,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       runConfirm({ masterRepo: o.masterRepo, projectPath, git, github, pins, os: osApi, clock, log, io }),
     stop() {
       stopping ??= (async () => {
+        // Sessions end with their turn streams; their work is committed and the runs stay open to resume (FR-14).
+        shuttingDown = true;
+        for (const j of jobs.values()) j.turns?.close();
+        await Promise.all([...jobs.values()].map((j) => j.done));
         for (const p of projects) {
           p.sessions?.closeAll();
           await p.listener?.close().catch(() => undefined);
@@ -736,9 +941,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     },
   };
 
+  if (o.agents) {
+    // What a killed engine left behind goes, except the session volumes of runs that can still resume.
+    const keep = new Set(runs.interrupted().map((r) => runVolume(r.id)));
+    await sweepLeftovers(o.agents.docker, keep, log).catch((e) => log.warn(`Leftover containers couldn't be swept: ${engineWords(e)}`));
+  }
+
   // FR-14: an interrupted analyst run gets a report saying so, then resumes
   // from its session or its last commit, with no retry counted.
-  for (const r of interruptedAtStart) {
+  for (const r of runs.interrupted()) {
     const p = projects.find((x) => x.real === r.project && x.state === "running");
     const f = p?.features.get(r.feature);
     if (!p || !f || ambiguous.has(f.id) || r.role !== "requirements-analyst") continue;
@@ -749,7 +960,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       continue;
     }
     analystRuns.set(f.id, r.id);
-    if (o.resumeAnalyst && r.worktree) {
+    if (o.agents) launchAnalyst(p, f, plan);
+    else if (o.resumeAnalyst && r.worktree) {
       o.resumeAnalyst({ feature: f.id, worktree: r.worktree, tools: handle.interviewTools(f.id, r.worktree), plan });
     }
   }

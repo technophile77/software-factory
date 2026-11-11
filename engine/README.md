@@ -119,7 +119,8 @@ Every outside dependency can be injected:
 | `logger` | `FileLogger` in `<engineHome>/logs` | `MemoryLogger` |
 | `parentOf` | `/proc` on Linux | A function from pid to parent pid |
 | `push` | `false` (the CLI sets `true`) | Talk to each project's remote: fetch `factory/state` at start and on `sync()`, and push it after each commit |
-| `resumeAnalyst` | none | Called at start for each interrupted analyst run, with its tools and resume plan (FR-14). Milestone 2 starts the SDK session here |
+| `resumeAnalyst` | none | Called at start for each interrupted analyst run when `agents` isn't given, with its tools and resume plan (FR-14) |
+| `agents` | none (the CLI passes Docker on its local endpoint and the Agent SDK) | `{ docker, sdk, dockerDir, proxyScript }` fakes. With it, `feature.start` and each resume run the analyst in its container, and leftovers of a killed engine are swept at start |
 
 Pushes and fetches go only to `<webBase>/<owner>/<repo>.git`, where
 `webBase` is the GitHub web base (`https://github.com` unless injected) and

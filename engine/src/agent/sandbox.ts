@@ -48,6 +48,11 @@ export interface AgentContainer {
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
+/** The run's own session volume, kept across resumes until the run ends. */
+export function runVolume(runId: string): string {
+  return dockerName(runId.toLowerCase(), "session");
+}
+
 /** The engine's end of the proxy's stdio channel. */
 export class ProxyClient {
   private next = 1;
@@ -208,7 +213,13 @@ export class SessionGroup {
   }
 
   /** An agent container for one session, with its own proxy credential bound to its role (SR-7). */
-  async startAgent(policy: RolePolicy, worktree: string | null, o: { sessionVolume?: boolean } = {}): Promise<AgentContainer> {
+  /**
+   * `sessionVolume: true` gives the session a volume that `close()` removes.
+   * `"run"` gives it the run's own volume (`runVolume`), created if missing
+   * and kept across groups, so a resumed run finds its SDK session (FR-14);
+   * the caller removes it when the run ends.
+   */
+  async startAgent(policy: RolePolicy, worktree: string | null, o: { sessionVolume?: boolean | "run" } = {}): Promise<AgentContainer> {
     if (!this.proxy) throw new DockerError("the group isn't open");
     const limits = Object.prototype.hasOwnProperty.call(this.c.agentLimits, policy.role) ? this.c.agentLimits[policy.role] : undefined;
     if (!limits) throw new DockerError(`no container limits for the ${policy.role} role`);
@@ -221,7 +232,20 @@ export class SessionGroup {
       mounts.push({ type: "bind", source: worktree, target: WORKSPACE, readOnly: !writes });
     }
     let volume: string | undefined;
-    if (o.sessionVolume) {
+    if (o.sessionVolume === "run") {
+      volume = runVolume(this.c.runId);
+      const have = await this.c.docker.run(["volume", "inspect", volume], { okCodes: [1] });
+      if (have.code === 0) {
+        // Only a volume this run made is mounted: a name alone could be anyone's.
+        const doc = JSON.parse(have.stdout.toString()) as unknown;
+        const v = Array.isArray(doc) ? doc[0] : doc;
+        const labels = isObj(v) && isObj(v.Labels) ? v.Labels : {};
+        if (labels["factory.run"] !== this.c.runId || labels["factory.project"] !== this.c.project) throw new DockerError(`volume ${volume} isn't this run's`);
+      } else {
+        await this.c.docker.run(["volume", "create", ...Object.entries(this.labels()).flatMap(([k, v]) => ["--label", `${k}=${v}`]), volume]);
+      }
+      mounts.push({ type: "volume", name: volume, target: `${SESSION_HOME}/.claude`, readOnly: false });
+    } else if (o.sessionVolume) {
       volume = dockerName(this.c.runId.toLowerCase(), policy.role, String(n), "session");
       await this.c.docker.run(["volume", "create", ...Object.entries(this.labels()).flatMap(([k, v]) => ["--label", `${k}=${v}`]), volume]);
       this.volumes.add(volume);

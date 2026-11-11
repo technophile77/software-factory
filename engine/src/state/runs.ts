@@ -41,7 +41,7 @@ export class RunBook {
     return run;
   }
 
-  update(id: string, patch: Partial<Pick<RunRecord, "session_id" | "last_commit">>): RunRecord {
+  update(id: string, patch: Partial<Pick<RunRecord, "session_id" | "last_commit" | "git_dir">>): RunRecord {
     const run = this.must(id);
     const next = { ...run, ...patch };
     this.record.putRun(next);
@@ -50,6 +50,13 @@ export class RunBook {
 
   finish(id: string, status: "complete" | "failed", reason?: string): RunRecord {
     const run = { ...this.must(id), status, ended_at: iso(this.clock.now()), ...(reason ? { reason } : {}) };
+    this.record.putRun(run);
+    return run;
+  }
+
+  /** A run whose session couldn't start (no Docker, say): it waits for the next engine start to resume it, which counts as one of its resumes. */
+  interrupt(id: string, reason: string): RunRecord {
+    const run: RunRecord = { ...this.must(id), status: "interrupted", reason };
     this.record.putRun(run);
     return run;
   }
@@ -117,6 +124,8 @@ export function agentReport(o: {
   body: Record<string, unknown>;
   facts: RunFacts;
   itemsFiled?: string[];
+  /** Envelope `artifacts`: the run's image and resolved skills (proposal 0013), as `{ kind, ref }`. */
+  artifacts?: Array<{ kind: string; ref: string }>;
 }): Change {
   const report = {
     schema: "agent-report/1.0",
@@ -127,7 +136,7 @@ export function agentReport(o: {
     outcome: o.outcome,
     summary: o.summary,
     items_filed: o.itemsFiled ?? [],
-    artifacts: [],
+    artifacts: o.artifacts ?? [],
     body: o.body,
     ...o.facts,
   };

@@ -508,4 +508,49 @@ This settles blocked decisions 5 and 6 above.
   - exclude, including a protected skill;
   - ten path and rule refusals, symlinks included;
   - image labels, tag and build context.
-- **Not done:** the analyst still isn't started from `feature.start`, so nothing calls `buildAgentImage` or `instructions()` at run time yet. Recording the resolved skill list in the agent report (proposal 0013) waits for that wiring.
+- **Not done (at the time):** starting the analyst from `feature.start`, and recording the resolved skill list in the agent report. Both are done in the next section.
+
+### The analyst, wired end to end
+
+- **Who starts it:** `feature.start` and every resume of an interrupted run now start the analyst. They do this through `EngineOptions.agents` (an `AgentRuntime`: Docker, the SDK loader, the image's files, the proxy bundle). The CLI builds the real one.
+  - With no docker client or local daemon, the CLI passes a stand-in that refuses every call with that reason, so a session never starts (AC-13).
+  - Without `agents`, the engine behaves as before; the acceptance harness relies on this.
+- **What one run does (`runAnalyst` in `src/engine.ts`, helpers in `src/agent/runtime.ts`):**
+  1. **The worktree:** an engine-owned checkout of the feature branch at `<engine home>/worktrees/<project hash>/<feature>`.
+     - It is made with `git worktree add --no-checkout`, then filled from git blobs and `read-tree`, so no repo filter, attribute or hook runs (SR-11).
+     - Its git dir is taken before any agent runs and kept in the run record (`git_dir`).
+  2. **The image:** the project's image for its `factory.version` commit and skills digest. An image already tagged for that identity is reused if its labels and user check out; otherwise it is built. The pinned base image doubles as the proxy image.
+  3. **The containers:** the run's `SessionGroup`, with the project's effective limits for each role and the proxy, the page byte cap, and the model credential chosen as for the billing check.
+  4. **The session:** `runAnalystSession` with the analyst's resolved `AGENT.md` (and the reader's, for `research_web`), the session caps from the limits, and the role's baked plugin path.
+  5. **Turns (`TurnQueue`):**
+     - The first turn names the branch and the spec path and gives the owner's request in a boundary frame (`frameRequest`). A resume from a commit adds the transcript summary; a resume of an SDK session gets a short "continue" turn instead.
+     - After that, each batch of owner replies is handed over through `takeTurn` (framed, and recorded as delivered) as soon as it is committed, except while the feature is paused.
+     - A passing `interview_spec_ready` closes the stream, which ends the session.
+  6. **The commit:** after the container is gone, the FR-9/FR-11 commit goes to the branch, and `last_commit` is recorded.
+- **How a run ends:**
+  - **Complete:** the spec passed.
+  - **Failed, with a partial report and a transcript note naming the reason:**
+    - a cap, including a worktree cap;
+    - a breach: a Security item is filed and the worktree reset to the branch;
+    - a secret in the change: a Security item is filed and the worktree reset;
+    - a session error;
+    - a session that ended without a ready spec.
+  - **Interrupted, with a transcript note:** the session couldn't start at all (Docker down, image build failed, no credential). The next engine start resumes it.
+  - **On `stop()`:** sessions end with their turn streams, their work is committed, and the runs stay open. The next start marks them interrupted and resumes them (FR-14). `crash()` writes nothing more.
+- **Reports:** the agent report's envelope `artifacts` lists `{ kind: "image", ref: <tag> }` and one `{ kind: "skill", ref: "<name> (<master|project>: <path>)" }` per resolved skill. This applies to the spec-ready report and to the report of a stopped run. Using `artifacts` needs no contract change. A dedicated field would.
+- **Resume (AC-12):**
+  - The analyst's SDK session lives on the run's own volume (`factory-<run>-session`). `startAgent(…, { sessionVolume: "run" })` creates it, or reuses it only if its labels name this run and project. Group close leaves it in place; it is removed when the run ends.
+  - A resume with a recorded session id passes `resume`. If the volume is gone, it starts again from the commit instead.
+- **Sweep at start:** containers, networks and volumes carrying the `factory.run` label are removed. The exception is the session volume of a run that is still interrupted, so it can resume.
+- **Interpretations for the owner:**
+  - A session that couldn't start leaves the run interrupted, not failed. It then retries only at the next engine start; there is no retry while the engine runs.
+  - The sweep removes every `factory.run`-labelled resource on the Docker daemon. It assumes one engine per daemon.
+  - No model or rung is chosen yet; the CLI's default applies (F-002 ladder not wired).
+- **Tests (`test/analyst-run.test.ts`, fake Docker and a scripted SDK that drives the real factory tools):**
+  - the full path from `feature.start` to a committed spec, with the image identity, instructions, limits, framed turns and report artifacts checked;
+  - a turns cap;
+  - AC-9 (a breach);
+  - AC-13 (Docker down, then a resume from the commit);
+  - AC-12 (a kill, the sweep, the kept volume, and an SDK-session resume).
+
+  The fakes moved to `test/fakes.ts`. The real-docker test stays behind `FACTORY_DOCKER_TESTS=1`.

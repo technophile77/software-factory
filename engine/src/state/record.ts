@@ -35,6 +35,8 @@ export interface RunRecord {
   session_id?: string;
   /** The last commit the engine made for the run (ADR 0012: resume from here). */
   last_commit?: string;
+  /** The analyst's worktree git dir, taken when the worktree was made (the agent can rewrite its `.git` link). */
+  git_dir?: string;
   /** The analyst's checkout, so a resumed run starts where it was. */
   worktree?: string;
   reason?: string;

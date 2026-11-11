@@ -3,7 +3,10 @@ import * as path from "node:path";
 import * as readline from "node:readline";
 import YAML from "yaml";
 import { systemClock } from "./clock";
+import type { AgentRuntime } from "./agent/runtime";
+import { loadAgentSdk } from "./agent/sdk-binding";
 import { confirmProject } from "./config/confirm";
+import { DockerCli, DockerError, pickEndpoint } from "./docker/cli";
 import { PinStore } from "./config/pins";
 import { defaultEngineHome, startEngine } from "./engine";
 import { ensureOwnerDir, findOnPath } from "./fsutil";
@@ -33,6 +36,25 @@ function flags(args: string[]): Record<string, string> {
     out[a.slice(2)] = args[++i]!;
   }
   return out;
+}
+
+/**
+ * Docker on a fixed local endpoint (SR-14) and the Agent SDK, loaded only when
+ * a session starts. With no docker client or local daemon, every session is
+ * refused with that reason, and the owner sees it in the transcript (AC-13).
+ */
+function agentRuntime(home: string): AgentRuntime {
+  const dockerPath = findOnPath(process.platform === "win32" ? "docker.exe" : "docker");
+  const host = pickEndpoint(process.platform, process.env);
+  const missing = !dockerPath ? "no docker client is on PATH" : !host ? "no local Docker daemon was found" : null;
+  const refuse = async (): Promise<never> => {
+    throw new DockerError(`Docker isn't available: ${missing}`);
+  };
+  const docker = missing
+    ? ({ run: refuse, out: refuse, spawn: () => { throw new DockerError(`Docker isn't available: ${missing}`); } } as unknown as DockerCli)
+    : new DockerCli({ dockerPath: dockerPath!, host: host!, configDir: path.join(home, "docker"), children: new Children() });
+  // The bundle sits in dist/; the image's fixed files ship beside it in docker/.
+  return { docker, sdk: loadAgentSdk, dockerDir: path.join(__dirname, "..", "docker"), proxyScript: path.join(__dirname, "proxy.js") };
 }
 
 /** The engine's own config, outside every repo: today only the gitleaks path. */
@@ -126,7 +148,7 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write("Give the gitleaks binary's absolute path with --gitleaks or `gitleaks:` in engine.yaml.\n");
     return 2;
   }
-  const engine = await startEngine({ masterRepo: master, engineHome: home, gitleaks: { path: gitleaks }, push: true });
+  const engine = await startEngine({ masterRepo: master, engineHome: home, gitleaks: { path: gitleaks }, push: true, agents: agentRuntime(home) });
   for (const p of engine.projects) {
     process.stderr.write(`${p.name ?? p.path}: ${p.state}${p.reason ? ` (${p.reason})` : ""}\n`);
   }
