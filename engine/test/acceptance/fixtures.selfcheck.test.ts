@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { drive, FakeClock } from "./support/clock";
 import { LEAK_MARKER } from "./support/fake-tools";
 import { BASE_PATH, git, World } from "./support/world";
@@ -36,7 +37,20 @@ describe("Fixture self-checks (no engine needed)", () => {
     expect(manifest).toMatch(new RegExp(`github_id: ${p.ownerId}`));
     expect(manifest).not.toMatch(/<[a-z][^>]*>/i);
     expect(git(p.clone, "rev-parse", "--verify", "refs/remotes/origin/factory/state").trim()).toMatch(/^[0-9a-f]{40}$/);
-    expect(readFileSync(w.projectsFile, "utf8")).toContain(p.configRepo);
+    expect(readFileSync(w.projectsFile, "utf8")).toContain(JSON.stringify(p.configRepo));
+  });
+
+  // Tells a fixture problem (the file's owner or ACL) from an engine one when
+  // SR-13 refuses every projects file on Windows: shows what the engine reads.
+  it.runIf(process.platform === "win32")("[FX-7] on Windows, the projects file the fixtures write passes SR-13's owner and ACL check", async () => {
+    w = await World.create();
+    const src = (m: string) => fileURLToPath(new URL(`../../src/${m}.ts`, import.meta.url));
+    const { realOsApi } = await import(/* @vite-ignore */ src("os/ffi"));
+    const { isOwnerWritableOnly } = await import(/* @vite-ignore */ src("os/sddl"));
+    const win = realOsApi().windows();
+    const sddl: string = win.fileSddl(w.projectsFile);
+    const sid: string = win.currentUserSid();
+    expect(isOwnerWritableOnly(sddl, sid), `user ${sid}, file ${sddl}`).toBe(true);
   });
 
   it("[FX-2] the fake GitHub runs the device flow and answers GET /user and GET /repos", async () => {
