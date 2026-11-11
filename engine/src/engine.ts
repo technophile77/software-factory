@@ -830,7 +830,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       }
       return fs_.map((f) => f.id);
     },
-    shutdown: () => void handle.stop(),
+    shutdown: () => void handle.stop().catch((e) => log.warn(`The engine didn't stop cleanly: ${engineWords(e)}`)),
   };
 
   // Phase 3: channels and engine.json (FR-4).

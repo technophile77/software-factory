@@ -36,17 +36,28 @@ export class FileLogger implements Logger {
     this.prune();
   }
 
+  // An info or warn line that can't be written (log folder gone, disk full)
+  // mustn't stop the engine mid-shutdown; action records still fail closed (SR-4).
   info(message: string): void {
-    this.write({ level: "info", message });
+    if (!this.tryWrite({ level: "info", message })) this.console(`factory-engine: ${message}`);
   }
 
   warn(message: string): void {
-    this.write({ level: "warn", message });
+    this.tryWrite({ level: "warn", message });
     this.console(`factory-engine: ${message}`);
   }
 
   action(rec: ActionRecord): void {
     this.write({ level: "action", ...rec, approval_id: rec.approval_id ?? null });
+  }
+
+  private tryWrite(rec: Record<string, unknown>): boolean {
+    try {
+      this.write(rec);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private write(rec: Record<string, unknown>): void {

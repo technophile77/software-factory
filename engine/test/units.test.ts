@@ -15,7 +15,7 @@ import { Git, overrideArgs } from "../src/git";
 import { HttpGitHub, parseDeviceCode, parsePoll, startDeviceApproval } from "../src/github";
 import { Gitleaks, ScanError } from "../src/gitleaks";
 import { frameTurn } from "../src/interview/frame";
-import { MemoryLogger } from "../src/log";
+import { FileLogger, MemoryLogger } from "../src/log";
 import { CredentialApi, FfiError, FUNCTIONS, Handle, OsApi, WindowsApi, realOsApi } from "../src/os/ffi";
 import { isOwnerOnlyPipe, isOwnerWritableOnly, ownerOnlyPipeSddl, parseSddl, withSelfSid } from "../src/os/sddl";
 import { Children, osParent } from "../src/proc";
@@ -27,6 +27,7 @@ import { ChainError, canonical, checkAgainstHead, makeEntry, parseTranscript, se
 import { InterviewState } from "../src/interview/model";
 import { canSymlink, needsSymlinks, nodeProgram, ownerOnly } from "./acceptance/support/platform";
 import { CLIENT_ID, GIT_PATH, FakeClock, FakeGitHub, OWNER_ID, fakeGitleaks, git, initRepo, manifestYaml, settle, tmpdir } from "./helpers";
+import { systemClock } from "../src/clock";
 
 const linuxOs: OsApi = {
   platform: "linux",
@@ -627,5 +628,18 @@ describe("reply frame (Interview tools v1.0)", () => {
     const b = frameTurn([{ item: "Q-1", revision: 0, kind: "answer", text: "x" }]).boundary;
     expect(a).not.toBe(b);
     expect(a).toMatch(/^[0-9a-f]{32}$/);
+  });
+});
+
+describe("FileLogger when its folder is gone", () => {
+  it("keeps info and warn off the error path, but an action record still fails closed (SR-4)", () => {
+    const dir = path.join(tmpdir(), "logs");
+    const lines: string[] = [];
+    const log = new FileLogger(dir, systemClock, (l) => lines.push(l));
+    fs.rmSync(dir, { recursive: true, force: true });
+    expect(() => log.info("engine stopped")).not.toThrow();
+    expect(() => log.warn("late warning")).not.toThrow();
+    expect(lines).toEqual(["factory-engine: engine stopped", "factory-engine: late warning"]);
+    expect(() => log.action({ kind: "push", target: "x", outcome: "ok" } as never)).toThrow(/ENOENT/);
   });
 });
