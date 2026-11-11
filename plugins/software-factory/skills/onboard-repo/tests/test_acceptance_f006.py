@@ -1,7 +1,7 @@
-"""F-006 (advisor) acceptance tests for the manifest checker: Role policy v2.3.
+"""F-006 (advisor) acceptance tests for the manifest checker: Role policy v2.4.
 
 Written by the test engineer from F-006 spec v5 (FR-6, FR-7, SR-7, A-3) and
-interface-contracts.md Role policy v2.3 (H-0061). They add to the nine
+interface-contracts.md Role policy v2.4 (H-0061). They add to the nine
 H-0061 tests in test_acceptance.py (`RolePolicyV23`) only what those don't
 cover: the rules in each repo's effective policy, repo overrides that try to
 widen the advisor, the "can't show it is inside" glob rule, the shell rule
@@ -40,7 +40,7 @@ class PolicyBase(oa.Base):
 
 
 class F006AdvisorRepoOverrides(PolicyBase):
-    """Role policy v2.3: the advisor rules "hold in the project policy and in
+    """Role policy v2.4: the advisor rules "hold in the project policy and in
     each repo's effective policy"; "A repo override may not add tools"."""
 
     def test_fr6_override_cannot_give_the_advisor_a_write_shell_or_web_tool(self):
@@ -119,7 +119,7 @@ class F006AdvisorRepoOverrides(PolicyBase):
 
 
 class F006AdvisorGlobsInside(PolicyBase):
-    """Role policy v2.3: "Each glob in its read.allow must be one of the
+    """Role policy v2.4: "Each glob in its read.allow must be one of the
     analyst's, or sit under an analyst glob ** or <path>/**; the checker
     refuses any it can't show is inside"."""
 
@@ -163,7 +163,7 @@ OLD_V23_DENY = [".factory/inbox/**", "**/.factory/inbox/**", ".factory/interview
 
 
 class H0076FactoryDenied(PolicyBase):
-    """Role policy v2.3 amendment H-0076: the advisor reads nothing under
+    """Role policy v2.4 amendment H-0076: the advisor reads nothing under
     .factory/; a manifest must replace the four inbox and transcript denies
     with `.factory/**` and `**/.factory/**`."""
 
@@ -206,7 +206,7 @@ class H0076FactoryDenied(PolicyBase):
 
 
 class F006MayRequestSpelling(PolicyBase):
-    """Role policy v2.3 Requests: "it may list only requirements-analyst and
+    """Role policy v2.4 Requests: "it may list only requirements-analyst and
     orchestrator"; SR-3: the request rule starts closed."""
 
     def test_near_miss_role_names_refused(self):

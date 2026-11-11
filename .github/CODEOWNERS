@@ -1,0 +1,3 @@
+# Only the owner can approve a pull request on main (H-0049, F-003 Gate 2 R2-10).
+# The factory machine account has Write, so without this its approval would count.
+* @technophile77

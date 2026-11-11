@@ -698,6 +698,16 @@ class ManifestPolicy(Base):
                 errs = self.errors(self.manifest(dev_deny=self.CC).replace('allow: ["src/**"]', f'allow: [{json.dumps(glob)}]'))
                 self.assertTrue(any("outside the worktree" in e for e in errs), errs)
 
+    def test_globs_use_one_dialect(self):
+        # H-0046 (Gate 2 R2-2): only literal segments, `*` and `**`.
+        for glob in ("src/?.py", "src/[ab]/**", "src/[[:alpha:]]/**", "src/{a,b}/**", "src/@(a|b)/**", ".factory/?./CLAUDE.md"):
+            with self.subTest(glob=glob):
+                errs = self.errors(self.manifest(dev_deny=self.CC).replace('allow: ["src/**"]', f'allow: [{json.dumps(glob)}]'))
+                self.assertTrue(any("glob dialect" in e for e in errs), errs)
+        for glob in ("src/**", "src/*.py", "src/app/(auth)/**", "**/.env.*"):
+            with self.subTest(glob=glob):
+                self.assertFalse(fc._escapes_worktree(glob))
+
     def test_policy_is_optional(self):
         text = self.manifest().split("policy:")[0]
         self.assertEqual(self.errors(text), [])
@@ -707,11 +717,13 @@ class Protection(unittest.TestCase):
     def test_states(self):
         self.assertEqual(fc._protection({"message": "Branch not protected"})[0], "missing")
         full = {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": True,
-                                                  "require_last_push_approval": True},
+                                                  "require_last_push_approval": True, "require_code_owner_reviews": True},
                 "required_status_checks": {"strict": True, "contexts": ["build"]}, "enforce_admins": {"enabled": True}}
         self.assertEqual(fc._protection(full)[0], "ok")
         # Gate 2 #1: a weaker rule would let the factory token push after approval and merge.
-        for key, value in (("dismiss_stale_reviews", False), ("require_last_push_approval", False)):
+        # R2-10: without code owner review, the machine account's approval counts on owner-authored PRs.
+        for key, value in (("dismiss_stale_reviews", False), ("require_last_push_approval", False),
+                           ("require_code_owner_reviews", False)):
             weak = json.loads(json.dumps(full))
             weak["required_pull_request_reviews"][key] = value
             self.assertEqual(fc._protection(weak)[0], "incomplete", key)
@@ -720,6 +732,57 @@ class Protection(unittest.TestCase):
         self.assertEqual(fc._protection(weak)[0], "incomplete")
         self.assertEqual(fc._protection({"required_status_checks": {"contexts": ["build"]}})[0], "incomplete")
         self.assertEqual(fc._protection("unreadable")[0], "unknown")
+
+
+class UnenforceableProtection(Base):
+    """H-0070: a private repo on a free plan stores branch rules but GitHub doesn't enforce them."""
+
+    def test_upgrade_message_is_unenforceable(self):
+        body = {"message": "Upgrade to GitHub Pro or make this repository public to enable this feature.",
+                "status": "403"}
+        self.assertEqual(fc._protection(body)[0], "unenforceable")
+        a = self.assess({"README.md": "x"}, github_protection=body)
+        self.assertEqual(a["github"]["branch_protection"], "unenforceable")
+        g = [g for g in a["gaps"] if g["id"] == "github:branch-protection"][0]
+        self.assertEqual(g.get("severity"), "high")
+        self.assertIn("private", g["title"])
+
+    def test_other_messages_stay_unknown(self):
+        self.assertEqual(fc._protection({"message": "Not Found"})[0], "unknown")
+
+
+class PluginVersion(unittest.TestCase):
+    """H-0048 (Gate 2 R2-8): the skill stops unless it runs from the pinned release."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+
+    def write(self, name, text):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
+
+    def test_shipped_plugin_has_a_release_version(self):
+        self.assertRegex(fc.plugin_version()["tag"], r"^v\d+\.\d+\.\d+$")
+
+    def test_pinned_tag_matches(self):
+        pj = self.write("plugin.json", '{"version": "1.2.3"}')
+        ok = self.write("ok.yaml", "factory:\n  version: v1.2.3\n")
+        bad = self.write("bad.yaml", "factory:\n  version: 0123abc\n")
+        self.assertTrue(fc.plugin_version(ok, pj)["match"])
+        self.assertFalse(fc.plugin_version(bad, pj)["match"])
+        self.assertFalse(fc.plugin_version(self.write("none.yaml", "name: x\n"), pj)["match"])
+
+    def test_unversioned_plugin_is_refused(self):
+        with self.assertRaises(fc.CheckError):
+            fc.plugin_version(None, self.write("plugin.json", '{"version": "latest"}'))
+
+    def test_cli_exit_code(self):
+        tag = fc.plugin_version()["tag"]
+        self.assertEqual(fc.main(["plugin-version", "--manifest", self.write("m.yaml", f"factory:\n  version: {tag}\n")]), 0)
+        self.assertEqual(fc.main(["plugin-version", "--manifest", self.write("n.yaml", "factory:\n  version: v0.0.0\n")]), 1)
 
 
 class Properties(unittest.TestCase):
@@ -852,7 +915,7 @@ class AdvisorFactoryDeny(unittest.TestCase):
                 self.assertTrue(any("advisor" in e and path in e for e in errs), errs)
 
     def test_old_inbox_and_transcript_denies_alone_are_not_enough(self):
-        # Under v2.3 as first approved, advice and run records stayed readable.
+        # Under the advisor policy as first approved (v2.3 before renumbering), advice and run records stayed readable.
         data = self.manifest()
         deny = data["policy"]["roles"]["advisor"]["read"]["deny"]
         deny[:] = [d for d in deny if d not in (".factory/**", "**/.factory/**")] + [
@@ -924,10 +987,10 @@ class SecondGateRegressions(Base):
         self.assertTrue(any("bypass the policy: bash, python3" in e for e in errs), errs)
 
     def test_r2_2_globs_that_can_match_dotdot(self):
-        for glob in (".factory/[.][.]/CLAUDE.md", ".factory/?./CLAUDE.md", ".factory/.?/x"):
+        for glob in (".factory/[.][.]/CLAUDE.md", ".factory/?./CLAUDE.md", ".factory/.?/x", "docs/?.md"):
             with self.subTest(glob=glob):
                 self.assertTrue(fc._escapes_worktree(glob))
-        for glob in (".factory/**", "src/*.py", "docs/?.md"):
+        for glob in (".factory/**", "src/*.py"):
             with self.subTest(glob=glob):
                 self.assertFalse(fc._escapes_worktree(glob))
 

@@ -10,7 +10,7 @@ Specs: F-005 (`docs/features/F-005-spec-interview.md` in the master
 factory) and F-006 (`docs/features/F-006-advisor-agent.md`, the advisor).
 You are the owner's front end to the requirements analyst, which runs inside
 the factory engine. You carry its questions to the owner and the owner's
-replies back, over the Engine control channel (v1.2). The analyst writes
+replies back, over the Engine control channel (v1.3). The analyst writes
 every question; the advisor, a separate agent on a stronger model, writes
 advice on a question when the owner asks for it or approves the analyst's
 proposal; the engine keeps the record. You keep nothing.
@@ -88,6 +88,9 @@ SF_REQUEST_END
 ```
 
 The JSON is always a single line, so it can never contain the end marker.
+On Windows, Python usually installs as `python` with no `python3`, so
+there write `python` in place of `python3`; the rest of the command is
+the same.
 Run it from the repo (or config repo) the owner is working in; the script
 finds the engine only through `.factory/engine.json` in that repo's
 `factory/state` worktree. It prints one JSON object: `"ok": true` with the
@@ -121,7 +124,7 @@ owner was shown, copied from the script's last output. `kind` is one of
 long the engine may wait for the analyst's research before answering; use 60.
 It never waits for an advisor call.
 
-`advisor` is true when the engine speaks channel v1.2 or later, which has
+`advisor` is true when the engine speaks channel v1.3 or later, which has
 the advisor. With an older engine the script refuses the three advisor
 reply kinds before sending anything (`advisor_unsupported`).
 

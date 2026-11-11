@@ -1,6 +1,6 @@
 # 0004. Agent isolation: a Git worktree per agent plus per-role permissions
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [0015](0015-agent-containers-signed-owner-actions.md) (container per agent session)
 - **Date:** 2026-11-08
 - **Decided by:** owner
 - **Decision item:** open decision 4 (Security); write-up in `docs/proposals/0004-agent-isolation-permissions.md`

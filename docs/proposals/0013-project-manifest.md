@@ -67,8 +67,13 @@ standards:                   # project additions; can only tighten master rules
   security: standards/security-extra.md
   coding: standards/coding.md
 
+complexity: moderate         # preset for initial calibration only (F-002)
+
 settings:                    # overrides of master defaults, within allowed limits
   concurrency: unlimited
+  agents:                    # approved rung per role (F-002); omit = master default
+    software-developer: { rung: 3 }
+    security-reviewer: { rung: 4 }
   retries:
     environment_reruns: 2
     fix_cycles: 3
@@ -86,6 +91,9 @@ notes: |
 - `reason` is required for every override and exclusion.
 - `maturity` may not exceed the lowest repo's maturity.
 - Paths must stay inside the project's config location.
+- `settings.agents.<role>.rung` must exist in the pinned factory's ladder and
+  may not be below the role's floor (security reviewer and validation judge:
+  Sonnet/medium, F-002 A-3).
 - **Protected items:** `security-review` and the six core agents
   (orchestrator, requirements-analyst, software-developer, test-engineer,
   security-reviewer, validation-judge) may not appear in `exclude`. An

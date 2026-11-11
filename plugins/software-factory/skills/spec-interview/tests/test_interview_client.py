@@ -4,7 +4,8 @@ Run: python3 -m unittest discover -s plugins/software-factory/skills/spec-interv
 
 The independent acceptance tests are the test engineer's. These run the
 client against fake_engine.FakeEngine, which implements Engine control
-channel v1.2 on a Unix socket, so they need Linux or macOS and git.
+channel v1.1 plus v1.3's advisor items on a Unix socket, so they need
+Linux or macOS and git.
 """
 import hashlib
 import importlib.util
@@ -793,6 +794,9 @@ class FakePipeApi:
     def server_is_owner(self, handle):
         return self.owner
 
+    def server_pid(self, handle):
+        return 4242
+
     def available(self, handle):
         return None if self.broken and not self.inbox else len(self.inbox)
 
@@ -877,6 +881,15 @@ class PipeTransport(unittest.TestCase):
         self.assertTrue(api.closed)
         self.assertEqual(api.written, [])
 
+    def test_server_not_the_engine_pid_is_refused_and_closed(self):
+        ic._PipeTransport(self.PIPE, api=FakePipeApi(), pid=4242)
+        api = FakePipeApi()
+        with self.assertRaises(ic.Refused) as e:
+            ic._PipeTransport(self.PIPE, api=api, pid=4243)
+        self.assertEqual(e.exception.code, "peer_not_engine")
+        self.assertTrue(api.closed)
+        self.assertEqual(api.written, [])
+
     def test_open_failure_and_bad_names(self):
         with self.assertRaises(ic.ChannelError) as e:
             ic._PipeTransport(self.PIPE, api=FakePipeApi(opens=False))
@@ -884,6 +897,18 @@ class PipeTransport(unittest.TestCase):
         for bad in ("\\\\host\\pipe\\x", "\\\\.\\pipe\\x\n"):
             with self.assertRaises(ic.Refused):
                 ic._PipeTransport(bad, api=FakePipeApi())
+
+
+class WindowsOutput(unittest.TestCase):
+    """Piped stdout on Windows is cp1252; the answer must still be UTF-8."""
+
+    def test_output_is_utf8_whatever_the_stdout_encoding(self):
+        raw = io.BytesIO()
+        out = io.TextIOWrapper(raw, encoding="cp1252")
+        with mock.patch.object(ic, "run", return_value={"display": "caf\u00e9 \u2713 \U0001f600"}):
+            code = ic.main(["status"], stdin=io.StringIO("{}"), stdout=out)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(raw.getvalue().decode("utf-8"))["display"], "caf\u00e9 \u2713 \U0001f600")
 
 
 class SkillText(unittest.TestCase):
@@ -926,11 +951,11 @@ def outside_fences(display):
 
 
 class Advisor(Base):
-    """F-006 FR-11 and channel v1.2: ask_advisor, advisor proposals, advice."""
+    """F-006 FR-11 and channel v1.3: ask_advisor, advisor proposals, advice."""
 
     def setUp(self):
         super().setUp()
-        write_engine_json(os.path.join(self.repo, ".factory"), self.engine.path, version="1.2")
+        write_engine_json(os.path.join(self.repo, ".factory"), self.engine.path, version="1.3")
         self.engine.features["F-001"] = {"title": "t", "items": [item("Q1"), item("A1", kind="assumption")]}
         self.session = self.open()
 
@@ -1138,7 +1163,7 @@ class AdviceDisplay(Base):
 
 
 class AdvisorFieldsFailClosed(Base):
-    """Channel v1.2 fields off the contract are refused, never half-read."""
+    """Channel v1.3 fields off the contract are refused, never half-read."""
 
     def bad(self, raw):
         with self.assertRaises(ic.ChannelError, msg=raw) as e:
@@ -1206,8 +1231,8 @@ class F006FixRound1(Base):
 
     TERMS = {"limits": {"turns": 40, "tokens": 200000, "time_s": 900, "web_calls": 20}, "over_budget": True}
 
-    def v12(self):
-        write_engine_json(os.path.join(self.repo, ".factory"), self.engine.path, version="1.2")
+    def v13(self):
+        write_engine_json(os.path.join(self.repo, ".factory"), self.engine.path, version="1.3")
 
     def show(self, *items):
         self.engine.features["F-001"] = {"title": "t", "items": list(items)}
@@ -1215,13 +1240,13 @@ class F006FixRound1(Base):
         self.assertEqual(code, 0, out)
         return out
 
-    def test_m6_advisor_replies_refused_before_sending_to_a_v11_engine(self):
+    def test_m6_advisor_replies_refused_before_sending_to_an_engine_before_v13(self):
         self.engine.features["F-001"] = {"title": "t", "items": [proposal("P1", "Q1"), item("Q1")]}
         session = self.open()
         for iid, kind in (("Q1", "ask_advisor"), ("P1", "approve_advisor"), ("P1", "decline_advisor")):
             code, out = self.reply(session, iid, kind=kind, text="x")
             self.assertEqual((code, out["error"]["code"]), (2, "advisor_unsupported"), kind)
-            self.assertIn("v1.2", out["display"])
+            self.assertIn("v1.3", out["display"])
         self.assertEqual(self.replies(), [])
         self.assertEqual(self.engine.advisor_calls, [])
         self.assertEqual(self.reply(session, "Q1", text="Postgres")[0], 0)
@@ -1234,14 +1259,22 @@ class F006FixRound1(Base):
         code, out = self.call("open", {"feature": "F-001"})
         self.assertIs(out["advisor"], False)
         self.call("close", {"session": out["session"]})
-        self.v12()
+        # v1.2 is H-0051's session approval only; the advisor arrives in v1.3.
+        write_engine_json(os.path.join(self.repo, ".factory"), self.engine.path, version="1.2")
+        self.assertIs(self.call("status")[1]["advisor"], False)
+        self.engine.features["F-001"]["items"] = [item("Q1")]
+        session = self.open()
+        self.assertEqual(self.reply(session, "Q1", kind="ask_advisor", text="x")[1]["error"]["code"],
+                         "advisor_unsupported")
+        self.call("close", {"session": session})
+        self.v13()
         self.assertIs(self.call("status")[1]["advisor"], True)
         self.assertIs(self.call("open", {"feature": "F-001"})[1]["advisor"], True)
         write_engine_json(os.path.join(self.repo, ".factory"), self.engine.path, version="1.13")
         self.assertIs(self.call("status")[1]["advisor"], True)
 
     def test_m5_approve_says_a_call_started_decline_does_not(self):
-        self.v12()
+        self.v13()
         self.engine.features["F-001"] = {"title": "t", "items": [proposal("P1", "Q1"), proposal("P2", "Q1"),
                                                                   item("Q1")]}
         session = self.open()

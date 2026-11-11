@@ -161,3 +161,45 @@ The fake engine records the asked-about revision on each advice entry.
   `F006AdvisorRepoOverrides.test_sr7_analyst_override_deny_must_reach_the_advisor_in_that_repo`,
   `test_sr7_project_advisor_checked_on_its_own`. Fix on their side: the
   constant becomes `[".factory/**", "**/.factory/**"]`.
+
+## Merge with main (renumbering)
+
+`main` had already used both version numbers F-006 took: Engine control
+channel v1.2 is H-0051 there (owner approval of interview sessions through
+GitHub, ADR 0014, approved), and Role policy v2.3 is H-0040 there (project
+evaluator and context hygiene roles, a draft). The merge keeps `main`'s
+numbers, so F-006's become **Engine control channel v1.3** (H-0063, H-0075)
+and **Role policy v2.4** (H-0061, H-0076, on top of `main`'s v2.3 roles).
+The owner's approvals are unchanged; only the numbers moved. Inbox item v1.1
+(H-0062) keeps its number, beside `main`'s ADR 0015 signed-commit rule.
+Everything in this report above, and in the Gate 2, test and validation
+reports, that says channel v1.2 or Role policy v2.3 for the advisor means
+v1.3 and v2.4 now.
+
+| Where | Resolution |
+|---|---|
+| `docs/interface-contracts.md` | Both sides kept. The status paragraph lists `main`'s v1.2, v2.3 and Agent report v1.2 and F-006's v1.3 and v2.4. Channel: `main`'s v1.2 text (session approval, `awaitApproval`, -32006/-32007) plus the advisor text, now marked v1.3. Role policy: `main`'s evaluator and hygiene roles, its glob dialect and container text, and the advisor role and `may_request`, now marked v2.4 |
+| `factory_check.py` | `SUPPORT_AGENTS` has all four optional roles; `EVALUATOR_HIDDEN` and the advisor constants both kept |
+| `templates/factory-project.yaml` | `project-evaluator`, `context-hygiene` and `advisor` all present; the template validates |
+| `onboard-repo/tests/test_acceptance.py` | `SUPPORT_ROLES` has all four roles; the advisor constants kept; the contract-text check reads `**Advisor (v2.4` |
+| `interview_client.py` | The advisor gate is now channel 1.3 or later (a v1.2 engine has only H-0051's approval); `main`'s Windows fixes kept. The docstring says H-0051's session approval is not handled by the client yet |
+| `SKILL.md` | Channel v1.3; `main`'s Windows `python` note kept |
+| Developer tests and fake engine | Version strings to 1.3; a v1.2 engine is checked to have no advisor |
+| F-006 spec | v8: FR-11's check is 1.3; section 10 names v1.3 and v2.4 |
+
+**Test engineer's files: version strings only.** At the orchestrator's
+request, as a mechanical merge fix:
+- spec-interview `test_acceptance_f006.py`: `v1.2` to `v1.3` in eight
+  comments and docstrings, `engine_version = "1.2"` to `"1.3"` (line 73),
+  and the regex `Engine control channel \(?v1\.2` to `v1\.3` (line 750).
+  `engine_version = "1.1"` (the old-engine test) and the class and method
+  names that contain `V12`/`v12` are unchanged.
+- spec-interview `fake_engine_f006.py`: `v1.2` to `v1.3` in three comments.
+- onboard-repo `test_acceptance_f006.py`: `Role policy v2.3` to `v2.4` in six
+  docstrings.
+- onboard-repo `test_acceptance.py`: the conflict resolution above
+  (`SUPPORT_ROLES`, a comment, and the `Advisor \(v2\.4` regex).
+
+**Tests after the merge** (Python 3.13): spec-interview 358 run, all pass;
+onboard-repo 306 run, all pass, 1 skipped (no Python 3.10);
+`check_docs.py` passes.

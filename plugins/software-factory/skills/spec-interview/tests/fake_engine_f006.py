@@ -1,8 +1,8 @@
-"""A fake engine for Engine control channel v1.2 (H-0063, F-006), built by the
+"""A fake engine for Engine control channel v1.3 (H-0063, F-006), built by the
 test engineer from the contract alone.
 
 It extends the F-005 contract fake (`test_acceptance.FakeEngine`, channel
-v1.1) with what v1.2 adds:
+v1.1) with what v1.3 adds:
 - item kind `advisor_proposal` (the analyst proposes an advisor call on
   question `about`, with its reason in `why`);
 - `advice: [{call, status, text?, web_queries?}]` on questions;
@@ -108,7 +108,7 @@ class AdvisorEngine(FakeEngine):
                              for a in out["advice"]]
         return copy.deepcopy(out)
 
-    # -- v1.2 reply ------------------------------------------------------------
+    # -- v1.3 reply ------------------------------------------------------------
     def m_interview_reply(self, p):
         with self.lock:
             _, s = self._session(p)

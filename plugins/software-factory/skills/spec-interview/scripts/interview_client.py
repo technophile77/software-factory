@@ -2,8 +2,9 @@
 """Client for the spec-interview skill (F-005, F-006).
 
 Carries the requirements analyst's interview between the owner's Claude Code
-session and the engine, over Engine control channel v1.2: v1.1 plus the
-advisor's proposals, reply kinds and advice (H-0063, amended by H-0075).
+session and the engine, over Engine control channel v1.1, plus v1.3's
+advisor proposals, reply kinds and advice (H-0063, amended by H-0075).
+v1.2's GitHub approval of a session (H-0051) is not handled here yet.
 Standard library
 only (FR-1), like factory_check.py, so it adds no component to review.
 
@@ -393,8 +394,9 @@ class _SocketTransport:
 
 class _Win32Pipe:
     """The few Win32 calls the pipe transport needs, through ctypes. Kept
-    apart so the transport's logic can be tested with a stand-in on Unix;
-    this class itself has never run (no Windows machine)."""
+    apart so the transport's logic can be tested with a stand-in on Unix.
+    First run on Windows 11 with Python 3.10, against Python and Node pipe
+    servers: 2026-11-10 (tests/windows/win_check.py)."""
 
     def __init__(self):
         import ctypes
@@ -445,12 +447,18 @@ class _Win32Pipe:
         finally:
             self.k32.CloseHandle(token)
 
+    def server_pid(self, handle):
+        pid = self.wt.ULONG()
+        if not self.k32.GetNamedPipeServerProcessId(handle, self.ctypes.byref(pid)):
+            return None
+        return pid.value
+
     def server_is_owner(self, handle):
-        ctypes, wt = self.ctypes, self.wt
-        pid = wt.ULONG()
-        if not self.k32.GetNamedPipeServerProcessId(handle, ctypes.byref(pid)):
+        pid = self.server_pid(handle)
+        if pid is None:
             return False
-        server = self.k32.OpenProcess(0x1000, False, pid.value)
+        ctypes = self.ctypes
+        server = self.k32.OpenProcess(0x1000, False, pid)
         if not server:
             return False
         try:
@@ -495,7 +503,7 @@ class _PipeTransport:
 
     POLL_S = 0.02
 
-    def __init__(self, path, api=None):
+    def __init__(self, path, api=None, pid=None):
         if not PIPE_RE.fullmatch(path):
             raise Refused("unsafe_pipe", "The engine address is not a local \\\\.\\pipe\\ name.")
         self.api = api or _Win32Pipe()
@@ -505,6 +513,10 @@ class _PipeTransport:
         if not self.api.server_is_owner(self.handle):
             self.api.close(self.handle)
             raise Refused("peer_not_owner", "The process behind the engine pipe is not running as you.")
+        # Same guard rail as the socket's (SR-5); Windows always reports the pid.
+        if pid is not None and self.api.server_pid(self.handle) != pid:
+            self.api.close(self.handle)
+            raise Refused("peer_not_engine", "The process behind the engine pipe is not the engine named in engine.json.")
 
     def send(self, data):
         while data:
@@ -532,7 +544,7 @@ class _PipeTransport:
 
 def connect(address, pid=None):
     if os.name == "nt":
-        return _PipeTransport(address)
+        return _PipeTransport(address, pid=pid)
     if address.startswith("\\\\"):
         raise Refused("unsafe_socket", "The engine address is a Windows pipe; this machine is not Windows.")
     return _SocketTransport(address, pid)
@@ -549,7 +561,7 @@ def _seconds(limit):
 class Channel:
     def __init__(self, transport):
         self.t = transport
-        self.advisor = False        # engine.json says channel v1.2 or later
+        self.advisor = False        # engine.json says channel v1.3 or later
         self.buf = b""
         self.next_id = 1
 
@@ -656,7 +668,7 @@ def _unreadable():
 
 
 def parse_advice(raw):
-    """The advisor calls on a question (v1.2). Anything off the contract fails
+    """The advisor calls on a question (v1.3). Anything off the contract fails
     the whole item: a half-read advice list could hide a failed call or show
     unchecked text as advice."""
     if not isinstance(raw, list):
@@ -1116,12 +1128,13 @@ def run(cmd, req, cwd):
     _run_deadline = time.monotonic() + RUN_LIMIT
     _validate(cmd, req)
     address, pid, minor = read_engine_address(find_engine_file(cwd))
-    if cmd == "reply" and req["kind"] in ADVISOR_KINDS and minor < 2:
-        # F-005 OQ-3: no escalation until the engine has the advisor (v1.2).
+    if cmd == "reply" and req["kind"] in ADVISOR_KINDS and minor < 3:
+        # F-005 OQ-3: no escalation until the engine has the advisor (v1.3;
+        # a v1.2 engine has only H-0051's session approval).
         raise Refused("advisor_unsupported", f"This engine speaks channel v1.{minor}, which has no advisor; "
-                      "asking the advisor needs v1.2 or later. Nothing was sent.")
+                      "asking the advisor needs v1.3 or later. Nothing was sent.")
     ch = Channel(connect(address, pid))
-    ch.advisor = minor >= 2
+    ch.advisor = minor >= 3
     try:
         return COMMANDS[cmd](ch, req)
     finally:
@@ -1168,8 +1181,16 @@ def main(argv=None, stdin=None, stdout=None, cwd=None):
             out, code = {"ok": False, "error": {"code": "internal_error",
                                                 "message": "The client failed unexpectedly; nothing more is shown."}}, 1
             out["display"] = out["error"]["message"]
-    stdout.write(json.dumps(out, ensure_ascii=False, indent=2) + "\n")
-    stdout.flush()
+    text = json.dumps(out, ensure_ascii=False, indent=2) + "\n"
+    if hasattr(stdout, "buffer"):
+        # The channel is UTF-8, but piped stdout on Windows uses the ANSI code
+        # page (cp1252), and -I ignores PYTHONUTF8: accents came out garbled
+        # and a check mark (U+2713) crashed the run with no JSON.
+        stdout.buffer.write(text.encode("utf-8"))
+        stdout.buffer.flush()
+    else:
+        stdout.write(text)
+        stdout.flush()
     return code
 
 

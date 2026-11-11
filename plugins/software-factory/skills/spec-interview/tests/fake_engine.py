@@ -1,7 +1,7 @@
 """A fake engine for the client's developer tests: Engine control channel
-v1.2 (v1.1 with H-0025, plus H-0063's advisor items as amended by H-0075)
-over a Unix socket, one
-JSON-RPC 2.0 message per line.
+v1.1 (with H-0025) plus v1.3's advisor items (H-0063 as amended by H-0075)
+over a Unix socket, one JSON-RPC 2.0 message per line. v1.2's GitHub
+approval of a session (H-0051) is not modelled; the client doesn't speak it.
 
 It keeps just enough state to exercise the client: sessions by token with
 the per-feature lock and takeover, item revisions, the error codes, reply
@@ -33,7 +33,7 @@ def proposal(iid, about, revision=1, status="open", **extra):
                 revision=revision, about=about, why="It cuts across three ADRs.", **extra)
 
 
-# v1.2: which reply kinds each item kind takes; anything else is -32005.
+# v1.3: which reply kinds each item kind takes; anything else is -32005.
 KINDS = {"question": {"answer", "more_info", "defer", "ask_advisor"},
          "assumption": {"approve_assumption", "reject_assumption"},
          "advisor_proposal": {"approve_advisor", "decline_advisor"}}
@@ -179,7 +179,7 @@ class FakeEngine:
 
     def _dispatch(self, method, params):
         if method == "engine.status":
-            return {"version": "1.2.0", "uptime_s": 5, "features": []}, False
+            return {"version": "1.3.0", "uptime_s": 5, "features": []}, False
         if method == "feature.start":
             self.started.append(params["request"])
             return {"feature": "F-100"}, False

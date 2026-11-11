@@ -15,9 +15,15 @@ role lists its tools and what it may read; secret files are denied to every role
 Its tightening after the F-003 security re-reviews (longer protected and secret
 lists, no shells as commands, no globs leaving the worktree) approved by the
 owner 2026-11-10 (decision card). Engine control channel v1.1 (H-0022) and Role policy v2.2 (H-0023) for F-005
-approved by the owner 2026-11-10 (decision card, as drafted). Inbox item v1.1
-(H-0062), Engine control channel v1.2 (H-0063) and Role policy v2.3 (H-0061)
-for F-006 approved by the owner 2026-11-10 (decision card, as drafted).
+approved by the owner 2026-11-10 (decision card, as drafted). Engine
+control channel v1.2 (H-0051, owner approval of interview sessions through
+GitHub, ADR 0014) approved by the owner 2026-11-10 (decision card). Role
+policy v2.3 (H-0040, policies for the project evaluator and context hygiene
+agents) and Agent report v1.2 (H-0041): drafts, awaiting owner approval.
+Inbox item v1.1 (H-0062), Engine control channel v1.3 (H-0063, amended by
+H-0075) and Role policy v2.4 (H-0061, amended by H-0076) for F-006 approved
+by the owner 2026-11-10 (decision card, as drafted); the channel and policy
+versions were renumbered from v1.2 and v2.3 when F-006 merged with main.
 
 ## Contract entry format
 
@@ -89,7 +95,10 @@ Body sections by inbox (headings are fixed so the extension can render them):
 **Owner actions** append to `history` with `by: owner` and one of
 `approved`, `rejected`, `changes_requested`, `research_requested`,
 `deferred`, `restored`, plus an optional `note`. Each action is one commit
-whose message starts with the item id.
+whose message starts with the item id. From ADR 0015 (H-0047, owner, 2026-11-10) the
+commit must be signed with one of the owner's SSH signing keys as listed on
+GitHub; the engine ignores an owner action whose commit is not, and files a
+Security alert for it.
 
 **Advisor (v1.1, F-006).** Optional, decision inbox only:
 
@@ -115,10 +124,12 @@ Call ids are `A-0001`, numbered per repo.
 
 ---
 
-## Agent report — v1.1
+## Agent report — v1.2
 
-- Status: Approved
-- Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8)
+- Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0041)
+- Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8);
+  v1.2 adds the context-hygiene body and `proposed_items`, requested by the
+  owner 2026-11-10 (PR #17)
 - Used by: engine, every agent, validation judge (as evidence)
 - Compatibility: as for inbox items.
 
@@ -161,21 +172,29 @@ engine fills them; agents do not.
 | security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks) |
 | validation-judge | `verdict` (PASS, FAIL, NEEDS_HUMAN_REVIEW), `checklist` (area, status, evidence), `findings` (grade, location, explanation) |
 | orchestrator | `gate`, `checks` (name, passed, evidence) |
-| project-evaluator | `scope` (project or feature), `complexity` (simple, moderate, complex), `predictions` (role → rung, reason) |
+| project-evaluator | `scope` (project or feature), `complexity` (simple, moderate, complex), `predictions` (role → rung, reason), and from v1.2 `proposed_items` |
+| context-hygiene (v1.2) | `sizes` (file, tokens, budget, change since last review), `duplicates` (instruction, locations), `skill_misses` (run, skill, `not_loaded` or `not_applicable`), `conflicts` (location, explanation), `proposed_items` |
+
+**`proposed_items` (v1.2).** Items a role with no inbox write access wants
+filed: each is a complete Inbox item v1.0 without `id`, `created_at` or
+`history`. The orchestrator files them unchanged, sets `created_by` to the
+proposing role, and lists the new ids in its own report's `items_filed`.
 
 ---
 
-## Engine control channel — v1.2
+## Engine control channel — v1.3
 
 - Status: Approved
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
   H-0025 (sessions by token, framing, `engine.json` format, error codes)
   approved by the owner, 2026-11-10 (decision card); amendment H-0026
   (`busy` data, listener pid, file modes) approved by the owner, 2026-11-10
-  (decision card); v1.2 approved by the owner, 2026-11-10 (H-0063, F-006, decision card);
-  amendment H-0075 (advisor fields stated exactly, call limits, budget
-  flag, advice revision and hash; F-006 Gate 2 #2, validation M1, M2)
-  approved by the owner, 2026-11-10 (decision card)
+  (decision card); v1.2 (H-0051, owner approval of interview sessions through
+  GitHub, ADR 0014) approved by the owner, 2026-11-10 (decision card); v1.3
+  (F-006, the advisor) approved by the owner, 2026-11-10 (H-0063 and
+  amendment H-0075: advisor fields stated exactly, call limits, budget flag,
+  advice revision and hash; decision card, as drafted; renumbered from v1.2
+  when merged with main)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -205,8 +224,9 @@ the client's SID. Clients check the server is the owner too: `SO_PEERCRED` or
 `getpeereid` on Unix, the server SID on Windows, opening the pipe with
 `SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION` and refusing any path that
 is not a local `\\.\pipe\` one. The engine refuses connections from agent
-processes it started. Agents running as the owner's user can still connect at
-Rapid prototype; that risk is accepted by the owner until Alpha (F-005 SR-5).
+processes it started. Agents running as the owner's user can still connect;
+from v1.2 an interview session accepts replies only after the owner approves
+it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 
 | Method | Params | Result |
 |---|---|---|
@@ -216,7 +236,8 @@ Rapid prototype; that risk is accepted by the owner until Alpha (F-005 SR-5).
 | `engine.shutdown` | none | `{ ok: true }` after agents reach a safe stop |
 | `feature.start` | `{ request: string }` | `{ feature: id }` (assigns the requirements analyst) |
 | `interview.list` | none | `{ features: [{ id, title, open, deferred, pending_assumptions }] }` (v1.1) |
-| `interview.open` | `{ feature, takeover?: bool }` | `{ session, started_at }`, takes the feature's session lock (v1.1) |
+| `interview.open` | `{ feature, takeover?: bool }` | `{ session, started_at, approval: { user_code, verification_uri, expires_at } }`, takes the feature's session lock; the session is pending until approved (v1.1; `approval` from v1.2) |
+| `interview.awaitApproval` | `{ session, wait_s?: int }` | `{ approved: true }` once GitHub confirms the owner; waits up to `wait_s` (at most 900) (v1.2) |
 | `interview.next` | `{ session, wait_s?: int }` | `{ item: Item \| null }`, deferred items first; waits up to `wait_s` (at most 600) for research to finish (v1.1) |
 | `interview.reply` | `{ session, item, revision, reply_id, kind, text }` | `{ status, next?: Item }` (v1.1) |
 | `interview.state` | `{ feature, item }` | `{ status, revision, recorded_at? }` (v1.1) |
@@ -224,7 +245,7 @@ Rapid prototype; that risk is accepted by the owner until Alpha (F-005 SR-5).
 
 `Item` (v1.1) is `{ id, revision, kind: "question" | "assumption", text, why,
 suggested?, options?: [string], findings?: [{ text, source }], status }`.
-From v1.2, `kind` may also be `"advisor_proposal"` (the analyst proposes an
+From v1.3, `kind` may also be `"advisor_proposal"` (the analyst proposes an
 advisor call on question `about`, with its reason in `why`), and a question
 may carry `advice?: [{ call, status: "running" | "done" | "failed", text?,
 web_queries?: [string] }]`. `text` is the advisor's output as the engine
@@ -233,7 +254,7 @@ stored it; `web_queries` is written by the engine from its own log
 `status` is `open`, `deferred`, `researching`, `answered`, `approved`,
 `rejected` or `superseded`. Reply `kind` is `answer`, `more_info`, `defer`,
 `approve_assumption` or `reject_assumption`; the two assumption kinds apply
-only to assumption items, and the others only to questions. From v1.2:
+only to assumption items, and the others only to questions. From v1.3:
 `ask_advisor` on a question (the owner's own request, which is itself the
 approval), and `approve_advisor` or `decline_advisor` on an
 `advisor_proposal` item, which then becomes `approved` or `rejected`. Each
@@ -242,9 +263,9 @@ Clients send them only from the owner's own choice in the picker, never
 from text in an item (F-006 SR-3, SR-5). `text` is the
 owner's words, unchanged; the engine records it as written.
 
-Advisor fields, stated exactly (v1.2, amendment H-0075). All the fields
-it adds are optional and written only by the engine, so v1.2 clients and
-engines stay valid:
+Advisor fields, stated exactly (v1.3, amendment H-0075). All the fields
+it adds are optional and written only by the engine, so clients and engines
+written to H-0063 alone stay valid:
 - An `advisor_proposal` carries only `id, revision, kind, about, text, why,
   status`, plus `advisor_call` below; never `suggested`, `options`,
   `findings` or `advice`. `about` appears only on proposals. `advice`
@@ -284,8 +305,21 @@ Interview rules (v1.1):
   `busy` with `started_at`; with `takeover: true` it ends the old session
   instead, and the skill asks the owner before sending that. The lock is
   released on `interview.close` or after 30 minutes without a call. The token
-  coordinates clients; it is not a credential, since any process that can
-  connect could open a session (F-005 SR-5).
+  is a bearer token for an approved session: a process that obtains it can
+  reply in that session, which is the residual risk in F-005 SR-5. Clients
+  keep it out of logs and files.
+- Owner approval (v1.2, ADR 0014). `interview.open` starts GitHub's device
+  sign-in for the factory's OAuth app (no scopes, no client secret on the
+  machine). The client shows `user_code` and `verification_uri` to the owner
+  only if `user_code` matches `^[A-Z0-9]{4}-[A-Z0-9]{4}$` and
+  `verification_uri` is exactly `https://github.com/login/device`; otherwise
+  it stops. The engine accepts the session only when the resulting token's
+  `GET /user` id equals the recorded owner id, then discards the token. Until
+  then `interview.next` and `interview.reply` on the session get error
+  `approval_pending`. A denied, expired or wrong-account approval, or GitHub
+  being unreachable, ends the session with `approval_failed`. A takeover
+  opens a new session and needs a new approval. An approved session also
+  ends 2 hours after approval.
 - Within a session each deferred item is returned once, before new items;
   the engine tracks what it has shown per session.
 - A reply naming a revision other than the item's current one gets error
@@ -298,7 +332,8 @@ Interview rules (v1.1):
   `busy` carries `data.started_at` (ISO 8601, UTC), which clients may show
   after checking its format. Codes:
   -32001 `busy`, -32002 `stale`, -32003 unknown feature or item, -32004
-  unknown or expired session, -32005 reply kind not allowed for the item.
+  unknown or expired session, -32005 reply kind not allowed for the item,
+  -32006 `approval_pending`, -32007 `approval_failed` (v1.2).
 
 **Notifications** (engine to client): `feature.stageChanged`,
 `inbox.itemFiled`, `agent.started`, `agent.finished`, and from v1.1
@@ -307,16 +342,18 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
-## Role policy — v2.3
+## Role policy — v2.4
 
-- Status: Approved
+- Status: Approved (v2.2); v2.3 draft, awaiting owner approval (H-0040);
+  v2.4 approved (H-0061, H-0076)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
-  the advisor policy and request rule approved in substance by the owner,
-  2026-11-10 (F-006 SR-7, card); v2.3 approved by the owner, 2026-11-10 (H-0061, decision card);
-  amendment H-0076 (the advisor denied all of `.factory/`; F-006 Gate 2 #1)
-  approved by the owner, 2026-11-10 (decision card)
+  v2.3 roles requested by the owner, 2026-11-10; the advisor policy and
+  request rule approved in substance by the owner, 2026-11-10 (F-006 SR-7,
+  card); v2.4 approved by the owner, 2026-11-10 (H-0061 and amendment
+  H-0076, the advisor denied all of `.factory/`; decision card, as drafted;
+  renumbered from v2.3 when merged with main)
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
   Security decision. v2.0 moved the policy from `.factory/policy/roles.yaml`
@@ -325,9 +362,11 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   required broke nothing. v2.2 adds the `Skill` tool, the open-web network
   rule for a role with no file tools, the optional `web-reader` role, and
   denies every role the engine's channel file; manifests on v2.1 must add
-  the two new deny entries. v2.3 adds the optional `advisor` role and the
+  the two new deny entries. v2.3 adds two optional roles, `project-evaluator`
+  and `context-hygiene`; a manifest without them stays valid, but those
+  agents may not run in it. v2.4 adds the optional `advisor` role and the
   `may_request` key. Both are additions: a manifest without them is valid
-  and no role can be requested, so v2.2 manifests need no change.
+  and no role can be requested, so earlier manifests need no change.
   Amendment H-0076 tightens the advisor's extra denies to all of
   `.factory/`; a manifest with an `advisor` role must replace its four
   inbox and transcript denies with the two new entries.
@@ -346,11 +385,53 @@ must deny reading secret files and, from v2.2, the engine's channel file:
 `**/.env`, `**/.env.*`, `**/.envrc`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`, `**/*.jks`, `**/*.keystore`, `**/id_rsa*`, `**/id_dsa*`, `**/id_ecdsa*`, `**/id_ed25519*`, `**/.npmrc`, `**/.pypirc`, `**/.netrc`, `**/.git-credentials`, `**/*.tfvars`, `**/credentials*.json`, `**/*.tfstate`, `**/*.tfstate.*`, `**/.aws/credentials`, `**/.docker/config.json`, `**/*.ppk`, `**/kubeconfig`, `**/.kube/config`, `.factory/engine.json`, `**/.factory/engine.json`.
 Every core role must be present, and every role that may write outside
 `.factory/` must deny the change-controlled paths: `CLAUDE.md`, `**/CLAUDE.md`, `CLAUDE.local.md`, `**/CLAUDE.local.md`, `.claude/**`, `.mcp.json`, `.github/**`, `.gitignore`, `.gitattributes`, `.husky/**`, `.pre-commit-config.yaml`, `lefthook.yml`, `osv-scanner.toml`, `agents/**`, `skills/**`, `plugins/**`, `.claude-plugin/**`, `workflows/**`, `**/.claude/**`, `.envrc`, `**/.envrc`, `.git`, `.git/**`, `.gitmodules`, `.vscode/**`, `.devcontainer/**`. Globs are relative to the worktree: no absolute paths, `\`, or segments
-that can match `..`; brace expansion, negated classes (`[!`, `[^`) and
-extglobs are refused because glob dialects read them differently.
-`commands` may not name a shell, interpreter or command wrapper. That is a
-guard rail, not the boundary: build and test tools run repo code by design,
-so arguments are not restricted. A repo override may not add tools.
+that can match `..`. **Glob dialect and matching (H-0046, owner,
+2026-11-10):** a glob is literal segments separated by `/`, where `*`
+matches any characters within one segment (dot files included) and `**`
+matches zero or more whole segments. `?`, bracket classes, braces and
+extglobs are refused, because glob libraries read them differently. Before
+matching a path, the engine resolves it to its real path, following every
+symbolic link (a path that doesn't exist yet resolves through its nearest
+existing parent), refuses it if the result is outside the worktree, and
+matches the result relative to the worktree with `/` separators, after
+Unicode NFC normalization. Deny globs match case-insensitively on every
+filesystem; allow globs match case-sensitively. A path counts as allowed
+only if an allow glob matches and no deny glob does.
+**Container per agent session (H-0045 and H-0052, owner, 2026-11-10;
+wording approved by decision card).** The engine runs every agent
+session, the agent process included, in its own container, so the agent's
+tools, hooks and everything they start stay inside it. Agents would
+otherwise run as the owner's OS user (ADR 0014), so the container is what
+keeps the owner's machine out of reach:
+- **Mounts:** only the session's worktree (read-only for a role with no
+  `write` allow outside `.factory/`) and per-project cache volumes for
+  build tools. Never the owner's home folder, the engine's socket or
+  `.factory/engine.json`, the container runtime's socket, or any other
+  host path.
+- **No owner credentials:** none are copied, mounted or passed in. The
+  only secret inside is the session's model token; a role that needs
+  GitHub gets the factory's machine-account token, never the owner's.
+- **Image:** built per project from a base image pinned by digest plus the
+  project's approved toolchain (S4.1); the agent runs as a non-root user,
+  with a read-only root filesystem apart from the worktree, the cache
+  volumes and a temp folder, all capabilities dropped, no new privileges,
+  and CPU, memory and process limits.
+- **Network:** the container reaches only the model API and the role's
+  `network` hosts, through an egress proxy the engine runs; nothing else.
+- **Write rules:** inside the worktree the container can't tell one path
+  from another, so when a session ends the engine compares its branch with
+  where it started. A changed path that the role's `write` rules don't
+  allow (deny wins) rejects the whole session's changes and files a
+  Security alert. A fresh worktree holds only tracked files, so untracked
+  secret files never reach a container; committed ones are reported by
+  the onboarding assessment.
+- **Fail closed:** if the container runtime is missing or a container
+  can't start with these settings, no agent session starts. On Windows
+  this needs Docker Desktop with the WSL2 back end.
+`commands` may not name a shell,
+interpreter or command wrapper. That is a guard rail; the container is the
+boundary. Build and test tools run repo code by design, so arguments are
+not restricted. A repo override may not add tools.
 `network.allow` lists host names. From v2.2 the single entry `"*"` means any
 host, and is allowed only for a role whose tools are `WebFetch` and
 `WebSearch` alone, so open web content never reaches an agent that can see
@@ -378,12 +459,52 @@ search. Its policy is fixed:
         allow: ["*"]
 ```
 
+**Project evaluator and context hygiene (v2.3, optional roles).** Both are
+advisory: they read the project and write only their own agent report. Items
+they propose (the evaluator's Product decision, the hygiene agent's
+Configuration hygiene items) go in that report and are filed by the
+orchestrator from the report's `proposed_items`. The evaluator must also
+deny reading `calibration/**`, `**/calibration/**`, `.factory/tuning/**`,
+`**/.factory/tuning/**`, `.factory/runs/**/review.json` and
+`**/.factory/runs/**/review.json`: calibration answers, tuning metrics and run
+reviews (which record whether its predictions were right) all score it
+(F-002 SR-1, SR-8). Neither role gets `Edit`, `Bash`, `Skill`, commands or network. The
+prompts and skill-use records the hygiene agent reviews are outside Git, so
+the engine hands them over; they add no read globs.
+
+```yaml
+    project-evaluator:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Write"]
+      read:
+        allow: ["**"]
+        deny: [<the secret files above>, "calibration/**", "**/calibration/**", ".factory/tuning/**", "**/.factory/tuning/**", ".factory/runs/**/review.json", "**/.factory/runs/**/review.json"]
+      write:
+        allow: [".factory/runs/**/project-evaluator-*.json"]
+      commands:
+        allow: []
+      network:
+        allow: []
+    context-hygiene:
+      tools:
+        allow: ["Read", "Grep", "Glob", "Write"]
+      read:
+        allow: ["**"]
+        deny: [<the secret files above>]
+      write:
+        allow: [".factory/runs/**/context-hygiene-*.json"]
+      commands:
+        allow: []
+      network:
+        allow: []
+```
+
 The requirements analyst gets `Skill` and reaches the web only through the
 web reader; its own `network` stays empty. Reading other features' specs and
 interview transcripts, and escalating to the advisor (F-006, once built), go
 through the engine, not through new read globs.
 
-**Advisor (v2.3, optional role).** Researches one hard question, after the
+**Advisor (v2.4, optional role).** Researches one hard question, after the
 owner approves the call, and returns advice for the owner (F-006). It reads
 what the requirements analyst may read, uses the shared skills, and reaches
 the web only by asking the web reader through the engine (F-006 SR-1); its
@@ -422,7 +543,7 @@ in its input (F-006 FR-6, A-3). File pointers the caller gives the advisor
 must match its read rules; the engine drops any other pointer from the
 input and reports it to the owner.
 
-**Requests (v2.3).** A role may carry `may_request`: the roles that may ask
+**Requests (v2.4).** A role may carry `may_request`: the roles that may ask
 the engine to start it. A missing key means no role may. The engine takes
 the requesting role from the session it started, never from a field in a
 request or a file (F-006 SR-3), and refuses requests from any role not
@@ -475,11 +596,12 @@ section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.1
+## Project manifest — v1.2
 
-- Status: Approved
+- Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
-  adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008)
+  adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
+  `complexity` and `settings.agents` (F-002 A-6, A-8)
 - Used by: engine (resolves effective config), owner (edits it), VS Code extension (later)
 - Compatibility: adding an optional key is non-breaking; renaming or removing one is breaking.
 
@@ -489,14 +611,20 @@ Full format, validation rules, and an example are in
 (`factory-project/1.0`), `name`, `factory.version`, `repos`, `maturity`.
 Optional: `description`, `skills`, `agents`, `standards`, `settings`, `notes`,
 `policy` (Role policy v2.0). Each entry of `repos` may carry `policy`
-overrides. The manifest is the only record of repo and project maturity
-levels. `schema` stays `factory-project/1.0`: v1.1 only adds optional keys.
+overrides. From v1.2, optional `complexity` (`simple`, `moderate`, `complex`:
+the preset used only for initial calibration) and
+`settings.agents.<role>.rung` (the role's approved rung of the master
+ladder; the engine refuses a rung that doesn't exist in the pinned factory
+version or is below the role's floor). Both change only through hygiene
+items (F-002). The manifest is the only record of repo and project maturity
+levels. `schema` stays `factory-project/1.0`: v1.1 and v1.2 only add optional keys.
 
 **Protected defaults:** `security-review` and the six core agents (orchestrator,
 requirements-analyst, software-developer, test-engineer, security-reviewer,
 validation-judge) may never be excluded; overriding one requires a linked,
-approved Security decision and may only add rules. The two support roles are
-not protected unless the owner decides otherwise.
+approved Security decision and may only add rules. The two support roles,
+`project-evaluator` and `context-hygiene`, are not protected: a project may
+exclude either with a reason (owner, 2026-11-10).
 
 ---
 
@@ -536,10 +664,10 @@ run ends. Only the engine and orchestrator write it (F-002 SR-8).
 
 ---
 
-## Tuning metrics — v1.0
+## Tuning metrics — v1.1
 
-- Status: Approved
-- Owner decision: F-002 A-1, A-8
+- Status: Approved (v1.0); v1.1 draft, awaiting owner approval (H-0015)
+- Owner decision: F-002 A-1, A-8; v1.1 adds the cost unit (owner, 2026-11-10, decision card)
 - Used by: engine (writes; orders the ladder), orchestrator and owner (read)
 - Compatibility: as for inbox items.
 
@@ -550,6 +678,7 @@ run ends. Only the engine and orchestrator write it (F-002 SR-8).
 {
   "schema": "tuning-metrics/1.0",
   "updated_at": "2026-11-10T00:00:00Z",
+  "cost_unit": "usd | plan_usage",
   "prices": { "source": "<url>", "as_of": "2026-11-03" },
   "roles": {
     "software-developer": {
@@ -570,6 +699,11 @@ run ends. Only the engine and orchestrator write it (F-002 SR-8).
 
 A rung with no samples is left out of `rungs` and listed last, in seed
 order, in `ladder_order`.
+
+From v1.1, `cost_unit` follows the project's budget mode (ADR 0012):
+`usd` in `tokens` mode, `plan_usage` (share of the plan's usage window) in
+`subscription` mode. `cost_usd` fields then hold that unit; the ladder
+order always uses it. Token counts are kept either way.
 
 ---
 

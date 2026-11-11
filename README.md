@@ -18,10 +18,15 @@ Start with [`CLAUDE.md`](CLAUDE.md) and the
 Install the factory's plugin once, then run it inside any repository:
 
 ```
-/plugin marketplace add technophile77/software-factory
+/plugin marketplace add technophile77/software-factory@v0.2.0
 /plugin install software-factory@software-factory
 /software-factory:onboard-repo
 ```
+
+Add the marketplace at a release tag, never at `main`, so you run the
+release you chose. To move to a newer release, remove the marketplace and
+add it again at the new tag. Each release tag is `v` plus the `version` in
+`plugins/software-factory/.claude-plugin/plugin.json`.
 
 See [`plugins/software-factory/skills/onboard-repo/SKILL.md`](plugins/software-factory/skills/onboard-repo/SKILL.md).
 

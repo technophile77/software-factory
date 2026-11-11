@@ -3,7 +3,7 @@
 - **Id:** F-006
 - **Status:** Approved (readiness gate passed 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10 (split out of F-005)
-- **Spec version:** 7
+- **Spec version:** 8
 
 ## 1. Objective and business purpose
 Some questions the factory puts to the owner are hard and cross-cutting, and
@@ -107,7 +107,7 @@ Interview answers (owner):
 | FR-8 | The advisor's output has four fixed sections: Findings (each with a source; web findings marked untrusted), Options (two to four, each with trade-offs), Recommendation (with reasoning and a confidence of low, medium or high), Risks and unknowns. Output that doesn't match is rejected and the owner is told the call failed. |
 | FR-9 | The output is shown to the owner word for word after F-005 SR-2/SR-10 stripping, as encoded text (SR-2), and labelled as the advisor's: in an interview beside the question, in the inbox in the same item. The caller cannot edit or summarize it. |
 | FR-10 | The advice is recorded: in the interview transcript for interview calls, in the inbox item's history and body for inbox calls. |
-| FR-11 | The F-005 `spec-interview` skill offers "ask the advisor" on every question, and shows advisor proposals for the owner to approve or decline. Following F-005 OQ-3 (no escalation until F-006 exists), the client offers and sends advisor replies only when `engine.json` reports channel version 1.2 or later. |
+| FR-11 | The F-005 `spec-interview` skill offers "ask the advisor" on every question, and shows advisor proposals for the owner to approve or decline. Following F-005 OQ-3 (no escalation until F-006 exists), the client offers and sends advisor replies only when `engine.json` reports channel version 1.3 or later. |
 
 ## 4. Acceptance criteria
 | Id | Given / When / Then | Covers |
@@ -188,12 +188,12 @@ All approved by the owner as drafted, 2026-11-10 (decision card):
 - **H-0060** `agents/advisor/AGENT.md`, and an advisor entry in the shared
   agent lists (`docs/agent-responsibilities.md`, `docs/architecture.md`,
   spec section 2 as a support role 2.9).
-- **H-0061** Role policy: an `advisor` role with read-only file tools, the
+- **H-0061** Role policy v2.4 (approved as v2.3; renumbered on merge with main): an `advisor` role with read-only file tools, the
   shared skills, web only via the web reader, no shell until R2-1; only the
   analyst and orchestrator may request it.
 - **H-0062** Inbox item v1.1: an optional `advisor_reason` field, an owner
   action `advisor_requested`, and an `Advisor` body section.
-- **H-0063** Engine control channel v1.2: interview item kind
+- **H-0063** Engine control channel v1.3 (approved as v1.2; renumbered on merge with main): interview item kind
   `advisor_proposal`, reply kinds `ask_advisor`, `approve_advisor`,
   `decline_advisor`, and an `advice` field on items.
 - **H-0064** `requirements-analyst` and `orchestrator` AGENT.md: when and how
@@ -230,3 +230,4 @@ All approved by the owner as drafted, 2026-11-10 (decision card):
 | 5 | 2026-11-10 | Hygiene items H-0060 to H-0064 approved as drafted; readiness gate passed (all Q answered, A-1..A-3 and SR decisions approved, nothing deferred) | Owner, 2026-11-10 (card) |
 | 6 | 2026-11-10 | Amendments from Gate 2 and validation approved as drafted: H-0075 (channel v1.2 advisor fields, limits, budget flag, advice revision and hash), H-0076 (advisor reads nothing under `.factory/`), H-0077 (orchestrator takes no action from advice; advisor never quotes secrets) | Owner, 2026-11-10 (card) |
 | 7 | 2026-11-11 | FR-11 states the client's channel-version check, which applies the owner's F-005 OQ-3 answer (test round 2 O5) | Owner's F-005 OQ-3 answer |
+| 8 | 2026-11-11 | Renumbered on merge with main, which had already used both numbers: Engine control channel v1.2 (H-0063, H-0075) becomes v1.3, after main's v1.2 (H-0051); Role policy v2.3 (H-0061, H-0076) becomes v2.4, after main's v2.3 (H-0040, a draft). FR-11's version check becomes 1.3. No change in meaning | Version numbers only; owner approvals of H-0061, H-0063, H-0075, H-0076 unchanged |

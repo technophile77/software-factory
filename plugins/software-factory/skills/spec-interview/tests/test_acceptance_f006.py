@@ -3,7 +3,7 @@ the client side, in the F-005 `spec-interview` skill.
 
 Written by the test engineer from F-006's acceptance criteria (AC-10, AC-11
 client side, AC-12), FR-9, FR-11, SR-2, SR-3, SR-5, A-2 and section 6, and
-from Engine control channel v1.2 (H-0063): item kind `advisor_proposal`,
+from Engine control channel v1.3 (H-0063): item kind `advisor_proposal`,
 the `advice` field, and reply kinds `ask_advisor`, `approve_advisor` and
 `decline_advisor`. The engine doesn't exist yet (ADR 0001), so the client
 runs against `fake_engine_f006.AdvisorEngine`, built from the contract. The
@@ -68,9 +68,9 @@ def unfenced_lines(display):
 
 
 class F6Base(f5.Base):
-    # A v1.2 engine: the client sends advisor replies only to one (F-005
+    # A v1.3 engine: the client sends advisor replies only to one (F-005
     # OQ-3, F-006 1: no escalation before F-006 is built).
-    engine_version = "1.2"
+    engine_version = "1.3"
 
     def start_engine(self, state=None):
         engine = AdvisorEngine(state)
@@ -107,7 +107,7 @@ class F6Base(f5.Base):
 
 
 # ---------------------------------------------------------------------------
-# Channel v1.2 reply kinds (FR-3, FR-11 client side, AC-2, AC-3, AC-4)
+# Channel v1.3 reply kinds (FR-3, FR-11 client side, AC-2, AC-3, AC-4)
 # ---------------------------------------------------------------------------
 
 class V12ReplyKinds(F6Base):
@@ -562,7 +562,7 @@ sys.addaudithook(_audit)
 
 
 # ---------------------------------------------------------------------------
-# Regression: the F-005 fixes (F1 to F4) hold on the v1.2 paths
+# Regression: the F-005 fixes (F1 to F4) hold on the v1.3 paths
 # ---------------------------------------------------------------------------
 
 class RegressionF005OnV12(F6Base):
@@ -652,7 +652,7 @@ class Properties(F6Base):
                 self.client("close", {"session": tok})
 
     def test_property_advisor_reply_text_byte_for_byte(self):
-        """100 random owner texts over the three v1.2 kinds: each arrives
+        """100 random owner texts over the three v1.3 kinds: each arrives
         unchanged, with the contract's params, and starts at most one call."""
         seed = seed_for("reply")
         rng = random.Random(seed)
@@ -747,7 +747,7 @@ class SkillTextF006(unittest.TestCase):
         self.assertIn("ask_advisor", joined)
 
     def test_regression_v12_named_and_tools_unchanged(self):
-        self.assertRegex(self.flat, r"Engine control channel \(?v1\.2")
+        self.assertRegex(self.flat, r"Engine control channel \(?v1\.3")
         # Still only the client script and the picker (F-005 SR-10).
         self.assertRegex(self.flat, re.compile(r"only the client script and (the )?(claude code's )?"
                                                r"(askuserquestion|question) picker", re.I))
@@ -755,8 +755,8 @@ class SkillTextF006(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Round 2: Engine control channel v1.2 amendment H-0075 (awaiting the owner),
-# F-006 Security Gate 2 #3 and #4, and the v1.2 gate (F-005 OQ-3)
+# Round 2: Engine control channel v1.3 amendment H-0075 (awaiting the owner),
+# F-006 Security Gate 2 #3 and #4, and the v1.3 gate (F-005 OQ-3)
 # ---------------------------------------------------------------------------
 
 LIMITS = {"turns": 40, "tokens": 200000, "time_s": 900, "web_calls": 12}

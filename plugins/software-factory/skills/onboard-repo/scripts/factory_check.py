@@ -10,6 +10,7 @@ Subcommands:
   assess            inspect a repo and write the assessment (JSON + Markdown)
   validate-manifest check a factory-project.yaml against Project manifest v1.0
   plan-items        file decision items for an assessment, skipping ones already filed
+  plugin-version    print this plugin's release tag; with --manifest, check it is the pinned one
 """
 from __future__ import annotations
 
@@ -31,7 +32,7 @@ CORE_AGENTS = [
     "test-engineer", "security-reviewer", "validation-judge",
 ]
 # Optional roles the master factory ships; a manifest may give them a policy.
-SUPPORT_AGENTS = ["web-reader", "advisor"]
+SUPPORT_AGENTS = ["web-reader", "project-evaluator", "context-hygiene", "advisor"]
 PROTECTED = set(CORE_AGENTS) | {"security-review"}
 DEFAULT_SKILLS = ["security-review"]
 COMPLEXITY = ["simple", "moderate", "complex"]
@@ -828,7 +829,13 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
     protection_status = "unknown"
     if github_protection is not None:
         protection_status, detail = _protection(github_protection)
-        if protection_status != "ok":
+        if protection_status == "unenforceable":
+            gaps.append(gap("github:branch-protection", "Branch rules can't be enforced on this private repository",
+                            "ADR 0006; ADR 0008", "github", "rapid-prototype",
+                            "Ask the owner to make the repository public or move it to a GitHub plan that enforces "
+                            "branch protection on private repositories; until then the factory's token could push "
+                            "to the default branch.", "owner-step", [ev(detail=detail)], severity="high"))
+        elif protection_status != "ok":
             gaps.append(gap("github:branch-protection", "The default branch is not protected as ADR 0006 requires", "ADR 0006; ADR 0008",
                             "github", "rapid-prototype",
                             "Protect the default branch: require the owner's approving review and the level's CI checks.",
@@ -911,6 +918,10 @@ def _protection(data):
     msg = str(data.get("message", ""))
     if "not protected" in msg.lower():
         return "missing", "branch not protected"
+    # A private repo on a free plan: GitHub stores rules but doesn't enforce
+    # them, so the factory's Write token could push to the default branch (H-0070).
+    if re.search(r"upgrade to github|make this repository public", msg, re.I):
+        return "unenforceable", "GitHub doesn't enforce branch rules on this private repository on its current plan"
     if msg:
         return "unknown", f"GitHub said: {msg[:80]}"
     reviews = data.get("required_pull_request_reviews") or {}
@@ -924,6 +935,10 @@ def _protection(data):
             problems.append("stale reviews not dismissed")
         if not reviews.get("require_last_push_approval"):
             problems.append("last push not required to be approved")
+        # The machine account has Write, so its approval would otherwise satisfy
+        # the review rule on owner-authored PRs (F-003 Gate 2 R2-10).
+        if not reviews.get("require_code_owner_reviews"):
+            problems.append("code owner review not required")
     if not (checks.get("contexts") or checks.get("checks")):
         problems.append("no required status checks")
     elif not checks.get("strict"):
@@ -1215,7 +1230,12 @@ SECRET_FILES = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**
                 "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json",
                 "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk",
                 "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
-# Role policy v2.3 (F-006 SR-7): the advisor reads no more than the analyst,
+# Role policy v2.3: the evaluator is scored against calibration answers, tuning
+# metrics and run reviews (which record whether it was right), so it must not
+# read them (F-002 SR-1, SR-8).
+EVALUATOR_HIDDEN = ["calibration/**", "**/calibration/**", ".factory/tuning/**", "**/.factory/tuning/**",
+                    ".factory/runs/**/review.json", "**/.factory/runs/**/review.json"]
+# Role policy v2.4 (F-006 SR-7): the advisor reads no more than the analyst,
 # and nothing on factory/state (H-0076): inbox, transcripts, earlier advice and
 # run records all quote other features. The engine hands it the current
 # feature's transcript itself, so no read glob can reach another's (FR-6, A-3).
@@ -1245,11 +1265,12 @@ SHELL_COMMANDS = {"busybox", "find", "npx", "uv", "uvx", "pipx", "toybox", "scri
 def _escapes_worktree(glob):
     # Globs are relative to the worktree root; `..` or an absolute path would let
     # a rule like `.factory/../src/**` look like a factory-only write.
-    # A segment that can match `..` (`[.][.]`, `?.`) counts as `..`; plain `*`
-    # and `**` are matched per segment by the engine and never cross upward.
-    # Brace expansion, negated classes and extglobs read differently across glob
-    # dialects, so they are refused rather than interpreted.
-    if re.search(r"[{}]|\[[!^\[]|\[[:.=]|[@!+*?]\(", glob):
+    # Role policy globs have one dialect (H-0046): literal segments, `*` within a
+    # segment and `**` across segments. `?`, bracket classes, braces and extglobs
+    # mean different things to different glob libraries, so they are refused
+    # rather than interpreted. A segment that can still match `..` (`.*`, `*.`)
+    # counts as `..`.
+    if re.search(r"[?\[\]{}]|[@!+*]\(", glob):
         return True
     return glob.startswith(("/", "~")) or "\\" in glob or re.match(r"^[A-Za-z]:", glob) is not None \
         or any(seg not in ("*", "**") and fnmatch.fnmatchcase("..", seg) for seg in glob.split("/"))
@@ -1279,7 +1300,7 @@ def _check_role(where, rule, errors):
             elif not isinstance(items, list) or not all(isinstance(i, str) and i for i in items):
                 errors.append(f"{where}.{key}.{sub} must be a list of strings")
             elif key in ("read", "write") and any(_escapes_worktree(i) for i in items):
-                errors.append(f"{where}.{key}.{sub} has a path outside the worktree (absolute, `..` or `\\`)")
+                errors.append(f"{where}.{key}.{sub} has a path outside the worktree (absolute, `..` or `\\`) or outside the glob dialect (`?`, `[...]`, braces, extglobs)")
             elif key == "commands":
                 names = {os.path.basename(i).lower().removesuffix(".exe") for i in items}
                 # Versioned or suffixed names (`python3.12`, `bash5.2`, `busybox.static`) count as their family.
@@ -1420,6 +1441,11 @@ def validate_policy(data, agents):
             missing = [f for f in SECRET_FILES if f not in set((rule.get("read") or {}).get("deny") or [])]
             if missing:
                 errors.append(f"policy for {role} in {where} must deny reading {', '.join(missing)}")
+            if role == "project-evaluator":
+                missing = [f for f in EVALUATOR_HIDDEN if f not in set((rule.get("read") or {}).get("deny") or [])]
+                if missing:
+                    errors.append(f"policy for {role} in {where} must deny reading {', '.join(missing)}, "
+                                  "which hold the answers and metrics that score it")
             allow = (rule.get("write") or {}).get("allow") or []
             deny = set((rule.get("write") or {}).get("deny") or [])
             if any(not a.startswith(".factory/") for a in allow):
@@ -1575,6 +1601,31 @@ def plan_items(a, inbox_dir, assessment_ref, include_complexity=False, write=Fal
 
 # ---------------------------------------------------------------------------
 
+PLUGIN_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".claude-plugin", "plugin.json")
+
+
+def plugin_version(manifest=None, plugin_json=PLUGIN_JSON):
+    """The installed plugin's release tag, and whether the manifest pins that tag.
+
+    The marketplace serves whatever ref the owner added it at, so the skill
+    checks that the copy it runs from is the factory version the project
+    pinned (F-003 Gate 2 R2-8).
+    """
+    with open(plugin_json, encoding="utf-8") as f:
+        version = json.load(f).get("version")
+    if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise CheckError("the installed plugin has no X.Y.Z version")
+    result = {"version": version, "tag": f"v{version}"}
+    if manifest is not None:
+        with open(manifest, encoding="utf-8") as f:
+            data = parse_yaml(f.read())
+        factory = data.get("factory") if isinstance(data, dict) else None
+        pinned = factory.get("version") if isinstance(factory, dict) else None
+        result["pinned"] = pinned if isinstance(pinned, str) else None
+        result["match"] = result["pinned"] == result["tag"]
+    return result
+
+
 def _load_json(path):
     with open(path, encoding="utf-8") as f:
         return json.load(f)
@@ -1653,6 +1704,8 @@ def main(argv=None):
     i.add_argument("--complexity", action="store_true", help="also file the complexity preset decision (new project)")
     i.add_argument("--write", action="store_true", help="write the items; without it, only print the plan")
     i.add_argument("--level", choices=LEVELS, help="file tool decisions only for levels up to this one")
+    v = sub.add_parser("plugin-version")
+    v.add_argument("--manifest", help="factory-project.yaml whose factory.version must be this plugin's tag")
     args = p.parse_args(argv)
 
     try:
@@ -1685,6 +1738,10 @@ def main(argv=None):
             errors = validate_manifest(data, args.master)
             print("\n".join(errors) or "Manifest is valid.")
             return 1 if errors else 0
+        if args.cmd == "plugin-version":
+            result = plugin_version(args.manifest)
+            print(json.dumps(result, indent=2))
+            return 1 if result.get("match") is False else 0
         if args.cmd == "plan-items":
             if args.write and _through_symlink(args.inbox_dir):
                 raise CheckError(f"inbox folder goes through a symlink, refusing to write: {args.inbox_dir}")

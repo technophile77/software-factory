@@ -338,7 +338,7 @@ class FR01GitHubProtection(Base):
         a = self.run_with({
             "required_status_checks": {"strict": True, "contexts": ["build", "smoke-test"]},
             "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": True,
-                                              "require_last_push_approval": True},
+                                              "require_last_push_approval": True, "require_code_owner_reviews": True},
         })
         self.assertEqual(a["github"]["branch_protection"], "ok")
         self.assertNotIn("github:branch-protection", ids(a))
@@ -1065,8 +1065,8 @@ class AC11Manifest(Base):
 CORE_ROLES = ["orchestrator", "requirements-analyst", "software-developer", "test-engineer",
               "security-reviewer", "validation-judge"]
 CONTRACT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill"}
-SUPPORT_ROLES = ["web-reader", "advisor"]
-# Copied from interface-contracts.md, Role policy v2.3 (H-0061) as amended by H-0076: the advisor's
+SUPPORT_ROLES = ["web-reader", "project-evaluator", "context-hygiene", "advisor"]
+# Copied from interface-contracts.md, Role policy v2.4 (H-0061) as amended by H-0076: the advisor's
 # fixed policy. H-0076 replaced the four inbox and transcript denies with all of .factory/.
 ADVISOR_TOOLS = ["Read", "Grep", "Glob", "Skill"]
 ADVISOR_EXTRA_DENY = [".factory/**", "**/.factory/**"]
@@ -1290,10 +1290,15 @@ class FR07RolePolicy(Base):
                 data = self.manifest()
                 data["repos"][0]["policy"]["roles"]["software-developer"]["write"] = {"allow": [glob]}
                 self.assertRejected(data, f"repo override writes {glob}")
-        # Control: plain character classes, ? and * are not on the refused list.
+        # H-0046 (Gate 2 R2-2): the dialect is literal segments, `*` and `**`, so `?` and classes are refused too.
+        for glob in ("src/[abc]*.py", "lib/?/**"):
+            with self.subTest(where="outside the dialect", glob=glob):
+                data = self.manifest()
+                data["policy"]["roles"]["software-developer"]["write"]["allow"].append(glob)
+                self.assertRejected(data, glob)
         data = self.manifest()
-        data["policy"]["roles"]["software-developer"]["write"]["allow"] += ["src/[abc]*.py", "lib/?/**", "docs/*.md"]
-        self.assertAccepted(data, "globs every dialect reads the same way")
+        data["policy"]["roles"]["software-developer"]["write"]["allow"] += ["src/*.py", "docs/*.md", "src/app/(auth)/**"]
+        self.assertAccepted(data, "globs inside the dialect")
 
     def test_role_policy_lists_match_the_contract_text(self):
         # The lists above are copied by hand; check them against the contract so a later amendment shows up here.
@@ -1400,6 +1405,33 @@ class RolePolicyV22(Base):
                 deny.remove(".factory/engine.json")
                 self.assertRejected(data, f"{role} may read engine.json")
 
+    def test_evaluator_and_hygiene_write_only_their_report(self):
+        # H-0040 (Role policy v2.3): both roles advise; neither edits, runs commands or reaches the network.
+        roles = self.manifest()["policy"]["roles"]
+        for role in ("project-evaluator", "context-hygiene"):
+            with self.subTest(role=role):
+                rules = roles[role]
+                self.assertEqual(rules["tools"]["allow"], ["Read", "Grep", "Glob", "Write"])
+                self.assertEqual(rules["write"]["allow"], [f".factory/runs/**/{role}-*.json"])
+                self.assertEqual(rules["commands"]["allow"], [])
+                self.assertEqual(rules["network"]["allow"], [])
+
+    def test_evaluator_cannot_read_what_scores_it(self):
+        # F-002 SR-1, SR-8: calibration answers, tuning metrics and run reviews stay hidden from the evaluator.
+        for glob in ("calibration/**", "**/calibration/**", ".factory/tuning/**", "**/.factory/tuning/**",
+                     ".factory/runs/**/review.json", "**/.factory/runs/**/review.json"):
+            with self.subTest(glob=glob):
+                data = self.manifest()
+                data["policy"]["roles"]["project-evaluator"]["read"]["deny"].remove(glob)
+                self.assertRejected(data, f"evaluator may read {glob}")
+        self.assertAccepted(self.manifest(), "evaluator with the hidden globs denied")
+
+    def test_optional_roles_may_be_left_out(self):
+        data = self.manifest()
+        for role in SUPPORT_ROLES:
+            del data["policy"]["roles"][role]
+        self.assertAccepted(data, "manifest without optional roles")
+
     def test_analyst_has_skill_and_no_web(self):
         rules = self.manifest()["policy"]["roles"]["requirements-analyst"]
         self.assertIn("Skill", rules["tools"]["allow"])
@@ -1484,7 +1516,7 @@ class RolePolicyV23(Base):
             self.skipTest("skill copied out of the factory repo; interface-contracts.md is not here")
         text = read(os.path.join(MASTER, "docs", "interface-contracts.md"))
         section = re.search(r"(?ms)^## Role policy .*?(?=^## )", text).group(0)
-        block = re.search(r"(?ms)^\*\*Advisor \(v2\.3.*?```yaml\n(.*?)```", section).group(1)
+        block = re.search(r"(?ms)^\*\*Advisor \(v2\.4.*?```yaml\n(.*?)```", section).group(1)
         self.assertIn(f"allow: {json.dumps(ADVISOR_TOOLS)}", block)
         self.assertIn(f"may_request: {json.dumps(ADVISOR_REQUESTERS)}", block)
         for key in ("write", "commands", "network"):

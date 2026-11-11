@@ -3,7 +3,7 @@
 - **Id:** F-002
 - **Status:** Approved (owner merged PR #8, 2026-11-10); implementation waits for the engine
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 11
+- **Spec version:** 12
 
 ## 1. Objective and business purpose
 Run each agent on the cheapest model and lowest effort level that still does
@@ -148,7 +148,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | **Ladder order (Product).** Rungs are ordered by measured cost per passing task, per role and per project, built up over time from calibration, replays and real runs (FR-18), not from published figures. Per-token prices only convert measured tokens to dollars (Anthropic API rates on 2026-11-03, input / output per million tokens: Haiku 5.5 $0.10 / $0.50, Sonnet 5.5 $2 / $10, Opus 5.5 $4 / $20, Fable 5.2 $8 / $40). Before anything is measured, initial calibration tries rungs by model price, then effort low → max, and the order is corrected as measurements arrive. | Owner, 2026-11-10 | Approved |
+| A-1 | **Ladder order (Product).** Rungs are ordered by measured cost per passing task, per role and per project, built up over time from calibration, replays and real runs (FR-18), not from published figures. Per-token prices only convert measured tokens to dollars (Anthropic API rates on 2026-11-03, input / output per million tokens: Haiku 5.5 $0.10 / $0.50, Sonnet 5.5 $2 / $10, Opus 5.5 $4 / $20, Fable 5.2 $8 / $40). Before anything is measured, initial calibration tries rungs by model price, then effort low → max, and the order is corrected as measurements arrive. On a subscription plan (ADR 0012 `settings.budget.mode: subscription`), cost per task is the share of plan usage the task used, not dollars; in `tokens` mode it is dollars. Calibration and replay spend counts against the project's budget, and ADR 0012's run-cost estimates read the same measurements. | Owner, 2026-11-10; subscription measure by decision card, 2026-11-10 | Approved |
 | A-2 | **Calibration pass bar (Product).** Each task runs 5 trials. A rung passes if at least 90% of trials pass, and, for the security reviewer and validation judge, no planted or recorded Critical or High defect is missed in any trial. | Owner, 2026-11-10 | Approved |
 | A-3 | **Floors for gate agents (Security).** The security reviewer and validation judge never run below Sonnet/medium, whatever calibration finds. | Owner, 2026-11-10 | Approved |
 | A-4 | **Approval for every change (Product).** Spec § 6 stands: step-ups and step-downs are both hygiene items; move-downs are grouped into one low-priority item per review. | Owner, 2026-11-10 | Approved |
@@ -229,3 +229,4 @@ All changes are additive (A-8):
 | 9 | 2026-11-10 | Evaluator extended to per-task complexity advice for the orchestrator once reliable (A-11 b, c; FR-20, FR-21; A-12 added) | — |
 | 10 | 2026-11-10 | A-11 approved; A-12 approved with the stricter bar (90% of last 30) | Owner, 2026-11-10 |
 | 11 | 2026-11-10 | Gate 1 security review: SR-2 tightened, SR-7 to SR-10 added, abuse cases added; readiness gate passed | Owner, 2026-11-10 (PR #8 merged) |
+| 12 | 2026-11-10 | A-1: on a subscription plan, cost is plan usage used; calibration counts against the budget (ADR 0012) | Owner, 2026-11-10 (decision card) |
