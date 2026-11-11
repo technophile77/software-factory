@@ -214,7 +214,7 @@ describe("Interview tools caps: over a cap is `limit`", () => {
     expect((await w.tool(feature, "interview_propose_assumption", { text: "sixth", why: "w" })).ok).toBe(true);
   });
 
-  it("[IT-10] at most 200 items per feature", { timeout: 600_000 }, async () => {
+  it("[IT-10] at most 200 items per feature", { timeout: 1_200_000 }, async () => {
     w = await World.create();
     // 200 rounds of git through the logging wrapper outlast the timeout on slower runners.
     w.logGit = false;

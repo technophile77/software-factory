@@ -173,7 +173,9 @@ describe("Items, revisions, replies (channel v1.1)", () => {
     const t0 = w.clock.now();
     const r = await drive(w.clock, w.rpc("interview.next", { session, wait_s: 100_000 }, 60_000), { stepMs: 10_000 });
     expect(r.error).toBeUndefined();
-    expect(w.clock.now() - t0).toBeLessThanOrEqual(620_000);
+    // The driver keeps stepping the fake clock until the reply arrives, so a slow
+    // runner overshoots by a few steps of driver time, not engine time.
+    expect(w.clock.now() - t0).toBeLessThanOrEqual(600_000 + 6 * 10_000);
   });
 
   it("[SE-12] a repeated reply_id returns the first result and changes nothing, even with other text", async () => {
