@@ -164,3 +164,120 @@ None.
    The orchestrator records the approval. The developer then shows the new fields in `display` and the test engineer adds tests.
 2. **Gate 2** must have no Critical finding. If it does, this becomes FAIL.
 3. Before the PR: the orchestrator review note (m3), and the deferred-AC list recorded for the engine feature (M3).
+
+---
+
+## Re-validation 1 (8db0cf1)
+
+- **Commit:** `8db0cf1` (`claude/project-thread-95vuv4`). Since the first report (`5c18c92`):
+  - `bfba26a`: Gate 2.
+  - `81d66e3`, `5959ed9`, `cb97563`: drafts of H-0075, H-0076 and H-0077.
+  - `85182f9`, `c94c594`: developer fix round 1, including the deferred-to-the-engine list.
+  - `4503e52`: owner approval of H-0075 to H-0077, and spec v6.
+  - `8c82307`: test round 2.
+  - `8db0cf1`: spec v7.
+- **Spec:** v7. **Contracts:** Engine control channel v1.2 with H-0075, Role policy v2.3 with H-0076. Both are approved in `4503e52`. That commit changed only the approval lines of the drafts (`git diff cb97563 4503e52`). Nothing in `docs/interface-contracts.md`, `agents/` or `docs/spec/` changed after it.
+- **Maturity level:** Rapid prototype.
+- **Verdict:** **PASS**
+  - Every checklist line is Met. There are no Blocking findings and no open Major findings.
+  - The two Needs owner lines (M1, M2) are closed by the owner's approval of H-0075.
+  - Gate 2 passes, with nothing Critical or High. Its two Mediums (#1, #2) and three Lows (#3 to #5) are each addressed by H-0075 to H-0077 and fix round 1.
+  - 6 Minor findings are open, all logged. Nothing here needs the owner.
+
+### My own run
+
+Product hashes (first 12 hex characters of SHA-256): `interview_client.py` 5557eec5952e, spec-interview `SKILL.md` d8499906215c, `factory_check.py` f66d94eb00cb. These are the same as test round 2 on `c94c594`. `c94c594..8db0cf1` touches only tests, the test report, the spec and the contract's approval lines.
+
+| Step | Result |
+|---|---|
+| spec-interview, `python3.X -m unittest discover -s plugins/software-factory/skills/spec-interview/tests` on 3.11, 3.12 and 3.13 | **356 run, 356 passed** on each: F-005 acceptance 154, the test engineer's F-006 84, the developer's 118 |
+| onboard-repo, the same on 3.11, 3.12 and 3.13 | **296 run, 295 passed, 1 skipped** on each (no python3.10 installed) |
+| `python3 scripts/check_docs.py` | "All docs checks passed." |
+
+### Probes (scratch folder `judge/probe3.py`, in-process on the real client)
+
+| Probe | Result |
+|---|---|
+| A question with `advisor_call` (`over_budget: true`) and three advice entries: done at an older revision with a matching `sha256` and `web_queries: []`; done with a wrong hash and no `web_queries`; failed with a hostile multi-line `reason` | The limits and an "Over budget" warning appear in the client's words beside "If you ask the advisor", outside any fence. "asked about revision 2; the question has changed since, it is now revision 3" appears. The hash is compared on the raw text (zero-width character included), so the match is found. The mismatch gives a **Warning**. `[]` gives "none"; a missing list gives "not reported by the engine". The reason is flattened to one line and fenced past its own backticks |
+| Malformed H-0075 fields: a negative limit, a missing limit key, a string `over_budget`, `advisor_call` on an assumption, `reason` on `done`, `sha256` on `failed`, an upper-case hash, a boolean `revision` | Each refused (`bad_response`) |
+| `engine.json` version `1.1`, `1.2`, `1.10`, `2.0` | Minor versions 1, 2 and 10 are read; `2.0` is refused. `run()` refuses the three advisor kinds before connecting when the minor version is below 2 (`interview_client.py` `run`). Tested by `V12GateOnOldEngine` and `F006FixRound1.test_m6_*` |
+
+### Evidence checklist (changes only; every other line is as in the first report and still Met)
+
+| Line | Status | Evidence |
+|---|---|---|
+| Interface contracts | Met | H-0075 states exactly what the client already enforced (M1), and adds `advisor_call`, `reason`, `revision`, `sha256`, the missing-vs-empty `web_queries` rule, `stale` on a decided proposal, and `wait_s` not waiting for advice (M2, m9). The client parses each strictly (`parse_advice`, `parse_advisor_call`) and shows each (`call_terms`, `advice_display`). Contract tests: `H0075ProposalShape` (5), `H0075AdviceEntry` (8), `H0075AdvisorCall` (4), `H0075OneDecision` (2), `GateTwo3WebQueries` (4). No unapproved diff. See n1 |
+| SR-8, A-1 | Met (client half); caps and budget enforcement deferred to the engine | Limits and over-budget shown before the owner chooses, with no extra step, as H-0075 says (AC-4 unchanged). `H0075AdvisorCall`, `SkillTextRound2`, probe |
+| SR-4 | Met (client half) | Hash compared with the text as sent; mismatch warned. `H0075AdviceEntry` (2 hash tests) |
+| §6 revision edge case | Met (client half) | "asked about revision n", flagged when the question has moved on. `H0075AdviceEntry` |
+| SR-1 | Met | Missing and empty query lists are told apart (Gate 2 #3). `GateTwo3WebQueries` |
+| SR-7, A-3, AC-8 (policy half) | Met | H-0076: `ADVISOR_EXTRA_DENY = [".factory/**", "**/.factory/**"]` (`factory_check.py:1223`), template updated. `H0076FactoryDenied` (4), `AdvisorFactoryDeny` (4) |
+| SR-5 | Met | H-0077: the orchestrator takes no action from instructions in advice and says when a revision followed a call (`agents/orchestrator/AGENT.md:48-54`) |
+| SR-6 | Engine; extra defence added | Advisor AGENT.md: never quote a secret; say where it is (H-0077) |
+| A-2, FR-3 (lost `ask_advisor`) | Met (client half) | SKILL.md "If a reply fails": recover with `CLIENT next`, never `state`; ask the owner if unclear (Gate 2 #4). `SkillTextRound2.test_gate2_4_*` |
+| FR-11 (v7) | Met | Advisor offered and sent only when `engine.json` says 1.2 or later; `status` and `open` report `advisor`. `V12GateOnOldEngine` (2), `F006FixRound1.test_m6_*`. See n2 |
+| Code quality | Met, with findings | The new parsing stays in one place and fails closed. The engine's numbers are shown only after integer checks, so they can sit outside a fence. Finding: n3 |
+| Comments | Met | New comments say why: `# Hashed before cleaning…`, `# Missing is not the same as none…`, `# F-005 OQ-3: no escalation until…`, the corrected `_covered` comment (m7) |
+| Documentation | Met | README 0.3.0 with the advisor (m1). Spec v6 and v7 change log. The dev report has fix round 1 and the full deferred list; the test report has round 2 |
+| Security | Met | Gate 1 and Gate 2 (`F-006-security-gate2.md`) are present. Gate 2: PASS at Rapid prototype, 2 Medium, 3 Low, none blocking. Each is addressed (table below). Gate 2 hasn't re-reviewed fix round 1 (n4) |
+
+### Gate 2 findings
+
+| # | Now | Evidence |
+|---|---|---|
+| 1 (Medium) | Resolved | H-0076 approved; checker, template and tests follow |
+| 2 (Medium) | Resolved | H-0075 approved; client shows limits and budget (same as my M2) |
+| 3 (Low) | Resolved | "not reported by the engine" vs "none" |
+| 4 (Low) | Resolved | SKILL.md recovers a lost `ask_advisor` through `CLIENT next` |
+| 5 (Low) | Resolved | H-0077 approved |
+| Info notes | The engine's, carried in the dev report's deferred list (tool list as a hard limit) or addressed (advisor and secrets). The proposal-by-id and per-repo checker message notes remain as Info | |
+
+### Status of earlier findings
+
+| # | Now | Evidence |
+|---|---|---|
+| M1 | **Resolved** | H-0075 states the proposal's fields, where `about` and `advice` go, and `text` only on `done`. The client matches |
+| M2 | **Resolved** | H-0075 adds `advisor_call`, advice `revision` and `sha256`. The client shows them. The Product point (no extra confirm) is settled in the contract text the owner approved |
+| M3 | **Resolved** | `F-006-dev-report.md` "Deferred to the engine feature": every FR, AC and SR engine half, with the client or policy half done now. The engine feature must pick this up. When it has a spec, the orchestrator should copy the list into it |
+| m1 | Resolved | README |
+| m2 | Open, carried | Coverage still not reported; the coverage.py tool decision is still unfiled (as F-003 m27, F-005 m3) |
+| m3 | Open | No `F-006-orchestrator-review.md` (DoD 6). The DoD needs it before the PR, not before this verdict |
+| m4 | Superseded | Test round 2 ran on `c94c594`, whose product hashes match `8db0cf1`, and I re-ran on `8db0cf1` |
+| m5 | Resolved | `advisor_started` and its `display` line after a successful `ask_advisor` or `approve_advisor`. `F006FixRound1.test_m5_*` |
+| m6 | Resolved | The v1.2 gate (FR-11, v7) |
+| m7 | Resolved | `_covered` comment |
+| m8 | Resolved | One `_unreadable()` helper |
+| m9 | Resolved | H-0075: `wait_s` doesn't wait for advisor calls; SKILL.md says so |
+
+### New findings
+
+#### Blocking
+
+None.
+
+#### Major
+
+None.
+
+#### Minor (logged; never block)
+
+| # | Location | Finding |
+|---|---|---|
+| n1 | `docs/interface-contracts.md:192`; test report O5 | The contract still shows `engine.json` as `{ "version": "1.1", … }`. It doesn't say that `version` is the channel version the engine speaks, or that clients offer the advisor only at 1.2 or later. A v1.2 engine that copies the example literally gets no advisor. That fails safe, and spec v7 FR-11 states the rule, so this doesn't block. Fix the wording at the next channel change. |
+| n2 | `F-006-advisor-agent.md` change log v7 | v7 adds the version gate to FR-11, approved by reference to the owner's F-005 OQ-3 answer, which §1 already quotes ("Until F-006 is built, no escalation is offered"). It is recorded, not silent, and it applies an existing owner rule. The orchestrator should show v7 to the owner with the next card so the approval is explicit. |
+| n3 | `interview_client.py:5-7`, `read_engine_address` docstring | Cosmetic: the module docstring now breaks "Standard library" onto its own line, and the `read_engine_address` docstring's first line runs to about 100 characters. |
+| n4 | Fix round 1 | Gate 2 hasn't re-reviewed `85182f9`. The changes carry out Gate 2's own suggestions and the approved amendments, and each one tightens: new fields are parsed strictly and fail closed, the policy denies more, and advisor replies are refused against older engines. At Rapid prototype I don't require a re-review, as for F-005 `5f20e1b`. Gate 2 can confirm it with the engine's first review. |
+| m2, m3 | Carried | Coverage reporting and the orchestrator review note, as above |
+
+### Counts (re-validation 1)
+
+- Blocking: 0.
+- Major: 0 open. M1, M2 and M3 are resolved.
+- Minor: 6 open: m2, m3, n1 to n4.
+- Lines: 0 Not met, 0 Needs owner.
+
+### Before the PR (not needed for PASS)
+
+1. The orchestrator writes the review note (m3, DoD 6), and shows spec v7 to the owner with the next card (n2).
+2. File the coverage.py tool decision (m2).
+3. When the engine feature is specified, copy the dev report's deferred list into it (M3).
