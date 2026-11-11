@@ -1,6 +1,6 @@
 # The agent image (ADR 0015, FR-8). Base pinned by index digest (Gate 1
 # review 4); Claude Code 2.1.311 checked against the Agent SDK 0.3.311
-# manifest (review 3). The engine builds it with `docker build`; the base
+# manifest (review 3). The engine builds it with `docker buildx build`; the base
 # image digest is passed in so the engine's pin is the only one.
 ARG BASE_IMAGE
 
@@ -12,7 +12,11 @@ COPY claude-code/package.json claude-code/package-lock.json ./
 # wrapper's postinstall isn't needed even here.
 RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY claude-sha256.json verify-claude.cjs ./
-RUN case "${TARGETARCH}" in amd64) P=x64 ;; arm64) P=arm64 ;; *) echo "unsupported arch ${TARGETARCH}"; exit 1 ;; esac \
+# BuildKit sets TARGETARCH; should it be empty, the base image's own node
+# says which architecture this stage runs on.
+RUN NODE_ARCH="$(node -p process.arch)" \
+ && case "${TARGETARCH:-none}" in amd64) P=x64 ;; arm64) P=arm64 ;; none) P="${NODE_ARCH}" ;; *) P=unsupported ;; esac \
+ && case "${P}" in x64|arm64) ;; *) echo "unsupported architecture: TARGETARCH='${TARGETARCH}', node reports '${NODE_ARCH}'; the agent image is built for linux/amd64 or linux/arm64 only" >&2; exit 1 ;; esac \
  && mkdir -p /out \
  && cp "node_modules/@anthropic-ai/claude-code-linux-${P}/claude" /out/claude \
  && node verify-claude.cjs /out/claude "linux-${P}" \

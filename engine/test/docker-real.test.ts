@@ -31,7 +31,7 @@ describe.skipIf(!ON)("agent containers on a real Docker daemon (AC-8, AC-13 to A
 
   beforeAll(async () => {
     const bin = findOnPath(process.platform === "win32" ? "docker.exe" : "docker");
-    const host = pickEndpoint(process.platform, process.env);
+    const host = await pickEndpoint(process.platform, process.env);
     if (!bin || !host) throw new Error("AC-13: no docker client or local daemon, so no session may start");
     const work = tmpdir();
     docker = new DockerCli({ dockerPath: bin, host, configDir: path.join(work, "docker"), children: new Children() });

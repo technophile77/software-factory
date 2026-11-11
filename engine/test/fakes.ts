@@ -61,6 +61,8 @@ export class FakeDocker {
   images = new Map<string, { Id: string; Config: { User: string; Labels: Record<string, string> } }>();
   /** What `ps`, `network ls` and `volume ls` list beyond what this fake made (an earlier engine's leftovers). */
   leftovers = { containers: [] as string[], networks: [] as string[] };
+  /** Makes `buildx version` fail as a client without the plugin would. */
+  noBuildx = false;
   /** Makes a call fail as a stopped daemon would. */
   down = false;
 
@@ -72,7 +74,8 @@ export class FakeDocker {
     if (args[0] === "volume" && args[1] === "create") this.volumes.set(args.at(-1)!, labels());
     if (args[0] === "volume" && args[1] === "rm") this.volumes.delete(args.at(-1)!);
     if (args[0] === "rm") this.started.delete(args.at(-1)!);
-    if (args[0] === "build") {
+    if (args[0] === "buildx" && args[1] === "version" && this.noBuildx) throw new DockerError("docker: 'buildx' is not a docker command.");
+    if (args[0] === "buildx" && args[1] === "build") {
       const id = `sha256:${String(this.images.size + 1).padStart(64, "e")}`;
       const img = { Id: id, Config: { User: "1000:1000", Labels: labels() } };
       this.images.set(id, img);

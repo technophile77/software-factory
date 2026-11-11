@@ -1,5 +1,6 @@
 import { ChildProcess, spawn } from "node:child_process";
 import * as fs from "node:fs";
+import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ensureOwnerDir } from "../fsutil";
@@ -46,6 +47,19 @@ export interface DockerOptions {
   configDir: string;
   children: Children;
   env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+}
+
+const WIN_PLUGIN_VARS = ["ProgramData", "ProgramFiles", "ProgramW6432"];
+const STDERR_TAIL = 4096;
+
+/** The last 4 KiB of a docker command's stderr, cut at a line start where one falls inside it. */
+export function stderrTail(stderr: string): string {
+  const t = stderr.trim();
+  if (t.length <= STDERR_TAIL) return t;
+  const cut = t.slice(-STDERR_TAIL);
+  const nl = cut.indexOf("\n");
+  return `…${nl >= 0 && nl < cut.length - 1 ? cut.slice(nl + 1) : cut}`;
 }
 
 export interface DockerRunOptions {
@@ -71,11 +85,19 @@ export class DockerCli {
   }
 
   env(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-    const env = baseEnv(this.o.env);
+    const from = this.o.env ?? process.env;
+    const env = baseEnv(from);
     // The client must not send the engine's own proxy settings to the daemon or into containers.
     for (const k of Object.keys(env)) if (/^(https?|no)_proxy$/i.test(k)) delete env[k];
+    if ((this.o.platform ?? process.platform) === "win32") {
+      // The Windows client finds CLI plugins (buildx) only under %ProgramData% and %ProgramFiles% \Docker\cli-plugins;
+      // ProgramW6432 is the 64-bit Program Files whatever the bitness of the process that started the engine.
+      // Home and AppData stay out: DOCKER_CONFIG replaces ~/.docker, and nothing else the client reads lives there.
+      for (const k of WIN_PLUGIN_VARS) if (from[k] !== undefined) env[k] = from[k];
+    }
     for (const k of Object.keys(extra)) if (/^DOCKER_/i.test(k)) throw new DockerError("DOCKER_* may not be passed");
-    return { ...env, DOCKER_CONFIG: this.o.configDir, ...extra };
+    // BuildKit only: the legacy builder leaves unlabelled intermediate containers and leaves TARGETARCH unset.
+    return { ...env, DOCKER_CONFIG: this.o.configDir, DOCKER_BUILDKIT: "1", ...extra };
   }
 
   args(args: string[]): string[] {
@@ -91,7 +113,8 @@ export class DockerCli {
       maxStdout: 16 * 1024 * 1024,
     }, this.o.children);
     if (res.code !== 0 && !(res.code !== null && o.okCodes?.includes(res.code))) {
-      throw new DockerError(`docker ${args[0]} failed (${res.timedOut ? "timeout" : res.code ?? res.signal}): ${res.stderr.trim().split("\n")[0]?.slice(0, 300) ?? ""}`);
+      // The tail, since a build's cause comes last. Secrets never reach docker's stderr: values travel in env or stdin.
+      throw new DockerError(`docker ${args[0]} failed (${res.timedOut ? "timeout" : res.code ?? res.signal}): ${stderrTail(res.stderr)}`);
     }
     return res;
   }
@@ -118,8 +141,49 @@ export class DockerCli {
   }
 }
 
-/** The first endpoint whose socket or pipe exists; null means no local daemon, so no session starts (AC-13). */
-export function pickEndpoint(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, exists: (p: string) => boolean = fs.existsSync): string | null {
-  const local = (e: string) => (e.startsWith("npipe:") ? `\\\\.\\pipe\\${e.slice("npipe:////./pipe/".length)}` : e.slice("unix://".length));
-  return localEndpoints(platform, env).find((e) => exists(local(e))) ?? null;
+/**
+ * The first endpoint whose socket or pipe exists; null means no local
+ * daemon, so no session starts (AC-13). Docker's named pipes answer stat
+ * with EBUSY, so on Windows they are probed by connecting instead.
+ */
+export async function pickEndpoint(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, exists?: (p: string) => boolean | Promise<boolean>): Promise<string | null> {
+  const check = exists ?? (platform === "win32" ? (p: string) => pipeExists(p) : fs.existsSync);
+  for (const e of localEndpoints(platform, env)) {
+    const local = e.startsWith("npipe:") ? `\\\\.\\pipe\\${e.slice("npipe:////./pipe/".length)}` : e.slice("unix://".length);
+    if (await check(local)) return e;
+  }
+  return null;
+}
+
+/** The part of a socket the pipe probe uses, so tests can pass a fake. */
+export interface ProbeSocket {
+  once(event: "connect", f: () => void): unknown;
+  once(event: "error", f: (e: NodeJS.ErrnoException) => void): unknown;
+  destroy(): unknown;
+}
+
+/**
+ * Whether a named pipe exists: a connection that opens, or EBUSY (every
+ * instance in use), means yes. Any other error, or no answer within the
+ * timeout, means no, so an unclear daemon refuses sessions rather than
+ * guessing. Nothing is sent; the connection closes at once.
+ */
+export function pipeExists(pipe: string, connect: (p: string) => ProbeSocket = (p) => net.connect(p), timeoutMs = 1000): Promise<boolean> {
+  return new Promise((resolve) => {
+    let sock: ProbeSocket;
+    try {
+      sock = connect(pipe);
+    } catch {
+      resolve(false);
+      return;
+    }
+    const done = (v: boolean) => {
+      clearTimeout(timer);
+      sock.destroy();
+      resolve(v);
+    };
+    const timer = setTimeout(() => done(false), timeoutMs);
+    sock.once("connect", () => done(true));
+    sock.once("error", (e) => done(e.code === "EBUSY"));
+  });
 }

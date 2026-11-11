@@ -115,7 +115,7 @@ describe("the analyst, wired end to end with fake Docker and SDK (FR-8 to FR-11)
     await until("the run's end", () => runOf(w, feature)?.status === "complete" && !d.volumes.has(runVolume(runOf(w, feature)!.id)));
 
     // The image is the project's, for its factory.version commit and skills.
-    const build = d.calls.find((x) => x.args[0] === "build")!.args;
+    const build = d.calls.find((x) => x.args[0] === "buildx" && x.args[1] === "build")!.args;
     const masterCommit = git(w.master, "rev-parse", "v0.1.0^{commit}");
     expect(build).toContain(`factory.master_commit=${masterCommit}`);
     expect(build).toContain(`factory.skills_sha256=${e.agentSources("acme").skillsDigest}`);

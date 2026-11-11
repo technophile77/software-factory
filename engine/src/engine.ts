@@ -779,7 +779,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       // No session ran: the run waits for the next engine start (AC-13).
       const why = engineWords(e);
       if (record.run(runId)?.status === "running") runs.interrupt(runId, why);
-      log.warn(`${f.id}: no analyst session started: ${why}`);
+      // The log keeps docker's whole stderr tail (4 KiB at most); the owner's note keeps the short form.
+      log.warn(`${f.id}: no analyst session started: ${e instanceof DockerError ? e.message : why}`);
       await noteAnalyst(f, "waiting", `No analyst session started: ${why}. The run resumes at the next engine start.`);
     }
   }

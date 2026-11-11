@@ -43,9 +43,9 @@ function flags(args: string[]): Record<string, string> {
  * a session starts. With no docker client or local daemon, every session is
  * refused with that reason, and the owner sees it in the transcript (AC-13).
  */
-function agentRuntime(home: string): AgentRuntime {
+async function agentRuntime(home: string): Promise<AgentRuntime> {
   const dockerPath = findOnPath(process.platform === "win32" ? "docker.exe" : "docker");
-  const host = pickEndpoint(process.platform, process.env);
+  const host = await pickEndpoint(process.platform, process.env);
   const missing = !dockerPath ? "no docker client is on PATH" : !host ? "no local Docker daemon was found" : null;
   const refuse = async (): Promise<never> => {
     throw new DockerError(`Docker isn't available: ${missing}`);
@@ -148,7 +148,7 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write("Give the gitleaks binary's absolute path with --gitleaks or `gitleaks:` in engine.yaml.\n");
     return 2;
   }
-  const engine = await startEngine({ masterRepo: master, engineHome: home, gitleaks: { path: gitleaks }, push: true, agents: agentRuntime(home) });
+  const engine = await startEngine({ masterRepo: master, engineHome: home, gitleaks: { path: gitleaks }, push: true, agents: await agentRuntime(home) });
   for (const p of engine.projects) {
     process.stderr.write(`${p.name ?? p.path}: ${p.state}${p.reason ? ` (${p.reason})` : ""}\n`);
   }

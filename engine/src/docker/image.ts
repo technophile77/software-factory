@@ -79,12 +79,17 @@ export function agentImageTag(id: ImageIdentity): string {
   return `factory-agent:${project}-${id.masterCommit.slice(0, 12)}-${id.skillsDigest.slice(0, 12)}`;
 }
 
-/** `docker build` for the agent image; the context is one `writeBuildContext` made, never a project's files. */
+/**
+ * `docker buildx build` for the agent image; the context is one
+ * `writeBuildContext` made, never a project's files. Always BuildKit: the
+ * legacy builder leaves TARGETARCH unset and its intermediate containers
+ * unlabelled, where the sweep can't find them.
+ */
 export function agentBuildArgs(contextDir: string, iidFile: string, id: ImageIdentity): string[] {
   if (!path.isAbsolute(contextDir) || !path.isAbsolute(iidFile)) throw new DockerError("absolute paths only");
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(id.project)) throw new DockerError("bad project name");
   if (!/^[0-9a-f]{40,64}$/.test(id.masterCommit) || !/^[0-9a-f]{64}$/.test(id.skillsDigest)) throw new DockerError("bad image identity");
-  return ["build", "--build-arg", `BASE_IMAGE=${BASE_IMAGE}`, "--iidfile", iidFile, "--tag", agentImageTag(id),
+  return ["buildx", "build", "--load", "--build-arg", `BASE_IMAGE=${BASE_IMAGE}`, "--iidfile", iidFile, "--tag", agentImageTag(id),
     "--label", `factory.project=${id.project}`, "--label", `factory.master_commit=${id.masterCommit}`, "--label", `factory.skills_sha256=${id.skillsDigest}`,
     "--file", path.join(contextDir, "agent.Dockerfile"), contextDir];
 }
@@ -109,8 +114,18 @@ export async function ensureAgentImage(docker: DockerCli, engineDockerDir: strin
   return { id: await buildAgentImage(docker, engineDockerDir, workDir, ident, sources), tag };
 }
 
+/** The build needs the buildx plugin; without it the engine says so rather than fall back to the legacy builder. */
+export async function requireBuildx(docker: DockerCli): Promise<void> {
+  try {
+    await docker.run(["buildx", "version"]);
+  } catch (e) {
+    throw new DockerError(`the docker buildx plugin wasn't found, and the agent image is built only with BuildKit: install or repair buildx (Docker Desktop includes it). ${(e as Error).message}`);
+  }
+}
+
 export async function buildAgentImage(docker: DockerCli, engineDockerDir: string, workDir: string, ident: ImageIdentity, sources: Pick<AgentSources, "skills">): Promise<string> {
   await baseImageId(docker);
+  await requireBuildx(docker);
   const context = path.join(workDir, `agent-context-${ident.masterCommit.slice(0, 12)}-${ident.skillsDigest.slice(0, 12)}`);
   writeBuildContext(engineDockerDir, context, sources);
   const iid = path.join(workDir, `agent-image-${ident.project}.iid`);

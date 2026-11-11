@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,8 +7,9 @@ import { analystTools, fetchPageTool, toCallResult, UNTRUSTED_LABEL } from "../s
 import { DUMMY_KEY, ProxyClient, SessionGroup } from "../src/agent/sandbox";
 import type { AgentSdk } from "../src/agent/sdk";
 import { CLAUDE_BIN, CONTAINER_FLAGS, SessionCaps, containerSpawn, hostRelative, runSession, sessionOptions, toolGate } from "../src/agent/session";
-import { DockerCli, DockerError, dockerName, isLocalEndpoint, localEndpoints, pickEndpoint } from "../src/docker/cli";
-import { BASE_IMAGE, agentBuildArgs, skillsPluginDir, writeBuildContext } from "../src/docker/image";
+import { DockerCli, DockerError, dockerName, isLocalEndpoint, localEndpoints, pickEndpoint, pipeExists, stderrTail } from "../src/docker/cli";
+import { findOnPath } from "../src/fsutil";
+import { BASE_IMAGE, agentBuildArgs, buildAgentImage, skillsPluginDir, writeBuildContext } from "../src/docker/image";
 import { ContainerLimits, ContainerSpec, bindSourceMatches, inspectMismatches, runArgs } from "../src/docker/plan";
 import type { InterviewTools } from "../src/interview/tools";
 import { MemoryLogger } from "../src/log";
@@ -29,13 +31,55 @@ describe("docker command line (SR-14)", () => {
     for (const bad of ["../x", "a b", "a;b", "", "x".repeat(65)]) expect(() => dockerName(bad), bad).toThrow(DockerError);
   });
 
-  it("uses only a local endpoint", () => {
+  it("finds a Windows client by its own extension or PATHEXT, only on absolute PATH entries", () => {
+    const files = new Set(["C:\\Docker\\docker.exe", "C:\\Git\\git.EXE", "D:\\x\\tool.cmd", "\\\\srv\\bin\\unc.exe", "rel\\docker.exe"]);
+    // Windows file names match without regard to case.
+    const isFile = (p: string) => [...files].some((f) => f.toLowerCase() === p.toLowerCase());
+    const env = (PATH: string, PATHEXT = ".COM;.EXE;.BAT;.CMD") => ({ PATH, PATHEXT });
+    const win = (name: string, e: NodeJS.ProcessEnv) => findOnPath(name, e, "win32", isFile);
+    expect(win("docker.exe", env("C:\\Docker"))).toBe("C:\\Docker\\docker.exe");
+    expect(win("docker.EXE", env("C:\\Docker"))).toBe("C:\\Docker\\docker.EXE");
+    expect(win("docker", env("C:\\Docker"))).toBe("C:\\Docker\\docker.exe");
+    expect(win("git", env("C:\\Docker;C:\\Git"))).toBe("C:\\Git\\git.exe");
+    expect(win("tool", env("D:\\x", ".exe;.cmd"))).toBe("D:\\x\\tool.cmd");
+    expect(win("unc.exe", env("\\\\srv\\bin"))).toBe("\\\\srv\\bin\\unc.exe");
+    // A name ending in something outside PATHEXT still gets the extensions.
+    expect(win("docker.exe", env("C:\\Docker", ".CMD"))).toBeNull();
+    // Relative, drive-relative and rooted-without-drive entries, and an empty one (the current directory), are skipped.
+    for (const PATH of ["rel", "C:rel", "\\Docker", ";", ""]) expect(win("docker.exe", env(PATH)), PATH).toBeNull();
+    for (const bad of ["..\\docker.exe", "C:docker.exe", "a/docker.exe", "", "."]) expect(win(bad, env("C:\\Docker")), bad).toBeNull();
+    expect(findOnPath("git", { PATH: "relative:/usr/bin" }, "linux", (p) => p === "/usr/bin/git" || p === "relative/git")).toBe("/usr/bin/git");
+  });
+
+  it("probes a named pipe by connecting: open or EBUSY exists, ENOENT or no answer doesn't", async () => {
+    const sock = (then: (s: EventEmitter) => void) => {
+      const s = Object.assign(new EventEmitter(), { destroyed: false, destroy() { s.destroyed = true; } });
+      setImmediate(() => then(s));
+      return s;
+    };
+    const err = (code: string) => Object.assign(new Error(code), { code });
+    const made: Array<{ destroyed: boolean }> = [];
+    const probe = (then: (s: EventEmitter) => void, timeout = 1000) => pipeExists("\\\\.\\pipe\\docker_engine", () => { const s = sock(then); made.push(s); return s; }, timeout);
+    expect(await probe((s) => s.emit("connect"))).toBe(true);
+    expect(await probe((s) => s.emit("error", err("EBUSY")))).toBe(true);
+    expect(await probe((s) => s.emit("error", err("ENOENT")))).toBe(false);
+    expect(await probe((s) => s.emit("error", err("EACCES")))).toBe(false);
+    expect(await probe(() => undefined, 20)).toBe(false);
+    expect(made.every((s) => s.destroyed)).toBe(true);
+    expect(await pipeExists("x", () => { throw err("EINVAL"); })).toBe(false);
+    // The fixed local list, in order: the Desktop Linux engine first.
+    const seen: string[] = [];
+    expect(await pickEndpoint("win32", {}, async (p) => (seen.push(p), p.endsWith("docker_engine")))).toBe("npipe:////./pipe/docker_engine");
+    expect(seen).toEqual(["\\\\.\\pipe\\dockerDesktopLinuxEngine", "\\\\.\\pipe\\docker_engine"]);
+  });
+
+  it("uses only a local endpoint", async () => {
     expect(localEndpoints("linux", { XDG_RUNTIME_DIR: "/run/user/1000" }, "/home/o")).toEqual(["unix:///run/user/1000/docker.sock", "unix:///home/o/.docker/desktop/docker.sock", "unix:///var/run/docker.sock"]);
     expect(localEndpoints("win32", {})[0]).toBe("npipe:////./pipe/dockerDesktopLinuxEngine");
     for (const e of ["tcp://10.0.0.1:2376", "ssh://host", "unix://relative", "npipe:////remote/pipe/x"]) expect(isLocalEndpoint(e), e).toBe(false);
-    expect(pickEndpoint("linux", {}, (p) => p === "/var/run/docker.sock")).toBe("unix:///var/run/docker.sock");
-    expect(pickEndpoint("darwin", {}, () => false)).toBeNull();
-    expect(pickEndpoint("win32", {}, (p) => p === "\\\\.\\pipe\\docker_engine")).toBe("npipe:////./pipe/docker_engine");
+    expect(await pickEndpoint("linux", {}, (p) => p === "/var/run/docker.sock")).toBe("unix:///var/run/docker.sock");
+    expect(await pickEndpoint("darwin", {}, () => false)).toBeNull();
+    expect(await pickEndpoint("win32", {}, (p) => p === "\\\\.\\pipe\\docker_engine")).toBe("npipe:////./pipe/docker_engine");
   });
 
   it("clears DOCKER_* and proxy variables, sets an engine-owned config, and passes --host first", () => {
@@ -57,6 +101,53 @@ describe("docker command line (SR-14)", () => {
     expect(() => d.env({ DOCKER_HOST: "x" })).toThrow();
     expect(() => new DockerCli({ dockerPath: "docker", host: "unix:///x", configDir: dir, children: new Children() })).toThrow(/absolute/);
     expect(() => new DockerCli({ dockerPath: "/d", host: "tcp://x:1", configDir: dir, children: new Children() })).toThrow(/local/);
+    expect(env.DOCKER_BUILDKIT).toBe("1");
+    expect(env.ProgramFiles).toBeUndefined();
+  });
+
+  it("on Windows passes only the folders the client finds buildx in, and never the owner's DOCKER_*", () => {
+    const dir = tmpdir();
+    const from = {
+      Path: "C:\\Windows", SystemRoot: "C:\\Windows", ProgramFiles: "C:\\Program Files", ProgramW6432: "C:\\Program Files", ProgramData: "C:\\ProgramData",
+      USERPROFILE: "C:\\Users\\o", APPDATA: "C:\\Users\\o\\AppData\\Roaming", LOCALAPPDATA: "C:\\Users\\o\\AppData\\Local", DOCKER_HOST: "tcp://evil:2375", DOCKER_BUILDKIT: "0",
+    };
+    const env = new DockerCli({ dockerPath: "/opt/docker", host: "npipe:////./pipe/docker_engine", configDir: path.join(dir, "docker"), children: new Children(), env: from, platform: "win32" }).env();
+    expect(env).toEqual({
+      Path: "C:\\Windows", SystemRoot: "C:\\Windows", ProgramFiles: "C:\\Program Files", ProgramW6432: "C:\\Program Files", ProgramData: "C:\\ProgramData",
+      DOCKER_CONFIG: path.join(dir, "docker"), DOCKER_BUILDKIT: "1",
+    });
+  });
+
+  it("puts the end of docker's stderr, at most 4 KiB, in its errors", async () => {
+    expect(stderrTail("  one line\n")).toBe("one line");
+    const long = Array.from({ length: 400 }, (_, i) => `step ${i}: output`).join("\n") + "\nERROR: unsupported architecture";
+    const t = stderrTail(long);
+    expect(t.length).toBeLessThanOrEqual(4097);
+    expect(t.startsWith("…step ")).toBe(true);
+    expect(t.endsWith("ERROR: unsupported architecture")).toBe(true);
+    expect(stderrTail("x".repeat(10_000))).toBe(`…${"x".repeat(4096)}`);
+    // Through the real run path: a docker that fails with a long stderr.
+    if (process.platform === "win32") return;
+    const dir = tmpdir();
+    const fake = path.join(dir, "docker");
+    fs.writeFileSync(fake, `#!/bin/sh\nfor i in $(seq 1 400); do echo "line $i of the build output, long enough to pass the cap" >&2; done\necho "the real cause" >&2\nexit 1\n`, { mode: 0o755 });
+    const d = new DockerCli({ dockerPath: fake, host: "unix:///var/run/docker.sock", configDir: path.join(dir, "cfg"), children: new Children(), env: { PATH: "/usr/bin:/bin" } });
+    const e = await d.run(["buildx", "build"]).catch((x: Error) => x);
+    expect(e).toBeInstanceOf(DockerError);
+    expect((e as Error).message).toMatch(/^docker buildx failed \(1\): …line \d+ of[\s\S]*the real cause$/);
+  });
+
+  it("requires buildx for the agent image instead of falling back to the legacy builder", async () => {
+    const d = new FakeDocker();
+    d.noBuildx = true;
+    const work = tmpdir();
+    const engineDocker = path.join(__dirname, "..", "docker");
+    await expect(buildAgentImage(d as unknown as DockerCli, engineDocker, work, { project: "p", masterCommit: "c".repeat(40), skillsDigest: "d".repeat(64) }, { skills: new Map([["requirements-analyst", []]]) }))
+      .rejects.toThrow(/buildx plugin wasn't found.*BuildKit/);
+    expect(d.calls.some((c) => c.args.includes("build"))).toBe(false);
+    d.noBuildx = false;
+    await buildAgentImage(d as unknown as DockerCli, engineDocker, work, { project: "p", masterCommit: "c".repeat(40), skillsDigest: "d".repeat(64) }, { skills: new Map([["requirements-analyst", []]]) });
+    expect(d.calls.map((c) => c.args.slice(0, 2).join(" "))).toContain("buildx build");
   });
 
   it("builds the agent image from the pinned base only", () => {
@@ -64,6 +155,7 @@ describe("docker command line (SR-14)", () => {
     const id = { project: "Proj", masterCommit: "c".repeat(40), skillsDigest: "d".repeat(64) };
     const a = agentBuildArgs("/e/ctx", "/e/w/iid", id);
     expect(a).toContain(`BASE_IMAGE=${BASE_IMAGE}`);
+    expect(a.slice(0, 3)).toEqual(["buildx", "build", "--load"]);
     expect(a.at(-1)).toBe("/e/ctx");
     // Spec v30: the image says which master commit and which skills it holds, so projects on different versions get different images.
     expect(a).toContain(`factory.master_commit=${"c".repeat(40)}`);

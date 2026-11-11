@@ -118,7 +118,9 @@ export function runFixed(binary: string, args: string[], opts: RunOptions, child
       out.push(d);
     });
     child.stderr.on("data", (d: Buffer) => {
-      if (err.length < 8192) err += d.toString("utf8");
+      // Bounded, but keeping both ends: git's errors lead with the cause, docker's builds end with it.
+      err += d.toString("utf8");
+      if (err.length > 16384) err = `${err.slice(0, 4096)}\n…\n${err.slice(-8192)}`;
     });
     child.on("error", (e) => {
       if (timer) clearTimeout(timer);

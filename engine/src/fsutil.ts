@@ -59,19 +59,36 @@ export function sha256Hex(data: string | Buffer): string {
   return crypto.createHash("sha256").update(data).digest("hex");
 }
 
-/** Absolute path of `name` on PATH, resolved once so later spawns can't be redirected. */
-export function findOnPath(name: string, env: NodeJS.ProcessEnv = process.env): string | null {
-  const exts = isWindows ? (env.PATHEXT ?? ".EXE;.CMD").split(";") : [""];
-  for (const dir of (env.PATH ?? env.Path ?? "").split(path.delimiter)) {
-    if (!dir || !path.isAbsolute(dir)) continue;
-    for (const ext of exts) {
-      const p = path.join(dir, name + ext.toLowerCase());
-      try {
-        const st = fs.statSync(p);
-        if (st.isFile()) return p;
-      } catch {
-        // not here
-      }
+const isFileAt = (p: string): boolean => {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Absolute path of `name` on PATH, resolved once so later spawns can't be
+ * redirected. Only fully absolute PATH entries count and the current
+ * directory never does, though Windows would otherwise search it first. On
+ * Windows a name that already ends in a PATHEXT extension (`docker.exe`) is
+ * looked up as is; any other name gets each extension in turn.
+ */
+export function findOnPath(name: string, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, isFile: (p: string) => boolean = isFileAt): string | null {
+  const P = platform === "win32" ? path.win32 : path.posix;
+  if (!name || name === "." || name === ".." || name.includes("/") || (platform === "win32" && /[\\:]/.test(name))) return null;
+  let names = [name];
+  if (platform === "win32") {
+    const exts = (env.PATHEXT ?? ".EXE;.CMD").split(";").map((e) => e.trim().toLowerCase()).filter((e) => /^\.[a-z0-9]+$/.test(e));
+    const own = P.extname(name).toLowerCase();
+    if (!own || !exts.includes(own)) names = exts.map((e) => name + e);
+  }
+  for (const dir of (env.PATH ?? env.Path ?? "").split(P.delimiter)) {
+    // On Windows `\dir` passes isAbsolute but follows the current drive; only `C:\…` and UNC paths are fixed.
+    if (!dir || !P.isAbsolute(dir) || (platform === "win32" && !/^([A-Za-z]:\\|\\\\)/.test(dir))) continue;
+    for (const n of names) {
+      const p = P.join(dir, n);
+      if (isFile(p)) return p;
     }
   }
   return null;
