@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Draft (requirements interview in progress)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 2
+- **Spec version:** 3
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -55,7 +55,7 @@ proxy.
 | Id | Requirement |
 |---|---|
 | FR-1 | The engine is a TypeScript Node process in `engine/` (ADR 0001, 0003), started by a command. One engine serves all enabled projects on the machine. |
-| FR-2 | At start it loads the master config (open question OQ-2) and each enabled project's manifest, and refuses to run a project whose manifest fails validation, whose repo isn't reachable with the factory token, or whose owner isn't on the allow list (ADR 0012). A refusal files a Security item and stops only that project. |
+| FR-2 | At start it loads each enabled project's manifest from its config repo, which holds the owner's GitHub id, the OAuth client id and the allow list (OQ-2, H-0080). The engine finds the config repos from a local list of paths on the machine, which holds no settings. It refuses to run a project whose manifest fails validation, whose repo isn't reachable with the factory token, or whose owner isn't on the allow list (ADR 0012). A refusal files a Security item and stops only that project. |
 | FR-3 | It refuses to start when its model credentials don't match a project's billing mode (ADR 0012). |
 | FR-4 | It serves Engine control channel v1.3 on a Unix socket or Windows named pipe with every access rule of the contract, and writes `engine.json` as the contract says. Advisor reply kinds return `kind_not_allowed` until the advisor increment, and `engine.json` reports the channel version it serves, so the skill doesn't offer the advisor (F-006 FR-11). |
 | FR-5 | `feature.start` assigns the next feature id, creates `feature/F-nnn-name` from `main` (ADR 0005) and queues the interview. New features enter only this way (ADR 0012). |
@@ -140,11 +140,13 @@ external interactions, so it gets a STRIDE threat model at Gate 1):
 | SR-2 | Fail closed on every check: config, authorization, approval, container start, proxy start, secrets scan. | Analyst (S5.1, ADR 0015) | Draft |
 | SR-3 | Analyst tool output and owner text are data to the engine; the engine never executes or interprets them as commands. | Analyst (S6.1) | Draft |
 | SR-4 | Each external action (GitHub calls, pushes) is logged with agent, action, target, time and approval id, without secrets. | Analyst (S9.6) | Draft |
+| SR-5 | The allow list sits in the manifest it guards, so widening it is a manifest change: it needs an approved hygiene item, and the engine refuses an unsigned owner change to it (ADR 0015). For Gate 1 to review. | Analyst (OQ-2) | Draft |
 
 ## 10. Interface requirements
 - Engine control channel v1.3: implemented as approved; no change expected.
 - New: analyst-to-engine interview tools (OQ-8). An Interfaces decision.
-- New: master factory config format (OQ-2). An Interfaces decision.
+- Project manifest: owner GitHub id, OAuth client id and allow list (OQ-2), drafted as H-0080. An Interfaces decision.
+- The master repo ships only templates and placeholders; no owner's real values are ever committed to it (owner, 2026-11-11).
 - Project manifest: `enabled` (ADR 0012) is not yet in the contract; needs
   its hygiene item before FR-2 can read it.
 
@@ -162,7 +164,7 @@ Asked one at a time in the interview. None is assumed.
 | Id | Question | Category | Status |
 |---|---|---|---|
 | OQ-1 | Is this the right first increment? | Product | Decided: real interviews end to end (owner, decision card, 2026-11-11) |
-| OQ-2 | Where does the master factory config live, and what does it hold (owner GitHub id, OAuth client id, allow list, the list of projects)? ADR 0014 says the engine refuses interviews until this exists. | Architecture, Interfaces | Asked |
+| OQ-2 | Where does the owner's factory config live (owner GitHub id, OAuth client id, allow list)? | Architecture, Interfaces | Decided: per project, in the project's config repo manifest (ADR 0010); nothing owner-specific in the master repo (owner, thread, 2026-11-11). Contract change drafted as H-0080 |
 | OQ-3 | Node can't read a socket peer's uid or pid, set a named pipe's ACL, or read a pipe client's SID, all of which the channel contract requires. How do we get them: a small FFI library, a native addon, or a separate helper program? | Architecture, Security | Open |
 | OQ-4 | Approve the Claude Agent SDK, and Claude Code inside the agent image, after their S4.1 review. | Architecture, Security | Open |
 | OQ-5 | How the engine drives containers: the `docker` command line (no new library) or a Docker API library. And the egress proxy: written in the engine with Node's own modules, or an existing proxy image. | Architecture, Security | Open |
@@ -188,3 +190,4 @@ Asked one at a time in the interview. None is assumed.
 |---|---|---|---|
 | 1 | 2026-11-11 | Draft from the specs, ADRs and the F-005 and F-006 deferred lists, before the owner interview | — |
 | 2 | 2026-11-11 | OQ-1: first increment is real interviews end to end | Owner, 2026-11-11 (decision card) |
+| 3 | 2026-11-11 | OQ-2: owner config goes per project in the config repo manifest; master repo holds templates only | Owner, 2026-11-11 (thread) |
