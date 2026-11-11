@@ -13,7 +13,7 @@ import { realOsApi } from "../src/os/ffi";
 import { realPath } from "../src/fsutil";
 import { grantWrite } from "./acceptance/support/platform";
 import {
-  GIT_PATH, OWNER_ID, ORG_ID, OTHER_ID, advanceSoon, RpcClient, World, engineJson, git, initRepo, makeWorld, manifestYaml, start,
+  GIT_PATH, OWNER_ID, ORG_ID, OTHER_ID, driveClock, RpcClient, World, engineJson, git, initRepo, makeWorld, manifestYaml, start,
 } from "./helpers";
 
 let engines: EngineHandle[] = [];
@@ -178,12 +178,7 @@ describe("pinned keys (SR-5, AC-20)", () => {
         git: new Git({ gitPath: GIT_PATH, homeDir: path.join(w.root, "githome"), children: new Children() }),
         clock: w.clock, log: w.log, io: { say: (l) => void said.push(l), ask: async () => typed },
       });
-      let done = false;
-      void run.finally(() => (done = true));
-      return (async () => {
-        for (let i = 0; i < 20 && !done; i++) await advanceSoon(w, 5000);
-        return run;
-      })();
+      return driveClock(w, run, 5000);
     };
     expect(await confirm()).toBe(false);
     expect(w.github.deviceCalls).toBe(0);
@@ -309,10 +304,7 @@ describe("confirm on the handle (SR-5)", () => {
     const e = await boot(w);
     expect(e.projects[0]!.state).toBe("stopped");
     w.github.approver = OWNER_ID;
-    let ok = false;
-    const run = e.confirmProject(w.config, { say: () => undefined, ask: async () => "acme" }).then((r) => (ok = r));
-    for (let i = 0; i < 10 && !ok; i++) await advanceSoon(w, 5000);
-    await run;
+    const ok = await driveClock(w, e.confirmProject(w.config, { say: () => undefined, ask: async () => "acme" }), 5000);
     expect(ok).toBe(true);
     await e.stop();
     engines = [];

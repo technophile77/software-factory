@@ -123,6 +123,10 @@ export class FakeClock implements Clock {
   now() {
     return this.t;
   }
+  /** How many waits are parked on this clock. */
+  get sleeping(): number {
+    return this.sleepers.length;
+  }
   sleep(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
       if (signal?.aborted || ms <= 0) return resolve();
@@ -321,6 +325,23 @@ export async function approvedSession(w: World, c: RpcClient, feature: string, a
     await new Promise((res) => setTimeout(res, 10));
   }
   return open.session as string;
+}
+
+/**
+ * Settles `p`, moving the fake clock `stepMs` at a time, but only while
+ * something is waiting on it. A fixed number of steps raced the work before
+ * the first wait: on a slow runner (git spawns on Windows) the steps ran out
+ * before the device poll began sleeping, and the poll then waited forever.
+ */
+export async function driveClock<T>(w: { clock: FakeClock }, p: Promise<T>, stepMs: number, realLimitMs = 25_000): Promise<T> {
+  let done = false;
+  void p.then(() => (done = true), () => (done = true));
+  const deadline = Date.now() + realLimitMs;
+  while (!done && Date.now() < deadline) {
+    if (w.clock.sleeping > 0) await w.clock.advance(stepMs);
+    else await new Promise((r) => setTimeout(r, 10));
+  }
+  return p;
 }
 
 /** Advances the clock once a request has had time to reach the engine and start waiting. */

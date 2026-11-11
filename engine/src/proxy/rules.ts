@@ -80,8 +80,9 @@ export function normalHost(host: string): string | null {
   const h = host.toLowerCase().replace(/\.$/, "");
   if (h.length === 0 || h.length > 253) return null;
   if (!/^(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(h)) return null;
-  // All-numeric labels would let an address in through inet_aton forms (0x7f.1, 2130706433).
-  if (/^[0-9.]+$/.test(h) || /^0x/i.test(h.split(".").pop()!)) return null;
+  // A numeric last label lets a resolver read the name as an address
+  // (inet_aton forms: 0x7f.1, 2130706433); no real top-level domain is numeric.
+  if (/^(0x[0-9a-f]*|[0-9]+)$/i.test(h.split(".").pop()!)) return null;
   return h;
 }
 

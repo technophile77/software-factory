@@ -10,16 +10,35 @@ is F-007 milestone 1, the part that needs no container runtime:
 - the engine-only interview transcript on `factory/state`;
 - the analyst's interview tools, as plain functions.
 
-Milestone 2 adds the Agent SDK sessions, containers, the proxy and the MCP
-wiring.
+Milestone 2 adds the parts that run agents, each tested with fakes:
+
+| Folder | What it holds |
+|---|---|
+| `src/policy/` | Role policy v2.5 from the manifest, the H-0046 glob dialect and the ADR 0015 path rule |
+| `src/docker/` | the `docker` command line (SR-14), container and network plans, the post-start `docker inspect` check, and the agent image build |
+| `src/proxy/` | the sidecar proxy and credential gateway (SR-6 to SR-9), on Node built-ins only; bundled to `dist/proxy.js` |
+| `src/agent/` | session options (SR-10), the container spawn, SR-18 caps, the `factory` MCP tools, `fetch_page`, the web reader, the worktree commit and end-of-session write check (FR-9, FR-11) |
+| `docker/` | the agent image: base image by digest, Claude Code 2.1.311 checked against the Agent SDK manifest, no npm in the final stage |
+
+The Agent SDK package itself isn't installed yet (see the dev report,
+milestone 2). Session code is written against `src/agent/sdk.ts`, the part
+of the SDK's surface the engine uses.
 
 ## Build and test
 
 ```
 npm ci --ignore-scripts
 npm run typecheck
-npm run build      # dist/engine.js; koffi stays external and loads its prebuilt binary
+npm run build      # dist/engine.js (koffi stays external) and dist/proxy.js (the sidecar proxy)
 npm test           # unit tests (test/*.test.ts) and the acceptance suite (test/acceptance, its own config)
+npm run coverage   # the same with V8 coverage; reported, not gated
+```
+
+Tests that need a real Docker daemon are skipped unless
+`FACTORY_DOCKER_TESTS=1`. Run them after `npm run build`:
+
+```
+FACTORY_DOCKER_TESTS=1 npx vitest run --project unit test/docker-real.test.ts
 ```
 
 The dependencies are pinned exactly in `package.json` and the committed

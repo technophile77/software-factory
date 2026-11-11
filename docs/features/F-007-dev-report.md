@@ -1,4 +1,4 @@
-# F-007 Developer completion report — milestone 1 of 2
+# F-007 Developer completion report — milestones 1 and 2
 
 - **Feature:** F-007 Run spec interviews on the real engine, spec v21
 - **Role:** software-developer
@@ -322,3 +322,97 @@ CH-4 was un-skipped on Windows (`test/acceptance/channel.test.ts`, as the coordi
 2. **Windows stale parent pids** in the ancestry walk: a residual risk for Security Gate 2. It can only fail closed.
 3. **Speed of the pipe on Windows.** Connections are now polled every 20 ms and data every 10 ms. That is fine for the channel, but it is polling, not overlapped I/O.
 4. **No job timeout.** The workflow (`.github/workflows/engine.yml`) has no `timeout-minutes`. The hung run sat for 54 minutes until it was cancelled. I suggest `timeout-minutes: 45` per job; this needs approval.
+
+## Milestone 2
+
+Built against spec v26 and the Gate 1 report. No Docker daemon was available,
+so everything that touches Docker, the network or the model is behind a seam
+and unit-tested with fakes. Real-daemon checks are in
+`test/docker-real.test.ts`, which is skipped unless `FACTORY_DOCKER_TESTS=1`.
+
+### What was built
+
+| Part | Files | Requirements |
+|---|---|---|
+| `@vitest/coverage-v8` 5.1.0 (exact, dev only, integrity matches review 6) and `npm run coverage`. Reported only; no threshold. | `package.json`, `vitest.config.mts` | OQ-9 |
+| Role policy v2.5, read from the manifest's `policy:` when a session starts, with repo overrides. Required denies, the open-web rule and the fixed web-reader policy are checked. The H-0046 glob dialect and the ADR 0015 real-path rule. | `src/policy/` | FR-9, SR-12 |
+| The docker command line: absolute path, argument array, `DOCKER_*` and proxy variables cleared, an engine-owned empty `DOCKER_CONFIG`, and `--host` set to a fixed local endpoint. Names come from validated ids only. | `src/docker/cli.ts` | SR-14, AC-13 |
+| Container plans (`docker run` arguments) and the post-start `docker inspect` check. The check covers image id, user, read-only root, capabilities, `no-new-privileges`, CPU, memory and pids limits, tmpfs, networks, exact mounts, log driver and host namespaces. Any mismatch removes the container. Values go in through `--env NAME` from docker's own environment, never in an argument (SR-1). | `src/docker/plan.ts` | FR-8, SR-14 |
+| The session group, one per run. It has an `--internal` network, an outside network that only the proxy joins, and the proxy sidecar. The proxy runs from the pinned base image with `dist/proxy.js` mounted read-only. The model credential goes over the proxy's stdin only after the proxy passes its check. Each agent container gets its own random proxy credential, bound to its role's `network.allow`. The credential is revoked when the session ends. Containers, session volumes and networks are removed at the end. | `src/agent/sandbox.ts` | SR-6, SR-7, SR-16, sensitive data |
+| The proxy, on Node built-ins only. CONNECT goes to port 443 only, for hosts on the role's list. The proxy resolves each name itself and refuses if **any** answer falls in an SR-8 range or a Docker subnet. It then connects to the address it checked. IP literals and numeric host forms are refused. The credential gateway lives at `/gw/<cred>/v1/messages[/count_tokens]`. A request carrying any key other than the dummy is dropped. The real key goes in as `x-api-key`, or a subscription token goes in as a bearer token. Nothing is logged with a credential. | `src/proxy/` | SR-7, SR-8, SR-9, AC-14 to AC-16 |
+| `fetch_page`. The fetch runs inside the proxy, under the reader's credential, with each redirect checked again and the size capped. The engine then strips comments, scripts, styles, `head`, hidden elements (attribute, `aria-hidden`, inline styles), and zero-width, bidi and tag characters, and caps the text. | `src/agent/page-text.ts`, `src/agent/factory-tools.ts` | SR-21, AC-21, H-0083 |
+| SR-10 options: `settingSources: []`, `strictMcpConfig`, the `factory` server only, the role's built-in tools plus its `mcp__factory__*` tools, `permissionMode: "default"`, `hooks: {}`, instructions passed in (from `agents/<role>/AGENT.md`, never the worktree), skills only from a baked plugin folder, and `env` limited to the four "off" flags. | `src/agent/session.ts` | SR-10 |
+| The container spawn: `docker exec -i` into the session's container, running `/opt/claude/claude`. The SDK's host `command` is ignored, only SDK protocol variables pass, and bypass-permission arguments are refused. | `src/agent/session.ts` | SR-10 |
+| The FR-9 tool gate (`canUseTool`). Every Read, Grep, Glob, Write and Edit path is mapped from `/workspace` to the worktree and checked with the real-path rule against the read or write rules. `Bash` is limited to one listed program with no shell syntax. Any other tool is denied. | `src/agent/session.ts` | FR-9 |
+| SR-18 session caps: turns, output tokens or dollars, and wall time. A cap aborts the session and reports which cap. The SDK session id is recorded as soon as it is seen (FR-14). `WebSearch` queries are logged from the message stream. | `src/agent/session.ts` | SR-18, SR-21 |
+| Interview tools v1.0 as `factory` MCP tools: JSON Schemas with the H-0082 limits, results mapped to `CallToolResult`, and research results labelled untrusted. | `src/agent/factory-tools.ts` | H-0082 |
+| `research_web`, real version. The request is recorded under the feature lock, but the reader runs outside it. The query is logged against the item, with per-question and per-session caps. Each query gets its own web-reader session and container, with only the query as prompt. Sources are the pages the engine actually fetched. | `src/interview/tools.ts`, `src/agent/web-reader.ts` | H-0082, F-005 SR-6/SR-17 |
+| Worktree commit (FR-11) with the end-of-session check in front. The engine reads the worktree itself (no git porcelain, links taken as links). git runs with an explicit `--git-dir`, because the agent can rewrite the worktree's `.git` file. The commit is refused on any path outside the write rules, a new or changed symlink, a changed `.git` link, history that no longer descends, or a secrets-scan hit. The branch moves by compare-and-swap. | `src/agent/worktree-commit.ts`, `src/agent/write-check.ts` | FR-9, FR-11, SR-11, SR-12, AC-9 |
+| The analyst session from start to end: billing check, policy, group, container, tools, session; the container is stopped *before* the commit and check; then breach handling and cleanup. | `src/agent/analyst.ts` | FR-8 to FR-11, SR-18 |
+| The agent image. The base is `node:26.13.0-trixie-slim@sha256:5adad64f…` (Gate 1 review 4). Claude Code 2.1.311 comes from an exact lockfile with `--ignore-scripts`; its binary's SHA-256 is checked against the SDK 0.3.311 manifest in the build stage. The final stage has no npm, npx or corepack, runs as `USER 1000:1000` and has no entrypoint script. | `docker/` | SR-19, G1 #18, #22 |
+| CI flake fix: `driveClock` advances the fake clock only while something is waiting on it. The two confirm tests used a fixed number of steps. On a slow runner, the steps ran out before the device poll started sleeping, and the poll then waited forever. That was the Windows timeout in "confirm on the handle". | `test/helpers.ts`, `test/engine.test.ts` | — |
+
+### Tests
+
+There are five new unit files: `policy.test.ts`, `proxy.test.ts`, `agent.test.ts`, `research.test.ts`, and `docker-real.test.ts` (gated). They cover:
+
+- the glob dialect and path rule;
+- policy validation and overrides;
+- the write check and worktree commit, against real git (including AC-9, symlinks, a tampered `.git` link and a secret hit);
+- the SR-8 address table (mapped, NAT64 and numeric forms);
+- the proxy end to end on loopback, with fake DNS: 407 and 403 paths, tunnelling, revocation, the gateway key swap, own-credential drop, subscription headers, `fetch_page` redirects and caps, and no credentials in logs;
+- page stripping;
+- docker argument building;
+- inspect mismatches, one case for each field;
+- the session group, with a fake docker that answers `inspect` from the arguments it was given (a tampered agent or proxy fails closed, and the credential is never sent to a proxy that failed);
+- SR-10 options;
+- the tool gate;
+- container spawn;
+- caps;
+- the MCP tool mapping;
+- research caps through the engine handle;
+- the analyst session order.
+
+The bundled `dist/proxy.js` was also smoke-run over stdio.
+
+Results on Linux (this container): typecheck is clean, the build passes (`dist/proxy.js` is 17.5 kB and requires only `node:` modules), and `npx vitest run` passes 380 and skips 6 of 386. The skips are the gated Docker file and the earlier platform-only skips. The coverage summary for unit tests alone, from before the milestone 2 files existed, was 78% of lines.
+
+### Blocked: decisions needed from the owner
+
+1. **Agent SDK peer dependencies (Architecture, Security).** `npm ci` refuses a lockfile without the SDK's peers. `sdk.mjs` bundles its own zod and MCP code and imports neither peer at run time. Only its type file uses `@anthropic-ai/sdk` and `@modelcontextprotocol/sdk`, and `tool()` needs the caller's zod. So the SDK isn't installed yet. Options:
+   - **A.** Pin all three peers exactly: zod 4.6.7 and MCP SDK 1.32.2 (both in Gate 1 review 2), plus an `@anthropic-ai/sdk` version, which review 2 left "not verified, choose at implementation". This adds about 100 packages to the host lockfile, including express, hono, cross-spawn, jose and ajv. None of them is loaded at run time and `npm audit` finds nothing, but none was reviewed under S4.1.
+   - **B.** An `engine/.npmrc` with `legacy-peer-deps=true`, plus zod 4.6.7 as a direct dependency. The lockfile gains only the SDK, its 8 platform packages and zod, and peer type imports degrade to `any`. This is factory configuration, so it needs approval, and CI's `npm ci` picks it up unchanged.
+
+   I recommend **B** (the smallest supply chain). With either option, the 8 SDK platform packages carry a native Claude Code binary of about 290 MB. One of them lands on the host and is never run, because every session goes through the container spawn. Once this is decided, the remaining work is one binding file (`src/agent/sdk-binding.ts`, about 30 lines, mapping `query` and `createSdkMcpServer`/`tool` onto `src/agent/sdk.ts`) and a test that `docker/claude-sha256.json` equals the installed SDK manifest.
+2. **SR-18 and H-0082 values (Product, Security).** The spec puts them in "change-controlled config" but gives no numbers and no file. Without them no session starts, because the engine has no defaults. Needed:
+   - per session, for the analyst and for the reader: turns, output tokens or dollars, and wall time;
+   - per container: CPU, memory, pids and temp size, for agents and for the proxy;
+   - `research_web` per question and per session;
+   - `fetch_page` bytes per page and characters per page;
+   - research summary length and the most sources returned;
+   - the worktree commit's file-count and byte limits.
+
+   Also: **which file** holds them. I suggest a `limits:` block in the engine home's `engine.yaml` (outside every repo), or keys in the project manifest under a hygiene item.
+3. **The gateway's API paths (Interfaces, Security).** SR-9 says "the paths Claude Code uses". I allowed only `POST /v1/messages` and `/v1/messages/count_tokens` (query `?beta=true`). The first real-daemon run will show whether Claude Code 2.1.311 needs others.
+4. **Subscription tokens through the gateway (Security; SR-9 says ask before any fallback).** The gateway sends a subscription token as `Authorization: Bearer` plus `anthropic-beta: oauth-2025-04-20`. This is unverified. If the first real run fails in subscription mode, the owner decides the fallback. Nothing falls back on its own.
+5. **Skills baked into the image (Architecture).** SR-10 says skills come only from the pinned master factory version, baked into the image. Two things are open: which version (`factory.version` in the manifest? a commit of the master clone?), and how the image gets them. I suggest copying `skills/` from that commit into a local plugin folder at build time. Until this is decided, a role with `Skill`, which includes the analyst, refuses to start.
+6. **Where `AGENT.md` is read from (Architecture).** It must be "from the master factory, never the worktree". It could be read from the master clone's working tree, its `HEAD` commit, or the commit named by `factory.version`. I'd read the blob from a pinned commit.
+7. **Which item a research call counts against (Product).** `research_web` takes only `{ query }`. I count it against the item in `researching`, or else the open question. A call with neither counts only against the session cap. "Per session" is per analyst session, held in memory.
+8. **The OSV-Scanner image scan in CI (SR-19).** It needs a step in `.github/workflows/engine.yml`, which is change-controlled, and a component review of OSV-Scanner. The step would build the agent image and scan it. It needs a hygiene item. The image's Debian packages haven't been CVE-checked yet (Gate 1 review 4).
+
+### Interpretations (owner to confirm)
+
+- **`DOCKER_CONFIG`.** SR-14 says to clear `DOCKER_CONFIG`. I set it to an empty engine-owned folder instead. Clearing it would load the owner's `~/.docker/config.json`, which can set a remote context, inject proxy variables into containers, and run credential helpers. The endpoint is passed as `--host`, chosen from a fixed per-OS list of local sockets and pipes. Remote (tcp/ssh) endpoints are refused.
+- **Network scope.** There is one internal network and one proxy per run; the analyst and its web readers share it, each with its own credential. That satisfies SR-16, which allows sharing within a project. Docker gives identical images the same id, so two projects with the same Dockerfile get the same agent image id. They hold no state.
+- **Which DNS answers refuse.** The proxy refuses a name if any of its DNS answers is blocked, not just the one it would use. This is stricter than SR-8. It also refuses reserved IPv4 (240/4) and NAT64 forms carrying a blocked address.
+- **Hidden content.** Only inline markup and styles are recognised. Text hidden by a stylesheet class still reaches the reader. That residual risk goes to Gate 2.
+- **Directory-level reads.** `Grep` and `Glob` on a directory are checked against the directory, not each file under it. Deny globs on files inside an allowed directory therefore don't stop a directory-wide `Grep`. The fresh-worktree rule (tracked files only) limits the impact. That residual risk goes to Gate 2.
+- **Whether to commit at all.** The worktree commit includes ignored files, so they pass the write rules and the secrets scan too. Ignored files are left out only if the owner prefers that.
+- **The proxy's control channel.** The proxy runs attached (`docker run -i`, log driver `none`), so pages and logs never land in Docker's log files.
+
+### Not done in this milestone
+
+- Starting the analyst from `feature.start` and feeding owner replies in as turns. The `frameTurn` / `undelivered` pieces exist, and `runAnalystSession` takes the turns as a stream, but the engine doesn't call it yet. It is blocked on decision 1 (no SDK) and decisions 2, 5 and 6 (no limits, skills or instructions source).
+- Using the session volume on resume: the volume is created per container, and passing an existing one in on resume is still to come.
+- The real-daemon run of AC-8 and AC-13 to AC-16. The test is written and needs the owner's machine (`FACTORY_DOCKER_TESTS=1`).
+- A sweep of leftover containers after a crash (by the `factory.run` label).
