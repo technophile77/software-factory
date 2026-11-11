@@ -11,15 +11,20 @@ import json
 import sys
 
 
-def eco_base(e):
-    return (e or "").split(":", 1)[0]
+def same_ecosystem(record_eco, package_eco):
+    # A Debian record has one entry per release ("Debian:13", "Debian:14"); a
+    # fix in a later release is no fix for this one.
+    record_eco, package_eco = record_eco or "", package_eco or ""
+    if ":" in package_eco:
+        return record_eco == package_eco
+    return record_eco.split(":", 1)[0] == package_eco
 
 
 def fixed_versions(vuln, name, ecosystem):
     out = []
     for a in vuln.get("affected") or []:
         p = a.get("package") or {}
-        if p.get("name") != name or eco_base(p.get("ecosystem")) != eco_base(ecosystem):
+        if p.get("name") != name or not same_ecosystem(p.get("ecosystem"), ecosystem):
             continue
         for r in a.get("ranges") or []:
             for e in r.get("events") or []:
@@ -47,11 +52,11 @@ def main(path):
     with open(path, encoding="utf-8") as f:
         fixable, unfixed = classify(json.load(f))
     print(f"{len(unfixed)} known vulnerabilities with no fix yet (listed, not blocking).")
-    for vid, name, ver, _ in sorted(unfixed):
+    for vid, name, ver, _ in sorted(set(unfixed)):
         print(f"  unfixed  {vid}  {name} {ver}")
     if fixable:
         print(f"{len(fixable)} vulnerabilities have a fix; update the base image pin:")
-        for vid, name, ver, fix in sorted(fixable):
+        for vid, name, ver, fix in sorted(set(fixable)):
             print(f"  FIXABLE  {vid}  {name} {ver} -> {fix}")
         return 1
     return 0

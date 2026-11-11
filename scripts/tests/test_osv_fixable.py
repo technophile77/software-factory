@@ -42,6 +42,11 @@ class Classify(unittest.TestCase):
         self.assertEqual(fixable, [])
         self.assertEqual(len(unfixed), 1)
 
+    def test_fix_only_in_a_later_debian_release_is_not_a_fix(self):
+        fixable, unfixed = of.classify(report(pkg("libc6", [vuln("CVE-5", "glibc", "2.43-7", eco="Debian:14")], source="glibc")))
+        self.assertEqual(fixable, [])
+        self.assertEqual(len(unfixed), 1)
+
     def test_name_used_when_no_source_name(self):
         fixable, _ = of.classify(report(pkg("tar", [vuln("CVE-4", "tar", "1.36")])))
         self.assertEqual(len(fixable), 1)
