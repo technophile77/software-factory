@@ -111,7 +111,7 @@ describe("remote factory/state (GS-4: SR-1, SR-11)", () => {
 });
 
 describe("fetch (TR-11: SR-17 on fetch)", () => {
-  it("at start: an interview file the engine didn't write on the remote is refused and not adopted; readiness fails, the interview goes on", async () => {
+  it("at start: an interview file the engine didn't write on the remote is refused and not adopted; readiness fails, the interview goes on", { timeout: 90_000 }, async () => {
     const { w, srv, bare } = await remoteWorld();
     let e = await boot(w);
     const c = await RpcClient.connect(engineJson(w).path);

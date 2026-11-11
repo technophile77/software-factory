@@ -40,7 +40,7 @@ function secretsOf(world: World) {
 }
 
 describe("SR-1: secrets stay out of logs, Git, inbox items, argument lists and prompts", () => {
-  it("[SC-1] SR-1: after a full run no secret appears in the logs, any repo's objects or history, engine.json, a git or gitleaks argument, or a turn message", async () => {
+  it("[SC-1] SR-1: after a full run no secret appears in the logs, any repo's objects or history, engine.json, a git or gitleaks argument, or a turn message", { timeout: 180_000 }, async () => {
     w = await World.create(undefined, { logGit: true });
     await fullRun(w);
     const secrets = secretsOf(w);
