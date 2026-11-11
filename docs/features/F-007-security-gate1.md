@@ -199,7 +199,7 @@ first CI run under #18. No component was run.
 and its whole lockfile (102 packages) has no npm advisories. The engine
 should pin the same version and never run Vitest's UI or API server.
 
-**Pin update, 2026-11-11 (spec v37, owner decision):** moved to `node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc`, the multi-arch index for Node's 26.13.1 security release (2026-11-10). Same Debian trixie slim base and layer layout. The CI image scan (H-0088) now checks each build.
+**Pin update, 2026-11-11 (spec v37, owner decision):** moved to `node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc`, the multi-arch index for Node's 26.13.1 security release (2026-11-10). Same Debian trixie slim base and layer layout. The CI image scan (H-0088) now checks each build. From spec v38 the image's final stage also runs `apt-get upgrade` from Debian's signed archive (owner decision), because the node image lagged a Debian zlib fix.
 
 ### 5. gitleaks (the engine's secrets scanner, OQ-11)
 

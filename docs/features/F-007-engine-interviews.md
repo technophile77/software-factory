@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 37
+- **Spec version:** 38
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -484,3 +484,4 @@ section 9.
 | 35 | 2026-11-11 | H-0088 drafted: OSV-Scanner on both lockfiles and the agent image, actions pinned by SHA, SR-13 placeholder and paths-file checks | Owner chose to add now (decision card); values draft |
 | 36 | 2026-11-11 | H-0088 approved as drafted and applied | Owner, 2026-11-11 (decision card) |
 | 37 | 2026-11-11 | Image CVEs: CI fails only on those with a fix and lists the rest; base image moved to `node:26.13.1-trixie-slim` (Node security release 2026-11-10), index digest `sha256:e6bedef2…20bc` | Owner, 2026-11-11 (decision card) |
+| 38 | 2026-11-11 | The agent image's final stage applies Debian's signed security updates (`apt-get upgrade`) at build time; builds need `deb.debian.org` and are no longer bit-for-bit repeatable | Owner, 2026-11-11 (decision card) |

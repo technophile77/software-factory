@@ -23,6 +23,12 @@ RUN NODE_ARCH="$(node -p process.arch)" \
  && chmod 0555 /out/claude
 
 FROM ${BASE_IMAGE}
+# Debian's signed security updates, so a CVE Debian has fixed is fixed here
+# even before the node image is rebuilt (owner decision 2026-11-11, spec v38).
+# Needs deb.debian.org at build time; builds are no longer bit-for-bit repeatable.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade --no-install-recommends \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
 # SR-19: no npm or npx in the final image (review 4: bundled npm carries advisories).
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /opt/yarn* \
