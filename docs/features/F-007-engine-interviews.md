@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 35
+- **Spec version:** 36
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -336,9 +336,9 @@ and a project manifest may only lower them. Two changes:
 
 A session at any cap stops and reports which cap (SR-18).
 
-### H-0088 (draft): supply-chain checks in CI (SR-13, SR-19; Gate 2 M4, L3)
+### H-0088 (approved): supply-chain checks in CI (SR-13, SR-19; Gate 2 M4, L3)
 
-Draft for the owner's approval. The owner chose on 2026-11-11 (decision card)
+Approved by the owner 2026-11-11 (decision card, as drafted). The owner chose on 2026-11-11 (decision card)
 to add these now rather than before Alpha. Three changes, all to
 change-controlled files:
 
@@ -377,10 +377,13 @@ change-controlled files:
    - Across the repo, fail on anything shaped like a GitHub OAuth client id
      (`Iv1.` followed by 16 hex characters, or `Ov23li` followed by 14
      characters), and on any email address except `noreply@` ones and those
-     at `example.com`, `.org` or `.net`, a `.invalid` domain, or
+     at `example.com`, `.org` or `.net`, a `.invalid` or `.example` domain, or
      `github.com` (URL user parts such as `git@github.com` in tests). Today's
      tree passes all three.
    - The script has its own tests, and the example values list is part of it.
+     Values a test builds in code (interpolation, a regex, a named constant
+     or property) are not literals and pass; the script's own tests are
+     skipped because they hold bad values on purpose.
 
 ## 11. Readiness gate
 Run by the orchestrator, 2026-11-11, on spec v21.
@@ -477,3 +480,4 @@ section 9.
 | 33 | 2026-11-11 | Gate 2 M1: the credential gateway refuses server-side tools and passes only allow-listed `anthropic-beta` values | Owner, 2026-11-11 (decision card) |
 | 34 | 2026-11-11 | Gate 2 M3: this increment assumes a single-user host; defending against other local user accounts (engine home ACL on Windows, Docker pipe server identity, `ProgramData` plugin path, Unix socket owner) is deferred to Alpha and must be fixed before promotion | Owner, 2026-11-11 (decision card) |
 | 35 | 2026-11-11 | H-0088 drafted: OSV-Scanner on both lockfiles and the agent image, actions pinned by SHA, SR-13 placeholder and paths-file checks | Owner chose to add now (decision card); values draft |
+| 36 | 2026-11-11 | H-0088 approved as drafted and applied | Owner, 2026-11-11 (decision card) |

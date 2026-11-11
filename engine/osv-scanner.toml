@@ -1,0 +1,7 @@
+# OSV-Scanner ignores for engine CI (SR-19, H-0088). Change-controlled: each
+# entry needs the owner's approval, a reason, and an expiry at most 90 days out.
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2027-02-01
+# reason = "Not in a used code path: ..."
