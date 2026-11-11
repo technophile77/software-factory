@@ -1,9 +1,9 @@
 # Feature: Run spec interviews on the real engine
 
 - **Id:** F-007
-- **Status:** Draft (requirements interview in progress)
+- **Status:** Draft (Security Gate 1 done; requirements folded in; owner questions OQ-10, OQ-11 and the H-0080 to H-0083 drafts open)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 15
+- **Spec version:** 16
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -60,8 +60,8 @@ proxy.
 | FR-4 | It serves Engine control channel v1.3 on a Unix socket or Windows named pipe with every access rule of the contract, and writes `engine.json` as the contract says. Advisor reply kinds return `kind_not_allowed` until the advisor increment, and `engine.json` reports the channel version it serves, so the skill doesn't offer the advisor (F-006 FR-11). |
 | FR-5 | `feature.start` assigns the next feature id, creates `feature/F-nnn-name` from `main` (ADR 0005) and queues the interview. New features enter only this way (ADR 0012). |
 | FR-6 | `interview.*` follow channel v1.3 and the interview rules: session lock by token, takeover, revisions, reply ids, deferred items once per session, `wait_s`, error codes. |
-| FR-7 | Every interview session needs the owner's GitHub device approval before any reply is accepted, exactly as ADR 0014 sets out: no scopes, no client secret, owner id check, token discarded, fail closed, 30-minute idle and 2-hour limits. |
-| FR-8 | The analyst and the web reader run as Agent SDK sessions, each in its own container as the Role policy contract sets out (ADR 0015): worktree and caches only, pinned image, non-root, read-only root, no capabilities, no owner credentials, no engine socket, egress only through the engine's proxy to the model API and the role's hosts. No container, no session. |
+| FR-7 | Every interview session needs the owner's GitHub device approval before any reply is accepted, exactly as ADR 0014 sets out: no scopes, no client secret, owner id check, token discarded, fail closed, 30-minute idle and 2-hour limits, every GitHub field validated (SR-23). |
+| FR-8 | The analyst and the web reader run as Agent SDK sessions, each in its own container as the Role policy contract sets out (ADR 0015): worktree and caches only, pinned image, non-root, read-only root, no capabilities, no owner credentials, no engine socket, egress only through the sidecar proxy (SR-6 to SR-9) to the model API and the role's hosts. No container, no session. |
 | FR-9 | Each role gets exactly its policy's tools; the engine checks every file tool call against the role's `read` and `write` rules with the ADR 0015 path rule, and when the session ends compares the branch with the write rules and rejects the session's commits on a breach. |
 | FR-10 | The analyst reaches the owner only through engine tools (OQ-8): ask a question, propose an assumption, request research, report the spec ready. The engine never answers for the owner and never turns analyst text into a reply. |
 | FR-11 | After each agent edit the engine commits the worktree change to the agent's branch (ADR 0012). The engine alone writes the transcript, append-only, on `factory/state`, and runs the secrets scan before each commit, blocking it on a hit. |
@@ -87,6 +87,14 @@ Drafted from the requirements above; each is refined in the interview.
 | AC-11 | Given a secret in a transcript entry, then the commit is blocked and nothing is pushed. | FR-11 |
 | AC-12 | Given the engine killed mid-session, when it restarts, then the run is `interrupted`, resumes, and no retry is counted. | FR-14 |
 | AC-13 | Given the Docker runtime is stopped, when a session would start, then no session starts and the owner is told why. | FR-8 |
+| AC-14 | Given an agent container, when it connects straight to an outside address or to `host.docker.internal`, then the connection fails; with no proxy credential the proxy refuses it. | SR-6, SR-7 |
+| AC-15 | Given the web reader asked for a private IP, `localhost`, or a name resolving to `127.0.0.1`, then the proxy refuses it. | SR-8 |
+| AC-16 | Given a running analyst session, then the model credential appears nowhere in its container's environment or files. | SR-9 |
+| AC-17 | Given a repo with `.claude/settings.json` hooks and a `CLAUDE.md`, when a session runs, then neither is loaded. | SR-10 |
+| AC-18 | Given a `.husky/pre-commit` written in the container, when the engine commits, then it doesn't run. | SR-11 |
+| AC-19 | Given a spec path that is a symlink to a file outside the worktree, then the engine refuses it and reveals nothing of the target. | SR-12 |
+| AC-20 | Given a change to the pinned owner id in the manifest, then the project stops until the owner confirms and the previous owner approves on the phone. | SR-5 |
+| AC-21 | Given a page with hidden text and zero-width characters, when the reader fetches it, then neither reaches the reader. | SR-21 |
 
 ## 5. Constraints
 - TypeScript on Node (ADR 0001). Windows, macOS and Linux; Windows needs
@@ -94,6 +102,12 @@ Drafted from the requirements above; each is refined in the interview.
 - Every new library, tool and image gets a security review and an
   Architecture decision before use (S4.1), is pinned (S4.3) and checked for
   CVEs in CI (S4.4).
+- Pins from the S4.1 reviews (Gate 1): koffi 3.3.6, the Claude Agent SDK
+  0.3.311 with the Claude Code 2.1.311 its manifest names (upgraded only
+  together), and `node:26.13.0-trixie-slim` by digest. A lockfile with
+  integrity hashes; `npm ci --ignore-scripts` on the host; Claude Code's
+  `postinstall` only in the image build, with the binary's SHA-256 checked
+  against the SDK manifest. Each bump is a new S4.1 check (G1 #22).
 - The engine's own repo maturity is Rapid prototype until promoted, so the
   bar in `maturity-levels.md` applies.
 - No change to the skill or the channel contract is needed for this
@@ -131,16 +145,55 @@ the interview, never recorded otherwise.
 |---|---|---|---|
 
 ## 9. Security considerations
-To be completed at Gate 1. Known from the ADRs and S9.7 (this feature has
-external interactions, so it gets a STRIDE threat model at Gate 1):
+From the analyst and Security Gate 1 (`F-007-security-gate1.md`, finding
+numbers in brackets). At Rapid prototype none blocks; the High ones (G1 #1
+to #7) block at Alpha, so they are requirements now.
 
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | The device-flow token and the model credential never reach a log, a file in Git, an inbox item or an agent's prompt. | Analyst (ADR 0014, S3) | Draft |
-| SR-2 | Fail closed on every check: config, authorization, approval, container start, proxy start, secrets scan. | Analyst (S5.1, ADR 0015) | Draft |
-| SR-3 | Analyst tool output and owner text are data to the engine; the engine never executes or interprets them as commands. | Analyst (S6.1) | Draft |
+| SR-1 | The model credential, the factory token, the device-flow token and `device_code`, interview session tokens and proxy credentials never reach a log, a file in Git, an inbox item, an argument list or an agent's prompt. | Analyst; G1 comment on SR-1 | Draft |
+| SR-2 | Fail closed on every check: config, authorization, approval, container start and its post-start inspection (SR-14), proxy start and address rules (SR-8), secrets scan. | Analyst; G1 comment on SR-2 | Draft |
+| SR-3 | Analyst tool calls and owner text are data to the engine. Tool arguments are validated against the Interview tools limits before use; the engine never executes or interprets them. | Analyst; G1 comment on SR-3 | Draft |
 | SR-4 | Each external action (GitHub calls, pushes) is logged with agent, action, target, time and approval id, without secrets. | Analyst (S9.6) | Draft |
-| SR-5 | The allow list sits in the manifest it guards, so widening it is a manifest change: it needs an approved hygiene item, and the engine refuses an unsigned owner change to it (ADR 0015). For Gate 1 to review. | Analyst (OQ-2) | Draft |
+| SR-5 | The engine reads each manifest from its config repo's `main` commit, never the working tree. It pins `owner.*`, `allowed_repo_owners` and `enabled` when the owner first approves them, in an engine-only record outside every repo. Any change to them, or a new path in the project list, stops that project and files a Security item; it runs again only after the owner confirms at an engine command and approves a device sign-in as the previously pinned owner id. Increment 3 replaces this with the signature check. | Analyst; G1 #7, #9; owner decision 2026-11-11 | Approved |
+| SR-6 | Agent containers join only an `--internal` Docker network with no route out. The proxy runs as a sidecar container from the pinned base image and is the only member with a second, outside network. A direct connection from an agent container to an outside address or to `host.docker.internal` fails. | G1 #1; owner decision 2026-11-11 | Approved |
+| SR-7 | Each container gets its own random proxy credential bound to one session and role. The proxy applies that role's allow list, refuses a missing or unknown credential, drops it when the session ends, and listens only on the internal network. | G1 #2 | Draft |
+| SR-8 | The proxy resolves each host itself and refuses loopback, private, CGNAT, link-local, unique-local, multicast, unspecified and Docker network addresses (and IPv4-mapped forms), connecting only to the address it checked. It refuses IP literals for open-web roles. CONNECT to port 443 only. | G1 #3 | Draft |
+| SR-9 | The model credential never enters an agent container. The container gets the proxy as its API base URL and a dummy key; the proxy adds the real credential, forwards only to `https://api.anthropic.com` on the API paths Claude Code uses, and drops any request carrying a credential of its own. If a subscription token can't pass a gateway, the owner is asked before any fallback. | G1 #4; owner decision 2026-11-11 | Approved |
+| SR-10 | Fixed session options: `settingSources: []`; `strictMcpConfig: true` with only the engine's `factory` server; the tool list is exactly the role's tools plus its `factory` tools; skills only from the pinned master factory version, baked into the image; never a bypass permission mode; hooks only the engine's own callbacks; instructions from `agents/<role>/AGENT.md`, never the worktree. Every session uses the engine's container spawn; without it no session starts and no `claude` process starts on the host. Auto-update, telemetry, error reporting and non-essential traffic are off in the container. | G1 #5 | Draft |
+| SR-11 | Every git command the engine runs has hooks off (empty engine-owned `core.hooksPath`, `--no-verify`), `core.fsmonitor=false`, no repo filters or textconv, `protocol.file.allow=never`, and no credential helper or SSH command. Pushes go over HTTPS with the factory token passed by `GIT_ASKPASS`, never in a URL or argument. Nothing from the worktree runs on the host. | G1 #6 | Draft |
+| SR-12 | Every engine read of a worktree path uses the ADR 0015 real-path rule and refuses a path that leaves the worktree. `spec_path` must be the session's own `docs/features/F-nnn-*.md`. The end-of-session check rejects any new or changed symlink. The secrets scan reads blobs from git. | G1 #8 | Draft |
+| SR-13 | The project paths file is refused if it is a symlink, isn't owned by the owner, or is group- or world-writable. A listed path is refused if it isn't absolute, is a symlink, isn't a Git work tree, or is the master repo or a clone of it. The master repo's CI fails if that file is ever tracked, or if templates or fixtures hold anything but placeholders. | G1 #9 | Draft |
+| SR-14 | `docker` runs by absolute path with an argument array, no shell, a fixed local context, and `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG` and `DOCKER_TLS*` cleared. Container names come from validated ids only. After each start `docker inspect` must confirm image digest, user, read-only root, no capabilities, `no-new-privileges`, CPU, memory and pids limits, network and exact mounts, or the container is stopped. On Linux, rootless Docker or Docker Desktop is recommended, since the daemon is root-equivalent. | G1 #14 | Draft |
+| SR-15 | Every FFI step fails closed. After creating the socket or pipe the engine reads its mode or ACL back and refuses to serve unless only the owner has access. FFI sits in one small module with a fixed list of OS functions. CI on all three OSes runs negative tests: another user's peer, a wider ACL, a forced FFI error. | G1 #13 | Draft |
+| SR-16 | Session state is per project: feature ids, session tokens, device approval, containers, volumes, proxy credentials and image are never shared across projects. | G1 #11 | Draft |
+| SR-17 | The engine keeps a hash chain over the transcript entries it writes, with the head in its own record. On fetch it refuses transcript changes that don't extend the chain, files a Security item and fails that feature's readiness checks. | G1 #12 | Draft |
+| SR-18 | Each session has fixed caps on turns, output tokens or dollars, and wall time; each container on CPU, memory, pids and temp size; all in change-controlled config. A run at a cap stops and reports. At most 3 resumes per run, then `failed`. The billing-mode check runs before each session. | G1 #17 | Draft |
+| SR-19 | CI scans the built image and the engine's lockfile on every change with OSV-Scanner (re-reviewed for image mode). The final agent image has no npm or npx. The engine's CI job has `contents: read` and no secrets. The secrets scanner is named (OQ-11). | G1 #18 | Draft |
+| SR-20 | Secrets live in the OS credential store under a factory-specific name. Residual risk accepted: other programs running as the owner can read them; narrowed by a factory token scoped to the project's repos with an expiry and a spending limit on any API key. | G1 #19; owner decision 2026-11-11 | Accepted risk |
+| SR-21 | The web reader fetches pages only through the engine's `fetch_page` tool, never Claude Code's `WebFetch`: through the proxy with SR-8's rules, hidden content stripped, size capped, plain text with its source address. `WebSearch` queries are logged from the SDK message stream. | G1 #20; owner decision 2026-11-11 | Approved |
+| SR-22 | Transcript text is stored as data (JSON strings), never as live Markdown. The readiness check flags remote images and raw HTML in the spec. | G1 #21 | Draft |
+| SR-23 | Every device-flow field from GitHub is validated: code formats, `verification_uri` exactly `https://github.com/login/device`, `expires_in` at most 900 s, `interval` and `slow_down` honoured. Default TLS checks. The owner is matched by numeric id, never login. | G1 #23 | Draft |
+
+**Sensitive data (G1 #15).** The model credential, factory token, device
+token and `device_code`, session tokens, proxy credentials, owner answers,
+transcripts, Claude Code session files, engine and proxy logs, and local
+paths. Session files live in a per-session volume, mounted only into that
+session's resumed container and deleted when the run ends. Logs live in an
+owner-only folder (0700, files 0600) outside every repo, hold no secrets or
+reply text, and are kept for a fixed time. `factory/state` is pushed, so the
+engine warns at start when a project's repo is public.
+
+**External services (S9.1, G1 #16).** GitHub: device flow and `GET /user`
+(read); `GET /repos/{owner}/{repo}` with the factory token (read); pushes of
+`feature/*` and `factory/state` (act, ADRs 0005, 0006, 0009). Anthropic API
+(act): role prompts, files the role reads, owner answers, web summaries. The
+web (read), through the reader only. npm registry and Docker Hub only when
+the image is built, never from a session. The factory token is fine-grained
+to the project's repos, `contents: write` and `metadata: read`, with an
+expiry, and never enters a container.
+
+**Threat model (S9.7):** in the Gate 1 report.
 
 ## 10. Interface requirements
 - Engine control channel v1.3: implemented as approved; no change.
@@ -188,19 +241,39 @@ stored and shown as written, and are data to the engine (SR-3).
 | `interview_spec_ready` | `{ spec_path, spec_version }` | `{ checks: [{ name, passed, evidence }] }`; runs FR-12 |
 
 Rules:
+- The server is built per session with its project and feature fixed. No
+  tool takes a feature; `item` must belong to the session's feature, and
+  ids match the channel's id pattern.
 - One question at a time: `interview_ask` is refused with `one_at_a_time`
   while an earlier question is `open` and not deferred. Assumptions don't
   count against this.
 - Limits: `text` up to 4,000 characters, `why` up to 2,000, up to 8
-  `options` of up to 200, up to 20 `findings`; over a limit is `invalid`.
+  `options` of up to 200, up to 20 `findings` with `text` up to 2,000 and
+  `source` an `https` URL up to 2,000; `query` one line up to 400;
+  `spec_version` a non-negative integer; unknown keys refused. Over a limit
+  is `invalid`.
+- Caps: at most 5 open assumptions, 200 items per feature, and a per-question
+  and per-session cap on `research_web`; over a cap is `limit`, and the
+  owner is told.
+- `spec_path` must be the session's own `docs/features/F-nnn-*.md` (SR-12).
 - The analyst's turn ends after it asks. Each owner reply reaches it as the
-  next turn's message, in a fixed frame the engine writes:
-  `Owner reply to <item> revision <n> (<kind>):` and then the owner's text
-  unchanged. Nothing else in a turn's message comes from the owner.
+  next turn's message, wrapped by the engine between two lines carrying a
+  random per-turn boundary, with the item, revision, kind and the text's
+  length, and the owner's text unchanged between them. Nothing else in a
+  turn's message comes from the owner.
 - `research_web` sends only the query; the engine logs it against the item.
 - The advisor proposal tool comes with the advisor increment.
-- Errors: `one_at_a_time`, `invalid`, `unknown_item`, `wrong_status` (for
-  example revising an item that had no `more_info` reply).
+- Errors: `one_at_a_time`, `invalid`, `limit`, `unknown_item`,
+  `wrong_status` (for example revising an item that had no `more_info`
+  reply).
+
+### H-0083 (draft): Role policy v2.5, web reader fetches through the engine
+The web reader's `tools` lose `WebFetch` and gain the engine tool
+`fetch_page { url }` → `{ url, text, truncated }`: fetched through the proxy
+under SR-8, hidden content (comments, scripts, hidden elements, zero-width
+and bidi characters) stripped, plain text capped in size, with the address
+it came from. `WebSearch` stays. A Role policy change (Interfaces, Security;
+G1 #20, owner decision 2026-11-11).
 
 ## 11. Readiness gate
 - [ ] Clear objective
@@ -225,9 +298,12 @@ Asked one at a time in the interview. None is assumed.
 | OQ-8 | The analyst-to-engine tools: names, parameters and results. | Interfaces | Drafted as H-0082 (section 10), for the owner's review |
 | OQ-9 | Test tools for the engine: Vitest, as the extension uses, or Node's built-in runner. | Architecture | Decided: Vitest, as the extension uses (owner, decision card, 2026-11-11) |
 
+| OQ-10 | One engine serves several projects, but the channel has no project field (G1 #11). Keep feature ids unique across all projects (no contract change), or add a `project` parameter to the channel? | Interfaces | Open |
+| OQ-11 | Which secrets scanner the engine uses before each commit (G1 #18): an existing tool after its S4.1 review, or patterns of our own in the engine. | Architecture, Security | Open |
+
 ### Security Gate 1 decisions
-From `F-007-security-gate1.md`. The findings become requirements once all
-five are decided.
+From `F-007-security-gate1.md`. All five decided; every finding is now in
+section 9.
 
 | Finding | Question | Status |
 |---|---|---|
@@ -235,7 +311,7 @@ five are decided.
 | #4 | How the model credential reaches a session | Decided: a credential gateway in the proxy; agents get a dummy key; if a subscription token can't pass a gateway, the owner is asked before any fallback (owner, decision card, 2026-11-11) |
 | #7 | Guarding owner-key changes before signed owner actions | Decided: manifest read from `main`; `owner.*`, `allowed_repo_owners` and `enabled` pinned; a change stops the project until the owner confirms it and approves a device sign-in as the previously pinned owner; replaced by signatures in increment 3 (owner, decision card, 2026-11-11) |
 | #19 | Residual risk of the OS credential store | Decided: accepted as residual risk, narrowed by scoped, expiring tokens, a spending limit on any API key and a factory-only store name (owner, decision card, 2026-11-11) |
-| #20 | Web reader page fetching | Asked |
+| #20 | Web reader page fetching | Decided: engine `fetch_page` tool replaces `WebFetch` (owner, decision card, 2026-11-11); drafted as H-0083 |
 
 ## 13. Increments (first one chosen by the owner, OQ-1; later order open)
 1. **This feature:** engine core, channel, phone approval, analyst and web
@@ -267,3 +343,4 @@ five are decided.
 | 13 | 2026-11-11 | Gate 1 #4: model credential through a gateway in the proxy | Owner, 2026-11-11 (decision card) |
 | 14 | 2026-11-11 | Gate 1 #7: owner keys pinned, changes confirmed by the previous owner | Owner, 2026-11-11 (decision card) |
 | 15 | 2026-11-11 | Gate 1 #19: OS credential store residual risk accepted with scoped tokens | Owner, 2026-11-11 (decision card) |
+| 16 | 2026-11-11 | Gate 1 #20 decided (engine `fetch_page`, H-0083). All Gate 1 findings folded in: SR-1 to SR-23, sensitive data and external services, AC-14 to AC-21, pins in constraints, H-0082 limits and caps. OQ-10, OQ-11 added | Owner, 2026-11-11 (decision card, #20); rest drafts |
