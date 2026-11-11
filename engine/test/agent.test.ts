@@ -396,9 +396,9 @@ describe("container spawn (SR-10)", () => {
     const d = new FakeDocker();
     const spawn = containerSpawn(d as unknown as DockerCli, "factory-r-1-requirements-analyst-1");
     const ac = new AbortController();
-    const child = spawn({ command: "/host/node_modules/claude", args: ["--output-format", "stream-json"], env: { CLAUDE_CODE_ENTRYPOINT: "sdk-ts", ANTHROPIC_API_KEY: "sk-ant-leak", PATH: "/usr/bin", HOME: "/home/o" }, signal: ac.signal });
+    const child = spawn({ command: "/host/node_modules/claude", args: ["--output-format", "stream-json", "--setting-sources=", "--strict-mcp-config"], env: { CLAUDE_CODE_ENTRYPOINT: "sdk-ts", ANTHROPIC_API_KEY: "sk-ant-leak", PATH: "/usr/bin", HOME: "/home/o" }, signal: ac.signal });
     const s = d.spawned[0]!;
-    expect(s.args).toEqual(["exec", "--interactive", "--user", "1000:1000", "--workdir", "/workspace", "--env", "CLAUDE_CODE_ENTRYPOINT", "factory-r-1-requirements-analyst-1", CLAUDE_BIN, "--output-format", "stream-json"]);
+    expect(s.args).toEqual(["exec", "--interactive", "--user", "1000:1000", "--workdir", "/workspace", "--env", "CLAUDE_CODE_ENTRYPOINT", "factory-r-1-requirements-analyst-1", CLAUDE_BIN, "--output-format", "stream-json", "--setting-sources=", "--strict-mcp-config"]);
     expect(s.env).toEqual({ CLAUDE_CODE_ENTRYPOINT: "sdk-ts" });
     ac.abort();
     expect(child.killed).toBe(true);
@@ -409,6 +409,8 @@ describe("container spawn (SR-10)", () => {
     const sig = new AbortController().signal;
     expect(() => spawn({ command: "c", args: ["--permission-mode", "bypassPermissions"], env: {}, signal: sig })).toThrow(/bypass/);
     expect(() => spawn({ command: "c", args: ["--dangerously-skip-permissions"], env: {}, signal: sig })).toThrow(/bypass/);
+    expect(() => spawn({ command: "c", args: ["--permission-mode=bypassPermissions", "--setting-sources=", "--strict-mcp-config"], env: {}, signal: sig })).toThrow(/bypass/);
+    expect(() => spawn({ command: "c", args: ["--strict-mcp-config"], env: {}, signal: sig })).toThrow(/setting-sources/);
   });
 });
 

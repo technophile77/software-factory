@@ -416,3 +416,20 @@ Results on Linux (this container): typecheck is clean, the build passes (`dist/p
 - Using the session volume on resume: the volume is created per container, and passing an existing one in on resume is still to come.
 - The real-daemon run of AC-8 and AC-13 to AC-16. The test is written and needs the owner's machine (`FACTORY_DOCKER_TESTS=1`).
 - A sweep of leftover containers after a crash (by the `factory.run` label).
+
+### Agent SDK installed (owner decision, 2026-11-11)
+
+- **What's installed:** `@anthropic-ai/claude-agent-sdk` 0.3.311 and `zod` 4.6.7, both exact. `engine/.npmrc` sets `legacy-peer-deps=true`, so `@anthropic-ai/sdk` and `@modelcontextprotocol/sdk` aren't installed. CI runs `npm ci --ignore-scripts` in `engine/` and picks up the `.npmrc`; that was checked from a clean `node_modules`.
+- **A side effect, fixed by pinning:** with peers no longer installed automatically, vitest's peer `vite` would have dropped out of the tree. It is now an exact dev dependency at 8.3.8, the version already in the reviewed lockfile.
+- **What the lockfile gained:** the SDK, its 8 platform packages and zod. Nothing else was added, changed or removed. `npm audit --audit-level=high` reports 0.
+- **The binding:** `src/agent/sdk-binding.ts` loads the ESM package at run time; the engine bundle keeps it external.
+  - The `factory` server is built with `createSdkMcpServer` and `tool()`.
+  - Each tool's JSON Schema becomes its zod shape through `z.fromJSONSchema`, and the handler still checks every argument itself.
+  - `query()` refuses any session without `spawnClaudeCodeProcess`.
+  - `test/sdk-binding.test.ts` checks that `docker/claude-sha256.json` equals the installed SDK manifest.
+- **The host binary is never executed:** the SDK's platform package (`claude-agent-sdk-<os>-<arch>`, plus the musl variant on Linux) puts a native Claude Code binary of about 290 MB on the host. The engine never runs it:
+  1. Install scripts are off.
+  2. The SDK starts the CLI only through `spawnClaudeCodeProcess` when one is given. The engine always gives one, and the binding refuses a session without it.
+  3. The engine's spawn ignores the SDK's `command`, which is that host binary's path; the unit test confirms that's what the SDK passes. It runs `docker exec … /opt/claude/claude` in the session's container instead.
+  4. No other SDK function that starts the CLI is called.
+- **SR-10, checked against the SDK:** a real `query()` against a stand-in spawn shows that SDK 0.3.311 passes SR-10 as `--setting-sources=`, `--strict-mcp-config` and `--permission-mode=default`. The container spawn now refuses to start without the first two, and refuses `--permission-mode=bypassPermissions`. It also lets the SDK's protocol variable `CLAUDE_CODE_SDK_READS_SESSION_STATE` through.

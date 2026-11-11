@@ -20,9 +20,12 @@ Milestone 2 adds the parts that run agents, each tested with fakes:
 | `src/agent/` | session options (SR-10), the container spawn, SR-18 caps, the `factory` MCP tools, `fetch_page`, the web reader, the worktree commit and end-of-session write check (FR-9, FR-11) |
 | `docker/` | the agent image: base image by digest, Claude Code 2.1.311 checked against the Agent SDK manifest, no npm in the final stage |
 
-The Agent SDK package itself isn't installed yet (see the dev report,
-milestone 2). Session code is written against `src/agent/sdk.ts`, the part
-of the SDK's surface the engine uses.
+Session code is written against `src/agent/sdk.ts`, the part of the Agent
+SDK's surface the engine uses; `src/agent/sdk-binding.ts` maps it onto the
+real SDK 0.3.311. `.npmrc` sets `legacy-peer-deps=true` (owner decision):
+the SDK's type-only peers aren't installed. The SDK's platform package puts a
+Claude Code binary on the host; the engine never runs it, because every
+session starts Claude Code in its container through the engine's spawn.
 
 ## Build and test
 
@@ -42,7 +45,7 @@ FACTORY_DOCKER_TESTS=1 npx vitest run --project unit test/docker-real.test.ts
 ```
 
 The dependencies are pinned exactly in `package.json` and the committed
-lockfile. At runtime the only ones are koffi 3.3.6 and yaml 2.9.1.
+lockfile. At runtime: koffi 3.3.6, yaml 2.9.1, the Agent SDK 0.3.311 and zod 4.6.7.
 
 ## Command line
 

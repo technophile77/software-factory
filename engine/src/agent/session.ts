@@ -146,7 +146,9 @@ export function sessionOptions(s: SessionInput, abort: AbortController): Session
 }
 
 /** Variables the SDK sets for its CLI protocol, the only ones taken from its env. */
-const SDK_ENV = new Set(["CLAUDE_CODE_ENTRYPOINT", "CLAUDE_AGENT_SDK_VERSION", ...Object.keys(CONTAINER_FLAGS)]);
+const SDK_ENV = new Set(["CLAUDE_CODE_ENTRYPOINT", "CLAUDE_AGENT_SDK_VERSION", "CLAUDE_CODE_SDK_READS_SESSION_STATE", ...Object.keys(CONTAINER_FLAGS)]);
+/** What SDK 0.3.311 passes for SR-10's options; a session whose arguments lack them doesn't start. */
+const REQUIRED_ARGS = ["--setting-sources=", "--strict-mcp-config"];
 const FORBIDDEN_ARGS = /^--(dangerously-skip-permissions|allow-dangerously-skip-permissions)$|^bypassPermissions$/;
 
 /**
@@ -156,7 +158,8 @@ const FORBIDDEN_ARGS = /^--(dangerously-skip-permissions|allow-dangerously-skip-
  */
 export function containerSpawn(docker: DockerCli, container: string, workdir: string = WORKSPACE): (o: SpawnOptions) => SpawnedProcess {
   return (o) => {
-    if (o.args.some((a) => FORBIDDEN_ARGS.test(a))) throw new Error("refused: a bypass permission mode");
+    if (o.args.some((a) => FORBIDDEN_ARGS.test(a) || a === "--permission-mode=bypassPermissions")) throw new Error("refused: a bypass permission mode");
+    for (const r of REQUIRED_ARGS) if (!o.args.includes(r)) throw new Error(`refused: the CLI arguments lack ${r}`);
     const env: Record<string, string> = {};
     for (const [k, v] of Object.entries(o.env)) if (SDK_ENV.has(k) && typeof v === "string") env[k] = v;
     const envFlags = Object.keys(env).flatMap((k) => ["--env", k]);
