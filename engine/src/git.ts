@@ -141,6 +141,30 @@ export class Git {
     return (await this.run(cwd, ["cat-file", "blob", sha])).stdout;
   }
 
+  /**
+   * Several blobs from one `cat-file --batch`, which like `cat-file blob`
+   * applies no textconv or filters. One process instead of one per file:
+   * each spawn costs tens of milliseconds, far more on Windows.
+   */
+  async catBlobs(cwd: string, shas: string[]): Promise<Map<string, Buffer>> {
+    const out = new Map<string, Buffer>();
+    const want = [...new Set(shas)];
+    if (!want.length) return out;
+    if (!want.every((s) => /^[0-9a-f]{40,64}$/.test(s))) throw new GitError("bad blob id");
+    const buf = (await this.run(cwd, ["cat-file", "--batch"], { input: want.join("\n") + "\n" })).stdout;
+    let at = 0;
+    for (const sha of want) {
+      const nl = buf.indexOf(0x0a, at);
+      const m = nl < 0 ? null : /^([0-9a-f]{40,64}) (\w+) (\d+)$/.exec(buf.subarray(at, nl).toString("utf8"));
+      if (!m || m[1] !== sha || m[2] !== "blob") throw new GitError(`blob ${sha.slice(0, 12)} couldn't be read`);
+      const end = nl + 1 + Number(m[3]);
+      if (end > buf.length) throw new GitError(`blob ${sha.slice(0, 12)} was cut short`);
+      out.set(sha, Buffer.from(buf.subarray(nl + 1, end)));
+      at = end + 1;
+    }
+    return out;
+  }
+
   async lsTreeEntry(cwd: string, commit: string, file: string): Promise<{ mode: string; type: string; sha: string } | null> {
     const r = await this.run(cwd, ["ls-tree", "-z", "--full-tree", commit, "--", file]);
     const line = r.stdout.toString("utf8").split("\0").find((l) => l.length > 0);

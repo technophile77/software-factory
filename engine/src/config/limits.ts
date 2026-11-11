@@ -4,6 +4,7 @@ import type { SessionCaps } from "../agent/session";
 import type { WorktreeLimits } from "../agent/worktree-commit";
 import type { ContainerLimits } from "../docker/plan";
 import type { Git } from "../git";
+import type { TreeSnapshot } from "./factory-source";
 import type { Manifest } from "./manifest";
 import { ConfigError } from "./paths-file";
 
@@ -82,10 +83,16 @@ export function parseLimits(doc: unknown, where: string, full: boolean): Limits 
  * project's `factory.version` names (spec v30), never a working tree.
  * Missing or invalid means no defaults, and the project doesn't run.
  */
-export async function readDefaultLimits(git: Git, masterRepo: string, commit: string): Promise<Limits> {
+export async function readDefaultLimits(git: Git, masterRepo: string, commit: string, tree?: TreeSnapshot): Promise<Limits> {
   let raw: Buffer | null;
+  const listed = tree?.entry(LIMITS_FILE);
+  // With a listing, the size is known before anything is read.
+  if (listed && listed.regular && listed.size > MAX_FILE) throw new LimitsError(`${LIMITS_FILE} is over 64 KiB.`);
   try {
-    raw = await git.readBlob(masterRepo, commit, LIMITS_FILE);
+    if (!tree) raw = await git.readBlob(masterRepo, commit, LIMITS_FILE);
+    else if (!listed) raw = null;
+    else if (!listed.regular) throw new LimitsError("not a regular file");
+    else raw = (await tree.blobs([listed.sha])).get(listed.sha)!;
   } catch {
     throw new LimitsError(`${LIMITS_FILE} in the master repo is not a regular file.`);
   }

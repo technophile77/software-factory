@@ -390,7 +390,9 @@ describe("factory.version sources (spec v30)", () => {
     ["a branch, not a tag", (w: World) => (git(w.master, "branch", "release"), "release"), /not a tag/],
     ["a name that is both a tag and a branch", (w: World) => (git(w.master, "branch", "v0.1.0"), "v0.1.0"), /ambiguous/],
     ["a tag of a tree", (w: World) => (git(w.master, "tag", "-a", "-m", "t", "treetag", "HEAD^{tree}"), "treetag"), /tag of a tree|doesn't resolve/],
+    ["a lightweight tag of a tree", (w: World) => (git(w.master, "tag", "treetag", "HEAD^{tree}"), "treetag"), /tag of a tree/],
     ["a revision expression", (_w: World) => "HEAD~1", /not a tag name/],
+    ["a tag with an oversized limits.yaml", (w: World) => (commitMaster(w, { "engine/config/limits.yaml": MASTER_FILES["engine/config/limits.yaml"]! + `# ${"x".repeat(70_000)}\n` }, "v0.2.0"), "v0.2.0"), /over 64 KiB/],
     ["a tag without limits.yaml", (w: World) => (commitMaster(w, { "engine/config/limits.yaml": null }, "v0.2.0"), "v0.2.0"), /missing/],
     ["a tag with invalid limits.yaml", (w: World) => (commitMaster(w, { "engine/config/limits.yaml": MASTER_FILES["engine/config/limits.yaml"]!.replace("pids: 64", "pids: 0") }, "v0.2.0"), "v0.2.0"), /proxy.pids/],
   ])("fails closed on %s, with a Security item", async (_name, make, re) => {
@@ -401,6 +403,16 @@ describe("factory.version sources (spec v30)", () => {
     const e = await boot(w0);
     expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringMatching(re) });
     expect(securityItems(w0)).toHaveLength(1);
+  });
+
+  it("follows an annotated tag of an annotated tag to its commit", async () => {
+    const w = makeWorld();
+    git(w.master, "tag", "-a", "-m", "a", "inner", "v0.1.0^{commit}");
+    git(w.master, "tag", "-a", "-m", "b", "outer", "inner");
+    fs.writeFileSync(path.join(w.config, "factory-project.yaml"), version("outer"));
+    git(w.config, "commit", "-q", "--allow-empty", "-am", "version");
+    const e = await boot(w);
+    expect(e.agentSources("acme").masterCommit).toBe(git(w.master, "rev-parse", "v0.1.0^{commit}"));
   });
 
   const policy = YAML.stringify({ policy: policyDoc().policy });

@@ -17,8 +17,8 @@ import { Listener, listenUnix } from "./channel/unix";
 import { listenPipe } from "./channel/windows";
 import { Clock, iso, systemClock } from "./clock";
 import { AuthorizationError, authorizeProject, billingMismatch, modelCredentialFor } from "./config/authorize";
-import { AgentSources, Instructions, resolveAgentSources } from "./config/agent-sources";
-import { resolveFactoryVersion } from "./config/factory-source";
+import { AgentSources, Instructions, MASTER_SOURCE_PATHS, resolveAgentSources } from "./config/agent-sources";
+import { TreeSnapshot, resolveFactoryVersion } from "./config/factory-source";
 import { Limits, LimitsError, agentLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
 import { Manifest, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
@@ -261,9 +261,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     let above: string[] = [];
     try {
       const masterCommit = await resolveFactoryVersion(git, o.masterRepo, m.factoryVersion);
-      const merged = mergeLimits(await readDefaultLimits(git, o.masterRepo, masterCommit), manifestLimits(m.raw));
+      // One listing serves the limits and the agent sources: this runs on every start, and each git process counts.
+      const masterTree = await TreeSnapshot.read(git, o.masterRepo, masterCommit, MASTER_SOURCE_PATHS);
+      const merged = mergeLimits(await readDefaultLimits(git, o.masterRepo, masterCommit, masterTree), manifestLimits(m.raw));
       if (!merged.above.length) {
-        p.sources = await resolveAgentSources({ git, masterRepo: o.masterRepo, masterCommit, configRepo: p.real!, configCommit: m.commit, manifest: m.raw });
+        p.sources = await resolveAgentSources({ git, masterRepo: o.masterRepo, masterCommit, configRepo: p.real!, configCommit: m.commit, manifest: m.raw, masterTree });
         p.limits = merged.limits;
         return true;
       }

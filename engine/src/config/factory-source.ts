@@ -17,23 +17,114 @@ const SHA_RE = /^[0-9a-f]{40,64}$/;
  * Resolves `factory.version` to a commit through `refs/tags/<version>` only.
  * Refused: a name that isn't a plain tag name, a missing tag, a name that is
  * also a branch (ambiguous), and a tag that isn't a commit or an annotated
- * tag of one.
+ * tag of one. One `for-each-ref` answers all of it, since this runs on every
+ * engine start.
  */
 export async function resolveFactoryVersion(git: Git, masterRepo: string, version: string): Promise<string> {
   if (!VERSION_RE.test(version) || version.includes("..") || version.endsWith(".lock")) {
     throw new SourceError(`factory.version ${JSON.stringify(version.slice(0, 100))} is not a tag name.`);
   }
-  const ref = `refs/tags/${version}`;
-  const r = await git.run(masterRepo, ["rev-parse", "--verify", "--quiet", ref], { okCodes: [1] });
-  const oid = r.stdout.toString().trim();
-  if (r.code !== 0 || !SHA_RE.test(oid)) throw new SourceError(`factory.version ${version} is not a tag in the master repo clone.`);
-  const branch = await git.run(masterRepo, ["rev-parse", "--verify", "--quiet", `refs/heads/${version}`], { okCodes: [1] });
-  if (branch.code === 0) throw new SourceError(`factory.version ${version} is ambiguous: the master repo clone has a branch with that name too.`);
-  const type = await git.out(masterRepo, ["cat-file", "-t", oid]);
-  if (type !== "tag" && type !== "commit") throw new SourceError(`factory.version ${version} is a tag of a ${type}, not of a commit.`);
-  const commit = await git.revParse(masterRepo, oid);
+  const tagRef = `refs/tags/${version}`;
+  const branchRef = `refs/heads/${version}`;
+  const out = await git.out(masterRepo, ["for-each-ref", "--format=%(refname)%00%(objecttype)%00%(objectname)%00%(*objecttype)%00%(*objectname)", tagRef, branchRef]);
+  // for-each-ref also lists refs below a matching prefix, so only exact names count.
+  const refs = new Map(out.split("\n").map((l) => l.split("\0")).filter((f) => f.length === 5).map((f) => [f[0]!, f.slice(1)]));
+  const tag = refs.get(tagRef);
+  if (!tag || !SHA_RE.test(tag[1]!)) throw new SourceError(`factory.version ${version} is not a tag in the master repo clone.`);
+  if (refs.has(branchRef)) throw new SourceError(`factory.version ${version} is ambiguous: the master repo clone has a branch with that name too.`);
+  const [type, oid, peeledType, peeled] = tag as [string, string, string, string];
+  if (type === "commit") return oid;
+  if (type !== "tag") throw new SourceError(`factory.version ${version} is a tag of a ${type}, not of a commit.`);
+  if (peeledType === "commit" && SHA_RE.test(peeled)) return peeled;
+  // A tag of a tag: rare, so peeling the whole chain can cost a second call.
+  const commit = peeledType === "tag" ? await git.revParse(masterRepo, oid) : null;
   if (!commit) throw new SourceError(`factory.version ${version} doesn't resolve to a commit.`);
   return commit;
+}
+
+interface SnapshotEntry {
+  mode: string;
+  type: string;
+  sha: string;
+  size: number;
+}
+
+const isRegular = (e: SnapshotEntry) => e.type === "blob" && (e.mode === "100644" || e.mode === "100755");
+
+/**
+ * The listing of a few paths at one commit, from a single `ls-tree`, so the
+ * files the engine reads at every start cost one process for the listing and
+ * one for the contents rather than several per file. Paths reached through a
+ * symbolic link aren't listed, so they read as missing, as with `lsTreeEntry`.
+ */
+export class TreeSnapshot {
+  private constructor(
+    private readonly git: Git,
+    private readonly repo: string,
+    readonly commit: string,
+    private readonly entries: Map<string, SnapshotEntry>,
+  ) {}
+
+  static async read(git: Git, repo: string, commit: string, paths: string[]): Promise<TreeSnapshot> {
+    const r = await git.run(repo, ["ls-tree", "-r", "-t", "-l", "-z", "--full-tree", commit, "--", ...paths]);
+    const entries = new Map<string, SnapshotEntry>();
+    for (const line of r.stdout.toString("utf8").split("\0")) {
+      const m = /^(\d{6}) (\w+) ([0-9a-f]{40,64}) +(-|\d+)\t(.*)$/s.exec(line);
+      if (m) entries.set(m[5]!, { mode: m[1]!, type: m[2]!, sha: m[3]!, size: m[4] === "-" ? 0 : Number(m[4]) });
+    }
+    return new TreeSnapshot(git, repo, commit, entries);
+  }
+
+  has(path: string): boolean {
+    return this.entries.has(path);
+  }
+
+  entry(path: string): { sha: string; size: number; regular: boolean } | undefined {
+    const e = this.entries.get(path);
+    return e && { sha: e.sha, size: e.size, regular: isRegular(e) };
+  }
+
+  /** The names of the folders directly under `dir`. */
+  subfolders(dir: string): string[] {
+    const pre = `${dir}/`;
+    return [...this.entries].filter(([p, e]) => e.type === "tree" && p.startsWith(pre) && !p.slice(pre.length).includes("/")).map(([p]) => p.slice(pre.length));
+  }
+
+  /** The blob of one regular file, checked against `maxBytes` before it is read. */
+  fileSha(file: string, maxBytes: number, what: string): string {
+    const e = this.entries.get(file);
+    if (!e) throw new SourceError(`${what} ${file} is missing at ${this.commit.slice(0, 12)}, or is reached through a symbolic link.`);
+    if (!isRegular(e)) throw new SourceError(`${what} ${file} is a symbolic link or not a regular file.`);
+    if (e.size > maxBytes) throw new SourceError(`${what} ${file} is over ${maxBytes} bytes.`);
+    return e.sha;
+  }
+
+  /**
+   * Every file under `dir` as `[path inside dir, sha, executable]`. Any link
+   * or submodule inside refuses the whole folder, as does going over the file
+   * or byte bounds; sizes come from the listing, so nothing is read first.
+   */
+  dirFiles(dir: string, bounds: { files: number; bytes: number }, what: string): Array<[string, string, boolean]> {
+    const top = this.entries.get(dir);
+    if (!top) throw new SourceError(`${what} ${dir} is missing at ${this.commit.slice(0, 12)}, or is reached through a symbolic link.`);
+    if (top.type !== "tree") throw new SourceError(`${what} ${dir} is a symbolic link or not a folder.`);
+    const out: Array<[string, string, boolean]> = [];
+    let bytes = 0;
+    for (const [p, e] of this.entries) {
+      if (!p.startsWith(`${dir}/`) || e.type === "tree") continue;
+      if (!isRegular(e)) throw new SourceError(`${what} ${p} is a symbolic link or not a regular file.`);
+      if (out.length >= bounds.files) throw new SourceError(`${what} ${dir} has more than ${bounds.files} files.`);
+      bytes += e.size;
+      if (bytes > bounds.bytes) throw new SourceError(`${what} ${dir} is over ${bounds.bytes} bytes.`);
+      out.push([p.slice(dir.length + 1), e.sha, e.mode === "100755"]);
+    }
+    return out;
+  }
+
+  /** The contents of blobs listed here, in one `cat-file --batch`. */
+  blobs(shas: string[]): Promise<Map<string, Buffer>> {
+    return this.git.catBlobs(this.repo, shas);
+  }
 }
 
 /**
@@ -82,17 +173,6 @@ export async function readDirAt(git: Git, repo: string, commit: string, dir: str
     bytes += content.length;
     if (bytes > bounds.bytes) throw new SourceError(`${what} ${dir} is over ${bounds.bytes} bytes.`);
     out.set(e.path.slice(dir.length + 1), { content, executable: e.mode === "100755" });
-  }
-  return out;
-}
-
-/** The names of the folders directly under `dir` at `commit`. */
-export async function subfolders(git: Git, repo: string, commit: string, dir: string): Promise<string[]> {
-  const r = await git.run(repo, ["ls-tree", "-z", "--full-tree", commit, "--", `${dir}/`]);
-  const out: string[] = [];
-  for (const line of r.stdout.toString("utf8").split("\0")) {
-    const m = /^(\d{6}) (\w+) [0-9a-f]{40,64}\t(.*)$/s.exec(line);
-    if (m && m[2] === "tree") out.push(m[3]!.slice(dir.length + 1));
   }
   return out;
 }

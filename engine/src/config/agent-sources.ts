@@ -1,7 +1,8 @@
 import * as crypto from "node:crypto";
 import type { Git } from "../git";
 import { CORE_ROLES, ROLE_RE } from "../policy/role-policy";
-import { SourceError, TreeFile, checkRepoPath, readDirAt, readFileAt, subfolders } from "./factory-source";
+import { LIMITS_FILE } from "./limits";
+import { SourceError, TreeFile, TreeSnapshot, checkRepoPath, readDirAt, readFileAt } from "./factory-source";
 
 /** Proposal 0013: the protected skill. The six core agents are protected too. */
 export const PROTECTED_SKILLS = ["security-review"];
@@ -11,6 +12,9 @@ const DECISION_RE = /^D-\d{4,}$/;
 // Bounds on what one project can put into an image or a prompt; the engine's own guard, not owner limits.
 const AGENT_MD_MAX = 256 * 1024;
 const SKILL_BOUNDS = { files: 100, bytes: 2 * 1024 * 1024 };
+
+/** What the engine reads from the master commit at every start: agent sources and the limit defaults. */
+export const MASTER_SOURCE_PATHS = ["skills", "agents", LIMITS_FILE];
 
 export type SourceOrigin = "master" | "project";
 
@@ -130,23 +134,25 @@ export async function resolveAgentSources(i: {
   configRepo: string;
   configCommit: string;
   manifest: unknown;
+  /** The master listing, when the caller already took one with `MASTER_SOURCE_PATHS`. */
+  masterTree?: TreeSnapshot;
 }): Promise<AgentSources> {
   const doc = isObj(i.manifest) ? i.manifest : {};
   const skillsBlock = readBlock(doc, "skills");
   const agentsBlock = readBlock(doc, "agents");
 
-  const masterSkills = new Set<string>();
-  for (const n of await subfolders(i.git, i.masterRepo, i.masterCommit, "skills")) {
-    if (NAME_RE.test(n) && (await i.git.lsTreeEntry(i.masterRepo, i.masterCommit, `skills/${n}/SKILL.md`))) masterSkills.add(n);
-  }
-  const masterAgents = new Set((await subfolders(i.git, i.masterRepo, i.masterCommit, "agents")).filter((n) => ROLE_RE.test(n)));
+  const tree = i.masterTree ?? (await TreeSnapshot.read(i.git, i.masterRepo, i.masterCommit, MASTER_SOURCE_PATHS));
+  const masterSkills = new Set(tree.subfolders("skills").filter((n) => NAME_RE.test(n) && tree.has(`skills/${n}/SKILL.md`)));
+  const masterAgents = new Set(tree.subfolders("agents").filter((n) => ROLE_RE.test(n)));
   checkAgainstMaster("skills", skillsBlock, masterSkills, PROTECTED_SKILLS);
   checkAgainstMaster("agents", agentsBlock, masterAgents, CORE_ROLES);
 
   const policyRoles = isObj(doc.policy) && isObj(doc.policy.roles) ? Object.keys(doc.policy.roles).filter((r) => ROLE_RE.test(r)) : [];
   const roles = [...new Set([...policyRoles, ...agentsBlock.custom.map((e) => e.name)])].sort();
 
+  // Master files are listed and bounds-checked first, then read in one batch.
   const instructions = new Map<string, Instructions>();
+  const masterInstructions: Array<[string, string, string]> = [];
   const excludedAgents = new Set(agentsBlock.exclude.map((e) => e.name));
   for (const role of roles) {
     const own = agentsBlock.override.find((e) => e.name === role) ?? agentsBlock.custom.find((e) => e.name === role);
@@ -155,8 +161,7 @@ export async function resolveAgentSources(i: {
       instructions.set(role, { text: buf.toString("utf8"), from: "project", path: own.path! });
     } else if (masterAgents.has(role) && !excludedAgents.has(role)) {
       const p = `agents/${role}/AGENT.md`;
-      const e = await i.git.lsTreeEntry(i.masterRepo, i.masterCommit, p);
-      if (e) instructions.set(role, { text: (await readFileAt(i.git, i.masterRepo, i.masterCommit, p, AGENT_MD_MAX, "master")).toString("utf8"), from: "master", path: p });
+      if (tree.has(p)) masterInstructions.push([role, p, tree.fileSha(p, AGENT_MD_MAX, "master")]);
     }
   }
 
@@ -167,10 +172,16 @@ export async function resolveAgentSources(i: {
     project.set(e.name, { name: e.name, from: "project", path: dir, files: await readDirAt(i.git, i.configRepo, i.configCommit, dir, SKILL_BOUNDS, `skills: ${e.name}`) });
   }
   const excluded = new Set(skillsBlock.exclude.map((e) => e.name));
-  const master = new Map<string, ResolvedSkill>();
+  const masterSkillFiles = new Map<string, Array<[string, string, boolean]>>();
   for (const n of [...masterSkills].sort()) {
     if (excluded.has(n) || project.has(n)) continue;
-    master.set(n, { name: n, from: "master", path: `skills/${n}`, files: await readDirAt(i.git, i.masterRepo, i.masterCommit, `skills/${n}`, SKILL_BOUNDS, "master skill") });
+    masterSkillFiles.set(n, tree.dirFiles(`skills/${n}`, SKILL_BOUNDS, "master skill"));
+  }
+  const blobs = await tree.blobs([...masterInstructions.map(([, , sha]) => sha), ...[...masterSkillFiles.values()].flat().map(([, sha]) => sha)]);
+  for (const [role, p, sha] of masterInstructions) instructions.set(role, { text: blobs.get(sha)!.toString("utf8"), from: "master", path: p });
+  const master = new Map<string, ResolvedSkill>();
+  for (const [n, files] of masterSkillFiles) {
+    master.set(n, { name: n, from: "master", path: `skills/${n}`, files: new Map(files.map(([rel, sha, executable]) => [rel, { content: blobs.get(sha)!, executable }])) });
   }
   const skills = new Map<string, ResolvedSkill[]>();
   for (const role of roles) {
