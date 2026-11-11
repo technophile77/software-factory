@@ -334,7 +334,7 @@ export class World {
     git(this.master, "add", "-A");
     git(this.master, "commit", "-q", "-m", "master root");
     git(this.master, "tag", "v0.1.0");
-    git(this.master, "remote", "add", "origin", "https://github.com/technophile77/software-factory");
+    git(this.master, "remote", "add", "origin", "https://github.com/example-owner/software-factory");
   }
 
   writeProjectsFile(paths: string[], mode = 0o600) {
