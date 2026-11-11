@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 28
+- **Spec version:** 29
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -298,7 +298,9 @@ the engine has platform code (named pipe ACL, peer checks, credential store).
 No secrets. The image scan (SR-19) joins it in milestone 2.
 
 
-### H-0087 (draft, awaiting approval): session limits (SR-18, H-0082 caps)
+### H-0087 (approved): session limits (SR-18, H-0082 caps)
+
+Approved by the owner 2026-11-11 (decision card, values as proposed).
 
 Owner decision 2026-11-11 (decision card): defaults ship in the master repo,
 and a project manifest may only lower them. Two changes:
@@ -422,3 +424,4 @@ section 9.
 | 26 | 2026-11-11 | H-0086: 45-minute limit per engine CI job | Owner, 2026-11-11 (decision card) |
 | 27 | 2026-11-11 | Agent SDK peers: `legacy-peer-deps` in `engine/.npmrc` plus zod 4.6.7; other peers not installed | Owner, 2026-11-11 (decision card) |
 | 28 | 2026-11-11 | Limits live in master defaults, projects may only lower them; H-0087 drafts the file, manifest v1.4 `limits:` and values | Owner, 2026-11-11 (decision card, location); values draft |
+| 29 | 2026-11-11 | H-0087 approved: limit values, manifest v1.4 `limits` | Owner, 2026-11-11 (decision card) |
