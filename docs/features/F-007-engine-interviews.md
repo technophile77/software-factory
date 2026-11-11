@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Draft (requirements interview in progress)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 12
+- **Spec version:** 13
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -232,8 +232,8 @@ five are decided.
 | Finding | Question | Status |
 |---|---|---|
 | #1 | Where the egress proxy runs | Decided: a sidecar container from the pinned base image, the only member of the agents' internal Docker network with a route out (owner, decision card, 2026-11-11) |
-| #4 | How the model credential reaches a session | Asked |
-| #7 | Guarding owner-key changes before signed owner actions | Open |
+| #4 | How the model credential reaches a session | Decided: a credential gateway in the proxy; agents get a dummy key; if a subscription token can't pass a gateway, the owner is asked before any fallback (owner, decision card, 2026-11-11) |
+| #7 | Guarding owner-key changes before signed owner actions | Asked |
 | #19 | Residual risk of the OS credential store | Open |
 | #20 | Web reader page fetching | Open |
 
@@ -264,3 +264,4 @@ five are decided.
 | 10 | 2026-11-11 | Section 10: drafts of H-0080 (manifest owner keys), H-0081 (.gitignore) and H-0082 (interview tools, OQ-8) | — (drafts) |
 | 11 | 2026-11-11 | OQ-9: Vitest | Owner, 2026-11-11 (decision card) |
 | 12 | 2026-11-11 | Gate 1 #1: proxy as a sidecar container on an internal network | Owner, 2026-11-11 (decision card) |
+| 13 | 2026-11-11 | Gate 1 #4: model credential through a gateway in the proxy | Owner, 2026-11-11 (decision card) |
