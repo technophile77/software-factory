@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 27
+- **Spec version:** 28
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -297,6 +297,43 @@ the unit and acceptance tests. It runs on Linux, macOS and Windows, because
 the engine has platform code (named pipe ACL, peer checks, credential store).
 No secrets. The image scan (SR-19) joins it in milestone 2.
 
+
+### H-0087 (draft, awaiting approval): session limits (SR-18, H-0082 caps)
+
+Owner decision 2026-11-11 (decision card): defaults ship in the master repo,
+and a project manifest may only lower them. Two changes:
+
+1. A new change-controlled file `engine/config/limits.yaml` with the values
+   below. It holds no owner values.
+2. Project manifest v1.4: an optional `limits:` block with the same keys.
+   The engine takes the lower of the two for each key and refuses a project
+   whose block sets any value above the default (Security item).
+
+| Key | Analyst | Web reader | Proxy |
+|---|---|---|---|
+| Turns per session | 300 | 30 | — |
+| Output tokens per session | 500,000 | 60,000 | — |
+| Dollars per session (API key mode) | 15 | 1 | — |
+| Wall time per session | 4 h | 10 min | — |
+| CPUs | 2 | 1 | 0.5 |
+| Memory | 2 GiB | 1 GiB | 256 MiB |
+| Processes (pids) | 256 | 128 | 64 |
+| Temp space | 512 MiB | 256 MiB | 16 MiB |
+
+| Interview cap | Value |
+|---|---|
+| `research_web` per question | 3 |
+| `research_web` per analyst session | 20 |
+| `fetch_page` bytes downloaded per page | 2 MiB |
+| `fetch_page` characters returned per page | 50,000 |
+| Research summary length | 2,000 characters |
+| Sources returned per research call | 8 |
+| Worktree commit: files changed | 200 |
+| Worktree commit: total size | 5 MiB |
+| Worktree commit: largest file | 1 MiB |
+
+A session at any cap stops and reports which cap (SR-18).
+
 ## 11. Readiness gate
 Run by the orchestrator, 2026-11-11, on spec v21.
 
@@ -384,3 +421,4 @@ section 9.
 | 25 | 2026-11-11 | H-0085: engine CI workflow on Linux, macOS and Windows | Owner, 2026-11-11 (decision card) |
 | 26 | 2026-11-11 | H-0086: 45-minute limit per engine CI job | Owner, 2026-11-11 (decision card) |
 | 27 | 2026-11-11 | Agent SDK peers: `legacy-peer-deps` in `engine/.npmrc` plus zod 4.6.7; other peers not installed | Owner, 2026-11-11 (decision card) |
+| 28 | 2026-11-11 | Limits live in master defaults, projects may only lower them; H-0087 drafts the file, manifest v1.4 `limits:` and values | Owner, 2026-11-11 (decision card, location); values draft |
