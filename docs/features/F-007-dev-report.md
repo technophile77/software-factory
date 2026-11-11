@@ -273,3 +273,52 @@ GS-4 and TR-11 now pass. TR-11 passes through the fetch at start, because the ha
    - **Decision needed (Interfaces):** either add an `interrupted` outcome to the Agent report, or have RS-1 check `handle.runs`.
 2. **Harness mapping for the other items.** The harness can now call `real.sync()` (TR-11 without a restart) and `real.confirmProject(path, io)` (c-4, in place of building the command from internals).
 3. **ST-1** in the acceptance suite still expects channel `1.3`. Under spec v22 it needs to expect `1.2`; that is the test engineer's change.
+
+## Fix round 2 (Windows and macOS)
+
+This round merges `claude/project-thread-xnrw8z` at `c03bfe5`. That merge
+brings in the engine CI workflow, portable test fakes and FX-7.
+
+### What changed
+
+| Item | Change | Where |
+|---|---|---|
+| SR-13 / SR-15: SDDL aliases | **The bug.** Windows writes some SIDs as aliases relative to the machine or domain, such as `LA` for the built-in Administrator (the CI runner's user). The parser knew only `SY` and `BA`, so every projects file and pipe ACL was refused.<br>**The fix.** The parser now knows every fixed alias (`WD`, `AU`, `BU` and the others). Machine- and domain-relative aliases (`LA`, `LG`, `DA`, `DU` and similar) stay *unresolved*: such an alias never matches the owner and counts as an untrusted writer, so the check fails closed.<br>**The current user's own alias.** The FFI layer passes the user's SID through Windows' own converter to learn which alias, if any, Windows writes for it. It then writes that one alias back as the SID in `fileSddl` and `handleSddl` (`withSelfSid`). The alias is never taken from the descriptor being checked. | `os/sddl.ts`, `os/ffi.ts` |
+| AC-4: ancestry off Linux | **What changed.** The channel's "a process the engine started" check now walks the whole ancestry on macOS (`proc_pidinfo` with `PROC_PIDTBSDINFO`, reading `pbi_ppid`) and on Windows (Toolhelp snapshot, reading `th32ParentProcessID`). Both go through koffi 3.3.6, and the new functions are on the fixed FFI list. Before, only direct children were refused there.<br>**On failure.** If a lookup fails, or an OS has none, the check throws and the peer is refused.<br>**Residual risk (Windows).** A parent pid can be stale after its process exits and Windows reuses the number. A walk can then wrongly refuse a peer (fail closed); it can't wrongly admit one past a live engine. | `proc.ts` (`osParent`), `os/ffi.ts`, `engine.ts` |
+| Windows pipe | **The hang.** Once the SR-13 fix let projects reach the channel, the whole test run hung on Windows. There were two causes:<br>• `FlushFileBuffers` after each write waits until the client has read everything. That deadlocks a client in the same process, which is how both test suites connect.<br>• A blocking `ConnectNamedPipe` held one of libuv's four pool threads for each listener.<br>**The fix.** The listener now waits in nonblocking mode and polls every 20 ms. It returns to blocking mode once a client is connected, and an instance left behind by a client that came and went is reset. The flush is gone. | `os/ffi.ts` |
+| Portable unit tests | **git path.** `GIT_PATH` uses the engine's own `findOnPath` in place of `/usr/bin/git`.<br>**Real paths.** On Windows the engine compares real paths with `fs.realpathSync.native` (`realPath`), so the 8.3 short name `RUNNER~1` and git's long path compare equal. This was the next cause of "not the top of a Git work tree".<br>**SR-13 unit tests.** POSIX mode checks are skipped on Windows, with a reason. The group-writable test uses `grantWrite` on Windows. The paths-file test uses the real FFI with `ownerOnly`.<br>**Timeouts.** The unit-test timeout is now 30 s, because the loopback git-over-HTTP tests ran past 5 s on macOS. | `test/*`, `fsutil.ts`, `vitest.config.mts` |
+
+New unit tests:
+
+- the exact runner SDDL `O:LAD:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;LA)`, unresolved aliases, and `withSelfSid`'s rules;
+- ancestry through `osParent` (a grandchild is refused, and a missing lookup throws);
+- on macOS and Windows only, the real parent lookup returns `process.ppid`.
+
+### Results
+
+The last CI run was `39cbb6a` (run 43004419742). Before this round, Windows passed 69 and failed 235.
+
+| OS | Passed | Failed | Skipped |
+|---|---|---|---|
+| ubuntu-latest | 317 | 0 | 4 |
+| macos-latest | 307 | 0 | 14 |
+| windows-latest | 304 | 3 | 14 |
+
+In that run, FX-7 passed on Windows and CH-4 passed on macOS.
+
+The three Windows failures:
+
+- **The unit worktree test.** git prints `/`, not `\`. Fixed after the last push; three pushes were allowed, so CI hasn't run the fix.
+- **IT-10 (200 items) timed out at 600 s.** Each item makes several git calls plus a scan through the launcher, and the Windows runner is slow. This is a speed problem, not a wrong result.
+- **SE-11 measured 630 s of engine time against a limit of ≤ 620 s.** The engine waits exactly `wait_s`. The fake clock's `drive` loop advances further while a slow runner answers late, so this looks like the test's tolerance, not the engine.
+
+On Linux, run locally after the final commit: typecheck clean, build passes, and `npx vitest run` passes 319 and skips 2 of 321.
+
+CH-4 was un-skipped on Windows (`test/acceptance/channel.test.ts`, as the coordinator asked). It passes on Linux. The new ancestry lookup's own unit test passed on the Windows runner, but CH-4 itself hasn't yet run in Windows CI.
+
+### Left open
+
+1. **IT-10 and SE-11 on Windows** (see above). IT-10 needs more time or a lighter fixture on Windows. SE-11 needs `drive` to step more finely, or a wider tolerance. Both are the test engineer's call.
+2. **Windows stale parent pids** in the ancestry walk: a residual risk for Security Gate 2. It can only fail closed.
+3. **Speed of the pipe on Windows.** Connections are now polled every 20 ms and data every 10 ms. That is fine for the channel, but it is polling, not overlapped I/O.
+4. **No job timeout.** The workflow (`.github/workflows/engine.yml`) has no `timeout-minutes`. The hung run sat for 54 minutes until it was cancelled. I suggest `timeout-minutes: 45` per job; this needs approval.

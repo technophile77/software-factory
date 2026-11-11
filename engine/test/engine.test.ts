@@ -69,7 +69,8 @@ describe("engine start (FR-1 to FR-4)", () => {
     const w = makeWorld();
     await boot(w);
     const list = git(w.config, "worktree", "list", "--porcelain");
-    expect(list).toContain(`worktree ${path.join(w.config, ".factory")}`);
+    // git prints forward slashes on Windows too.
+    expect(list).toContain(`worktree ${path.join(w.config, ".factory").replaceAll("\\", "/")}`);
     expect(list).toContain("branch refs/heads/factory/state");
   });
 

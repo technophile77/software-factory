@@ -114,7 +114,7 @@ describe("Channel transport and access (AC-4, FR-4, SR-15 on Linux)", () => {
   // On Windows the fake gitleaks is a launcher .exe that starts Node, so the
   // probe is the engine's grandchild, and the engine looks up ancestry only on
   // Linux (proc.ts linuxParent). Real gitleaks connects, if ever, as a direct child.
-  it.skipIf(isWindows)("[CH-4] AC-4: a process the engine started (its gitleaks run) is refused on the channel", async () => {
+  it("[CH-4] AC-4: a process the engine started (its gitleaks run) is refused on the channel", async () => {
     w = await World.create();
     w.gitleaks.control({ probeEngineJson: w.engineJsonPath() });
     await answerOne(w);
