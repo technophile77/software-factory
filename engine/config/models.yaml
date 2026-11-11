@@ -1,0 +1,7 @@
+# The model each agent role runs on until F-002 wires its rungs: owner
+# decision, F-007 spec v32. Change-controlled. The engine reads this file
+# from the master clone commit that the project's `factory.version` tag
+# names, like limits.yaml; a project can't override it yet (that arrives with
+# F-002's settings.agents.<role>.rung).
+requirements-analyst: claude-opus-5-5
+web-reader: claude-haiku-5-5

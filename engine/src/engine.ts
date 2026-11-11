@@ -19,7 +19,8 @@ import { Clock, iso, systemClock } from "./clock";
 import { AuthorizationError, authorizeProject, billingMismatch, modelCredentialFor } from "./config/authorize";
 import { AgentSources, Instructions, MASTER_SOURCE_PATHS, resolveAgentSources } from "./config/agent-sources";
 import { TreeSnapshot, resolveFactoryVersion } from "./config/factory-source";
-import { Limits, LimitsError, agentLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
+import { Models, MODELS_FILE, readDefaultModels } from "./config/models";
+import { LIMITS_FILE, Limits, LimitsError, agentLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
 import { Manifest, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin } from "./config/pins";
@@ -102,6 +103,7 @@ interface Project extends ProjectStatus {
   /** Known for every running project (phase 1); see EngineHandle.limits and agentSources. */
   limits: Limits | null;
   sources: AgentSources | null;
+  models: Models | null;
   state_repo: StateRepo | null;
   features: Map<string, FeatureInterview>;
   sessions: SessionManager | null;
@@ -140,6 +142,8 @@ export interface EngineHandle {
   limits(project: string): Limits;
   /** Spec v30: a running project's resolved agent instructions and skills, master defaults with its overrides on top. */
   agentSources(project: string): AgentSources;
+  /** Spec v32: a running project's model per role, from `engine/config/models.yaml` at its `factory.version` commit. */
+  models(project: string): Models;
   /** A role's `AGENT.md` for a running project; throws when the role has none, so it can't run. */
   instructions(project: string, role: string): Instructions;
 }
@@ -218,7 +222,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   const projects: Project[] = listed.map((p) => ({
-    path: p, name: null, state: "stopped", warnings: [], real: null, manifest: null, limits: null, sources: null, state_repo: null,
+    path: p, name: null, state: "stopped", warnings: [], real: null, manifest: null, limits: null, sources: null, models: null, state_repo: null,
     features: new Map(), sessions: null, listener: null, conns: new Set(), token: null,
   }));
 
@@ -243,7 +247,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   const running = (name: string): Project => {
     const p = projects.find((x) => x.manifest?.name === name && x.state === "running");
-    if (!p || !p.limits || !p.sources) throw new LimitsError(`No running project is named ${name}.`);
+    if (!p || !p.limits || !p.sources || !p.models) throw new LimitsError(`No running project is named ${name}.`);
     return p;
   };
 
@@ -261,12 +265,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     let above: string[] = [];
     try {
       const masterCommit = await resolveFactoryVersion(git, o.masterRepo, m.factoryVersion);
-      // One listing serves the limits and the agent sources: this runs on every start, and each git process counts.
+      // One listing and one read serve the limits, the models and the agent sources: this runs on every start, and each git process counts.
       const masterTree = await TreeSnapshot.read(git, o.masterRepo, masterCommit, MASTER_SOURCE_PATHS);
+      await masterTree.prefetch([LIMITS_FILE, MODELS_FILE], 64 * 1024);
       const merged = mergeLimits(await readDefaultLimits(git, o.masterRepo, masterCommit, masterTree), manifestLimits(m.raw));
+      const models = await readDefaultModels(masterTree);
       if (!merged.above.length) {
         p.sources = await resolveAgentSources({ git, masterRepo: o.masterRepo, masterCommit, configRepo: p.real!, configCommit: m.commit, manifest: m.raw, masterTree });
         p.limits = merged.limits;
+        p.models = models;
         return true;
       }
       above = merged.above;
@@ -670,6 +677,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const m = p.manifest!;
     const sources = p.sources!;
     const limits = p.limits!;
+    const models = p.models!;
     const branch = f.state.branch;
     const known = plan?.run ?? (analystRuns.get(f.id) ? record.run(analystRuns.get(f.id)!) : undefined);
     const wt = await prepareWorktree(git, p.real!, known?.worktree ?? worktreeDir(p, f.id), branch, known?.git_dir);
@@ -691,6 +699,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       runArtifacts.set(runId, [
         { kind: "image", ref: image.tag },
         ...(sources.skills.get("requirements-analyst") ?? []).map((s) => ({ kind: "skill", ref: `${s.name} (${s.from}: ${s.path})` })),
+        { kind: "model", ref: `requirements-analyst: ${models["requirements-analyst"]}` },
+        ...(readerMd ? [{ kind: "model", ref: `web-reader: ${models["web-reader"]}` }] : []),
       ]);
       if (resumeId) {
         // The SDK session lives on the run's volume; without it the run starts again from its commit.
@@ -712,14 +722,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         agentLimits: roleContainerLimits(limits), proxyLimits: containerLimits(limits.proxy), maxPageBytes: maxPageBytes(limits),
         credential, log, ...(rt.platform ? { platform: rt.platform } : {}), ...(rt.sleep ? { sleep: rt.sleep } : {}),
       });
-      const facts: RunFacts = rt.model ? { model: rt.model } : {};
+      const facts: RunFacts = { model: models["requirements-analyst"] };
       let r: Awaited<ReturnType<typeof runAnalystSession>>;
       try {
         r = await runAnalystSession({
           sdk, docker: rt.docker, group, manifest: m.raw, worktree: wt.path,
           instructions: { analyst: analystMd.text, ...(readerMd ? { reader: readerMd.text } : {}) },
           limits: agentLimits(limits, m.billingMode), skillsPluginDir: skillsPluginDir("requirements-analyst"),
-          ...(rt.model ? { model: rt.model } : {}), ...(resumeId ? { resume: resumeId } : {}), sessionVolume: "run",
+          models: { analyst: models["requirements-analyst"], reader: models["web-reader"] }, ...(resumeId ? { resume: resumeId } : {}), sessionVolume: "run",
           billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
           tools: (research) => handle.interviewTools(f.id, wt.path, facts, research),
           turns,
@@ -917,6 +927,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     },
     agentSources(project) {
       return running(project).sources!;
+    },
+    models(project) {
+      return { ...running(project).models! };
     },
     instructions(project, role) {
       const i = running(project).sources!.instructions.get(role);

@@ -31,7 +31,8 @@ export interface AnalystRunInput {
   instructions: { analyst: string; reader?: string };
   limits: AgentLimitsConfig;
   skillsPluginDir?: string;
-  model?: string;
+  /** Spec v32: the model for each role, from the master's `engine/config/models.yaml`. */
+  models: { analyst: string; reader: string };
   resume?: string;
   /** "run" keeps the SDK session on the run's own volume, so a resume finds it. Default: a volume for this session only. */
   sessionVolume?: boolean | "run";
@@ -82,7 +83,7 @@ export async function runAnalystSession(i: AnalystRunInput): Promise<{ outcome: 
             perSession: i.limits.research.perSession,
             run: (q) => research({
               group: i.group, docker: i.docker, sdk: i.sdk, policy: reader!, instructions: i.instructions.reader!, caps: i.limits.reader,
-              page: i.limits.page, summaryMaxChars: i.limits.summaryMaxChars, maxSources: i.limits.maxSources, log: i.log, ...(i.model ? { model: i.model } : {}),
+              page: i.limits.page, summaryMaxChars: i.limits.summaryMaxChars, maxSources: i.limits.maxSources, log: i.log, model: i.models.reader,
             }, q),
           }
         : undefined;
@@ -96,7 +97,7 @@ export async function runAnalystSession(i: AnalystRunInput): Promise<{ outcome: 
         factoryTools: tools.map((t) => t.name),
         caps: i.limits.analyst,
         ...(i.skillsPluginDir ? { skillsPluginDir: i.skillsPluginDir } : {}),
-        ...(i.model ? { model: i.model } : {}),
+        model: i.models.analyst,
         ...(i.resume ? { resume: i.resume } : {}),
         spawn: containerSpawn(i.docker, agent.name),
         log: i.log,

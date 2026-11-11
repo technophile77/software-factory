@@ -2,6 +2,7 @@ import * as crypto from "node:crypto";
 import type { Git } from "../git";
 import { CORE_ROLES, ROLE_RE } from "../policy/role-policy";
 import { LIMITS_FILE } from "./limits";
+import { MODELS_FILE } from "./models";
 import { SourceError, TreeFile, TreeSnapshot, checkRepoPath, readDirAt, readFileAt } from "./factory-source";
 
 /** Proposal 0013: the protected skill. The six core agents are protected too. */
@@ -13,8 +14,8 @@ const DECISION_RE = /^D-\d{4,}$/;
 const AGENT_MD_MAX = 256 * 1024;
 const SKILL_BOUNDS = { files: 100, bytes: 2 * 1024 * 1024 };
 
-/** What the engine reads from the master commit at every start: agent sources and the limit defaults. */
-export const MASTER_SOURCE_PATHS = ["skills", "agents", LIMITS_FILE];
+/** What the engine reads from the master commit at every start: agent sources, the limit defaults and the models. */
+export const MASTER_SOURCE_PATHS = ["skills", "agents", LIMITS_FILE, MODELS_FILE];
 
 export type SourceOrigin = "master" | "project";
 

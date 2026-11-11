@@ -65,6 +65,8 @@ export class TreeSnapshot {
     private readonly entries: Map<string, SnapshotEntry>,
   ) {}
 
+  private readonly cache = new Map<string, Buffer>();
+
   static async read(git: Git, repo: string, commit: string, paths: string[]): Promise<TreeSnapshot> {
     const r = await git.run(repo, ["ls-tree", "-r", "-t", "-l", "-z", "--full-tree", commit, "--", ...paths]);
     const entries = new Map<string, SnapshotEntry>();
@@ -121,9 +123,21 @@ export class TreeSnapshot {
     return out;
   }
 
-  /** The contents of blobs listed here, in one `cat-file --batch`. */
-  blobs(shas: string[]): Promise<Map<string, Buffer>> {
-    return this.git.catBlobs(this.repo, shas);
+  /** The contents of blobs listed here; those not already read come from one `cat-file --batch`. */
+  async blobs(shas: string[]): Promise<Map<string, Buffer>> {
+    const missing = shas.filter((s) => !this.cache.has(s));
+    for (const [sha, b] of await this.git.catBlobs(this.repo, missing)) this.cache.set(sha, b);
+    return new Map(shas.map((s) => [s, this.cache.get(s)!]));
+  }
+
+  /**
+   * Reads the regular files among `paths` that are at most `maxBytes`, in one
+   * batch, so the small defaults files that follow cost no process each.
+   * Anything missing, irregular or oversized is left for its reader to refuse.
+   */
+  async prefetch(paths: string[], maxBytes: number): Promise<void> {
+    const shas = paths.map((p) => this.entry(p)).filter((e) => e && e.regular && e.size <= maxBytes).map((e) => e!.sha);
+    await this.blobs(shas);
   }
 }
 

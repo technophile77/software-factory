@@ -20,6 +20,7 @@ Milestone 2 adds the parts that run agents, each tested with fakes:
 | `src/agent/` | session options (SR-10), the container spawn, SR-18 caps, the `factory` MCP tools, `fetch_page`, the web reader, the worktree commit and end-of-session write check (FR-9, FR-11) |
 | `docker/` | the agent image: base image by digest, Claude Code 2.1.311 checked against the Agent SDK manifest, no npm in the final stage |
 | `config/limits.yaml` | the session, container and interview limits (H-0087), change-controlled. The engine reads it from the master commit the project's `factory.version` tag names, never a working tree. A project's manifest `limits:` may only lower a value; a higher one stops the project and files a Security item |
+| `config/models.yaml` | the model for each agent role until F-002 wires rungs (spec v32), change-controlled. Read like `limits.yaml`, from the `factory.version` commit; a missing role, an unknown role or an empty model id stops the project and files a Security item |
 
 Session code is written against `src/agent/sdk.ts`, the part of the Agent
 SDK's surface the engine uses; `src/agent/sdk-binding.ts` maps it onto the

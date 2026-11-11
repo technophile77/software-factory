@@ -125,6 +125,7 @@ describe("the analyst, wired end to end with fake Docker and SDK (FR-8 to FR-11)
     expect(o.systemPrompt).toBe("# Requirements analyst (master)\n");
     expect(o.plugins).toEqual([{ type: "local", path: "/opt/factory/skills/requirements-analyst" }]);
     expect(o.maxTurns).toBe(300);
+    expect(o.model).toBe("claude-opus-5-5");
     const agentRun = d.calls.find((x) => x.args[0] === "run" && x.args.includes("factory.role=requirements-analyst"))!.args;
     expect(agentRun).toContain(d.images.get(tag)!.Id);
     expect(agentRun[agentRun.indexOf("--memory") + 1]).toBe(`${2048 * 1024 * 1024}b`);
@@ -142,7 +143,10 @@ describe("the analyst, wired end to end with fake Docker and SDK (FR-8 to FR-11)
       { kind: "image", ref: tag },
       { kind: "skill", ref: "security-review (master: skills/security-review)" },
       { kind: "skill", ref: "style (master: skills/style)" },
+      { kind: "model", ref: "requirements-analyst: claude-opus-5-5" },
+      { kind: "model", ref: "web-reader: claude-haiku-5-5" },
     ]);
+    expect(report.model).toBe("claude-opus-5-5");
     // Everything the run started is gone.
     expect(d.started.size).toBe(0);
   });

@@ -394,6 +394,11 @@ describe("factory.version sources (spec v30)", () => {
     ["a revision expression", (_w: World) => "HEAD~1", /not a tag name/],
     ["a tag with an oversized limits.yaml", (w: World) => (commitMaster(w, { "engine/config/limits.yaml": MASTER_FILES["engine/config/limits.yaml"]! + `# ${"x".repeat(70_000)}\n` }, "v0.2.0"), "v0.2.0"), /over 64 KiB/],
     ["a tag without limits.yaml", (w: World) => (commitMaster(w, { "engine/config/limits.yaml": null }, "v0.2.0"), "v0.2.0"), /missing/],
+    ["a tag without models.yaml", (w: World) => (commitMaster(w, { "engine/config/models.yaml": null }, "v0.2.0"), "v0.2.0"), /models.yaml is missing/],
+    ["a models.yaml naming an unknown role", (w: World) => (commitMaster(w, { "engine/config/models.yaml": MASTER_FILES["engine/config/models.yaml"] + "orchestrator: m\n" }, "v0.2.0"), "v0.2.0"), /not a role the engine runs/],
+    ["a models.yaml missing a role", (w: World) => (commitMaster(w, { "engine/config/models.yaml": "requirements-analyst: m\n" }, "v0.2.0"), "v0.2.0"), /'web-reader' needs a model id/],
+    ["a models.yaml with an empty model id", (w: World) => (commitMaster(w, { "engine/config/models.yaml": "requirements-analyst: ''\nweb-reader: m\n" }, "v0.2.0"), "v0.2.0"), /'requirements-analyst' needs a model id/],
+    ["a models.yaml with a non-string model id", (w: World) => (commitMaster(w, { "engine/config/models.yaml": "requirements-analyst: [a]\nweb-reader: m\n" }, "v0.2.0"), "v0.2.0"), /needs a model id/],
     ["a tag with invalid limits.yaml", (w: World) => (commitMaster(w, { "engine/config/limits.yaml": MASTER_FILES["engine/config/limits.yaml"]!.replace("pids: 64", "pids: 0") }, "v0.2.0"), "v0.2.0"), /proxy.pids/],
   ])("fails closed on %s, with a Security item", async (_name, make, re) => {
     const w0 = makeWorld();
@@ -403,6 +408,13 @@ describe("factory.version sources (spec v30)", () => {
     const e = await boot(w0);
     expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringMatching(re) });
     expect(securityItems(w0)).toHaveLength(1);
+  });
+
+  it("spec v32: the models come from engine/config/models.yaml at the factory.version commit", async () => {
+    const w = makeWorld();
+    commitMaster(w, { "engine/config/models.yaml": "requirements-analyst: newer\nweb-reader: newer\n" });
+    const e = await boot(w);
+    expect(e.models("acme")).toEqual({ "requirements-analyst": "claude-opus-5-5", "web-reader": "claude-haiku-5-5" });
   });
 
   it("follows an annotated tag of an annotated tag to its commit", async () => {

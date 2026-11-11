@@ -545,7 +545,7 @@ This settles blocked decisions 5 and 6 above.
 - **Interpretations for the owner:**
   - A session that couldn't start leaves the run interrupted, not failed. It then retries only at the next engine start; there is no retry while the engine runs.
   - The sweep removes every `factory.run`-labelled resource on the Docker daemon. It assumes one engine per daemon.
-  - No model or rung is chosen yet; the CLI's default applies (F-002 ladder not wired).
+  - Models: see "Models (spec v32)" below.
 - **Tests (`test/analyst-run.test.ts`, fake Docker and a scripted SDK that drives the real factory tools):**
   - the full path from `feature.start` to a committed spec, with the image identity, instructions, limits, framed turns and report artifacts checked;
   - a turns cap;
@@ -554,3 +554,10 @@ This settles blocked decisions 5 and 6 above.
   - AC-12 (a kill, the sweep, the kept volume, and an SDK-session resume).
 
   The fakes moved to `test/fakes.ts`. The real-docker test stays behind `FACTORY_DOCKER_TESTS=1`.
+
+## Models (spec v32)
+
+- **The file:** `engine/config/models.yaml` maps `requirements-analyst` to `claude-opus-5-5` and `web-reader` to `claude-haiku-5-5`. The engine reads it from the `factory.version` commit, in the same listing and blob read as `limits.yaml`, so a start still costs three git processes for these sources.
+- **Checks (fail closed, Security item):** the file is missing, is not a regular file, is over 16 KiB, is not YAML, names a role other than those two, lacks either role, or has an empty or non-string model id. A model id may hold letters, digits and `._:@/-`, up to 200 characters.
+- **Use:** the analyst's SDK options get `model` from `requirements-analyst`, and each web reader's from `web-reader`. The agent report's `model` field is the analyst's model. Its `artifacts` list `{ kind: "model", ref: "<role>: <model>" }` for the analyst, and for the web reader when the project has one. A project can't override the models yet; that comes with F-002's rungs.
+

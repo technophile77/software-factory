@@ -18,7 +18,6 @@ export interface AgentRuntime {
   dockerDir: string;
   /** The bundled proxy, `dist/proxy.js`. */
   proxyScript: string;
-  model?: string;
   platform?: NodeJS.Platform;
   sleep?(ms: number): Promise<void>;
 }

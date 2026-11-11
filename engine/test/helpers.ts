@@ -67,6 +67,7 @@ export function initRepo(dir: string, files: Record<string, string>, origin?: st
 export const MASTER_FILES: Record<string, string> = {
   "README.md": "master\n",
   "engine/config/limits.yaml": fs.readFileSync(path.join(__dirname, "..", "config", "limits.yaml"), "utf8"),
+  "engine/config/models.yaml": fs.readFileSync(path.join(__dirname, "..", "config", "models.yaml"), "utf8"),
   "agents/requirements-analyst/AGENT.md": "# Requirements analyst (master)\n",
   "agents/web-reader/AGENT.md": "# Web reader (master)\n",
   "skills/security-review/SKILL.md": "---\nname: security-review\ndescription: master\n---\nReview.\n",

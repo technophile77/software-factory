@@ -450,7 +450,7 @@ describe("an analyst session end to end, with fakes (FR-8 to FR-11)", () => {
     const tools = Object.fromEntries(["interview_ask", "interview_propose_assumption", "interview_revise", "research_web", "interview_spec_ready"].map((n) => [n, async () => ({ ok: true, result: {} })])) as unknown as InterviewTools;
     return {
       order, sdk, docker: d as unknown as DockerCli, group: group(d), manifest: policyDoc(), worktree: tmpdir(),
-      instructions: { analyst: "analyst instructions", reader: "reader instructions" }, limits, skillsPluginDir: "/opt/factory/skills",
+      instructions: { analyst: "analyst instructions", reader: "reader instructions" }, models: { analyst: "model-a", reader: "model-r" }, limits, skillsPluginDir: "/opt/factory/skills",
       billingCheck: () => null, tools: (r) => (order.push(r ? "tools+research" : "tools"), tools), turns: oneTurn(),
       commit: async () => ({ status: "unchanged" }),
       onSessionId: (id) => void order.push(`session ${id}`), onBreach: async () => void order.push("breach"), log: new MemoryLogger(), ...over,
@@ -478,6 +478,7 @@ describe("an analyst session end to end, with fakes (FR-8 to FR-11)", () => {
     expect(i.order).toEqual(["tools+research", "session s-9", "commit, container gone: true", "breach"]);
     const o = sdk.seen[0]!;
     expect(o.systemPrompt).toBe("analyst instructions");
+    expect(o.model).toBe("model-a");
     expect(o.allowedTools).toHaveLength(5);
     expect(d.calls.map((c) => c.args.join(" "))).toContain("network rm factory-r-0a1b2c-int");
   });
