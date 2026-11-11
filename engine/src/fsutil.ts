@@ -33,6 +33,25 @@ export function ensureOwnerDir(dir: string): void {
  * Writes owner-only (0600) through a temporary file and a rename, so a reader
  * never sees half a file and a crash leaves the old one.
  */
+/**
+ * On Windows, replacing a file fails (EPERM, EACCES or EBUSY) while another
+ * process has it open without delete sharing, as virus scanners and indexers
+ * do for a moment after each write. Retried for up to about a second; the
+ * wait is synchronous, and short enough not to matter.
+ */
+function renameRetrying(from: string, to: string): void {
+  for (let i = 0; ; i++) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (!isWindows || i >= 20 || (code !== "EPERM" && code !== "EACCES" && code !== "EBUSY")) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    }
+  }
+}
+
 export function writeFileAtomic(file: string, data: string | Buffer): void {
   const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomBytes(6).toString("hex")}.tmp`);
   const fd = fs.openSync(tmp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
@@ -44,7 +63,7 @@ export function writeFileAtomic(file: string, data: string | Buffer): void {
   }
   try {
     if (!isWindows) fs.chmodSync(tmp, 0o600);
-    fs.renameSync(tmp, file);
+    renameRetrying(tmp, file);
   } catch (e) {
     fs.rmSync(tmp, { force: true });
     throw e;

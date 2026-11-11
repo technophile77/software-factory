@@ -3,7 +3,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -145,6 +145,81 @@ export function nodeProgram(base: string, script: string): string {
   }
   writeFileSync(base + ".js", script);
   writeFileSync(base + ".cmdline", `"${process.execPath}" "${base}.js"`);
+  // A copy, not a hard link: Windows can't delete any name of an image that
+  // is running, so a link shared across test files would block cleanup.
   copyFileSync(windowsLauncher(), base + ".exe");
   return base + ".exe";
+}
+
+/**
+ * Removes a test's folder. On Windows a file a running process holds can't
+ * be deleted, and a test that timed out can leave its git or gitleaks
+ * children running, so after a refusal this kills every process this test
+ * process started (test files run one per process, so they are all this
+ * test's) and tries again for a few seconds.
+ */
+export function removeTree(dir: string) {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    return;
+  } catch (e) {
+    if (process.platform !== "win32") throw e;
+  }
+  killChildProcesses();
+  rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+}
+
+function killChildProcesses() {
+  const ps = join(SYSTEM32, "WindowsPowerShell", "v1.0", "powershell.exe");
+  let pids: number[] = [];
+  try {
+    const out = execFileSync(ps, ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter 'ParentProcessId=${process.pid}').ProcessId`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30_000 });
+    pids = out.split(/\s+/).filter((s) => /^\d+$/.test(s)).map(Number);
+  } catch {
+    return;
+  }
+  for (const pid of pids) {
+    // /T takes the launcher's node and git's own children with it.
+    try {
+      execFileSync(join(SYSTEM32, "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", timeout: 10_000 });
+    } catch {
+      // Already gone.
+    }
+  }
+}
+
+let symlinks: boolean | undefined;
+
+/**
+ * Whether this process may create symbolic links. Windows refuses them
+ * (EPERM) without Developer Mode or elevation; tests that need a real
+ * symlink skip there and say so.
+ */
+export function canSymlink(): boolean {
+  if (symlinks !== undefined) return symlinks;
+  const dir = mkdtempSync(join(tmpdir(), "f007-link-"));
+  try {
+    writeFileSync(join(dir, "t"), "");
+    symlinkSync(join(dir, "t"), join(dir, "l"));
+    symlinks = true;
+  } catch {
+    symlinks = false;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  return symlinks;
+}
+
+/** A symlink test's title, saying why it is skipped where links can't be made. */
+export function needsSymlinks(title: string): string {
+  return canSymlink() ? title : `${title} (skipped: needs symbolic links, which Windows refuses without Developer Mode or elevation)`;
+}
+
+/**
+ * Links folder `at` to `target`: a symlink, or on Windows a junction, which
+ * needs no privilege and which the engine must refuse just the same (Node's
+ * lstat reports a junction as a link).
+ */
+export function linkDir(target: string, at: string) {
+  symlinkSync(target, at, process.platform === "win32" ? "junction" : "dir");
 }

@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { existsSync, lstatSync, renameSync, symlinkSync, chmodSync, chownSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { grantWrite } from "./support/platform";
+import { canSymlink, grantWrite, linkDir, needsSymlinks } from "./support/platform";
 import { git, mode, REPO_ROOT, World } from "./support/world";
 
 let w: World | undefined;
@@ -166,7 +166,7 @@ describe("AC-3 / FR-3: model credential against the billing mode", () => {
 });
 
 describe("SR-13: the project paths file and the paths it lists", () => {
-  it("[ST-12] SR-13: a projects file that is a symlink is refused", async () => {
+  it.skipIf(!canSymlink())(needsSymlinks("[ST-12] SR-13: a projects file that is a symlink is refused"), async () => {
     w = await World.create();
     const real = join(w.root, "outside", "projects.yaml");
     renameSync(w.projectsFile, real);
@@ -205,7 +205,8 @@ describe("SR-13: the project paths file and the paths it lists", () => {
   it("[ST-16] SR-13: a listed path that is a symlink is refused", async () => {
     w = await World.create([{ name: "linked" }, { name: "plain" }]);
     const link = join(w.root, "outside", "link-to-config");
-    symlinkSync(w.project().configRepo, link);
+    // A junction on Windows: no privilege needed, and it is refused just the same.
+    linkDir(w.project().configRepo, link);
     w.writeProjectsFile([link, w.project(1).configRepo]);
     await w.boot();
     const all = await w.engine!.projects();

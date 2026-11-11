@@ -33,7 +33,7 @@ import {
 import { drive, FakeClock, realDelay } from "./clock";
 import { FakeGitHub } from "./fake-github";
 import { FakeGitleaks, GitWrapper } from "./fake-tools";
-import { ownerOnly, WINDOWS_ENV } from "./platform";
+import { ownerOnly, removeTree, WINDOWS_ENV } from "./platform";
 import { RpcClient, rpcOnce, type RpcResponse } from "./rpc";
 
 /** The host's git, by absolute path, so the fixtures never run the logging
@@ -286,8 +286,9 @@ export class World {
   envOverrides: Record<string, string | undefined> = {};
   gitleaksSha?: string;
   /** Run the engine's git through the logging wrapper. Each wrapped call
-   * starts a Node process, which makes long runs several times slower. */
-  logGit = true;
+   * starts a Node process (and on Windows a launcher too), which makes long
+   * runs several times slower, so only tests that read the log turn it on. */
+  logGit = false;
   readonly sessionTokens: string[] = [];
 
   private constructor(tls?: { key: string; cert: string }) {
@@ -313,9 +314,10 @@ export class World {
 
   static async create(
     specs: ProjectSpec[] = [{}],
-    opts: { tls?: { key: string; cert: string }; writeProjectsFile?: boolean } = {},
+    opts: { tls?: { key: string; cert: string }; writeProjectsFile?: boolean; logGit?: boolean } = {},
   ): Promise<World> {
     const w = new World(opts.tls);
+    w.logGit = opts.logGit ?? false;
     await w.gh.start();
     w.makeMaster();
     specs.forEach((s, i) => w.addProject(s, i));
@@ -664,13 +666,12 @@ export class World {
 
   async cleanup() {
     this.analyst.stop();
-    try {
-      await this.stop();
-    } catch {
-      // A failing engine must not hide the test's own failure.
-    }
+    // After a test timed out, its engine may still be mid-call: don't wait on it for long.
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([this.stop().catch(() => undefined), new Promise<void>((r) => (timer = setTimeout(r, 15_000)))]);
+    clearTimeout(timer);
     await this.gh.stop().catch(() => undefined);
-    rmSync(this.root, { recursive: true, force: true });
+    removeTree(this.root);
   }
 }
 

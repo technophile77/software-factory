@@ -570,3 +570,14 @@ This settles blocked decisions 5 and 6 above.
 - **Environment:** on Windows the client also gets `ProgramData`, `ProgramFiles` and `ProgramW6432`. The client finds CLI plugins only under the first two, and the third covers an engine started from a 32-bit process. Home and AppData variables stay out, because `DOCKER_CONFIG` replaces `~/.docker`. `DOCKER_*` from the owner's environment is never passed.
 - **Arch:** the Dockerfile uses `TARGETARCH` when BuildKit sets it, and otherwise uses the base image's `node -p process.arch`. It fails with a message naming both values when the result isn't amd64/x64 or arm64.
 - **Errors:** `DockerError` carries the last 4 KiB of docker's stderr, cut at a line start. Process stderr capture now keeps its first 4 KiB and last 8 KiB, where it used to keep only the start. The engine log gets the whole tail; the owner's transcript note stays at 300 characters.
+
+## Windows test run on the owner's PC (non-elevated, Defender on)
+
+- **Timeouts:** the acceptance world ran all of the engine's git through a logging wrapper. On Windows each call started a launcher, then Node, then git. Logging is now opt-in (`World.create(…, { logGit: true })`), used only by the tests that read the log: GS-1 to GS-4 and SC-1. The launcher was already compiled once per source text. Each world still copies it, because Windows can't delete any name of a running image, so a shared hard link would block cleanup.
+- **Transcript commits:** these now use 7–8 git processes, down from 11 plus 4 per extra file. Blob ids are computed in-process and scanned before anything is written, so a refused secret never becomes a git object and nothing needs removing. All blobs are written in one `hash-object`. Both index updates go through one `--index-info` each. A commit on top of the engine's own last commit reuses its temp index. Git's returned ids must match the scanned ones.
+- **SC-3 (engine fixes):** on Windows a virus scanner briefly holds files after a write. Three places now tolerate this:
+  - `writeFileAtomic` retries the replace for about a second on EPERM, EACCES or EBUSY.
+  - A secrets-scan staging folder that can't be removed no longer turns a finished scan into a failure.
+  - Writing `.factory`'s checked-out copy after the commit is made is logged on failure, not reported as a failed record.
+- **Symlinks:** tests that need a real symlink (RD-11, RD-12, RD-13, ST-12, unit AC-19 file case, unit paths-file link) skip with a reason when the OS refuses them. Folder-link cases (ST-16, unit AC-19 parent folder) use a junction on Windows.
+- **Cleanup:** `World.cleanup` waits at most 15 s for the engine. If removal is refused on Windows, it kills this test process's children and retries. Unit `tmpdir()` folders are removed after each test file (`test/setup.ts`).

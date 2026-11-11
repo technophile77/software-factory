@@ -13,7 +13,7 @@ import { MemoryCredentialStore } from "../src/secrets";
 import { MemoryLogger } from "../src/log";
 import { findOnPath, realPath } from "../src/fsutil";
 import { EngineHandle, EngineOptions, startEngine } from "../src/engine";
-import { nodeProgram, ownerOnly } from "./acceptance/support/platform";
+import { nodeProgram, ownerOnly, removeTree } from "./acceptance/support/platform";
 
 // Fixtures hold placeholders only (SR-13): example ids, example orgs, fake tokens.
 export const OWNER_ID = 1000001;
@@ -44,11 +44,25 @@ export function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, env: GIT_ENV, encoding: "utf8" }).trim();
 }
 
+const made: string[] = [];
+
 export function tmpdir(prefix = "sf-"): string {
   // Short paths: Unix socket paths are limited to about 100 bytes.
   const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   fs.chmodSync(d, 0o700);
+  made.push(d);
   return realPath(d);
+}
+
+/** Removes every folder `tmpdir` made in this test file; `test/setup.ts` runs it after the file. */
+export function removeTmpdirs(): void {
+  for (const d of made.splice(0)) {
+    try {
+      removeTree(d);
+    } catch {
+      // Left for the OS's temp cleanup; a test's result doesn't depend on it.
+    }
+  }
 }
 
 export function initRepo(dir: string, files: Record<string, string>, origin?: string): void {

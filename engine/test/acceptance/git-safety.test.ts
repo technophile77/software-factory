@@ -84,7 +84,7 @@ describe("SR-11: nothing from the repo or the owner's git config runs on the hos
   it.each(["absolute", "husky"] as const)(
     "[GS-1] SR-11 / AC-18 abuse case (%s hooksPath): no hook, fsmonitor, filter, textconv, credential helper or SSH command runs, and nothing goes to a file:// push URL",
     async (variant) => {
-      w = await World.create();
+      w = await World.create(undefined, { logGit: true });
       const { evilBare } = poison(w, variant);
       await exercise(w);
       expect(w.gitw.calls().length, "the engine ran git through the given path").toBeGreaterThan(0);
@@ -94,7 +94,7 @@ describe("SR-11: nothing from the repo or the owner's git config runs on the hos
   );
 
   it("[GS-2] SR-11: every git call carries the overrides: empty hooksPath outside every repo, fsmonitor off, file protocol never, no credential helper", async () => {
-    w = await World.create();
+    w = await World.create(undefined, { logGit: true });
     await exercise(w);
     const calls = w.gitw.calls();
     expect(calls.length).toBeGreaterThan(0);
@@ -113,7 +113,7 @@ describe("SR-11: nothing from the repo or the owner's git config runs on the hos
   });
 
   it("[GS-3] SR-11: commits and pushes pass --no-verify", async () => {
-    w = await World.create();
+    w = await World.create(undefined, { logGit: true });
     await exercise(w);
     for (const c of w.gitw.calls()) {
       const { subcommand, rest } = gitOverrides(c);
@@ -124,7 +124,7 @@ describe("SR-11: nothing from the repo or the owner's git config runs on the hos
   });
 
   it("[GS-4] SR-1 / SR-11: the factory token never appears in a git argument or URL; pushes authenticate through GIT_ASKPASS over HTTPS", async () => {
-    w = await World.create();
+    w = await World.create(undefined, { logGit: true });
     await exercise(w);
     const calls = w.gitw.calls();
     for (const c of calls) {

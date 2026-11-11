@@ -126,7 +126,14 @@ export class Gitleaks implements SecretsScanner {
       if (r.code === 99) return { clean: false, ...this.findings(r.stdout, blobs) };
       throw new ScanError(`The secrets scan failed (exit ${r.code ?? r.signal}).`);
     } finally {
-      fs.rmSync(staging, { recursive: true, force: true });
+      // On Windows a virus scanner can still hold a staged file for a moment. A
+      // folder left behind is removed at the next start, and must never turn a
+      // finished scan into a failed one.
+      try {
+        fs.rmSync(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      } catch {
+        // see above
+      }
     }
   }
 

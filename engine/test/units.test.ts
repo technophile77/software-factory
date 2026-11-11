@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as path from "node:path";
@@ -21,10 +22,10 @@ import { Children, osParent } from "../src/proc";
 import { MemoryCredentialStore, OsCredentialStore, SecretError, factoryTokenName } from "../src/secrets";
 import { EngineRecord } from "../src/state/record";
 import { RunBook, transcriptSummary } from "../src/state/runs";
-import { StateRepo, checkStatePath } from "../src/state/state-repo";
+import { SecretFound, StateRepo, blobId, checkStatePath } from "../src/state/state-repo";
 import { ChainError, canonical, checkAgainstHead, makeEntry, parseTranscript, serialize } from "../src/state/transcript";
 import { InterviewState } from "../src/interview/model";
-import { nodeProgram, ownerOnly } from "./acceptance/support/platform";
+import { canSymlink, needsSymlinks, nodeProgram, ownerOnly } from "./acceptance/support/platform";
 import { CLIENT_ID, GIT_PATH, FakeClock, FakeGitHub, OWNER_ID, fakeGitleaks, git, initRepo, manifestYaml, settle, tmpdir } from "./helpers";
 
 const linuxOs: OsApi = {
@@ -412,6 +413,46 @@ describe("git (SR-11)", () => {
     expect(git(repo, "show", "factory/state:inbox/decision/D-0001.md")).toBe("x");
   });
 
+  it("commits with few git processes, scans before writing, and leaves no object for a refused secret", async () => {
+    const root = tmpdir();
+    const repo = path.join(root, "repo");
+    initRepo(repo, { "a.txt": "a" });
+    const fake = fakeGitleaks(path.join(root, "bin"));
+    const children = new Children();
+    const g = new Git({ gitPath: GIT_PATH, homeDir: path.join(root, "home"), children });
+    const state = new StateRepo(g, new Gitleaks({ binary: fake.path, workDir: path.join(root, "gl"), children, expectSha256: fake.sha256 }), repo, new MemoryLogger(), path.join(root, "tmp"));
+    await state.ensureWorktree();
+    const content = "héllo\n";
+    expect(blobId("sha1", Buffer.from(content))).toBe(execFileSync("git", ["hash-object", "--stdin"], { input: content, encoding: "utf8" }).trim());
+    const calls: string[] = [];
+    const orig = g.run.bind(g);
+    g.run = (cwd, args, o) => (calls.push(args[0]!), orig(cwd, args, o));
+    await state.commit([{ path: "interviews/F-001/a.jsonl", content: "one\n" }], "F-001: one");
+    // head, write the blob, read-tree, index, tree, commit, ref, the checkout's index.
+    expect(calls).toEqual(["rev-parse", "hash-object", "read-tree", "update-index", "write-tree", "commit-tree", "update-ref", "update-index"]);
+    calls.length = 0;
+    await state.commit([{ path: "interviews/F-001/a.jsonl", content: "one\ntwo\n" }, { path: "interviews/F-001/b.jsonl", content: "b\n" }], "F-001: two");
+    // On top of its own last commit the temp index is reused; two blobs still take one process.
+    expect(calls).toEqual(["rev-parse", "hash-object", "update-index", "write-tree", "commit-tree", "update-ref", "update-index"]);
+    expect(git(repo, "show", "factory/state:interviews/F-001/a.jsonl")).toBe("one\ntwo");
+    expect(git(repo, "show", "factory/state:interviews/F-001/b.jsonl")).toBe("b");
+    expect(git(repo, "show", "factory/state~1:interviews/F-001/a.jsonl")).toBe("one");
+    expect(git(path.join(repo, ".factory"), "status", "--porcelain")).toBe("");
+    // A commit made elsewhere moves the branch: the next one reads the tree again and keeps that commit's files.
+    const other = git(repo, "commit-tree", git(repo, "rev-parse", "factory/state^{tree}"), "-p", "factory/state", "-m", "elsewhere");
+    git(repo, "update-ref", "refs/heads/factory/state", other);
+    calls.length = 0;
+    await state.commit([{ path: "interviews/F-001/c.jsonl", content: "c\n" }], "F-001: three");
+    expect(calls).toContain("read-tree");
+    expect(git(repo, "show", "factory/state~1")).toContain("elsewhere");
+    expect(git(repo, "show", "factory/state:interviews/F-001/b.jsonl")).toBe("b");
+    // A secret: refused before git ever stores it.
+    const secret = "key FAKE-SECRET-77\n";
+    await expect(state.commit([{ path: "interviews/F-001/d.jsonl", content: secret }], "F-001: secret")).rejects.toBeInstanceOf(SecretFound);
+    const sha = blobId("sha1", Buffer.from(secret));
+    expect(() => git(repo, "cat-file", "-e", sha)).toThrow();
+  });
+
   it("refuses unsafe state paths", () => {
     for (const p of ["../x", "/x", "a/../b", ".git/config", "a/.GIT/x", "a\\b", "", "a//b"]) expect(() => checkStatePath(p)).toThrow();
     expect(() => checkStatePath("interviews/F-001/transcript.jsonl")).not.toThrow();
@@ -466,8 +507,14 @@ describe("project paths file and manifest (SR-13, H-0080, H-0081)", () => {
       fs.writeFileSync(f, bad);
       expect(() => readPathsFile(root, host)).toThrow(ConfigError);
     }
-    fs.rmSync(f);
+  });
+
+  it.skipIf(!canSymlink())(needsSymlinks("refuses a project paths file that is a symbolic link"), () => {
+    const root = tmpdir();
+    const f = path.join(root, "factory-projects.local.yaml");
+    const host = process.platform === "win32" ? realOsApi() : linuxOs;
     fs.writeFileSync(path.join(root, "real.yaml"), "projects: []\n", { mode: 0o600 });
+    ownerOnly(path.join(root, "real.yaml"));
     fs.symlinkSync(path.join(root, "real.yaml"), f);
     expect(() => readPathsFile(root, host)).toThrow(/symbolic link/);
   });

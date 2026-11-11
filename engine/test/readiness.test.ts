@@ -5,6 +5,7 @@ import { EngineHandle } from "../src/engine";
 import { InterviewState } from "../src/interview/model";
 import { readinessChecks, remoteContentLines, specAssumptions } from "../src/interview/readiness";
 import { makeEntry } from "../src/state/transcript";
+import { canSymlink, linkDir, needsSymlinks } from "./acceptance/support/platform";
 import { RpcClient, World, approvedSession, engineJson, git, makeWorld, start } from "./helpers";
 
 let engines: EngineHandle[] = [];
@@ -101,7 +102,7 @@ describe("interview_spec_ready (FR-12, AC-10)", () => {
     expect(c5.evidence).not.toContain("Never asked");
   });
 
-  it("AC-19: a symlinked spec is refused and reveals nothing of the target", async () => {
+  it.skipIf(!canSymlink())(needsSymlinks("AC-19: a symlinked spec is refused and reveals nothing of the target"), async () => {
     const { w, feature, tools } = await setup();
     const secret = path.join(w.root, "id_ed25519");
     fs.writeFileSync(secret, "PRIVATE KEY MATERIAL");
@@ -110,11 +111,14 @@ describe("interview_spec_ready (FR-12, AC-10)", () => {
     const r = await tools.interview_spec_ready({ spec_path: `docs/features/${feature}-x.md`, spec_version: 1 });
     expect(r).toEqual({ ok: false, error: { code: "invalid", message: "spec_path must be this feature's own docs/features spec, as a regular file." } });
     expect(JSON.stringify(r)).not.toContain("PRIVATE");
-    // A link in a parent folder is refused too.
-    fs.rmSync(path.join(w.worktree, "docs"), { recursive: true });
+  });
+
+  it("AC-19: a link in a parent folder of the spec is refused (a junction on Windows)", async () => {
+    const { w, feature, tools } = await setup();
+    fs.rmSync(path.join(w.worktree, "docs"), { recursive: true, force: true });
     fs.mkdirSync(path.join(w.root, "elsewhere", "features"), { recursive: true });
     fs.writeFileSync(path.join(w.root, "elsewhere", "features", `${feature}-x.md`), "- **Spec version:** 1\n");
-    fs.symlinkSync(path.join(w.root, "elsewhere"), path.join(w.worktree, "docs"));
+    linkDir(path.join(w.root, "elsewhere"), path.join(w.worktree, "docs"));
     expect((await tools.interview_spec_ready({ spec_path: `docs/features/${feature}-x.md`, spec_version: 1 })).ok).toBe(false);
   });
 

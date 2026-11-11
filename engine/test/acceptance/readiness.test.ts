@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readinessCheck, type ToolOutcome } from "./harness";
+import { canSymlink, needsSymlinks } from "./support/platform";
 import { askAndFetch, interviewReady } from "./support/flows";
 import { approvedRow, commitAll, specPath, specText, writeSpec } from "./support/spec";
 import { rand, World } from "./support/world";
@@ -162,7 +163,7 @@ describe("AC-19 / SR-12: spec_path must be the session's own docs/features/F-nnn
     return p;
   }
 
-  it("[RD-11] AC-19: a spec path that is a symlink to a file outside the worktree is refused and reveals nothing of the target", async () => {
+  it.skipIf(!canSymlink())(needsSymlinks("[RD-11] AC-19: a spec path that is a symlink to a file outside the worktree is refused and reveals nothing of the target"), async () => {
     w = await World.create();
     const { feature, worktree, rel } = await setup(w);
     const target = outsideFile(w);
@@ -172,7 +173,7 @@ describe("AC-19 / SR-12: spec_path must be the session's own docs/features/F-nnn
     await expectRefusedQuietly(w, feature, rel, [target]);
   });
 
-  it("[RD-12] SR-12: docs/features itself symlinked outside the worktree is refused", async () => {
+  it.skipIf(!canSymlink())(needsSymlinks("[RD-12] SR-12: docs/features itself symlinked outside the worktree is refused"), async () => {
     w = await World.create();
     const { feature, worktree, rel } = await setup(w);
     const outDir = join(w.root, "outside", "features");
@@ -184,7 +185,7 @@ describe("AC-19 / SR-12: spec_path must be the session's own docs/features/F-nnn
     await expectRefusedQuietly(w, feature, rel, [outDir]);
   });
 
-  it("[RD-13] SR-12: a symlink to another file inside the worktree resolves outside the session's spec pattern and is refused", async () => {
+  it.skipIf(!canSymlink())(needsSymlinks("[RD-13] SR-12: a symlink to another file inside the worktree resolves outside the session's spec pattern and is refused"), async () => {
     w = await World.create();
     const { feature, worktree, rel } = await setup(w);
     writeFileSync(join(worktree, "NOTES.md"), `${SECRET}\n`);

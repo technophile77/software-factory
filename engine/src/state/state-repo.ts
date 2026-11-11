@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { STATE_BRANCH } from "../constants";
@@ -21,6 +22,11 @@ export interface Change {
   /** Path relative to the `.factory` worktree, `/`-separated. */
   path: string;
   content: Buffer | string;
+}
+
+/** The id git gives a blob: the hash of `blob <size>\0` and the content, in the repo's object format. */
+export function blobId(algo: "sha1" | "sha256", content: Buffer): string {
+  return crypto.createHash(algo).update(`blob ${content.length}\0`).update(content).digest("hex");
 }
 
 /** A path the engine writes on factory/state: plain segments, never into .git. */
@@ -148,65 +154,89 @@ export class StateRepo {
     return run;
   }
 
+  /**
+   * One commit on factory/state. Every git process counts here (a transcript
+   * commit runs on each owner reply and tool call, and process starts are
+   * slow on Windows), so the blobs are hashed in-process and scanned before
+   * any is written: refused text never becomes a git object, and nothing has
+   * to be removed again. The id git returns on writing must match the one
+   * scanned, so the scan saw exactly what the commit holds.
+   */
   private async commitNow(changes: Change[], message: string): Promise<string> {
     if (changes.length === 0) throw new GitError("nothing to commit");
     for (const c of changes) checkStatePath(c.path);
     const parent = await this.head();
-    const blobs: Array<Blob & { path: string }> = [];
-    const fresh: string[] = [];
-    for (const c of changes) {
-      const sha = await this.git.out(this.factoryDir, ["hash-object", "--no-filters", "--stdin"], { input: c.content });
-      const existed = (await this.git.run(this.factoryDir, ["cat-file", "-e", sha], { okCodes: [1, 128] })).code === 0;
-      await this.git.run(this.factoryDir, ["hash-object", "-w", "--no-filters", "--stdin"], { input: c.content });
-      if (!existed) fresh.push(sha);
-      // The scan reads the blob back from git, so it sees exactly what the commit will hold.
-      blobs.push({ sha, path: c.path, content: await this.git.catBlob(this.factoryDir, sha) });
-    }
+    const algo = parent.length === 64 ? "sha256" : "sha1";
+    const blobs: Array<Blob & { path: string }> = changes.map((c) => {
+      const content = typeof c.content === "string" ? Buffer.from(c.content, "utf8") : c.content;
+      return { sha: blobId(algo, content), path: c.path, content };
+    });
     let result;
     try {
       result = await this.scanner.scan(blobs);
     } catch (e) {
-      await this.dropObjects(fresh);
       throw e instanceof ScanError ? e : new ScanError("The secrets scan failed.");
     }
     if (!result.clean) {
       const hit = new Set(result.blobs);
-      await this.dropObjects(fresh);
       throw new SecretFound(blobs.filter((b) => hit.has(b.sha)).map((b) => b.path), result.rules);
     }
+    const written = await this.writeBlobs(blobs);
+    if (written.some((sha, i) => sha !== blobs[i]!.sha)) throw new GitError("git stored a different blob than the one scanned");
     ensureOwnerDir(this.tmpDir);
-    const index = path.join(this.tmpDir, `index-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    // The index of the last commit made here is still that commit's tree, so the next commit on top skips read-tree.
+    const reuse = this.lastIndex?.commit === parent ? this.lastIndex.file : null;
+    if (this.lastIndex && !reuse) fs.rmSync(this.lastIndex.file, { force: true });
+    this.lastIndex = null;
+    const index = reuse ?? path.join(this.tmpDir, `index-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    const entries = blobs.map((b) => `100644 ${b.sha}\t${b.path}\0`).join("");
+    let commit: string;
     try {
-      await this.git.run(this.factoryDir, ["read-tree", parent], { indexFile: index });
-      for (const b of blobs) {
-        await this.git.run(this.factoryDir, ["update-index", "--add", "--cacheinfo", `100644,${b.sha},${b.path}`], { indexFile: index });
-      }
+      if (!reuse) await this.git.run(this.factoryDir, ["read-tree", parent], { indexFile: index });
+      await this.git.run(this.factoryDir, ["update-index", "--add", "-z", "--index-info"], { indexFile: index, input: entries });
       const tree = await this.git.out(this.factoryDir, ["write-tree"], { indexFile: index });
-      const commit = await this.git.out(this.factoryDir, ["commit-tree", tree, "-p", parent, "-F", "-"], { input: message + "\n" });
+      commit = await this.git.out(this.factoryDir, ["commit-tree", tree, "-p", parent, "-F", "-"], { input: message + "\n" });
       // Compare-and-swap: a commit someone else made meanwhile fails this one instead of being lost.
       await this.git.run(this.factoryDir, ["update-ref", STATE_REF, commit, parent]);
-      for (const b of blobs) {
-        await this.git.run(this.factoryDir, ["update-index", "--add", "--cacheinfo", `100644,${b.sha},${b.path}`], { okCodes: [128] });
-        this.writeWorking(b.path, b.content);
-      }
-      return commit;
-    } finally {
+    } catch (e) {
       fs.rmSync(index, { force: true });
+      throw e;
     }
+    this.lastIndex = { file: index, commit };
+    // The commit is made. The checked-out copy only mirrors it for people
+    // reading .factory, so a failure from here on is logged, not reported
+    // as a failed commit.
+    try {
+      await this.git.run(this.factoryDir, ["update-index", "--add", "-z", "--index-info"], { input: entries, okCodes: [128] });
+      for (const b of blobs) this.writeWorking(b.path, b.content);
+    } catch (e) {
+      this.log.warn(`factory/state: commit ${commit.slice(0, 12)} is made, but its files in .factory weren't all updated (${(e as Error).message})`);
+    }
+    return commit;
   }
 
-  /**
-   * Removes the loose objects a refused commit created, so a found secret
-   * doesn't stay in .git. Objects that existed before are left alone: other
-   * commits may hold them.
-   */
-  private async dropObjects(shas: string[]): Promise<void> {
-    for (const sha of shas) {
+  private lastIndex: { file: string; commit: string } | null = null;
+
+  /** Writes the blobs in one git process; resolves to their ids in order. */
+  private async writeBlobs(blobs: Blob[]): Promise<string[]> {
+    if (blobs.length === 1) {
+      return [await this.git.out(this.factoryDir, ["hash-object", "-w", "--no-filters", "--stdin"], { input: blobs[0]!.content })];
+    }
+    ensureOwnerDir(this.tmpDir);
+    const dir = fs.mkdtempSync(path.join(this.tmpDir, "blobs-"));
+    try {
+      const files = blobs.map((b, i) => {
+        const f = path.join(dir, String(i));
+        fs.writeFileSync(f, b.content, { mode: 0o600, flag: "wx" });
+        return f;
+      });
+      const out = await this.git.out(this.factoryDir, ["hash-object", "-w", "--no-filters", "--stdin-paths"], { input: files.join("\n") + "\n" });
+      return out.split("\n");
+    } finally {
       try {
-        const rel = await this.git.out(this.factoryDir, ["rev-parse", "--git-path", `objects/${sha.slice(0, 2)}/${sha.slice(2)}`]);
-        fs.rmSync(path.isAbsolute(rel) ? rel : path.join(this.factoryDir, rel), { force: true });
+        fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
       } catch {
-        this.log.warn("A refused commit's object could not be removed from .git; run `git gc --prune=now` in the repo.");
+        // Clean text already scanned, in the engine's own folder; removed with it.
       }
     }
   }
