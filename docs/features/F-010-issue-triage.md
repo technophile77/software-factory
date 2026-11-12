@@ -1,9 +1,9 @@
 # Feature: Triage GitHub issues into the factory
 
 - **Id:** F-010
-- **Status:** Draft (all open questions decided; next: Gate 1 and the drafts of H-0110 to H-0114)
+- **Status:** Draft (OQ-8 open; then the readiness gate)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 20
+- **Spec version:** 21
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -55,7 +55,7 @@ The owner's existing rules still hold:
    | `needs_info`: the report is missing something needed to triage or reproduce it | Wait for the reporter (10) | "Need more information" |
    | `unclear`: the triager can't yet tell whether the use case is supported or what the inputs and expected output are | Ask the reporter first, as `needs_info` (10). Still unclear after two rounds: treated as a feature request. | "Need more information" with questions |
    | `feature_request`, or a `bug` against a use case that specs, docs and earlier releases don't support | Decision inbox, Product: "Start an interview for this?" (7) | "Feature request" |
-   | `security_report` | Decision inbox, Security, high priority. Never fixed in the open lane (OQ-4). | None. A public reply or label would point at the vulnerability. |
+   | `security_report` | Made private at once (OQ-8, SR-30), then a Security inbox item, high priority. Never fixed in the open lane; handled privately until resolved. | None. A public reply or label would point at the vulnerability. |
    | `duplicate` of an open issue | Recorded | Label only |
    | `question` (the reporter asks how to do something) | Recorded. The factory doesn't answer it. | Label only |
    | `not_actionable` | Recorded | Label only |
@@ -248,7 +248,7 @@ Drafted by the analyst; SR-12 to SR-29 come from Gate 1 (`F-010-security-gate1.m
 | SR-11 | The question slot is the one place a crafted issue could choose words the factory's account posts (owner accepted this risk, OQ-7). Questions only, three at most, each with a checked purpose. The FR-17 filter keeps out links, mentions, references and formatting, and the length cap and one-sentence rule bound the rest. Gate 1 reviews whether that is enough. | Analyst | Draft |
 | SR-12 | Confirmation and fix branches stay local until Gate 2 and validation pass, and the PR opens as a draft. The fix lane is refused on a repo whose workflows give secrets to runs for factory branches. `instructions_found` routes to Security, not to the fix lane. Record text reaches code-writing sessions only as fenced data. Reproduction tests don't spawn processes, read the environment, use the network or run decoded code (subject to the owner's decision). | Gate 1 #1 | Approved (owner, 2026-11-12, decision card) |
 | SR-13 | The test engineer derives the expected output from the cited evidence. A crash fix changes only the crash. Gate 2 stops a fix that loosens a check. The PR body carries a fixed banner. | Gate 1 #2 | Accepted from Gate 1 |
-| SR-14 | Snapshots, records and drop logs live in a private, owner-only store. `factory/state` holds only hashes, kinds, routes, ids and the action log. Security-report material stays private (subject to the owner's decision). Sensitive data is listed. | Gate 1 #3 | Owner chose storage on `factory/state` as drafted (decision card, 2026-11-12). The risks were not stated on the card, so they are put to the owner again (Gate 1 #3). |
+| SR-14 | Sensitive information never goes into a public repo (owner, 2026-11-12, thread). `factory/state` holds issue material except: everything about a `security_report` or a `security_relevant` lane, dropped question text, redacted secret findings, and personal data beyond the GitHub login. Those go only to a private, owner-only store outside every repo, and `factory/state` keeps their hash and id. If the engine can't confirm a repo is private, it treats it as public. | Gate 1 #3 | Approved (owner, 2026-11-12, thread and decision card) |
 | SR-15 | Question checks run on an NFKC-and-confusables fold, with drops for digit and hex runs, spelled-out domains, GitHub autolink forms, mixed scripts, verbatim overlap with the issue, a fixed word list and a profanity list. Questions start with a fixed interrogative. The question is Markdown-escaped. The rendered reply is secret-scanned. Questions are labelled as automated, and a per-repo switch turns them off. | Gate 1 #4 | Accepted from Gate 1 |
 | SR-16 | Issue writes use an issues-only credential on triaged repos, never the owner's account, with short-lived or expiring tokens (subject to the owner's decision). | Gate 1 #5 | Decided: the factory token gains `issues: write` (H-0114), as drafted; that permission covers every repo the token covers, and the engine's fixed call list (SR-17) and per-repo `issues.enabled` limit where it is used (owner, 2026-11-12, decision card) |
 | SR-17 | One GitHub client with a fixed list of calls. It follows links and redirects only to `api.github.com`, and on writes never. Repo and issue ids are checked before each write. Ids are compared as numbers. Responses are validated. Unexpected answers fail closed. | Gate 1 #6 | Accepted from Gate 1 |
@@ -265,6 +265,7 @@ Drafted by the analyst; SR-12 to SR-29 come from Gate 1 (`F-010-security-gate1.m
 | SR-28 | `duplicate_of` must name an open issue the engine has triaged that isn't a security report. Duplicates post nothing about the other issue. | Gate 1 #17 | Accepted from Gate 1 |
 | SR-29 | The action log adds agent, repo id, issue number and a body hash. Dropped text is never logged. | Gate 1 #18 | Accepted from Gate 1 |
 | SR-10 | A `security_report` gets no public reply or label. | Analyst | Draft |
+| SR-30 | A vulnerability report is made private until it is resolved (owner, 2026-11-12, thread): the engine moves it out of public view as OQ-8 decides, before any other step, and the fix happens only in private. Notification emails GitHub already sent when the issue opened can't be recalled; the Security item says so. | Owner | Approved in substance; mechanism in OQ-8 |
 
 ## 10. Interface requirements
 Drafts below. Each is filed as its own hygiene item in the inbox and applied
@@ -478,6 +479,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 18 | 2026-11-12 | Gate 1 #5: issue writes use the factory token with `issues: write`, not a GitHub App (SR-16) | Owner, 2026-11-12 (decision card) |
 | 19 | 2026-11-12 | Corrected v17: the owner did not accept a stated risk; Gate 1 #3 risks put to the owner | — |
 | 20 | 2026-11-12 | Gate 1 #9: per-reporter limits and inbox digest (SR-20, H-0110 limits) | Owner, 2026-11-12 (decision card) |
+| 21 | 2026-11-12 | Owner rule: sensitive information never goes into a public repo (SR-14 adopted); vulnerability reports made private until resolved (SR-30); OQ-8 added | Owner, 2026-11-12 (thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -489,3 +491,4 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | OQ-5 | How does the engine learn of new issues? (a) It checks GitHub every few minutes (default 5) while running, and catches up on start. (b) A GitHub Actions workflow in each repo relays issue events to somewhere the engine reads. Recommended: (a); no inbound port, no new workflow in every repo, and conditional requests cost no rate limit. **Decided: (a).** | Architecture | Decided (owner, 2026-11-12, decision card) |
 | OQ-6 | What about issues already open when triage is turned on? (a) Ignore them; only new issues. (b) Triage the backlog too, inside the daily cap. (c) Ask once when triage is turned on. Recommended: (c). **Decided: (b).** | Product | Decided (owner, 2026-11-12, decision card) |
 | OQ-7 | How specific can "need more information" be? (a) Only items from the fixed list in section 10. (b) The fixed list plus one short question written by the factory, plain text, at most 200 characters, with no links, @-mentions or code. Recommended: (a). The text in (b) would come from a session that read the issue, so a crafted issue could make the factory's account post words chosen by its author. **Decided: (b)**, with the filter in FR-17. | Security | Decided (owner, 2026-11-12, decision card) |
+| OQ-8 | How does the factory make a public vulnerability report private? (a) The engine transfers the issue to a private "security intake" repo of the same owner, named in the manifest (needs only `issues: write` there), then files a Security item; the owner opens a private security advisory and adds the reporter to it. (b) The factory token also gets admin and advisory rights, and the engine opens the draft advisory itself, adds the reporter, then transfers the issue. (c) The owner does it all by hand from a Security item; the issue stays public until then. Recommended: (a). GitHub lets only admins or security managers open advisories, and admin rights for the factory would break least privilege (S8). | Security | Open |
