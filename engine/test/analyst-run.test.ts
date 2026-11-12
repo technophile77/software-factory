@@ -263,4 +263,70 @@ describe("the analyst, wired end to end with fake Docker and SDK (FR-8 to FR-11)
     const report = JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/requirements_interview/requirements-analyst-1.json`));
     expect(report.summary).toContain("interrupted");
   });
+
+  it("ADR 0012: a session that fails at once on resume gives way to a new session from the last commit, in the same resume", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    const s1 = scriptedSdk(async function* ({ next }) {
+      await next();
+      yield { type: "system", subtype: "init", session_id: "s-6" };
+      await next();
+    });
+    const first = await boot(w, runtime(d, s1.sdk));
+    const feature = (await first.c.ok("feature.start", { request: "Export" })).feature as string;
+    await until("the session id", () => runOf(w, feature)?.session_id === "s-6");
+    const run = runOf(w, feature)!;
+    await first.e.crash();
+    engines = [];
+    clients = [];
+    await until("the old group to close", () => d.calls.some((x) => x.args.join(" ") === `network rm factory-${run.id.toLowerCase()}-out`));
+
+    // The trial's failure: the resumed session ends in a second with no model output (F-001, run R-8e78).
+    const s2 = scriptedSdk(async function* ({ next, options }) {
+      await next();
+      if (options.resume) {
+        yield { type: "result", subtype: "error_during_execution", session_id: "s-6", num_turns: 0, errors: ["dangling tool_use"] };
+        return;
+      }
+      yield { type: "system", subtype: "init", session_id: "s-7" };
+      await next();
+    });
+    await boot(w, runtime(d, s2.sdk));
+    await until("the new session", () => s2.seen.length === 2);
+    expect(s2.seen[0]!.resume).toBe("s-6");
+    expect(s2.seen[1]!.resume).toBeUndefined();
+    expect(s2.prompts[1]).toContain("Export");
+    expect(s2.prompts[1]).toContain("Summary of the interview so far");
+    await until("the new session id", () => runOf(w, feature)?.session_id === "s-7");
+    expect(runOf(w, feature)).toMatchObject({ id: run.id, status: "running", resumes: 1 });
+  });
+
+  it("ADR 0012: when the run's session volume is gone, the new session gets the transcript summary", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    const s1 = scriptedSdk(async function* ({ next }) {
+      await next();
+      yield { type: "system", subtype: "init", session_id: "s-8" };
+      await next();
+    });
+    const first = await boot(w, runtime(d, s1.sdk));
+    const feature = (await first.c.ok("feature.start", { request: "Export" })).feature as string;
+    await until("the session id", () => runOf(w, feature)?.session_id === "s-8");
+    const run = runOf(w, feature)!;
+    await first.e.crash();
+    engines = [];
+    clients = [];
+    await until("the old group to close", () => d.calls.some((x) => x.args.join(" ") === `network rm factory-${run.id.toLowerCase()}-out`));
+    d.volumes.delete(runVolume(run.id));
+
+    const s2 = scriptedSdk(async function* ({ next }) {
+      await next();
+      yield { type: "system", subtype: "init", session_id: "s-9" };
+      await next();
+    });
+    await boot(w, runtime(d, s2.sdk));
+    await until("the new session", () => s2.seen.length === 1);
+    expect(s2.seen[0]!.resume).toBeUndefined();
+    expect(s2.prompts[0]).toContain("Summary of the interview so far");
+  });
 });
