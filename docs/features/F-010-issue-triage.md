@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (open questions in section 13)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 1
+- **Spec version:** 2
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -43,7 +43,7 @@ The owner's existing rules still hold:
 
    | Kind | Route |
    |---|---|
-   | `bug` with evidence (OQ-1) | Confirmation step (5) |
+   | `bug` with evidence: it contradicts an approved spec requirement, is a regression from an earlier tagged release, or is a crash or unhandled error on input the docs allow (OQ-1) | Confirmation step (5) |
    | `bug` against behavior no approved requirement covers | Decision inbox, Product: "Treat as a feature request?" |
    | `feature_request` | Decision inbox, Product: "Start an interview for this?" (7) |
    | `unclear` (expected behavior can't be told from specs or docs) | Decision inbox, Product, with the triager's reading as the question |
@@ -198,11 +198,12 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-12 | First draft from the owner's request | — |
+| 2 | 2026-11-12 | OQ-1: a confirmed bug is a spec contradiction, a regression from a tagged release, or a crash on documented input, each shown by a failing test | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
 |---|---|---|---|
-| OQ-1 | What counts as a confirmed bug that the factory may fix without the owner? (a) Only behavior that contradicts an approved spec requirement, shown by a failing test. (b) (a), plus a regression from an earlier tagged release, or a crash or unhandled error on input the docs allow, each shown by a failing test. (c) Whatever the triager judges a bug, if a test reproduces it. Recommended: (b). (a) leaves most issues on onboarded repos with the owner; (c) lets an outside reporter define requirements. | Product | Open |
+| OQ-1 | What counts as a confirmed bug that the factory may fix without the owner? (a) Only behavior that contradicts an approved spec requirement, shown by a failing test. (b) (a), plus a regression from an earlier tagged release, or a crash or unhandled error on input the docs allow, each shown by a failing test. (c) Whatever the triager judges a bug, if a test reproduces it. Recommended: (b). (a) leaves most issues on onboarded repos with the owner; (c) lets an outside reporter define requirements. **Decided: (b).** | Product | Decided (owner, 2026-11-12, decision card) |
 | OQ-2 | How does "requirements approved" (DoD item 1) apply to a fix? (a) The fix spec cites an approved requirement or the OQ-1 evidence, and that stands in for approval; no owner step before the PR. (b) The owner approves each fix spec in the inbox first. Recommended: (a); (b) contradicts "without my input". The owner still merges either way. | Product | Open |
 | OQ-3 | May the factory write to an issue? (a) Never; the PR links the issue and the owner's merge closes it. Anything else the owner does by hand. (b) (a), plus the factory may propose a comment (can't reproduce, duplicate, question answered) as a Security item with the exact text; it posts only on approval (S9.2). (c) An ADR lets it add a fixed set of labels and one templated acknowledgement without asking. Recommended: (b). | Security | Open |
 | OQ-4 | Who may open an issue that reaches the fix lane? (a) Anyone. Confirmation is by the factory's own test, not the reporter's word, and caps bound cost. (b) Only the owner and repo collaborators; others' bugs go to the inbox first. Recommended: (a) for private repos and (b) for public ones, set per repo in the manifest. | Security | Open |
