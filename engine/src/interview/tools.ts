@@ -3,7 +3,9 @@ import { Logger } from "../log";
 import type { Change } from "../state/state-repo";
 import { SecretFound } from "../state/state-repo";
 import { FeatureInterview, InterviewError } from "./feature";
-import { SourceRow, sourcesTable, tableHash, tableProblems } from "./document";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { DocumentMeta, SourceRow, sha256, sourcesTable, tableHash, tableProblems } from "./document";
 import { Finding, ItemContent, QUESTION_TYPES, QuestionType, WireItem } from "./model";
 import { Check, SpecPathRefused, readSpec, readinessChecks } from "./readiness";
 
@@ -81,6 +83,27 @@ function itemContent(a: Record<string, unknown>, full: boolean, fromDocument = f
     c.type = a.type as QuestionType;
   }
   return c;
+}
+
+/** The branch's copy of the source document, read without following links, against the recorded hash (Gate 2 L1). */
+function branchCopyIntact(worktree: string, d: DocumentMeta): boolean {
+  let fd: number;
+  try {
+    fd = fs.openSync(path.join(worktree, ...d.path.split("/")), fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+  } catch {
+    return false;
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size !== d.bytes) return false;
+    const buf = Buffer.alloc(st.size);
+    fs.readSync(fd, buf, 0, st.size, 0);
+    return sha256(buf) === d.sha256;
+  } catch {
+    return false;
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function itemId(v: unknown): string {
@@ -232,7 +255,10 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
       run("interview_spec_ready", async () => {
         const { specPath, specVersion: version, spec } = specArgs(args);
         const a = { spec_path: specPath, spec_version: version };
-        const checks = readinessChecks({ spec, specVersion: version, state: f.state, chainIntact: f.chainIntact && !f.remoteRefused });
+        const sourceIntact = f.state.document ? branchCopyIntact(ctx.worktree, f.state.document) : undefined;
+        const checks = readinessChecks({
+          spec, specVersion: version, state: f.state, chainIntact: f.chainIntact && !f.remoteRefused, ...(sourceIntact !== undefined ? { sourceIntact } : {}),
+        });
         const passed = checks.every((c) => c.passed);
         // A transcript someone else changed can't take more entries; the failed check is the answer.
         if (!f.chainIntact) return { checks };

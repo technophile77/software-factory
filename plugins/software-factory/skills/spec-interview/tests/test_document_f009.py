@@ -98,7 +98,9 @@ class StartFromDocument(Base):
         self.assertEqual(self.engine.calls, [])
 
     def test_sr6_refuses_unc_device_and_stream_paths(self):
-        for path in ("\\\\server\\share\\spec.md", "//server/share/spec.md", "\\\\?\\C:\\spec.md", "\\\\.\\pipe\\x.md"):
+        for path in ("\\\\server\\share\\spec.md", "//server/share/spec.md", "\\\\?\\C:\\spec.md", "\\\\.\\pipe\\x.md",
+                     # Gate 2 H2: mixed separators and the NT prefix.
+                     "/\\host\\share\\doc.md", "\\/host/share/doc.md", "/\\.\\pipe\\x.md", "\\??\\UNC\\host\\s\\d.md"):
             with self.subTest(path=path):
                 code, out = self.start(path)
                 self.assertEqual(code, 2, out)
@@ -110,6 +112,15 @@ class StartFromDocument(Base):
                         ic._document_path(path, self.repo)
             # A plain drive path gets through (here os.path is still POSIX's, so only "no refusal" is checked).
             ic._document_path("C:\\docs\\spec.md", self.repo)
+
+    def test_a_linked_folder_leading_to_a_share_is_refused(self):
+        # Gate 2 L2: the real path, after every link on the way, gets the UNC check too.
+        path = self.write("r.md", DOC)
+        with mock.patch.object(ic.os.path, "realpath", return_value="\\\\host\\share\\r.md"):
+            code, out = self.start(path)
+        self.assertEqual(code, 2, out)
+        self.assertIn("network share", out["display"])
+        self.assertEqual(self.engine.calls, [])
 
     def test_sr14_provenance_and_document_shape_are_checked(self):
         path = self.write("r.md", DOC)

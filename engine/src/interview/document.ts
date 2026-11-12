@@ -46,11 +46,16 @@ export const SOURCE_PATH_RE = /^docs\/features\/F-\d{3,6}-source\.(md|txt)$/i;
 
 // C0 controls other than tab, LF and CR, DEL, and C1 controls (SR-9).
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
-// Characters a reader can't see but a model reads (SR-8): zero-width and joiners, bidi marks,
-// embeddings, overrides and isolates, invisible operators, the word joiner block, the Mongolian
-// vowel separator, soft hyphen, the Hangul fillers, and the Unicode tag block, which can spell out
-// a whole hidden instruction. A byte order mark is allowed only as the first character.
-const INVISIBLE = /[\u00ad\u034f\u061c\u115f\u1160\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufeff\uffa0]|[\u{e0000}-\u{e007f}]/u;
+// Characters a reader can't see but a model reads (SR-8), by Unicode property
+// rather than a hand list (Gate 2 M1): every format character (bidi controls,
+// zero-width characters and joiners, tags, Arabic number signs, interlinear
+// annotation, musical formatting), private use, unassigned and surrogate code
+// points, plus the invisible characters in visible classes: the combining
+// grapheme joiner, Hangul and Khmer fillers, Mongolian variation selectors,
+// the blank Braille pattern and the variation selectors, which can encode
+// arbitrary bytes. FE0E and FE0F, which pick text or emoji style, stay
+// allowed. A byte order mark is allowed only as the first character.
+const INVISIBLE = /[\p{Cf}\p{Co}\p{Cn}\p{Cs}]|[\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u2800\u3164\uffa0\ufe00-\ufe0d]|[\u{e0100}-\u{e01ef}]/u;
 
 function linesMatching(lines: string[], re: RegExp): number[] {
   const out: number[] = [];
@@ -60,24 +65,33 @@ function linesMatching(lines: string[], re: RegExp): number[] {
   return out;
 }
 
+// Named entities for invisible characters that Markdown renderers decode.
+const INVISIBLE_ENTITIES = /&(shy|zwj|zwnj|lrm|rlm|lre|rle|pdf|lro|rlo|ZeroWidthSpace|NoBreak|InvisibleTimes|InvisibleComma|it|ic|af|ApplyFunction|NegativeVeryThinSpace|NegativeThinSpace|NegativeMediumSpace|NegativeThickSpace|blank);/i;
+
+function hiddenEntity(line: string): boolean {
+  if (INVISIBLE_ENTITIES.test(line)) return true;
+  for (const m of line.matchAll(/&#(x[0-9a-f]{1,8}|[0-9]{1,9});/gi)) {
+    const cp = m[1]![0]!.toLowerCase() === "x" ? parseInt(m[1]!.slice(1), 16) : parseInt(m[1]!, 10);
+    if (cp > 0x10ffff || CONTROL.test(String.fromCodePoint(cp)) || INVISIBLE.test(String.fromCodePoint(cp))) return true;
+  }
+  return false;
+}
+
 /**
- * Markdown lines whose HTML a renderer would hide or interpret (SR-8): an HTML
- * comment, anywhere it opens or continues, and any raw tag outside code. Text
- * inside fenced or inline code is shown as written, so it isn't hidden.
+ * Lines with anything a Markdown renderer could hide or interpret as HTML
+ * (SR-8): an HTML comment, from where it opens to where it closes; a tag
+ * name after `<` or `</`, even at the end of a line; a declaration, CDATA or
+ * processing instruction; and an entity for an invisible character. These are
+ * refused even inside code: renderers disagree on where code starts and ends
+ * (escaped backticks, indented and list-item fences, info strings), so a
+ * check that skips code can be led past HTML that a renderer shows as HTML
+ * (Gate 2 H1). The owner can write `&lt;` for a literal `<`.
  */
 export function hiddenMarkdownLines(lines: string[]): number[] {
   const hits = new Set<number>();
-  let fence: string | null = null;
   let inComment = false;
   lines.forEach((raw, i) => {
-    const f = /^\s{0,3}(`{3,}|~{3,})/.exec(raw);
-    if (!inComment && f) {
-      if (!fence) fence = f[1]![0]!.repeat(f[1]!.length);
-      else if (f[1]!.startsWith(fence)) fence = null;
-      return;
-    }
-    if (fence) return;
-    let line = raw.replace(/(`+)[\s\S]*?\1/g, "");
+    let line = raw;
     if (inComment) {
       hits.add(i + 1);
       const end = line.indexOf("-->");
@@ -87,11 +101,9 @@ export function hiddenMarkdownLines(lines: string[]): number[] {
     }
     if (line.includes("<!--")) {
       hits.add(i + 1);
-      const rest = line.slice(line.indexOf("<!--") + 4);
-      if (!rest.includes("-->")) inComment = true;
+      if (!line.slice(line.lastIndexOf("<!--") + 4).includes("-->")) inComment = true;
     }
-    // A tag, a closing tag, a declaration or a processing instruction (CommonMark's raw HTML).
-    if (/<\/?[a-z][a-z0-9-]*(\s[^>]*)?\/?>|<![a-z]|<\?[a-z]/i.test(line)) hits.add(i + 1);
+    if (/<\/?[a-z][a-z0-9-]*(?=[\s/>]|$)|<!|<\?/i.test(line) || hiddenEntity(line)) hits.add(i + 1);
   });
   return [...hits].sort((a, b) => a - b);
 }
@@ -119,7 +131,9 @@ export function validateDocument(raw: unknown): SourceDocument {
   const control = linesMatching(lines, CONTROL);
   if (control.length) throw bad("document.text has control characters other than tab, LF and CR.", control);
   const hidden = new Set(linesMatching(lines, INVISIBLE));
-  if (d.media_type === "text/markdown") for (const n of hiddenMarkdownLines(lines)) hidden.add(n);
+  // Plain text gets the same HTML checks (SR-8 doesn't limit them to Markdown): the analyst or a
+  // viewer may still render it, and the owner can write it without HTML.
+  for (const n of hiddenMarkdownLines(lines)) hidden.add(n);
   if (hidden.size) {
     throw new DocumentRefused("hidden_content", "The document has text a reader can't see (an HTML comment, raw HTML, or a zero-width or bidi character); remove it and try again.", [...hidden].sort((a, b) => a - b));
   }

@@ -151,6 +151,8 @@ export function readinessChecks(input: {
   specVersion: number;
   state: InterviewState;
   chainIntact: boolean;
+  /** For a document-started feature: whether the branch's copy still matches the stored hash (Gate 2 L1). */
+  sourceIntact?: boolean;
 }): Check[] {
   const { spec, state } = input;
   const checks: Check[] = [];
@@ -202,6 +204,13 @@ export function readinessChecks(input: {
 
   // Interview tools v1.1 (SR-7): for the owner's own document, the latest
   // confirmation must be approved and built from the spec's current table.
+  if (state.document) {
+    checks.push({
+      name: "source_unchanged",
+      passed: input.sourceIntact === true,
+      evidence: input.sourceIntact === true ? `${state.document.path} matches the SHA-256 recorded at the start.` : `${state.document.path} is missing, not a regular file, or changed since the start.`,
+    });
+  }
   if (state.document?.provenance === "owner") {
     const confirmations = state.list("source_confirmation");
     const latest = confirmations[confirmations.length - 1];

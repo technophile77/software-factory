@@ -700,9 +700,13 @@ def _document_path(raw, cwd):
     if not isinstance(raw, str) or not raw.strip() or "\x00" in raw or len(raw) > 4096:
         raise _refuse_doc("The document path must be a file path.")
     p = raw.strip()
-    if os.name == "nt" or p.startswith("\\\\") or p.startswith("//"):
-        if p.startswith(("\\\\", "//")):
-            raise _refuse_doc("Network (UNC) and device paths aren't accepted; copy the file to a local folder.")
+    # Windows reads a slash and a backslash alike, so any two leading separators, in any mix,
+    # start a UNC or device path, as does the NT prefix backslash-??-backslash (Gate 2 H2).
+    # Refused on every OS, so a test on one shows what another would do.
+    unified = p.replace("/", "\\")
+    if unified.startswith(("\\\\", "\\??\\")):
+        raise _refuse_doc("Network (UNC) and device paths aren't accepted; copy the file to a local folder.")
+    if os.name == "nt":
         # A colon is only a drive letter's: "C:file" is drive-relative and "file:name" is a data stream.
         if ":" in p and not re.fullmatch(r"[A-Za-z]:[\\/][^:]*", p):
             raise _refuse_doc("That isn't a plain local file path.")
@@ -719,6 +723,9 @@ def read_document(raw_path, provenance, cwd):
     if provenance not in DOC_PROVENANCE:
         raise Refused("bad_request", "`document.provenance` must be owner or reference, from the owner's pick.")
     path = _document_path(raw_path, cwd)
+    # A linked folder on the way could lead to a share (Gate 2 L2): the real path gets the same check.
+    if os.path.realpath(path).replace("/", "\\").startswith(("\\\\", "\\??\\")):
+        raise _refuse_doc("The document's folder links to a network share or device; copy the file to a local folder.")
     media = DOC_TYPES.get(os.path.splitext(path)[1].lower())
     if media is None:
         raise _refuse_doc("Only Markdown (.md, .markdown) and plain text (.txt) documents are accepted; "
