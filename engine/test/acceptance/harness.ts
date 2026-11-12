@@ -43,6 +43,9 @@ export interface EngineOptions {
   };
   /** Called at start for each interrupted analyst run the engine resumes (FR-14). */
   resumeAnalyst?: (r: ResumedRun) => void;
+  /** Milestone 2: what the engine runs agents with (README "In-process API", `agents`):
+   * `{ docker, sdk, dockerDir, proxyScript }`. Passed through untouched. */
+  agents?: unknown;
 }
 
 /** A run in the engine record (FR-14 bookkeeping). */
@@ -136,6 +139,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     clock: o.clock,
     env: o.env,
     push: true,
+    ...(o.agents ? { agents: o.agents } : {}),
     resumeAnalyst: o.resumeAnalyst
       ? (r: { feature: string; worktree: string; tools: Record<string, any>; plan: ResumedRun["plan"] }) =>
           o.resumeAnalyst!({ ...r, tools: toolsByName(r.tools) })

@@ -290,6 +290,8 @@ export class World {
    * runs several times slower, so only tests that read the log turn it on. */
   logGit = false;
   readonly sessionTokens: string[] = [];
+  /** Milestone 2: the engine's `agents` runtime (a fake or real Docker and an SDK); none means no agent runs. */
+  agents?: unknown;
 
   private constructor(tls?: { key: string; cert: string }) {
     this.root = mkdtempSync(join(tmpdir(), `f007-${++counter}-`));
@@ -314,18 +316,18 @@ export class World {
 
   static async create(
     specs: ProjectSpec[] = [{}],
-    opts: { tls?: { key: string; cert: string }; writeProjectsFile?: boolean; logGit?: boolean } = {},
+    opts: { tls?: { key: string; cert: string }; writeProjectsFile?: boolean; logGit?: boolean; agentFiles?: boolean } = {},
   ): Promise<World> {
     const w = new World(opts.tls);
     w.logGit = opts.logGit ?? false;
     await w.gh.start();
-    w.makeMaster();
+    w.makeMaster(opts.agentFiles ?? false);
     specs.forEach((s, i) => w.addProject(s, i));
     if (opts.writeProjectsFile !== false) w.writeProjectsFile(w.projects.map((p) => p.configRepo));
     return w;
   }
 
-  private makeMaster() {
+  private makeMaster(agentFiles: boolean) {
     mkdirSync(this.master);
     git(this.master, "init", "-q", "-b", "main");
     writeFileSync(join(this.master, "README.md"), "# software-factory (fixture)\n");
@@ -334,6 +336,13 @@ export class World {
     mkdirSync(join(this.master, "engine", "config"), { recursive: true });
     writeFileSync(join(this.master, "engine", "config", "limits.yaml"), readFileSync(join(REPO_ROOT, "engine", "config", "limits.yaml")));
     writeFileSync(join(this.master, "engine", "config", "models.yaml"), readFileSync(join(REPO_ROOT, "engine", "config", "models.yaml")));
+    // A role runs only with an AGENT.md at factory.version (SR-10), so worlds that run agents carry the real two.
+    if (agentFiles) {
+      for (const role of ["requirements-analyst", "web-reader"]) {
+        mkdirSync(join(this.master, "agents", role), { recursive: true });
+        writeFileSync(join(this.master, "agents", role, "AGENT.md"), readFileSync(join(REPO_ROOT, "agents", role, "AGENT.md")));
+      }
+    }
     git(this.master, "add", "-A");
     git(this.master, "commit", "-q", "-m", "master root");
     git(this.master, "tag", "v0.1.0");
@@ -464,6 +473,7 @@ export class World {
         runtimeDir: this.runtimeDir,
       },
       resumeAnalyst: (r) => this.analyst.resume(r),
+      ...(this.agents ? { agents: this.agents } : {}),
     };
   }
 

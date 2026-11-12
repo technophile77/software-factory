@@ -1,6 +1,6 @@
-# F-007 test plan: milestone 1 (no Docker)
+# F-007 test plan: milestone 1 (no Docker) and milestone 2 (agents)
 
-- **Feature:** F-007 Run spec interviews on the real engine, spec v21
+- **Feature:** F-007 Run spec interviews on the real engine, spec v21 (milestone 1); spec v38 (milestone 2, below)
 - **Author:** test-engineer, 2026-11-11
 - **Scope:** milestone 1 of 2: config and manifest loading, pinned owner
   keys, credential store, control channel and its access checks, GitHub
@@ -193,3 +193,112 @@ These are not assumed. Each test that touches one says what it accepts.
    only checks it doesn't wait past 900 s and isn't `approved`.
 7. **Over-limit `wait_s` and malformed ids:** refused or clamped is not
    stated; the tests accept either -32602 or the contract's own code.
+
+---
+
+# Milestone 2: agents in containers
+
+- **Feature:** F-007, spec v38 (change log rows 22 to 38 read for owner
+  decisions that touch these criteria: v24 coverage tool, v30 and v32 agent
+  sources and models, v33 gateway rules, v37 and v38 image).
+- **Author:** test-engineer, 2026-11-12.
+- **Scope:** the criteria validation found without an independent test
+  (F-007-validation.md, M1): AC-8, AC-9, AC-13, AC-14, AC-15, AC-16, AC-17
+  and AC-21, with the SRs behind them (SR-6 to SR-10, SR-12, SR-21).
+- **Written from:** the spec (§2, FR-8, FR-9, FR-14, AC table, SR-6 to
+  SR-10, SR-12, SR-21, H-0083, H-0087), `interface-contracts.md` (Role policy
+  v2.5, Interview tools v1.0) and the template's Role policy for
+  `requirements-analyst` and `web-reader`. How to drive the engine came from
+  `engine/README.md` ("In-process API", the `agents` option) and the seam
+  types the engine takes as input (`src/agent/sdk.ts`, `src/agent/runtime.ts`,
+  `src/docker/cli.ts`), plus the `docker` command lines the engine issues, so
+  the fake Docker answers them as Docker would. The developer's tests were
+  not read; `test/claude-real.test.ts` was read only for how the real binary
+  and a fake Messages API are wired, as the orchestrator allowed. Its
+  assertions were not used.
+- **Where:** `engine/test/acceptance/`: `agents.test.ts` (AG), `reader.test.ts`
+  (RW), `settings-isolation.test.ts` (CS), `containers-real.test.ts` (DR), with
+  `support/fake-docker.ts` and `support/agents.ts`.
+
+## Approach
+
+Each test starts the whole engine through the harness, as milestone 1 does,
+and adds the engine's `agents` runtime (`{ docker, sdk, dockerDir,
+proxyScript }`). `feature.start` then runs the analyst exactly as for the
+owner: worktree, image, networks, proxy sidecar, container, Agent SDK
+session, commit and write check. Three ways to stand in for what a test
+machine lacks:
+
+| Stand-in | What it replaces | Why it keeps the test black box |
+|---|---|---|
+| Fake `docker` client (`support/fake-docker.ts`), a Node program the engine runs by absolute path, like the fake gitleaks | The Docker daemon | It sits at the process boundary the spec fixes (OQ-5: the `docker` command line). It keeps containers, networks, volumes and images as files, answers `inspect` from what `run` was really asked, and refuses what Docker refuses: an unknown flag, a missing image, a write to a read-only root or mount. `exec` is the agent's process in its container: its file actions go through that container's mounts only. The proxy sidecar is a stand-in that speaks the engine's stdio protocol and serves pages from a table (the network). A `down` switch makes every command fail as the client does when the daemon is stopped |
+| Fake Agent SDK (`support/agents.ts`) | The model and Claude Code | Each session runs a behaviour the test gives for its role. It can only do what an agent can: call its `factory` tools, and start "Claude Code" through the engine's own spawn (`spawnClaudeCodeProcess`), which the engine runs as `docker exec` in the container. What a tool call returns is recorded as what reached the agent |
+| Real Docker, gated (`containers-real.test.ts`) | Nothing | The engine builds and runs the real agent image, proxy and networks. Only the model is missing: the fake SDK holds each session open while the test probes the containers the engine made from inside, with `docker exec` and the image's own Node |
+
+AC-17 needs Claude Code itself, so `settings-isolation.test.ts` runs the real
+Claude Code 2.1.311 binary from the SDK package (`node_modules/@anthropic-ai/
+claude-agent-sdk-<platform>`) through the real SDK, with the engine's fixed
+session options (`sessionOptions`, SR-10), in a scratch folder, against a
+local fake Messages API on loopback with a dummy key. No credential, no
+network. In the product Claude Code runs only in the container, so this runs
+it on the host the same way, which is the part of SR-10 the container
+doesn't decide (what Claude Code loads from its working folder).
+
+The gated tests run only with `FACTORY_DOCKER_TESTS=1`, after
+`npm run build` (the proxy runs `dist/proxy.js`). They need the internet on
+the first run (base image, `npm` and `deb.debian.org` for the image build,
+v38), and DR-5 and DR-6's controls need it too (example.com).
+
+## Criteria to tests (milestone 2)
+
+| Criterion | Tests | Kind |
+|---|---|---|
+| AC-8 | DR-1 (non-root, read-only root, `/tmp` writable as control, no Docker socket), DR-2 (a marker file in the owner's real home, `engine.json` by name and by its socket path, and any engine or Docker socket: none found anywhere in the container's file system; the only host folder is `/workspace`), DR-3 (a host outside the analyst's policy is refused with its own credential) | Real Docker, gated |
+| AC-9 | AG-4 (control: own spec only is committed, no Security item), AG-5 ×5 (spec plus `.github/workflows/…`, `agents/…/AGENT.md`, `.claude/settings.json`, `CLAUDE.md`, `src/app.ts`: nothing committed locally or on the remote, run failed, a Security item names the path), AG-6 (a deletion outside the rules), AG-7 (a symlink inside `docs/features/`, SR-12) | Fakes |
+| AC-13 | AG-1 (daemon stopped: no Docker command succeeds, no SDK session, run `interrupted` with no resume counted, the transcript says no session started and why), AG-2 (control: daemon up, proxy and analyst containers and one session), AG-3 (Docker back at the next start: the same run starts its session) | Fakes |
+| AC-14 | DR-3 (direct to 1.1.1.1:443, 8.8.8.8:53, example.com:443, `host.docker.internal` :443 and :80 all fail; CONNECT with no credential and with a wrong one is 407), DR-6 (the same from the reader, with 407 without a credential) | Real Docker, gated |
+| AC-15 | DR-4 (fetch_page for 127.0.0.1, localhost, 10.0.0.1, 192.168.1.1, 169.254.169.254, [::1] and `localtest.me`, a public name for 127.0.0.1: every call an error, no page text), DR-5 (control: example.com is fetched), DR-6 (CONNECT with the reader's own credential: 403 for each of those, and for port 80; 200 for example.com:443 as control) | Real Docker, gated |
+| AC-16 | DR-2 (the credential in no file, no process environment under `/proc`, not in the exec'd environment, not in `docker inspect` `Config.Env`; the API key is a dummy), DR-7 (the same for the reader's container) | Real Docker, gated |
+| AC-17 | CS-1 (engine options: no hook from `.claude/settings.json`, `settings.local.json` or the user's settings runs, the `.mcp.json` server doesn't start, and no text of `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md` or the user's `CLAUDE.md` reaches the model, while the session's own Read does), CS-2 (control: with the user, project and local sources on, every marker and every level's hooks load) | Real binary |
+| AC-21 | RW-1 (HTML: comment, `<script>`, `<style>`, `hidden`, inline `display:none` and `visibility:hidden`, `<template>`, 5 zero-width and 11 bidi characters: none reach the reader; the visible text does), RW-2 (plain text page), RW-3 (SR-21: the reader has `fetch_page` and no `WebFetch`, its fetch went through the proxy, `research_web` returns the fetched page as its source) | Fakes |
+| SR-6, SR-7 | DR-3, DR-6 | Real Docker, gated |
+| SR-8 | DR-4, DR-6 | Real Docker, gated |
+| SR-9 | DR-2 (dummy key), DR-7 | Real Docker, gated |
+| SR-10 | CS-1, CS-2, AG-4 (the agent process starts as one `docker exec` into the analyst container) | Real binary, fakes |
+| SR-12 (end-of-session symlink) | AG-7 | Fakes |
+| SR-21 | RW-1 to RW-3 | Fakes |
+| FR-14 (session never started) | AG-1, AG-3 | Fakes |
+
+## Tool choice (milestone 2 additions)
+
+| Test type | Best fit and why | Tool used | Owner decision |
+|---|---|---|---|
+| Acceptance, no Docker | Vitest driving the whole engine, with a fake `docker` program at the command-line boundary (OQ-5) and a fake SDK at the engine's SDK seam: runs on every CI OS, sees every command and tool result | Vitest + `support/fake-docker.ts`, `support/agents.ts` | OQ-9; no new component |
+| Acceptance, real Docker | Docker Desktop (WSL2) on the owner's PC, the engine's own runtime. Only a real daemon shows network isolation, mounts and the image's user | Docker Desktop, engine `docker` command line | Spec §7, ADR 0015 (already the product's runtime) |
+| Acceptance, real Claude Code | The Claude Code 2.1.311 binary the SDK package ships, already approved and pinned (OQ-4); a fake Messages API on Node's `http` | Claude Code 2.1.311, Node `http` | OQ-4 |
+| Coverage (reported) | `@vitest/coverage-v8` 5.1.0, matching the runner | `@vitest/coverage-v8` 5.1.0 | OQ-9 follow-up, spec v24 |
+
+## What isn't tested here, and why (milestone 2)
+
+| Item | Why |
+|---|---|
+| Text hidden only by a stylesheet class rule (AC-21) | Validation M6(b) proposes accepting it as a residual risk until Alpha; the owner hasn't decided. RW-4 is written as a skip that says so, to be unskipped if the owner asks for the fix |
+| `WebSearch` through the gateway (SR-21, §2 step 5) | Validation M2 is with the owner. Nothing here can tell whether Claude Code's search would pass without a real model call |
+| A planted `.mcp.json` server with a control | CS-1 checks the server doesn't start; there is no control showing it would start with `strictMcpConfig` off, because a project MCP server also needs approval in Claude Code. SR-10's `strictMcpConfig` is checked only by that negative |
+| AC-17 inside the container | The engine runs Claude Code only in its container; CS-1 runs the same binary on the host with the engine's options. The container adds nothing to what Claude Code loads from its working folder |
+| AC-8's engine socket on Windows | A Windows named pipe isn't a file a Linux container can see; DR-2 looks for the socket by path and name on every host |
+| `localtest.me` when DNS fails | If the proxy can't resolve it, the refusal is "didn't resolve" (502 for CONNECT), and DR-6 fails rather than pass on a wrong reason. It needs the internet like the controls |
+| SR-14 post-start `inspect` mismatches, SR-18 caps, FR-13 report fields | Not in the criteria validation asked for here; the fake Docker would let them be added (a doctored `inspect`, a session over a cap) |
+
+## Spec and contract gaps found (milestone 2)
+
+1. **"The owner is told why" (AC-13) has no channel surface.** The engine
+   writes an `analyst_session` entry ("No analyst session started: … The
+   run resumes at the next engine start.") to the feature's transcript and
+   logs the Docker error. The control channel has no method that shows it:
+   `engine.status` gives only `active_agents`. AG-1 checks the transcript.
+   Whether the skill should show it is a Product or Interfaces question.
+2. **AC-9 says "its commits are rejected".** In the engine the analyst makes
+   no commits of its own; the engine commits after the session (FR-11). The
+   tests read AC-9 as "nothing the session changed is committed", which is
+   what FR-9 says.
