@@ -3,7 +3,7 @@
 - **Id:** F-008
 - **Status:** In review
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 6
+- **Spec version:** 7
 
 This is part of the engine's increment 3 ("Requirements to ready", F-007
 section 13). The owner chose to build Security Gate 1 on its own first
@@ -135,7 +135,7 @@ approved security requirements are in the spec.
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | After findings are resolved, the engine's check (FR-9) is enough; the reviewer does not run a second time on the revised spec. | | Pending |
+| A-1 | After findings are resolved, the engine's check (FR-9) is enough; the reviewer does not run a second time on the revised spec. | Owner, decision card, 2026-11-12 | Approved |
 | A-2 | The reviewer reads the feature's interview transcript, because answers there shape what the spec means. | | Pending |
 
 ## 9. Security considerations
@@ -212,3 +212,4 @@ Asked one at a time. None is assumed.
 | 4 | 2026-11-12 | OQ-3: Gate 1 requirements go to the owner as interview questions; choices between options go to the inbox | Owner, 2026-11-12 (decision card) |
 | 5 | 2026-11-12 | OQ-4: pinned factory standards plus the project's additions | Owner, 2026-11-12 (decision card) |
 | 6 | 2026-11-12 | Security Gate 1 (`F-008-security-gate1.md`): SR-4 tightened, SR-7 to SR-12, FR-13 added, FR-1 and FR-9 tightened, AC-12 to AC-18 | Pending owner approval with the spec |
+| 7 | 2026-11-12 | A-1 approved: no second reviewer run after findings are resolved | Owner, 2026-11-12 (decision card) |
