@@ -181,6 +181,11 @@ describe.skipIf(!ON)(`F-007 milestone 2 on a real Docker daemon (AC-8, AC-14, AC
     readerGo.open();
     if (homeDir) rmSync(homeDir, { recursive: true, force: true });
     await w?.cleanup();
+    // The engine keeps a stopped run's session volume so the run can resume (FR-14); this run never will.
+    if (docker) {
+      const vols = (await docker.out(["volume", "ls", "-q", "--filter", "label=factory.project=proj0"]).catch(() => "")).split(/\s+/).filter((v: string) => /^factory-r-[0-9a-f]+-session$/.test(v));
+      for (const v of vols) await docker.run(["volume", "rm", v], { okCodes: [1] }).catch(() => undefined);
+    }
   }, 120_000);
 
   it("[DR-1] AC-8: the analyst runs as a non-root user with a read-only root file system, and no Docker socket", { timeout: 300_000 }, async () => {
@@ -251,7 +256,8 @@ describe.skipIf(!ON)(`F-007 milestone 2 on a real Docker daemon (AC-8, AC-14, AC
   it("[DR-5] AC-15 (control): the same fetch_page reaches a public page (needs the internet)", () => {
     const f = fetches[CONTROL_URL]!;
     expect(f.isError, JSON.stringify(f.value)).toBe(false);
-    expect(String((f.value as any).text)).toMatch(/Example Domain/);
+    // example.com's wording changes now and then; either version proves real page text came back.
+    expect(String((f.value as any).text)).toMatch(/Example Domain|documentation examples/);
   });
 
   it("[DR-6] AC-15 / SR-8: CONNECT from the web reader's container with its own credential is refused for loopback, private and link-local addresses, a name resolving to 127.0.0.1, and any port but 443", { timeout: 300_000 }, async () => {
