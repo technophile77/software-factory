@@ -3,7 +3,7 @@
 - **Id:** F-009
 - **Status:** Approved (readiness gate passed 2026-11-12); in development
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 11
+- **Spec version:** 12
 
 ## 1. Objective and business purpose
 The owner often has a finished spec or a working document before a feature
@@ -177,6 +177,7 @@ Passed 2026-11-12 (orchestrator check on spec v6):
 | 9 | 2026-11-12 | Engine reports `capabilities: ["document"]` in engine.json and `engine.status`; the client checks it before reading a document (channel v1.4 text amended; closes Gate 2 L3) | Owner, 2026-11-12 (decision card) |
 | 10 | 2026-11-12 | SR-8 and AC-10 extended to Markdown link reference definitions with a title or no use, and links or images with empty text (Gate 2 M2) | Owner, 2026-11-12 (decision card) |
 | 11 | 2026-11-12 | FR-8: the source confirmation shows and locks each spec line; quotes need 5 words or 25 characters and sit in one block under the named heading (Gate 2 M3); Interview tools v1.1 and channel v1.4 text amended | Owner, 2026-11-12 (decision card) |
+| 12 | 2026-11-12 | AC-4 to AC-8 (and the model parts of FR-6, FR-7, FR-9, SR-1, SR-12) accepted at Rapid prototype on the engine-side evidence with the scripted analyst; a real-analyst evaluation against sample documents is a known issue that blocks promotion to Alpha (validation M3) | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |

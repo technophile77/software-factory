@@ -1,6 +1,6 @@
 # F-009 Developer completion report
 
-- **Feature:** F-009 Start an interview from an existing document, spec v11
+- **Feature:** F-009 Start an interview from an existing document, spec v12
 - **Role:** software-developer
 - **Date:** 2026-11-12
 - **Branch:** `claude/project-thread-qzenwf`
@@ -90,6 +90,7 @@ A document inside the owner's repo is named by its repo path and read from the w
 4. **Status words.** A confirmed source list is `approved` and a reopened one is `rejected`, reusing the contract's status values rather than adding new ones.
 
 ## Known issues
+- **Real-analyst evaluation (blocks Alpha).** AC-4 to AC-8 are tested with a scripted analyst only; the owner accepted that at Rapid prototype (spec v12). Before Alpha, run the real analyst against sample documents.
 - SR-13 (budget check at start) deferred to Alpha by the owner, 2026-11-12. Until then the 256 KiB cap is the only size guard.
 - **Existing project manifests.** Under Role policy v2.6, existing manifests must add `docs/features/*-source.md` and `docs/features/*-source.txt` to every outside writer's `write.deny`. Without them the engine refuses the project. This includes the e2e trial config repo.
 - The plugin's Python tests aren't run by GitHub CI, as before this feature. They were run here on Linux. The Windows checks in `tests/windows` weren't run.
