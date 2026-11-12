@@ -3,7 +3,7 @@
 - **Id:** F-008
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 3
+- **Spec version:** 4
 
 This is part of the engine's increment 3 ("Requirements to ready", F-007
 section 13). The owner chose to build Security Gate 1 on its own first
@@ -43,10 +43,13 @@ approved security requirements are in the spec.
    `docs/features/<feature>-security-gate1.md`, after the secrets scan.
 5. If there are no findings, the feature moves to `readiness_gate`.
 6. Findings the reviewer resolves with a new or tightened security
-   requirement go back to the requirements analyst, who puts them to the
-   owner (OQ-3). Findings that need the owner's choice between options are
-   filed as Security items in the decision inbox, and the feature waits
-   (`blocked`) until they are decided (OQ-3).
+   requirement send the feature back to `requirements_interview`. The
+   analyst gets the findings as data and puts each requirement to the owner
+   as an interview question with the requirement as its suggested answer;
+   the owner approves, changes or rejects it in the spec interview as usual
+   (OQ-3). Findings that need the owner's choice between options are filed
+   as Security items in the decision inbox, and the feature waits
+   (`blocked`) until they are decided, which needs the next feature.
 7. Once every finding is resolved by an approved requirement in the spec,
    and the spec passes the interview checks again, the feature moves to
    `readiness_gate`. The full readiness gate and reading inbox decisions
@@ -64,7 +67,7 @@ approved security requirements are in the spec.
 | FR-5 | After the session, the engine validates the report file: valid JSON within a size cap, the right schema, role, feature, stage and commit, known criterion ids from the standards it gave, known severities, every checklist question answered, text within caps. If it is missing or invalid, the engine resumes the same session once with the reasons; if it is still invalid, the run fails and nothing from it is committed. |
 | FR-6 | For a valid report, the engine renders `docs/features/<feature>-security-gate1.md` in the layout the factory's existing Gate 1 reports use, then scans and commits the report and the rendering on the feature branch (ADR 0012). |
 | FR-7 | A report with no findings moves the feature to `readiness_gate`. |
-| FR-8 | Findings handled per OQ-3: each finding is either sent to the requirements analyst as a requirement to put to the owner, or filed as a Security item in the decision inbox with the reviewer's options and recommendation. A feature with any open Security item from its Gate 1 is `blocked`. |
+| FR-8 | Findings handled per OQ-3. A finding with a suggested requirement moves the feature back to `requirements_interview`; the next analyst session gets every such finding, quoted as data, and asks one interview question per finding (Interview tools v1.0 `interview_ask`, the requirement as `suggested`), citing the finding. A finding marked `needs_owner` is filed as a Security item in the decision inbox with the reviewer's options and recommendation, and the feature is `blocked` while any is open. |
 | FR-9 | Before moving to `readiness_gate` after findings, the engine checks every finding is resolved: a security requirement in the spec's section 9 that cites the finding, with status Approved, or a decided Security item. A finding that isn't resolved keeps the feature at `security_gate_1` and the check's evidence names it. |
 | FR-10 | Gate 1 runs are resumable and interruptible as analyst runs are (FR-14 of F-007, with the restart-recovery fix), within `MAX_RESUMES`. A run that fails is recorded in the transcript, the engine log and the agent report, with the reason. |
 | FR-11 | The reviewer's model and session limits come from the master's `engine/config/models.yaml` and `engine/config/limits.yaml` at the pinned factory version, through hygiene item H-0095; the engine has no defaults. A project's `limits:` may only lower them. |
@@ -133,8 +136,8 @@ approved security requirements are in the spec.
 ## 10. Interface requirements
 - H-0095: `security-reviewer` entries in `engine/config/models.yaml` and
   `engine/config/limits.yaml` (change-controlled; values to be proposed).
-- OQ-3 may change how the analyst receives Gate 1 findings (Interview tools
-  v1.0 amendment) if findings go back through the interview.
+- Interview tools v1.0 are used as they stand: Gate 1 requirements are
+  ordinary questions with a suggested answer (OQ-3).
 - Role policy v2.5 is used as it stands (OQ-2).
 - H-0096: Agent report v1.3 adds optional `security-reviewer` body fields
   for Gate 1, `checklist` (question, answer), `permissions_added`,
@@ -157,7 +160,7 @@ Asked one at a time. None is assumed.
 |---|---|---|---|
 | OQ-1 | Build Gate 1 on its own first, or all of increment 3 together? | Product | Decided: Gate 1 first, the rest of increment 3 next (owner, decision card, 2026-11-12) |
 | OQ-2 | How the reviewer hands in its report: engine tools that validate it (new contract), or by writing `.factory/runs/**/security-reviewer-*.json` as its role policy allows, checked afterwards. | Interfaces | Decided: the reviewer writes the report file its role policy allows; the engine checks it after the session (owner, decision card, 2026-11-12) |
-| OQ-3 | How Gate 1 findings reach the spec with the owner's approval: the analyst puts each new requirement to the owner in the interview, and only choices between options go to the inbox; or every finding goes to the inbox. | Product | Open |
+| OQ-3 | How Gate 1 findings reach the spec with the owner's approval: the analyst puts each new requirement to the owner in the interview, and only choices between options go to the inbox; or every finding goes to the inbox. | Product | Decided: new requirements through the interview, choices between options to the inbox (owner, decision card, 2026-11-12) |
 | OQ-4 | Where the reviewer reads the security standards: the engine supplies the pinned factory's `docs/security-standards.md` plus the project's `standards.security` file, read-only at a fixed path. | Architecture | Open |
 
 ## 13. Change log
@@ -166,3 +169,4 @@ Asked one at a time. None is assumed.
 | 1 | 2026-11-12 | First draft, on the recommended scope of OQ-1 | |
 | 2 | 2026-11-12 | OQ-1: Gate 1 on its own first; inbox reading with signed actions and the full readiness gate next | Owner, 2026-11-12 (decision card) |
 | 3 | 2026-11-12 | OQ-2: the reviewer writes its own report file; the engine validates it after the session, with one correction turn | Owner, 2026-11-12 (decision card) |
+| 4 | 2026-11-12 | OQ-3: Gate 1 requirements go to the owner as interview questions; choices between options go to the inbox | Owner, 2026-11-12 (decision card) |
