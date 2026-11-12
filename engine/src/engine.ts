@@ -74,7 +74,7 @@ export interface EngineOptions {
   push?: boolean;
   /**
    * Starts the analyst again for a run the engine found interrupted (FR-14).
-   * Milestone 2 starts an Agent SDK session here. Without it, the resumed run
+   * Tests replace the real resume through this; without it, the resumed run
    * waits for the next interviewTools call for its feature.
    */
   resumeAnalyst?: (r: { feature: string; worktree: string; tools: InterviewTools; plan: ResumePlan }) => void;

@@ -192,3 +192,24 @@ start-up sweep as session commands, and AG-4 counted one Security item twice
 3. From the milestone 1 report, still open: the first pin of a new project
    (SR-5 wording), `.factory/` in the config repo (validation M4), and error
    `-32000` for a tampered feature.
+
+## Addendum: final commit `797a8e1` (orchestrator, 2026-11-12)
+
+The run above is on `4b21531`. Later commits change only owner-decision
+records, the web-search exception (`22482e2`, spec v39) and two fixes to
+`containers-real.test.ts` found on the owner's PC: DR-5's control now accepts
+example.com's current wording as well as the old one, and the teardown stops
+the engine and removes the run's session volume before the harness folder
+goes. Neither changes what a DR test asserts about the engine.
+
+| Run on `797a8e1` | Result |
+|---|---|
+| Linux, `npx vitest run --coverage` (validation judge) | 500 tests: 486 passed, 0 failed, 14 skipped; lines 87.1%, branches 78.68% |
+| Owner's Windows 11 PC, Docker Desktop 29.9.3, `FACTORY_DOCKER_TESTS=1` `containers-real` | DR-1 to DR-7: 7 of 7 pass; no session volume, container or network left; the DR-2 home marker removed |
+| Owner's PC, `test/docker-real.test.ts` (on `2218fd2`, engine code as `797a8e1`) | 4 of 4 pass |
+| GitHub CI (Linux, macOS, Windows, supply chain, docs) | green on `4504497`; later commits run on push |
+
+Updates to the rows above:
+- AC-8, AC-14, AC-15, AC-16: **pass** (DR-1 to DR-7 on the owner's PC).
+- RW-4: skipped as an accepted residual until Alpha (owner, spec v43), no longer pending.
+- WebSearch: the owner allowed it for the web reader only (spec v39). `claude-real.test.ts` shows the real CLI's search request is refused without the grant and passes with it; there is no independent test of this yet (validation m12).

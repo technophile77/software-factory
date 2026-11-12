@@ -620,3 +620,13 @@ This settles blocked decisions 5 and 6 above.
   - the body isn't a JSON object.
 
   A compressed body gets 415. Each refusal is logged with a reason and never the body. `anthropic-beta` values outside the allow-list in `src/proxy/server.ts` are dropped, and the request still goes. The dropped values are logged after being cleaned to plain tokens. The allow-list is what Claude Code 2.1.311 sent for both the analyst and web-reader models, captured from the real binary, plus `oauth-2025-04-20`. The real-binary test fails if the CLI starts sending a beta that isn't listed.
+
+## After Gate 2 (orchestrator, 2026-11-12)
+
+Changes after the Security Gate 2 fix round, each recorded in the spec change log:
+
+- `8657a80`: info and warn log lines that can't be written fall back to the console, so a shutdown can't fail on them; action records still fail closed (SR-4).
+- `aabaed2`: on Windows, `populateWorktree` refuses any existing entry (links included) before opening, and checks the opened file's real path before writing, because Windows has no `O_NOFOLLOW` (Gate 2 H2).
+- H-0088 (`77bdff2`, `a010208`, `e8a6c0a`, `7d5d8ab`): OSV-Scanner on both lockfiles and the agent image, actions pinned by SHA, the SR-13 placeholder check; only image CVEs with a fix for the image's own Debian release fail CI (spec v36, v37, v40).
+- Spec v37 and v38: base image `node:26.13.1-trixie-slim` by index digest; the agent image's final stage runs Debian's `apt-get upgrade`.
+- `22482e2` (spec v39): the gateway passes `web_search_<date>` only on the web reader's grant with `WebSearch`; every other server tool stays refused.

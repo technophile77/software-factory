@@ -1,16 +1,15 @@
 # Factory engine
 
 The factory engine (ADR 0001, 0003) is a TypeScript Node process. This package
-is F-007 milestone 1, the part that needs no container runtime:
+is F-007, the first engine increment: real spec interviews. It holds:
 
 - config, pinned keys and authorization;
 - OS secrets;
 - the control channel;
 - GitHub device approval;
 - the engine-only interview transcript on `factory/state`;
-- the analyst's interview tools, as plain functions.
-
-Milestone 2 adds the parts that run agents, each tested with fakes:
+- the analyst's interview tools;
+- the parts that run agents in containers:
 
 | Folder | What it holds |
 |---|---|
@@ -27,7 +26,13 @@ SDK's surface the engine uses; `src/agent/sdk-binding.ts` maps it onto the
 real SDK 0.3.311. `.npmrc` sets `legacy-peer-deps=true` (owner decision):
 the SDK's type-only peers aren't installed. The SDK's platform package puts a
 Claude Code binary on the host; the engine never runs it, because every
-session starts Claude Code in its container through the engine's spawn.
+session starts Claude Code in its container through the engine's spawn. Only
+tests run it (`test/claude-real.test.ts`, `test/acceptance/settings-isolation.test.ts`),
+in a scratch folder against a local fake API with a dummy key.
+
+The real-Docker tests are gated: set `FACTORY_DOCKER_TESTS=1` with Docker
+running, then run `npx vitest run --config test/acceptance/vitest.config.mts containers-real`
+and `npx vitest run test/docker-real.test.ts`.
 
 ## Build and test
 
