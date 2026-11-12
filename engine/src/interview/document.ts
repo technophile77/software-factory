@@ -111,10 +111,29 @@ export function hiddenMarkdownLines(lines: string[]): number[] {
 // Markdown's own ways to hide text (SR-8 as extended by the owner, Gate 2 M2).
 // A link reference definition renders as nothing, so one with a title, or one
 // no link uses (the `[//]: # (comment)` idiom), is text only the analyst sees.
-const LINK_DEF = /^ {0,3}\[((?:\\.|[^\\\]])+)\]:[ \t]*(\S*)[ \t]*(.*)$/;
-const TITLE_START = /^[ \t]*["'(]/;
-// A link or image with empty text shows nothing; its title or target is hidden.
-const EMPTY_LINK = /!?\[[ \t]*\](?=[(\[])/;
+// Block quote and list markers, and any indent, are dropped first: a definition
+// inside a quote or list item renders as nothing too (validation M1), and one
+// in an indented code block is refused like HTML in code (Gate 2 H1).
+const CONTAINER = /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*/;
+const LINK_DEF = /^\[((?:\\.|[^\\\]])+)\]:[ \t]*(\S*)[ \t]*(.*)$/;
+const TITLE_START = /^["'(]/;
+const LINK_TEXT = /!?\[([^\]]*)\](?=[(\[])/g;
+const SPACE_ENTITIES = /&(nbsp|ensp|emsp|emsp13|emsp14|numsp|puncsp|thinsp|ThinSpace|hairsp|VeryThinSpace|MediumSpace|NonBreakingSpace|Tab|NewLine);/gi;
+
+// A link or image whose text is only whitespace, invisible characters or
+// entities for them shows nothing; its title or target is hidden.
+function emptyLinkText(line: string): boolean {
+  for (const m of line.matchAll(LINK_TEXT)) {
+    const decoded = m[1]!
+      .replace(SPACE_ENTITIES, " ")
+      .replace(/&#(x[0-9a-f]{1,8}|[0-9]{1,9});/gi, (e, n: string) => {
+        const cp = n[0]!.toLowerCase() === "x" ? parseInt(n.slice(1), 16) : parseInt(n, 10);
+        return cp <= 0x10ffff ? String.fromCodePoint(cp) : e;
+      });
+    if (!decoded.replace(new RegExp(INVISIBLE.source, "gu"), "").replace(/\s/gu, "")) return true;
+  }
+  return false;
+}
 
 function linkLabel(label: string): string {
   return label.trim().replace(/\s+/g, " ").toLowerCase();
@@ -124,9 +143,10 @@ export function hiddenLinkLines(lines: string[]): number[] {
   const hits = new Set<number>();
   const defs: Array<{ line: number; label: string }> = [];
   const defLines = new Set<number>();
+  const bare = lines.map((l) => l.replace(CONTAINER, ""));
   lines.forEach((line, i) => {
-    if (EMPTY_LINK.test(line)) hits.add(i + 1);
-    const m = LINK_DEF.exec(line);
+    if (emptyLinkText(line)) hits.add(i + 1);
+    const m = LINK_DEF.exec(bare[i]!);
     if (!m) return;
     defLines.add(i);
     defs.push({ line: i + 1, label: linkLabel(m[1]!) });
@@ -135,11 +155,11 @@ export function hiddenLinkLines(lines: string[]): number[] {
     let next = i + 1;
     if (!m[2] && next < lines.length) {
       defLines.add(next);
-      title = lines[next]!.trim().replace(/^\S+/, "");
+      title = bare[next]!.trim().replace(/^\S+/, "");
       next++;
     }
     if (title.trim()) hits.add(i + 1);
-    else if (next < lines.length && TITLE_START.test(lines[next]!)) {
+    else if (next < lines.length && TITLE_START.test(bare[next]!)) {
       hits.add(i + 1);
       hits.add(next + 1);
     }

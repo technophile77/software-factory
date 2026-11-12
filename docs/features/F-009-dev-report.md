@@ -61,11 +61,16 @@
 - M3: the owner chose to show and lock the spec lines (2026-11-12). Each source row carries `spec_line`, copied by the engine, and the confirmation's hash covers those lines, so rewording a confirmed requirement fails `sources_confirmed`. Quotes need 5 words or 25 characters, Section must be a document heading (`-` without headings), and a quote must sit in one paragraph, list item or table row under that heading. The item text no longer says "word for word".
 - All Gate 2 findings are now fixed or decided.
 
+## Validation round 1 fixes
+- B1: the acceptance-test `engineJson()` type carries `capabilities`.
+- M1: link definitions inside block quotes, list items and indented lines, and link text made only of whitespace entities or invisible characters, are refused.
+- Minors: the client's hidden-content reason lists the v10 rules; SKILL.md names channel v1.4; `source_unchanged` is stated in Interview tools v1.1.
+
 ## Repo documents
 A document inside the owner's repo is named by its repo path and read from the working copy, uncommitted edits included (owner decision, spec v8). A path that leaves the repo gets the same local checks as any other path. Covered by `test_a_requirements_document_in_the_repo_itself_by_its_repo_path`.
 
 ## Tests
-- Engine: `test/document.test.ts` (new, 25 tests) plus updated agent and gitleaks tests. Full run: 508 passed, 14 skipped (the real-Docker and real-Claude files, as before); typecheck and build clean.
+- Engine: `test/document.test.ts` (new, 24 tests) plus updated agent and gitleaks tests. Final full run: 589 passed, 14 skipped (the real-Docker and real-Claude files, as before). `npm run typecheck` (both the source and the acceptance-test projects) and the build are clean after the validation B1 fix; before it, the acceptance-test project failed on the `capabilities` field (validation B1).
 - Client: `tests/test_document_f009.py` (new, 14 tests). Full spec-interview suite: 381 passed. onboard-repo suite: 318 passed, 1 skipped.
 - Docs checks and placeholder check pass.
 

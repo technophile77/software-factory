@@ -102,8 +102,9 @@ DOC_TYPES = {".md": "text/markdown", ".markdown": "text/markdown", ".txt": "text
 DOC_MAX_BYTES = 262_144
 DOC_PROVENANCE = ("owner", "reference")
 DOC_REASONS = {"invalid": "it isn't text the engine accepts (bad encoding, control characters, or a field out of range)",
-               "hidden_content": "it has text a reader can't see: an HTML comment, raw HTML, or a zero-width or "
-                                 "bidi character. Remove it and try again",
+               "hidden_content": "it has text a reader can't see: an HTML comment, raw HTML, a zero-width or "
+                                 "bidi character, a link definition with a title or that no link uses, or a "
+                                 "link or image with empty text. Remove it and try again",
                "secret": "the secrets scan found a secret in it. Remove the secret and try again",
                "budget": "the project's remaining budget can't cover it"}
 RULE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")

@@ -909,6 +909,9 @@ Rules:
   the `source_confirmation` item from the table itself, with each spec
   ref's own line. A later spec version that changes the table, or any of
   those spec lines, needs a new confirmation.
+- `interview_spec_ready` adds the check `source_unchanged` whenever the
+  feature started from a document: the branch's copy of the document still
+  matches the SHA-256 recorded at the start (F-009 Gate 2 L1).
 - `interview_spec_ready` adds the check `sources_confirmed` when
   `provenance` is `owner`: the latest `source_confirmation` item is
   confirmed and its table and spec lines match the spec's current ones.
