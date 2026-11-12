@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (all open questions decided; next: Gate 1 and the drafts of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 17
+- **Spec version:** 18
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -250,7 +250,7 @@ Drafted by the analyst; SR-12 to SR-29 come from Gate 1 (`F-010-security-gate1.m
 | SR-13 | The test engineer derives the expected output from the cited evidence. A crash fix changes only the crash. Gate 2 stops a fix that loosens a check. The PR body carries a fixed banner. | Gate 1 #2 | Accepted from Gate 1 |
 | SR-14 | Snapshots, records and drop logs live in a private, owner-only store. `factory/state` holds only hashes, kinds, routes, ids and the action log. Security-report material stays private (subject to the owner's decision). Sensitive data is listed. | Gate 1 #3 | Not adopted: owner kept storage on `factory/state` as drafted and accepted the risk, including vulnerability reports on public repos (owner, 2026-11-12, decision card) |
 | SR-15 | Question checks run on an NFKC-and-confusables fold, with drops for digit and hex runs, spelled-out domains, GitHub autolink forms, mixed scripts, verbatim overlap with the issue, a fixed word list and a profanity list. Questions start with a fixed interrogative. The question is Markdown-escaped. The rendered reply is secret-scanned. Questions are labelled as automated, and a per-repo switch turns them off. | Gate 1 #4 | Accepted from Gate 1 |
-| SR-16 | Issue writes use an issues-only credential on triaged repos, never the owner's account, with short-lived or expiring tokens (subject to the owner's decision). | Gate 1 #5 | Pending owner decision (Security) |
+| SR-16 | Issue writes use an issues-only credential on triaged repos, never the owner's account, with short-lived or expiring tokens (subject to the owner's decision). | Gate 1 #5 | Decided: the factory token gains `issues: write` (H-0114), as drafted; that permission covers every repo the token covers, and the engine's fixed call list (SR-17) and per-repo `issues.enabled` limit where it is used (owner, 2026-11-12, decision card) |
 | SR-17 | One GitHub client with a fixed list of calls. It follows links and redirects only to `api.github.com`, and on writes never. Repo and issue ids are checked before each write. Ids are compared as numbers. Responses are validated. Unexpected answers fail closed. | Gate 1 #6 | Accepted from Gate 1 |
 | SR-18 | Before each write the issue is fetched again and must be open, unlocked, in the same repo and unchanged since the snapshot. The record names the commit the triager read. | Gate 1 #7 | Accepted from Gate 1 |
 | SR-19 | The engine acts only on its own record or on files that extend its hash chain. Foreign files file a Security item. | Gate 1 #8 | Accepted from Gate 1 |
@@ -472,6 +472,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 15 | 2026-11-12 | Gate 1: SR-12 to SR-29 added; SR-12, SR-14, SR-16, SR-20 wait for owner Security decisions | — |
 | 16 | 2026-11-12 | Gate 1 #1: fix branches stay local until Gate 2 and validation pass; no auto-fix on repos whose CI gives secrets to factory branches (SR-12) | Owner, 2026-11-12 (decision card) |
 | 17 | 2026-11-12 | Gate 1 #3: issue material stays on `factory/state` as drafted; owner accepts that it is public on public repos, vulnerability reports included (SR-14 not adopted) | Owner, 2026-11-12 (decision card) |
+| 18 | 2026-11-12 | Gate 1 #5: issue writes use the factory token with `issues: write`, not a GitHub App (SR-16) | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
