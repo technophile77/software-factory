@@ -75,6 +75,34 @@ export function content(src: Record<string, unknown>): ItemContent {
   return c;
 }
 
+/** A Gate 1 finding as the transcript keeps it (F-008): the reviewer's words, scanned before they were recorded. */
+export interface Gate1Record {
+  n: number;
+  criterion: string;
+  severity: string;
+  fix: string;
+  explanation: string;
+  needs_owner: boolean;
+  /** The Security item filed for it, if any. */
+  item?: string;
+}
+
+/** F-008: where the feature's Security Gate 1 stands. */
+export interface Gate1State {
+  /** Reviewer runs started, the correction resume not counted separately (SR-11 counts runs). */
+  runs: number;
+  /** The findings of the last valid report. */
+  findings: Gate1Record[];
+  /** True from a report with findings until the FR-9 check passes. */
+  pending: boolean;
+  /** Why the feature waits on the owner, if it does. */
+  blocked: string | null;
+  /** Findings already filed as Security items under FR-13, by number. */
+  riskFiled: number[];
+  /** When the last valid report was recorded. */
+  reportAt: string | null;
+}
+
 /** Everything the engine knows about one feature's interview, rebuilt from its transcript. */
 export class InterviewState {
   title = "";
@@ -87,7 +115,8 @@ export class InterviewState {
   /** Reply ids recorded but not yet handed to the analyst. */
   readonly undelivered: string[] = [];
   researchCalls = 0;
-  lastSpecReady: { passed: boolean; at: string } | null = null;
+  lastSpecReady: { passed: boolean; at: string; spec_path: string; spec_version: number } | null = null;
+  readonly gate1: Gate1State = { runs: 0, findings: [], pending: false, blocked: null, riskFiled: [], reportAt: null };
 
   apply(e: Entry): void {
     switch (e.type) {
@@ -142,10 +171,29 @@ export class InterviewState {
         break;
       }
       case "spec_ready":
-        this.lastSpecReady = { passed: e.passed as boolean, at: e.at };
+        this.lastSpecReady = { passed: e.passed as boolean, at: e.at, spec_path: e.spec_path as string, spec_version: e.spec_version as number };
         break;
       case "stage":
         this.stage = e.stage as string;
+        break;
+      case "gate1_run":
+        this.gate1.runs++;
+        break;
+      case "gate1_report":
+        this.gate1.findings = (e.findings as Gate1Record[]).map((f) => ({ ...f }));
+        this.gate1.pending = this.gate1.findings.length > 0;
+        this.gate1.riskFiled = [];
+        this.gate1.reportAt = e.at;
+        break;
+      case "gate1_blocked":
+        this.gate1.blocked = e.reason as string;
+        for (const n of (e.risk as number[] | undefined) ?? []) if (!this.gate1.riskFiled.includes(n)) this.gate1.riskFiled.push(n);
+        break;
+      case "gate1_resolved":
+        if (e.passed) {
+          this.gate1.pending = false;
+          this.gate1.blocked = null;
+        }
         break;
       default:
         // session_approved, cap_reached and other audit entries change no state.

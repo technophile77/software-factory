@@ -72,7 +72,7 @@ export function readSpec(worktree: string, feature: string, specPath: string): s
   }
 }
 
-const norm = (s: string) => s.normalize("NFC").replace(/\s+/g, " ").trim();
+export const norm = (s: string) => s.normalize("NFC").replace(/\s+/g, " ").trim();
 
 function sectionLines(spec: string, heading: RegExp): Array<{ n: number; line: string }> {
   const lines = spec.split(/\r?\n/);
@@ -106,6 +106,28 @@ export function specAssumptions(spec: string): SpecAssumption[] {
     const [id, text, , status] = c as [string, string, string, string];
     if (!text) continue;
     out.push({ line: n, id, text, status: status.toLowerCase() });
+  }
+  return out;
+}
+
+export interface SpecRequirement {
+  line: number;
+  id: string;
+  text: string;
+  source: string;
+  status: string;
+}
+
+/** The rows of the spec's section 9 security requirements table (F-008 SR-7, FR-9). */
+export function specSecurityRequirements(spec: string): SpecRequirement[] {
+  const out: SpecRequirement[] = [];
+  for (const { n, line } of sectionLines(spec, /^##\s+(\d+\.\s+)?Security considerations\s*$/i)) {
+    if (!line.trim().startsWith("|")) continue;
+    const c = cells(line);
+    if (c.length < 4 || /^-+$/.test(c[0]!.replace(/:/g, "")) || c[0]!.toLowerCase() === "id") continue;
+    const [id, text, source, status] = c as [string, string, string, string];
+    if (!/^SR-\d+$/.test(id) || !text) continue;
+    out.push({ line: n, id, text, source, status: status.toLowerCase() });
   }
   return out;
 }

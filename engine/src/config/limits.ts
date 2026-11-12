@@ -27,10 +27,20 @@ export const LIMIT_KEYS = {
   fetch_page: { max_download_mib: "num", max_chars: "int" },
   research_result: { summary_chars: "int", max_sources: "int" },
   worktree_commit: { max_files: "int", max_total_mib: "num", max_file_mib: "num" },
+  security_reviewer: SESSION,
+  security_gate_1: { runs_per_feature: "int", report_kib: "int", additions_kib: "int" },
 } as const satisfies Record<string, Record<string, Kind>>;
 
+/**
+ * Sections a factory version from before F-008 doesn't have. Without them the
+ * project still runs, but no Gate 1 session starts (F-008 AC-10).
+ */
+export const OPTIONAL_SECTIONS = ["security_reviewer", "security_gate_1"] as const;
+type Optional = (typeof OPTIONAL_SECTIONS)[number];
+
 type Keys = typeof LIMIT_KEYS;
-export type Limits = { [S in keyof Keys]: { [K in keyof Keys[S]]: number } };
+type Full = { [S in keyof Keys]: { [K in keyof Keys[S]]: number } };
+export type Limits = Omit<Full, Optional> & Partial<Pick<Full, Optional>>;
 export type PartialLimits = { [S in keyof Keys]?: { [K in keyof Keys[S]]?: number } };
 type Section = keyof Keys;
 
@@ -57,7 +67,7 @@ export function parseLimits(doc: unknown, where: string, full: boolean): Limits 
   for (const s of Object.keys(doc)) if (!own(LIMIT_KEYS, s)) bad(`unknown section '${s}'`);
   for (const [s, keys] of Object.entries(LIMIT_KEYS) as Array<[string, Record<string, Kind>]>) {
     if (!own(doc, s)) {
-      if (full) bad(`'${s}' is missing`);
+      if (full && !(OPTIONAL_SECTIONS as readonly string[]).includes(s)) bad(`'${s}' is missing`);
       continue;
     }
     const sec = doc[s];
@@ -122,7 +132,9 @@ export function mergeLimits(defaults: Limits, project: PartialLimits | null): { 
   const limits = structuredClone(defaults);
   const above: string[] = [];
   for (const [s, sec] of Object.entries(project ?? {}) as Array<[Section, Record<string, number>]>) {
-    const target = limits[s] as Record<string, number>;
+    const target = limits[s] as Record<string, number> | undefined;
+    // A section the master file lacks has nothing to run, so there is nothing to lower.
+    if (!target) continue;
     for (const [k, v] of Object.entries(sec)) {
       if (v > target[k]!) above.push(`${s}.${k}`);
       else target[k] = v;
@@ -160,7 +172,29 @@ export function agentLimits(l: Limits, billing: Manifest["billingMode"]): AgentL
 
 /** The container limits for each agent role, keyed as the sandbox looks them up. */
 export function roleContainerLimits(l: Limits): Record<string, ContainerLimits> {
-  return { "requirements-analyst": containerLimits(l.analyst), "web-reader": containerLimits(l.web_reader) };
+  return {
+    "requirements-analyst": containerLimits(l.analyst),
+    "web-reader": containerLimits(l.web_reader),
+    ...(l.security_reviewer ? { "security-reviewer": containerLimits(l.security_reviewer) } : {}),
+  };
+}
+
+/** F-008 FR-11, SR-6, SR-8, SR-10, SR-11: the Gate 1 values, or null when this factory version has none. */
+export interface Gate1Limits {
+  caps: SessionCaps;
+  runsPerFeature: number;
+  reportBytes: number;
+  additionsBytes: number;
+}
+
+export function gate1Limits(l: Limits, billing: Manifest["billingMode"]): Gate1Limits | null {
+  if (!l.security_reviewer || !l.security_gate_1) return null;
+  return {
+    caps: sessionCaps(l.security_reviewer, billing),
+    runsPerFeature: l.security_gate_1.runs_per_feature,
+    reportBytes: l.security_gate_1.report_kib * 1024,
+    additionsBytes: l.security_gate_1.additions_kib * 1024,
+  };
 }
 
 export function maxPageBytes(l: Limits): number {

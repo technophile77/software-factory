@@ -39,3 +39,18 @@ worktree_commit:
   max_files: 200
   max_total_mib: 5
   max_file_mib: 1
+# F-008 Security Gate 1: owner decision H-0095. A factory version without
+# these two sections runs no Gate 1 session.
+security_reviewer:
+  turns: 100
+  output_tokens: 200000
+  dollars: 5 # API key (tokens) mode only
+  wall_time_minutes: 60
+  cpus: 1
+  memory_mib: 1024
+  pids: 128
+  tmp_mib: 256
+security_gate_1:
+  runs_per_feature: 3 # SR-11
+  report_kib: 256 # SR-8
+  additions_kib: 64 # SR-10
