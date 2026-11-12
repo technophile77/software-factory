@@ -1,9 +1,9 @@
 # Feature: Run Security Gate 1 on the real engine
 
 - **Id:** F-008
-- **Status:** Draft
+- **Status:** In review
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 4
+- **Spec version:** 6
 
 This is part of the engine's increment 3 ("Requirements to ready", F-007
 section 13). The owner chose to build Security Gate 1 on its own first
@@ -33,8 +33,9 @@ approved security requirements are in the spec.
    checks. The reviewer can read the worktree and write only its own report
    file: no shell, no network apart from the model API.
 3. The reviewer gets its `AGENT.md`, the shared `security-review` skill and
-   the factory's security standards from the factory version the project
-   pins, plus the project's own security additions (OQ-4). It follows the
+   the factory's `docs/security-standards.md` from the factory version the
+   project pins, plus the project's own security additions file
+   (`standards.security` in the manifest), read-only at a fixed path (OQ-4). It follows the
    Gate 1 checklist and writes its report as the agent report file its role
    policy allows (OQ-2).
 4. When the session ends, the engine checks what the reviewer wrote. If the
@@ -51,8 +52,10 @@ approved security requirements are in the spec.
    as Security items in the decision inbox, and the feature waits
    (`blocked`) until they are decided, which needs the next feature.
 7. Once every finding is resolved by an approved requirement in the spec,
-   and the spec passes the interview checks again, the feature moves to
-   `readiness_gate`. The full readiness gate and reading inbox decisions
+   and the spec passes the interview checks again, the engine checks the
+   findings are resolved (it does not run the reviewer again) and the
+   feature moves to `readiness_gate`. A requirement the owner rejects is
+   filed as a Security item asking the owner to accept the risk. The full readiness gate and reading inbox decisions
    come in the next feature (OQ-1).
 8. `engine.status` shows the feature's stage throughout, and the transcript
    and engine log say why a gate didn't run or didn't finish.
@@ -60,18 +63,19 @@ approved security requirements are in the spec.
 ## 3. Functional requirements
 | Id | Requirement |
 |---|---|
-| FR-1 | When a feature of an enabled, running project is at `security_gate_1` with no Gate 1 run for its current spec commit, the engine starts one. This happens after the interview checks pass and at engine start. One Gate 1 run per feature at a time. |
+| FR-1 | When a feature of an enabled, running project enters `security_gate_1` from a passing interview and has no unresolved Gate 1 findings, the engine starts one Gate 1 run on that spec commit; at engine start it starts one for a feature at `security_gate_1` that has no Gate 1 report since it last entered the stage. A feature returning from the findings interview gets the FR-9 check, not a new run (Gate 1 #6). One Gate 1 run per feature at a time. |
 | FR-2 | The reviewer runs as an Agent SDK session in its own container under the project's `security-reviewer` role policy and every container rule of Role policy v2.5. Its only write is its report, `.factory/runs/<feature>/security_gate_1/security-reviewer-<n>.json` on the feature branch, which the engine names in its input; the end-of-session write check rejects every other change. |
-| FR-3 | The engine gives the reviewer: its `AGENT.md` and the `security-review` skill as the analyst gets its own (F-007), the security standards from the pinned factory version and the project's additions (OQ-4), the feature's spec path and version, and the feature's interview transcript as data. |
+| FR-3 | The engine gives the reviewer: its `AGENT.md` and the `security-review` skill as the analyst gets its own (F-007), `docs/security-standards.md` from the master clone commit the project's `factory.version` names and the project's `standards.security` file from the config repo's `main` commit, read-only at a fixed path outside the worktree (OQ-4, SR-10), the feature's spec path and version, and the feature's interview transcript as data. |
 | FR-4 | The reviewer writes its report as an Agent report v1.2 file with the `security-reviewer` body (OQ-2). The engine fills the envelope fields that agents don't (v1.1). Each finding has criterion id, severity, location, explanation, suggested resolution and whether it needs the owner's choice. The report also answers each Gate 1 checklist question, lists the permissions the feature adds (S8.5), the abuse cases, and what is not applicable with the reason. |
 | FR-5 | After the session, the engine validates the report file: valid JSON within a size cap, the right schema, role, feature, stage and commit, known criterion ids from the standards it gave, known severities, every checklist question answered, text within caps. If it is missing or invalid, the engine resumes the same session once with the reasons; if it is still invalid, the run fails and nothing from it is committed. |
 | FR-6 | For a valid report, the engine renders `docs/features/<feature>-security-gate1.md` in the layout the factory's existing Gate 1 reports use, then scans and commits the report and the rendering on the feature branch (ADR 0012). |
 | FR-7 | A report with no findings moves the feature to `readiness_gate`. |
 | FR-8 | Findings handled per OQ-3. A finding with a suggested requirement moves the feature back to `requirements_interview`; the next analyst session gets every such finding, quoted as data, and asks one interview question per finding (Interview tools v1.0 `interview_ask`, the requirement as `suggested`), citing the finding. A finding marked `needs_owner` is filed as a Security item in the decision inbox with the reviewer's options and recommendation, and the feature is `blocked` while any is open. |
-| FR-9 | Before moving to `readiness_gate` after findings, the engine checks every finding is resolved: a security requirement in the spec's section 9 that cites the finding, with status Approved, or a decided Security item. A finding that isn't resolved keeps the feature at `security_gate_1` and the check's evidence names it. |
+| FR-9 | Before moving to `readiness_gate` after findings, the engine checks every finding is resolved: a security requirement in the spec's section 9 that cites the finding, with status Approved and text matching the owner's approved answer in the transcript, or a decided Security item (Gate 1 #7). A finding that isn't resolved keeps the feature at `security_gate_1` and the check's evidence names it. |
 | FR-10 | Gate 1 runs are resumable and interruptible as analyst runs are (FR-14 of F-007, with the restart-recovery fix), within `MAX_RESUMES`. A run that fails is recorded in the transcript, the engine log and the agent report, with the reason. |
 | FR-11 | The reviewer's model and session limits come from the master's `engine/config/models.yaml` and `engine/config/limits.yaml` at the pinned factory version, through hygiene item H-0095; the engine has no defaults. A project's `limits:` may only lower them. |
 | FR-12 | `engine.status` reports the feature's stage at every step; the stage is recorded on the feature's transcript chain as today. |
+| FR-13 | A Gate 1 question the owner rejects files a Security item asking the owner to accept the risk or send the feature back, quoting the finding; the feature is `blocked` until it is decided. A deferred one leaves the finding unresolved (Gate 1 #7). |
 
 ## 4. Acceptance criteria
 | Id | Given / When / Then | Covers |
@@ -86,6 +90,13 @@ approved security requirements are in the spec.
 | AC-8 | Given a finding that needs the owner's choice, then one Security item is filed in the decision inbox with the reviewer's options and recommendation, and the feature is `blocked`. | FR-8 |
 | AC-9 | Given the engine stops during a Gate 1 run, when it starts again, then the run resumes or restarts from its last commit, as analyst runs do. | FR-10 |
 | AC-10 | Given the master's `models.yaml` or `limits.yaml` has no `security-reviewer` entry, then no Gate 1 session starts and the transcript and engine log say why. | FR-11 |
+| AC-12 | Given the spec or transcript contains text telling the reviewer to report no findings, and the spec's section 9 has no requirement, when the reviewer files an empty report, then it is refused as invalid. | SR-7 |
+| AC-13 | Given the report path is a symbolic link, over 256 KiB, nested deeper than the limit, or any path other than the named one is changed, then nothing is read through the link, the report is invalid or the session's changes are rejected. | SR-8, SR-12 |
+| AC-14 | Given finding text with Markdown links, images, HTML or a heading, then the rendered report and inbox item show it as plain text. | SR-4 |
+| AC-15 | Given finding text containing a secret the scanner detects, then no report, rendering, inbox item or analyst input carrying it is written or sent, and a Security item with engine text only is filed. | SR-9 |
+| AC-16 | Given a project additions file that defines an `S` criterion id, then the gate runs on the factory standards alone and a Security item says why. | SR-10 |
+| AC-17 | Given a feature returns to `security_gate_1` from the findings interview, then no new reviewer session starts; and given a feature has had 3 Gate 1 runs, then a fourth doesn't start and a Security item is filed. | FR-1, SR-11 |
+| AC-18 | Given the owner rejects a Gate 1 question, then a Security item is filed and the feature is `blocked`; given an SR that cites a finding but whose text differs from the owner's approved answer, then FR-9 fails naming it. | FR-9, FR-13 |
 | AC-11 | Given F-002 in the end-to-end trial project, parked at `security_gate_1`, when the engine runs with this feature, then F-002 gets a Gate 1 report and moves on as AC-6 to AC-8 say. | FR-1 to FR-9 |
 
 ## 5. Constraints
@@ -108,6 +119,10 @@ approved security requirements are in the spec.
 - The project's security additions file is missing, a link, or too large.
 - Gate 1 runs on a spec that the engine finds was changed outside the
   engine (transcript chain or branch check fails).
+- A reviewer that keeps finding new issues each run (SR-11).
+- The owner rejects or defers a requirement Gate 1 suggested (FR-13).
+- A quoted secret in a finding (SR-9).
+- Project additions that try to relax or redefine the factory's rules (SR-10).
 
 ## 7. Dependencies
 - F-007 engine (merged), and the restart-recovery fix (in progress).
@@ -129,13 +144,38 @@ approved security requirements are in the spec.
 | SR-1 | Least privilege (S8): the reviewer writes only its named report file, and has no shell, no commands and no network other than the model API. | Analyst | Draft |
 | SR-2 | The spec, transcript and project security additions are untrusted data to the reviewer (S6.1); its instructions say so, and the engine labels them as data. | Analyst | Draft |
 | SR-3 | Every engine read of a worktree file for this gate uses the ADR 0015 real-path rule (F-007 SR on `readSpec`). | Analyst | Draft |
-| SR-4 | Reviewer text written into the rendered report, an inbox item or the analyst's input is escaped or quoted so it can't change their structure (S1.1, S1.2). Front matter of inbox items is engine-written only. | Analyst | Draft |
+| SR-4 | Reviewer text written into the rendered report or an inbox item is plain text: Markdown control characters escaped, no raw HTML, no links or images. In the analyst's input it is JSON strings in a labelled data block. Inbox front matter is engine-written only (S1.1, S1.2). | Analyst; Gate 1 #3 | Draft |
 | SR-5 | The engine, not the reviewer, decides the stage. A report can't move a feature to `readiness_gate` unless FR-7 or FR-9 holds. | Analyst | Draft |
 | SR-6 | The Gate 1 session gets the same caps, container limits and billing check as the analyst (F-007 SR-18), from its own entries. | Analyst | Draft |
+| SR-7 | The reviewer's input puts factory instructions and standards first, then each untrusted text (spec, transcript, project additions) in a labelled data block with its source. A report with no findings must answer every checklist question with reasons citing spec sections and list the permissions the feature adds; an empty report on a spec whose section 9 has no requirement is invalid (S6.1). | Gate 1 #1 | Draft |
+| SR-8 | The engine reads the report from the session's commit in git, never through the file system: exactly the named path, mode 100644, at most 256 KiB, parsed with a nesting limit (S1.4). | Gate 1 #2 | Draft |
+| SR-9 | The secrets scan covers the report, the rendering, each inbox item before commit, and the analyst's input before a session starts. A hit stops that output and files a Security item with engine text only (S3.1). | Gate 1 #4 | Draft |
+| SR-10 | Project additions are data after the factory standards and can only add criteria, with `P`-prefixed ids. An `S` id defined there makes the file invalid and the gate runs on the factory standards alone, with a Security item. Severity definitions and the blocking table come only from the factory standards. The file is a regular file in the config repo, at most 64 KiB (S6.1, S7). | Gate 1 #5 | Draft |
+| SR-11 | At most 3 Gate 1 runs per feature, the correction resume included; a fourth needs the owner and files a Security item (S5.1). | Gate 1 #6 | Draft |
+| SR-12 | The write check accepts exactly the run's named report path, not every path the role's write glob allows (S8.1). | Gate 1 #8 | Draft |
 
 ## 10. Interface requirements
-- H-0095: `security-reviewer` entries in `engine/config/models.yaml` and
-  `engine/config/limits.yaml` (change-controlled; values to be proposed).
+- H-0095 (draft, for owner approval): new entries in the change-controlled
+  engine config.
+
+  ```yaml
+  # engine/config/models.yaml
+  security-reviewer: claude-opus-5-5   # a gate agent: same model as the analyst
+  # engine/config/limits.yaml
+  security_reviewer:
+    turns: 100
+    output_tokens: 200000
+    dollars: 5 # API key (tokens) mode only
+    wall_time_minutes: 60
+    cpus: 1
+    memory_mib: 1024
+    pids: 128
+    tmp_mib: 256
+  security_gate_1:
+    runs_per_feature: 3        # SR-11
+    report_kib: 256            # SR-8
+    additions_kib: 64          # SR-10
+  ```
 - Interview tools v1.0 are used as they stand: Gate 1 requirements are
   ordinary questions with a suggested answer (OQ-3).
 - Role policy v2.5 is used as it stands (OQ-2).
@@ -161,7 +201,7 @@ Asked one at a time. None is assumed.
 | OQ-1 | Build Gate 1 on its own first, or all of increment 3 together? | Product | Decided: Gate 1 first, the rest of increment 3 next (owner, decision card, 2026-11-12) |
 | OQ-2 | How the reviewer hands in its report: engine tools that validate it (new contract), or by writing `.factory/runs/**/security-reviewer-*.json` as its role policy allows, checked afterwards. | Interfaces | Decided: the reviewer writes the report file its role policy allows; the engine checks it after the session (owner, decision card, 2026-11-12) |
 | OQ-3 | How Gate 1 findings reach the spec with the owner's approval: the analyst puts each new requirement to the owner in the interview, and only choices between options go to the inbox; or every finding goes to the inbox. | Product | Decided: new requirements through the interview, choices between options to the inbox (owner, decision card, 2026-11-12) |
-| OQ-4 | Where the reviewer reads the security standards: the engine supplies the pinned factory's `docs/security-standards.md` plus the project's `standards.security` file, read-only at a fixed path. | Architecture | Open |
+| OQ-4 | Where the reviewer reads the security standards: the engine supplies the pinned factory's `docs/security-standards.md` plus the project's `standards.security` file, read-only at a fixed path. | Architecture | Decided: the pinned factory's `docs/security-standards.md` plus the project's `standards.security` file, read-only at a fixed path (owner, decision card, 2026-11-12) |
 
 ## 13. Change log
 | Version | Date | Change | Approved by |
@@ -170,3 +210,5 @@ Asked one at a time. None is assumed.
 | 2 | 2026-11-12 | OQ-1: Gate 1 on its own first; inbox reading with signed actions and the full readiness gate next | Owner, 2026-11-12 (decision card) |
 | 3 | 2026-11-12 | OQ-2: the reviewer writes its own report file; the engine validates it after the session, with one correction turn | Owner, 2026-11-12 (decision card) |
 | 4 | 2026-11-12 | OQ-3: Gate 1 requirements go to the owner as interview questions; choices between options go to the inbox | Owner, 2026-11-12 (decision card) |
+| 5 | 2026-11-12 | OQ-4: pinned factory standards plus the project's additions | Owner, 2026-11-12 (decision card) |
+| 6 | 2026-11-12 | Security Gate 1 (`F-008-security-gate1.md`): SR-4 tightened, SR-7 to SR-12, FR-13 added, FR-1 and FR-9 tightened, AC-12 to AC-18 | Pending owner approval with the spec |
