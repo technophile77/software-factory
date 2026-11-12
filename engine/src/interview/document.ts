@@ -186,6 +186,9 @@ export function hiddenLinkLines(lines: string[]): number[] {
     let last = Math.max(...covered);
     for (const i of covered) defLines.add(i);
     defs.push({ line: first + 1, label: linkLabel(m[1]!) });
+    // Every use of a label with blank text, such as the shortcut `[&nbsp;]`,
+    // renders as a link with no visible text (test defect D-2).
+    if (blankLinkText(m[1]!)) hits.add(first + 1);
     // The destination or the title may sit on the next line.
     let title = m[3]!;
     if (!m[2] && last + 1 < bare.length) {
@@ -203,6 +206,13 @@ export function hiddenLinkLines(lines: string[]): number[] {
     const body = bare.filter((_, i) => !defLines.has(i)).join("\n");
     const used = new Set<string>();
     for (const u of body.matchAll(/\[((?:\\.|[^\\\]])+)\]/g)) used.add(linkLabel(u[1]!));
+    const blank = new Set(defs.filter((d) => blankLinkText(d.label)).map((d) => d.label));
+    if (blank.size) {
+      bare.forEach((l, i) => {
+        if (defLines.has(i)) return;
+        for (const u of l.matchAll(/\[((?:\\.|[^\\\]])+)\]/g)) if (blank.has(linkLabel(u[1]!))) hits.add(i + 1);
+      });
+    }
     for (const d of defs) if (!used.has(d.label)) hits.add(d.line);
   }
   return [...hits].sort((a, b) => a - b);

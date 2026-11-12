@@ -72,6 +72,7 @@
 
 ## Validation round 2 fixes
 - M1: the link checks run on the whole text (container markers dropped per line), so a link label or link text that runs over two lines is caught; a hit names every line it covers. Link text that is only a blank code span is refused too (m13).
+- D-2 (test Addendum 2): a link definition whose label is blank text, and every use of it (the shortcut `[&nbsp;]` form), are refused; the test engineer's LNK-6 now passes.
 - m4: `agents/requirements-analyst/AGENT.md` states the v11 Sources rules. Drafted; it is change-controlled and waits on the owner's approval, with the `source_unchanged` sentence in Interview tools v1.1 (round 2 M2).
 
 ## Repo documents
