@@ -3,7 +3,7 @@
 - **Id:** F-008
 - **Status:** Approved (readiness gate passed 2026-11-12)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 13
+- **Spec version:** 14
 
 This is part of the engine's increment 3 ("Requirements to ready", F-007
 section 13). The owner chose to build Security Gate 1 on its own first
@@ -151,7 +151,7 @@ approved security requirements are in the spec.
 | SR-8 | The engine reads the report only from its engine-owned report folder, after the container is gone: exactly the named file, a regular file opened without following links, at most 256 KiB, parsed with a nesting limit (S1.4). | Gate 1 #2; owner, decision card, 2026-11-12 | Approved |
 | SR-9 | The secrets scan covers the report, the rendering, each inbox item before commit, and the analyst's input before a session starts. A hit stops that output and files a Security item with engine text only (S3.1). | Gate 1 #4 | Approved |
 | SR-10 | Project additions are data after the factory standards and can only add criteria, with `P`-prefixed ids. An `S` id defined there makes the file invalid and the gate runs on the factory standards alone, with a Security item. Severity definitions and the blocking table come only from the factory standards. The file is a regular file in the config repo, at most 64 KiB (S6.1, S7). | Gate 1 #5 | Approved |
-| SR-11 | At most 3 Gate 1 runs per feature, the correction resume included; a fourth needs the owner and files a Security item (S5.1). | Gate 1 #6 | Approved |
+| SR-11 | At most 3 Gate 1 runs per feature, the correction resume included; a fourth needs the owner and files a Security item (S5.1). The `security_reviewer` caps (turns, output tokens, dollars, wall time) cover a whole run: the correction session and every restart resume get only what the run's earlier sessions left. | Gate 1 #6 | Approved |
 | SR-12 | The write check accepts exactly the run's named report path, not every path the role's write glob allows (S8.1). | Gate 1 #8 | Approved |
 
 ## 10. Interface requirements
@@ -220,3 +220,4 @@ Asked one at a time. None is assumed.
 | 11 | 2026-11-12 | Spec v10 approved; all SRs Approved; readiness gate passed (six checks: objective, behavior, testable ACs, constraints, assumptions A-1 and A-2 approved, OQ-1 to OQ-4 decided) | Owner, 2026-11-12 (decision card) |
 | 12 | 2026-11-12 | Found in development: report-only roles get a read-only worktree, so the report goes to a separate engine-owned writable folder and is committed to factory/state (FR-2, SR-8 reworded) | Owner, 2026-11-12 (decision card) |
 | 13 | 2026-11-12 | Security Gate 2 M1: an owner answer other than the suggested requirement counts only once the owner approves its wording as a "Gate 1 #n" assumption; anything else is a rejection (FR-9, AC-18) | Owner, 2026-11-12 (decision card) |
+| 14 | 2026-11-12 | Security Gate 2 L3: the reviewer's caps cover a whole run, correction and restart resumes included (SR-11) | Owner, 2026-11-12 (decision card) |
