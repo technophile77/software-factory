@@ -93,6 +93,7 @@ ADVICE_STATUSES = ("running", "done", "failed")
 ADVISOR_KINDS = ("ask_advisor", "approve_advisor", "decline_advisor")
 LIMITS = ("turns", "tokens", "time_s", "web_calls")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+STAGE_RE = re.compile(r"^[a-z0-9_]{1,40}$")
 MAX_REASON = 500
 ITEM_STATUSES = ("open", "deferred", "researching", "answered", "approved", "rejected", "superseded")
 
@@ -102,7 +103,7 @@ FIELDS = {
     "list": set(),
     "open": {"feature", "takeover"},
     "approval": {"session", "wait_s"},
-    "next": {"session", "wait_s"},
+    "next": {"session", "wait_s", "feature"},
     "reply": {"session", "feature", "item", "revision", "status", "kind", "text", "reply_id", "wait_s"},
     "state": {"feature", "item"},
     "close": {"session"},
@@ -923,6 +924,8 @@ def _validate(cmd, req):
             raise Refused("bad_request", "`request` must be the owner's feature request text.")
     if cmd in ("open", "reply", "state"):
         _need_id(req, "feature")
+    if cmd == "next" and "feature" in req:
+        _need_id(req, "feature")
     if cmd in ("next", "reply", "close", "approval"):
         _need_session(req)
     if cmd in ("reply", "state"):
@@ -968,6 +971,10 @@ def cmd_status(ch, req):
     r = _result(ch.call("engine.status"))
     feats = r.get("features") if isinstance(r.get("features"), list) else []
     out = {"features": [_id(f.get("id"), "feature") for f in feats if isinstance(f, dict)]}
+    # Each feature's stage, so the skill can tell a finished interview from
+    # an analyst still at work. Only a plain stage name gets through.
+    out["stages"] = {f["id"]: f["stage"] for f in feats if isinstance(f, dict)
+                     and isinstance(f.get("stage"), str) and STAGE_RE.fullmatch(f["stage"])}
     # Only a plain version number gets through; any other text is dropped.
     if isinstance(r.get("version"), str) and VERSION_RE.fullmatch(r["version"]):
         out["version"] = r["version"]
@@ -1055,7 +1062,34 @@ def _next(ch, session, wait_s):
 
 
 def cmd_next(ch, req):
-    return _shown(_next(ch, req["session"], _wait_s(req)))
+    out = _shown(_next(ch, req["session"], _wait_s(req)))
+    if out["item"] is None and "feature" in req:
+        out.update(_where_is(ch, req["feature"]))
+    return out
+
+
+INTERVIEW_STAGE = "requirements_interview"
+
+
+def _where_is(ch, feature):
+    """With nothing waiting, says whether the interview is over or the analyst
+    is still at work, from the feature's stage in engine.status. Any failure
+    leaves the plain "nothing waiting" answer."""
+    try:
+        feats = _result(ch.call("engine.status")).get("features")
+    except ChannelError:
+        return {}
+    stage = next((f.get("stage") for f in feats if isinstance(f, dict) and f.get("id") == feature), None) \
+        if isinstance(feats, list) else None
+    if not isinstance(stage, str) or not STAGE_RE.fullmatch(stage):
+        return {}
+    if stage == INTERVIEW_STAGE:
+        return {"stage": stage, "display": (
+            f"Nothing is waiting for you right now. The analyst is still working on {feature}: it may "
+            "file another question in a moment, or it is writing the spec.")}
+    return {"stage": stage, "interview_done": True, "display": (
+        f"The interview for {feature} is finished: the analyst's spec passed the interview checks "
+        f"and the feature has moved on to the {stage} stage. Nothing more is needed from you here.")}
 
 
 def cmd_state(ch, req):
@@ -1129,6 +1163,8 @@ def cmd_reply(ch, req):
     if nxt is None and status == "researching":
         out["waiting"] = True
         out["display"] = "The analyst is researching. You can wait for it or defer the question."
+    elif nxt is None:
+        out.update(_where_is(ch, req["feature"]))
     if req["kind"] in ("ask_advisor", "approve_advisor"):
         # `next` may be another item, so say so here too (validation m5).
         out["advisor_started"] = True

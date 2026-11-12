@@ -76,6 +76,7 @@ class FakeEngine:
         self.silent = False
         self.notify_first = False     # send a notification before each answer
         self.approval = None          # the `approval` object `open` returns, if any
+        self.status_features = []     # engine.status's `features`
         self.approval_result = True   # True approves; an RpcError code fails awaitApproval
         self.srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.srv.bind(self.path)
@@ -183,7 +184,7 @@ class FakeEngine:
 
     def _dispatch(self, method, params):
         if method == "engine.status":
-            return {"version": "1.3.0", "uptime_s": 5, "features": []}, False
+            return {"version": "1.3.0", "uptime_s": 5, "features": self.status_features}, False
         if method == "feature.start":
             self.started.append(params["request"])
             return {"feature": "F-100"}, False

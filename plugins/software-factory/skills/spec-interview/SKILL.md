@@ -107,12 +107,12 @@ it to the owner or put it anywhere else.
 
 | Sub | stdin | Result |
 |---|---|---|
-| `status` | `{}` | engine reachable, `advisor` |
+| `status` | `{}` | engine reachable, `advisor`, `stages` (each feature's stage) |
 | `start` | `{"request": "<owner's text>"}` | `feature` |
 | `list` | `{}` | `features`, `display` |
 | `open` | `{"feature": "<id>"}` (+ `"takeover": true` only after the owner's yes) | `session`, `started_at`, `advisor`, and from a v1.2 engine `approval` and `approval_display` |
 | `approval` | `{"session": "<token>", "wait_s": 120}` | `approved` |
-| `next` | `{"session": "<token>", "wait_s": 60}` | `item` (or null), `display`, `waiting`?, `advice_running`? |
+| `next` | `{"session": "<token>", "feature": "<id>", "wait_s": 60}` | `item` (or null), `display`, `waiting`?, `advice_running`? |
 | `reply` | `{"session", "feature", "item", "revision", "status", "kind", "text", "wait_s": 60}` (+ `reply_id` on a retry) | `status`, `next`, `display`, `reply_id`, `waiting`?, `advice_running`?, `advisor_started`? or `already_recorded` |
 | `state` | `{"feature": "<id>", "item": "<id>"}` | `status`, `revision` |
 | `close` | `{"session": "<token>"}` | `closed` |
@@ -251,11 +251,14 @@ with any question; the advice never picks an answer.
 Send it with `CLIENT reply`, then show the result:
 
 - `next` is the next item: go back to the start of this step.
-- `next` is null and no `waiting`: nothing is waiting right now, but the
-  analyst often files its next question or assumption a few seconds after
-  a reply, or is writing the spec. Tell the owner, and ask with
+- `next` is null and no `waiting`: show the `display`, which says whether
+  the analyst is still at work or the interview is finished. If
+  `interview_done` is true, the spec passed the interview checks and the
+  feature moved on to the `stage` named: run `CLIENT close` and offer step 2
+  again. Otherwise the analyst often files its next question or assumption
+  a few seconds after a reply, or is writing the spec. Ask with
   AskUserQuestion: "Check again" or "Stop for now". Check again runs
-  `CLIENT next` with the session and shows what it returns, then asks the
+  `CLIENT next` with the session and the feature and shows what it returns, then asks the
   same way if it is still null. Stop for now runs `CLIENT close` and offers
   step 2 again. Never check again on your own.
 - `advisor_started` is true: the call started. Tell the owner, even when
