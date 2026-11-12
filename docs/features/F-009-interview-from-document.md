@@ -1,9 +1,9 @@
 # Feature: Start an interview from an existing document
 
 - **Id:** F-009
-- **Status:** Draft (interview in progress; open questions in section 13)
+- **Status:** Draft (open questions decided; Security Gate 1 next)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 1
+- **Spec version:** 2
 
 ## 1. Objective and business purpose
 The owner often has a finished spec or a working document before a feature
@@ -35,8 +35,9 @@ and no assumption reaches a spec without the owner's approval.
    reads it, checks type and size, and sends it with a short request text
    (a title, or the owner's one-line note). Claude never reads or shows the
    document.
-3. The owner says what the document is (OQ-1): their own requirements, or
-   reference material written by someone else.
+3. The owner says what the document is (OQ-1): "My requirements" or
+   "Reference" (written by someone else, or not yet agreed). Only Markdown
+   and plain text are accepted (OQ-2), up to 256 KiB (OQ-3).
 4. The engine runs the secrets scan on the document before it stores it.
    On a hit it refuses the start and says which line, and keeps nothing.
 5. The engine commits the document, unchanged, to the feature branch next to
@@ -63,7 +64,7 @@ and no assumption reaches a spec without the owner's approval.
 ## 3. Functional requirements
 | Id | Requirement |
 |---|---|
-| FR-1 | `feature.start` accepts an optional `document`: `{ name, media_type, text, provenance }`. `provenance` is `owner` or `reference` (OQ-1). `request` stays required. |
+| FR-1 | `feature.start` accepts an optional `document`: `{ name, media_type, text, provenance }`. `media_type` is `text/markdown` or `text/plain` (OQ-2); `text` is at most 256 KiB as UTF-8 (OQ-3); `provenance` is `owner` or `reference` (OQ-1). `request` stays required. The document can't be added or replaced after the start (OQ-4). |
 | FR-2 | The client script reads the document from a path the owner gives, refuses anything but the accepted types (OQ-2) and anything over the size limit (OQ-3), and sends it on stdin JSON as today; the path never goes on a command line. |
 | FR-3 | The engine runs the gitleaks scan on the document before storing it, and refuses the start on a hit without keeping the text. |
 | FR-4 | The engine commits the document byte for byte to the feature branch at `docs/features/F-nnn-source.<ext>` and records its SHA-256 in the transcript. The analyst may read it but never edit it (Role policy write deny). |
@@ -143,11 +144,12 @@ Security Gate 1 hasn't run.
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-12 | First draft from the owner's request | — |
+| 2 | 2026-11-12 | OQ-1 (c) owner picks per document; OQ-2 Markdown and plain text only; OQ-3 256 KiB; OQ-4 no replacing the document mid-interview | Owner, 2026-11-12 (thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
 |---|---|---|---|
-| OQ-1 | How much does the document count as the owner's answer? (a) Owner's document: statements count as answers, one source-confirmation item at the end, questions only on gaps, conflicts and ambiguities. (b) Every requirement from the document is a question with the document's text as the suggested answer. (c) Owner picks per document: "my requirements" behaves as (a), "reference" as (b). Recommended: (c). | Product | Open |
-| OQ-2 | Which formats in this increment? (a) Markdown and plain text only. (b) Also .docx and PDF, which need a parser, its S4.1 security review and CVE tracking. Recommended: (a); convert other formats before handing them over. | Product, Security | Open |
-| OQ-3 | Size limit for a document. Recommended: 256 KiB of text, well under the 1 MiB file limit and inside the analyst's context with room to work. | Product | Open |
-| OQ-4 | Can the owner add or replace the document after the interview starts? Recommended: not in this increment; start a new feature. | Product | Open |
+| OQ-1 | How much does the document count as the owner's answer? (a) Owner's document: statements count as answers, one source-confirmation item at the end, questions only on gaps, conflicts and ambiguities. (b) Every requirement from the document is a question with the document's text as the suggested answer. (c) Owner picks per document: "my requirements" behaves as (a), "reference" as (b). Recommended: (c). | Product | Decided: (c) (owner, thread, 2026-11-12) |
+| OQ-2 | Which formats in this increment? (a) Markdown and plain text only. (b) Also .docx and PDF, which need a parser, its S4.1 security review and CVE tracking. Recommended: (a); convert other formats before handing them over. | Product, Security | Decided: (a) (owner, thread, 2026-11-12) |
+| OQ-3 | Size limit for a document. Recommended: 256 KiB of text, well under the 1 MiB file limit and inside the analyst's context with room to work. | Product | Decided: 256 KiB (owner, thread, 2026-11-12) |
+| OQ-4 | Can the owner add or replace the document after the interview starts? Recommended: not in this increment; start a new feature. | Product | Decided: not in this increment (owner, thread, 2026-11-12) |
