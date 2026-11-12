@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 43
+- **Spec version:** 44
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -86,7 +86,7 @@ Drafted from the requirements above; each is refined in the interview.
 | AC-10 | Given a spec reported ready with a question still `deferred`, then readiness check 6 fails; with an approved assumption that has no `approve_assumption` entry, check 5 fails. (These are F-005 AC-7 and AC-8, carried here.) | FR-12 |
 | AC-11 | Given a secret in a transcript entry, then the commit is blocked and nothing is pushed. | FR-11 |
 | AC-12 | Given the engine killed mid-session, when it restarts, then the run is `interrupted`, resumes, and no retry is counted. | FR-14 |
-| AC-13 | Given the Docker runtime is stopped, when a session would start, then no session starts and the owner is told why. | FR-8 |
+| AC-13 | Given the Docker runtime is stopped, when a session would start, then no session starts and the owner is told why. For increment 1, the reason in the feature's transcript and the engine log counts as telling the owner (v44). | FR-8 |
 | AC-14 | Given an agent container, when it connects straight to an outside address or to `host.docker.internal`, then the connection fails; with no proxy credential the proxy refuses it. | SR-6, SR-7 |
 | AC-15 | Given the web reader asked for a private IP, `localhost`, or a name resolving to `127.0.0.1`, then the proxy refuses it. | SR-8 |
 | AC-16 | Given a running analyst session, then the model credential appears nowhere in its container's environment or files. | SR-9 |
@@ -490,3 +490,4 @@ section 9.
 | 41 | 2026-11-12 | Recorded exception to ADR 0009 and ADR 0005 for this increment: feature branches, specs, interview transcripts, Agent reports and `factory/state` live in the project's config repo (ADR 0010). Increment 4 (build to PR) moves feature work and `factory/state` to the managed code repos | Owner, 2026-11-12 (decision card) |
 | 42 | 2026-11-12 | SR-14: `DOCKER_CONFIG` points to an empty engine-owned folder instead of being cleared, because a cleared variable makes Docker read the owner's `~/.docker` (developer interpretation confirmed) | Owner, 2026-11-12 (decision card) |
 | 43 | 2026-11-12 | AC-21 residual risk accepted until Alpha: text hidden only by a page's stylesheet rules can reach the web reader (inline hiding, hidden elements, zero-width and bidi characters are stripped). Must be fixed before promotion to Alpha | Owner, 2026-11-12 (decision card) |
+| 44 | 2026-11-12 | AC-13 for increment 1: the reason no session started is recorded in the feature's transcript and the engine log, and that counts as the owner being told. A channel surface for it (for example a per-feature reason in `engine.status`) comes with the VS Code extension increment, as an Interfaces change then (validation M8, option A) | Owner, 2026-11-12 (decision card) |

@@ -212,3 +212,17 @@ None.
 1. **Owner, one card (M8):** decide whether the transcript entry and log count as "the owner is told why" for AC-13. I recommend option A: accept for increment 1, and add a channel surface in the extension increment.
 2. **Test engineer (M7, m11):** add an addendum to the run report. Name `797a8e1`, record the PC's DR-1 to DR-7 results, bring the RW-4 and `WebSearch` rows up to v43 and v39, and confirm the two DR test edits.
 3. Before the PR: the orchestrator review note (m6), and the README and dev report updates (m1 to m3).
+
+## Owner answer and result (2026-11-12)
+
+The owner chose option A for M8 on a decision card: for increment 1, the
+reason in the feature's transcript and the engine log counts as telling the
+owner, and a channel surface comes with the VS Code extension increment
+(spec v44). That needs no code change. The other items under "To reach PASS"
+are done: the test report addendum names `797a8e1` and the PC results (written
+by the orchestrator, so m11's confirmation by the test engineer is still
+open), and m1 to m3 and m6 are fixed (`8623f3a` and
+`F-007-orchestrator-review.md`).
+
+**Result: PASS at Rapid prototype.** AC-13 is Met under v44. Blocking 0,
+Major 3 logged (M5 open, M7 addressed, M8 settled), Minor 14 logged.
