@@ -369,3 +369,55 @@ Unchanged from Addendum 1 (link rules in `text/plain`; link-definition text
 in code; model behaviour, validation M3; SR-13). Also: a `[` and `]` with a
 blank line between them is not a link in CommonMark; LNK-7 asserts it is
 accepted, and the engine's "a blank line ends the paragraph" check holds it.
+
+## Addendum 3: validation round 3 M4 on `20d2bff`
+
+Validation round 3 found that an empty link or image after a stray `[`, and
+link text of only emphasis around a no-break space, were accepted against
+SR-8 and AC-10 (M4). The developer fixed them in `20d2bff`; D-2 was fixed in
+`490c562`, after Addendum 2's run. This addendum adds tests for those forms
+from the spec (SR-8, AC-10 as extended in v10), with controls, and re-runs
+everything on the final commit. The plan's new rows are marked "round 3".
+
+### Run
+
+| | |
+|---|---|
+| Code tested | `20d2bff` (`claude/project-thread-qzenwf`), plus the new tests in this commit. No product code changed |
+| Commands | `cd engine && npm run typecheck && npx vitest run`; `python3 -m unittest discover -s plugins/software-factory/skills/spec-interview/tests` |
+| Environment | Linux container, Node 22.23.4, Python 3.13.18, system git, running as root. No Docker |
+| Typecheck | Clean (engine and `test/acceptance`) |
+| Renderings | Each new case was rendered with the CommonMark reference renderer (commonmark.js 0.31.2, scratch area only): every refused case is a link or image with no visible text and its title or target hidden; every control shows its text |
+| Fails before the fix | With `engine/src/interview/document.ts` from `0e826cd` swapped in locally (then restored), all 19 LNK-8 tests fail and all 8 LNK-9 controls pass, so the new tests detect M4 |
+
+| Suite | Run | Passed | Failed | Skipped |
+|---|---|---|---|---|
+| Engine, whole (35 files) | 721 | 707 | 0 | 14 |
+| of which F-009 acceptance (`f009-document.test.ts`) | 194 | 194 | 0 | 0 |
+| Client, whole (`spec-interview/tests`) | 428 | 428 | 0 | 0 |
+| of which F-009 acceptance (`test_acceptance_f009.py`) | 43 | 43 | 0 | 0 |
+
+The 14 engine skips are the same gated real-Docker files and platform gates
+as before; no F-009 test is skipped. Coverage was not re-measured.
+
+**Result: pass.** No failures.
+
+### Earlier failures
+
+| Failure | Now |
+|---|---|
+| D-2 (LNK-6 ×3, a shortcut reference link with blank text) | Pass on `20d2bff` (fixed in `490c562`) |
+
+### New tests
+
+| Rule | Tests | Result |
+|---|---|---|
+| SR-8 / AC-10, stray `[` before an empty link (round 3 M4) | LNK-8 ×9: one `[`, two, and a word and `[` before an empty link; a stray `[` before a `&nbsp;` link, an empty link that hides its target (no title), an empty image, line-break link text, an empty full reference link, and an empty link in a list item | Pass (9) |
+| SR-8 / AC-10, emphasis around a blank (round 3 M4) | LNK-8 ×10: link text of `*&nbsp;*`, `_&nbsp;_`, `**&nbsp;**`, `__&nbsp;__`, `***&nbsp;***`; `*&nbsp;*` as an image alt, a full reference link's text, a shortcut reference link's text, link text in a block quote, and after a stray `[` | Pass (10) |
+| AC-10 controls | LNK-9 ×8: link text and an image alt in emphasis; strong, emphasis and words mixed; a full reference link in emphasis; underscores inside link text; a stray `[` before a link with text; link text holding balanced brackets; emphasis, a link and a lone `[` on one line | Pass (8) |
+
+### Not tested, and why
+
+Unchanged from Addendum 2. Also: link text that is only a lone `*` (which
+CommonMark shows as a visible `*`) may be refused by the engine; that is
+fail-closed and not asserted either way.

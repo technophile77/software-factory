@@ -505,6 +505,54 @@ describe("AC-10 / SR-8 (v10): Markdown link tricks that hide text are refused, a
     await w.boot();
     await startedDoc(w, doc(text));
   });
+
+  // CommonMark takes the innermost bracket as the link, so a stray `[` before an empty link leaves it a
+  // link; and emphasis around a no-break space shows nothing. Each renders (commonmark.js 0.31.2) as a
+  // link or image with no visible text and its title or target hidden.
+  it.each<[string, (m: string) => string, number[]]>([
+    ["a stray [ before an empty link", (m) => `Visible.\nText [[ ](# "${m}") more.`, [2]],
+    ["a word and a stray [ before an empty link", (m) => `Visible.\nText [a[ ](# "${m}") more.`, [2]],
+    ["two stray [ before an empty link", (m) => `Visible.\nText [[[ ](# "${m}") more.`, [2]],
+    ["a stray [ before a &nbsp; link", (m) => `Visible.\nText [[&nbsp;](# "${m}") more.`, [2]],
+    ["a stray [ before an empty link that hides its target", (m) => `Visible.\nText [[ ](https://example.org/${m}) more.`, [2]],
+    ["a stray [ before an empty image", (m) => `Visible.\nText [![](# "${m}") more.`, [2]],
+    ["a stray [ before line-break link text", (m) => `Visible.\nText [[\n](# "${m}")`, [2, 3]],
+    ["a stray [ before an empty full reference link", (m) => `Visible.\nText [[ ][r]\n\n[r]: https://example.org/${m}`, [2]],
+    ["a stray [ before an empty link in a list item", (m) => `Visible.\n\n- Text [[ ](# "${m}")`, [3]],
+    ["*&nbsp;* as link text", (m) => `Visible.\n[*&nbsp;*](# "${m}")`, [2]],
+    ["_&nbsp;_ as link text", (m) => `Visible.\n[_&nbsp;_](# "${m}")`, [2]],
+    ["**&nbsp;** as link text", (m) => `Visible.\n[**&nbsp;**](# "${m}")`, [2]],
+    ["__&nbsp;__ as link text", (m) => `Visible.\n[__&nbsp;__](# "${m}")`, [2]],
+    ["***&nbsp;*** as link text", (m) => `Visible.\n[***&nbsp;***](# "${m}")`, [2]],
+    ["*&nbsp;* as image alt text", (m) => `Visible.\n![*&nbsp;*](x.png "${m}")`, [2]],
+    ["*&nbsp;* as a full reference link's text", (m) => `Visible.\nSee [*&nbsp;*][r].\n\n[r]: https://example.org/${m}`, [2]],
+    ["*&nbsp;* as a shortcut reference link's text", (m) => `Visible.\nSee [*&nbsp;*].\n\n[*&nbsp;*]: https://example.org/${m}`, [2, 4]],
+    ["*&nbsp;* as link text in a block quote", (m) => `Visible.\n\n> [*&nbsp;*](# "${m}")`, [3]],
+    ["a stray [ before *&nbsp;* link text", (m) => `Visible.\nText [[*&nbsp;*](# "${m}") more.`, [2]],
+  ])("[LNK-8] SR-8 / AC-10 (validation round 3 M4): %s is refused as hidden_content naming its line, and nothing is stored", async (_n, make, lines) => {
+    w = await World.create();
+    await w.boot();
+    const marker = `HIDDEN${rand(6)}`;
+    const before = await snapshot(w);
+    const data = refused(await startDoc(w, doc(make(marker))), "hidden_content");
+    expect(data.lines?.some((l) => lines.includes(l)), `lines ${JSON.stringify(data.lines)} name one of ${lines}`).toBe(true);
+    await expectNothingKept(w, before, marker);
+  });
+
+  it.each<[string, string]>([
+    ["link text in emphasis, with a title", "See [*the ADR*](https://example.org/adr \"ADR 0003\").\n"],
+    ["link text mixing strong, emphasis and words", "See [**bold** and _soft_ text](https://example.org).\n"],
+    ["a full reference link whose text is in emphasis", "See [_the ADR_][adr].\n\n[adr]: https://example.org/adr\n"],
+    ["image alt text in emphasis", "See ![*a chart*](chart.png \"Rows\").\n"],
+    ["underscores inside link text", "Use [snake_case_names](https://example.org) here.\n"],
+    ["a stray [ before a link with text", "Pick [one] or [[two](https://example.org)].\n"],
+    ["link text holding balanced brackets", "Lists like [a, [b]](https://example.org) nest.\n"],
+    ["emphasis, a link and a lone [ in one line", "A *stress* on [ADR](https://example.org) and [ brackets.\n"],
+  ])("[LNK-9] AC-10 (control): %s is accepted", async (_n, text) => {
+    w = await World.create();
+    await w.boot();
+    await startedDoc(w, doc(text));
+  });
 });
 
 describe("SR-9: the engine validates every document field itself and fails closed", () => {
