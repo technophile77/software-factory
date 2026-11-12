@@ -108,6 +108,51 @@ export function hiddenMarkdownLines(lines: string[]): number[] {
   return [...hits].sort((a, b) => a - b);
 }
 
+// Markdown's own ways to hide text (SR-8 as extended by the owner, Gate 2 M2).
+// A link reference definition renders as nothing, so one with a title, or one
+// no link uses (the `[//]: # (comment)` idiom), is text only the analyst sees.
+const LINK_DEF = /^ {0,3}\[((?:\\.|[^\\\]])+)\]:[ \t]*(\S*)[ \t]*(.*)$/;
+const TITLE_START = /^[ \t]*["'(]/;
+// A link or image with empty text shows nothing; its title or target is hidden.
+const EMPTY_LINK = /!?\[[ \t]*\](?=[(\[])/;
+
+function linkLabel(label: string): string {
+  return label.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function hiddenLinkLines(lines: string[]): number[] {
+  const hits = new Set<number>();
+  const defs: Array<{ line: number; label: string }> = [];
+  const defLines = new Set<number>();
+  lines.forEach((line, i) => {
+    if (EMPTY_LINK.test(line)) hits.add(i + 1);
+    const m = LINK_DEF.exec(line);
+    if (!m) return;
+    defLines.add(i);
+    defs.push({ line: i + 1, label: linkLabel(m[1]!) });
+    // The destination or the title may sit on the next line.
+    let title = m[3]!;
+    let next = i + 1;
+    if (!m[2] && next < lines.length) {
+      defLines.add(next);
+      title = lines[next]!.trim().replace(/^\S+/, "");
+      next++;
+    }
+    if (title.trim()) hits.add(i + 1);
+    else if (next < lines.length && TITLE_START.test(lines[next]!)) {
+      hits.add(i + 1);
+      hits.add(next + 1);
+    }
+  });
+  if (defs.length) {
+    const body = lines.filter((_, i) => !defLines.has(i)).join("\n");
+    const used = new Set<string>();
+    for (const u of body.matchAll(/\[((?:\\.|[^\\\]])+)\]/g)) used.add(linkLabel(u[1]!));
+    for (const d of defs) if (!used.has(d.label)) hits.add(d.line);
+  }
+  return [...hits].sort((a, b) => a - b);
+}
+
 /**
  * The engine's own checks on a `document` (channel v1.4, SR-8, SR-9), on the
  * raw request value: it fails closed, and a refusal names fields and line
@@ -134,8 +179,9 @@ export function validateDocument(raw: unknown): SourceDocument {
   // Plain text gets the same HTML checks (SR-8 doesn't limit them to Markdown): the analyst or a
   // viewer may still render it, and the owner can write it without HTML.
   for (const n of hiddenMarkdownLines(lines)) hidden.add(n);
+  for (const n of hiddenLinkLines(lines)) hidden.add(n);
   if (hidden.size) {
-    throw new DocumentRefused("hidden_content", "The document has text a reader can't see (an HTML comment, raw HTML, or a zero-width or bidi character); remove it and try again.", [...hidden].sort((a, b) => a - b));
+    throw new DocumentRefused("hidden_content", "The document has text a reader can't see (an HTML comment, raw HTML, a zero-width or bidi character, a link definition with a title or that no link uses, or a link or image with empty text); remove it and try again.", [...hidden].sort((a, b) => a - b));
   }
   return { name, media_type: d.media_type as SourceDocument["media_type"], text: d.text, provenance: d.provenance };
 }

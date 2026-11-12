@@ -1,6 +1,6 @@
 # F-009 Developer completion report
 
-- **Feature:** F-009 Start an interview from an existing document, spec v9
+- **Feature:** F-009 Start an interview from an existing document, spec v10
 - **Role:** software-developer
 - **Date:** 2026-11-12
 - **Branch:** `claude/project-thread-qzenwf`
@@ -57,13 +57,14 @@
 - L2: the client also runs the UNC check on the real path, after every link on the way.
 - Test defect E-2 (acceptance tests) fixed.
 - L3: closed by the capability list (owner decision 2026-11-12).
-- Open: M2 (Markdown link tricks) and M3 (what the source confirmation binds), each waiting on an owner decision.
+- M2: SR-8 extended by the owner (2026-11-12). `hiddenLinkLines` refuses link reference definitions with a title (on the same or the next line) or that no link uses, and links or images with empty text, in code and plain text too, as for H1.
+- Open: M3 (what the source confirmation binds), waiting on an owner decision.
 
 ## Repo documents
 A document inside the owner's repo is named by its repo path and read from the working copy, uncommitted edits included (owner decision, spec v8). A path that leaves the repo gets the same local checks as any other path. Covered by `test_a_requirements_document_in_the_repo_itself_by_its_repo_path`.
 
 ## Tests
-- Engine: `test/document.test.ts` (new, 21 tests) plus updated agent and gitleaks tests. Full run: 508 passed, 14 skipped (the real-Docker and real-Claude files, as before); typecheck and build clean.
+- Engine: `test/document.test.ts` (new, 22 tests) plus updated agent and gitleaks tests. Full run: 508 passed, 14 skipped (the real-Docker and real-Claude files, as before); typecheck and build clean.
 - Client: `tests/test_document_f009.py` (new, 14 tests). Full spec-interview suite: 381 passed. onboard-repo suite: 318 passed, 1 skipped.
 - Docs checks and placeholder check pass.
 

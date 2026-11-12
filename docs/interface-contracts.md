@@ -362,7 +362,9 @@ Interview rules (v1.1):
   (document text is only ever a suggested answer).
 The engine checks every field itself and fails closed. Before storing
 anything it refuses a document that contains an HTML comment, a raw HTML
-tag, or a zero-width or bidi character, or in which the secrets scan finds
+tag, a zero-width or bidi character, a Markdown link reference definition
+with a title or that no link uses, or a link or image with empty text
+(F-009 SR-8), or in which the secrets scan finds
 a secret, or whose estimated cost the remaining project budget can't cover.
 A refused start creates no feature, commit, transcript entry or session.
 The document can't be added or replaced after the start. An engine that
