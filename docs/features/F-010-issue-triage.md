@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (readiness checks 1 to 5 pass; check 6 waits on the owner's approval of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 24
+- **Spec version:** 25
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -285,7 +285,7 @@ Drafted by the analyst; SR-12 to SR-29 come from Gate 1 (`F-010-security-gate1.m
 Drafts below. Each is filed as its own hygiene item in the inbox and applied
 only on the owner's approval (CLAUDE.md rule 3).
 
-### H-0110 (draft): Project manifest v1.5, per-repo `issues` block; limits
+### H-0110 (approved, owner, 2026-11-12, decision card): Project manifest v1.5, per-repo `issues` block; limits
 Interfaces. Adds an optional key; non-breaking. `schema` stays
 `factory-project/1.0`.
 
@@ -503,6 +503,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 22 | 2026-11-12 | OQ-8: the factory opens the private advisory, adds the reporter and transfers the issue; the factory token gains admin and advisory rights (H-0114) | Owner, 2026-11-12 (decision card) |
 | 23 | 2026-11-12 | Gate 1 #9 rest: issue work runs behind the owner's features (SR-20) | Owner, 2026-11-12 (decision card) |
 | 24 | 2026-11-12 | SR-1 to SR-11 amended per Gate 1 and accepted; Gate 1 abuse cases added; H-0111 storage follows SR-14; readiness checks 1 to 5 pass | — |
+| 25 | 2026-11-12 | H-0110 approved as drafted | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
