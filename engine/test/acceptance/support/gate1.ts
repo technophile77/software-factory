@@ -390,7 +390,13 @@ export async function stageOf(w: World, feature: string): Promise<string | undef
 
 export async function waitStage(w: World, feature: string, stage: string, ms = 30_000): Promise<void> {
   try {
-    await waitFor(async () => (await stageOf(w, feature)) === stage, ms, `${feature} at ${stage}`);
+    // One channel connection per poll: polled every 25 ms, a Windows named pipe runs out of instances and drops
+    // connections, so a failed poll counts as "not there yet" and the polls are spaced.
+    await waitFor(async () => {
+      const at = await stageOf(w, feature).catch(() => undefined);
+      if (at !== stage) await new Promise((r) => setTimeout(r, 200));
+      return at === stage;
+    }, ms, `${feature} at ${stage}`);
   } catch (e) {
     throw new Error(`${(e as Error).message}; engine.status says ${await stageOf(w, feature).catch(() => "nothing")}`);
   }
