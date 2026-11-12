@@ -66,6 +66,10 @@
 - M1: link definitions inside block quotes, list items and indented lines, and link text made only of whitespace entities or invisible characters, are refused.
 - Minors: the client's hidden-content reason lists the v10 rules; SKILL.md names channel v1.4; `source_unchanged` is stated in Interview tools v1.1.
 
+## Test addendum 1 fixes
+- D-1: any line with an unescaped `|` is its own block, so a quote can't run across rows of a table written without outer pipes.
+- T-1: the F-006 skill-text check accepts channel v1.3 or later, since SKILL.md now names v1.4.
+
 ## Repo documents
 A document inside the owner's repo is named by its repo path and read from the working copy, uncommitted edits included (owner decision, spec v8). A path that leaves the repo gets the same local checks as any other path. Covered by `test_a_requirements_document_in_the_repo_itself_by_its_repo_path`.
 

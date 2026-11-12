@@ -338,9 +338,12 @@ function documentSections(text: string): DocSection[] {
     }
     if (/^ {0,3}(=+|-+)[ \t]*$/.test(raw) && out.length && i > 0 && collapse(lines[i - 1]!) === out[out.length - 1]!.heading) return;
     if (!raw.trim() || /^ {0,3}([-*_])[ \t]*(\1[ \t]*){2,}$/.test(raw)) return flush();
-    if (/^\s*([-*+]|\d{1,9}[.)])\s/.test(raw) || /^\s*\|/.test(raw) || /^\s*(```|~~~)/.test(raw)) flush();
+    // Any line with an unescaped pipe may be a table row (GFM allows rows
+    // without outer pipes), so it is a block of its own (test defect D-1).
+    const row = /(^|[^\\])\|/.test(raw);
+    if (/^\s*([-*+]|\d{1,9}[.)])\s/.test(raw) || row || /^\s*(```|~~~)/.test(raw)) flush();
     block.push(raw);
-    if (/^\s*\|/.test(raw)) flush();
+    if (row) flush();
   });
   flush();
   return [whole, ...out];
