@@ -92,9 +92,11 @@ export async function populateWorktree(git: Git, repo: string, commit: string, w
 /**
  * The analyst's checkout of its feature branch, in an engine-owned folder
  * outside every repo. Its git dir is taken when the worktree is made, before
- * an agent can touch its `.git` file, and kept in the run record.
+ * an agent can touch its `.git` file, and kept in the run record. With
+ * `detachAt`, the worktree is detached at that commit instead: git allows a
+ * branch in one worktree only, and the analyst's keeps it.
  */
-export async function prepareWorktree(git: Git, repo: string, dir: string, branch: string, gitDir?: string): Promise<{ path: string; gitDir: string }> {
+export async function prepareWorktree(git: Git, repo: string, dir: string, branch: string, gitDir?: string, detachAt?: string): Promise<{ path: string; gitDir: string }> {
   ensureOwnerDir(path.dirname(dir));
   const common = realPath(path.resolve(repo, await git.out(repo, ["rev-parse", "--git-common-dir"])));
   if (gitDir && fs.existsSync(dir) && fs.existsSync(gitDir)) {
@@ -103,13 +105,13 @@ export async function prepareWorktree(git: Git, repo: string, dir: string, branc
   }
   await git.run(repo, ["worktree", "prune"]);
   fs.rmSync(dir, { recursive: true, force: true });
-  await git.run(repo, ["worktree", "add", "--no-checkout", dir, branch]);
+  await git.run(repo, detachAt ? ["worktree", "add", "--no-checkout", "--detach", dir, detachAt] : ["worktree", "add", "--no-checkout", dir, branch]);
   const link = fs.readFileSync(path.join(dir, ".git"), "utf8").trim();
   const m = /^gitdir: (.+)$/.exec(link);
   if (!m) throw new Error("git made a worktree without a gitdir link");
   const made = path.resolve(dir, m[1]!);
   if (!realPath(made).startsWith(path.join(common, "worktrees") + path.sep)) throw new Error("the new worktree's git dir isn't under the repo");
-  const head = await git.revParse(repo, `refs/heads/${branch}`);
+  const head = detachAt ?? (await git.revParse(repo, `refs/heads/${branch}`));
   if (!head) throw new Error(`no branch ${branch}`);
   await populateWorktree(git, repo, head, dir, made);
   return { path: dir, gitDir: made };

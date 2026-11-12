@@ -27,7 +27,7 @@ function lines(text: string, heading: RegExp): string[] {
   const out: string[] = [];
   let inside = false;
   for (const line of text.split(/\r?\n/)) {
-    if (/^#{1,2}\s/.test(line)) inside = heading.test(line);
+    if (/^#{1,6}\s/.test(line)) inside = heading.test(line);
     else if (inside) out.push(line);
   }
   return out;

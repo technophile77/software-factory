@@ -973,7 +973,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const reportRel = `.factory/runs/${f.id}/${GATE1_STAGE}/${reportName}`;
     const wtDir = path.join(path.dirname(worktreeDir(p, f.id)), `${f.id}-gate1`);
     const known = resume?.run;
-    const wt = await prepareWorktree(git, p.real!, known?.worktree ?? wtDir, f.state.branch, known?.git_dir);
+    const wt = await prepareWorktree(git, p.real!, known?.worktree ?? wtDir, f.state.branch, known?.git_dir, commit);
     await populateWorktree(git, p.real!, commit, wt.path, wt.gitDir);
     const run = known ?? runs.start({ project: p.real!, feature: f.id, role: REVIEWER_ROLE, stage: GATE1_STAGE, worktree: wt.path });
     const runId = run.id;
