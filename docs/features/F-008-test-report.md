@@ -184,3 +184,58 @@ the engine uses `factory/state`), no `blocked` on the channel, the finding
 citation format, unnumbered text and nesting caps, SR-11's "correction
 resume included", whether a failed run counts as "a report" for FR-1, and
 the owner's own wording (F-3).
+
+## Addendum: final commit `db1d01d` (test engineer, 2026-11-12)
+
+The run above is on `8f3a566`. This rerun is on `db1d01d`, the head of
+`claude/project-thread-nty8f8` (`git log -1`), with spec v14. It replaces
+the result above: **pass**. F-1 to F-3 no longer fail.
+
+| Run on `db1d01d` | Result |
+|---|---|
+| Command | `cd engine && npm run typecheck && npx vitest run --coverage --coverage.reportsDirectory=<scratch folder outside the repo> --coverage.reportOnFailure=true` |
+| Environment | As above: Linux, Node 22.23.4, no Docker |
+| Typecheck | Clean (engine and `test/acceptance`) |
+| Test files | 36: 34 passed, 2 skipped (real Docker) |
+| Tests | 616: 602 passed, 0 failed, 14 skipped (the same 14, for the same reasons as above) |
+| F-008 `gate1.test.ts` | 67: 67 passed (G1-15b is new) |
+| Other acceptance | 239: 230 passed, 9 skipped |
+| Unit (developer's) | 310: 305 passed, 5 skipped |
+| Coverage | Lines 88.22% (4,167 / 4,723), branches 79.66% (3,346 / 4,200), statements 84.01%, functions 84.4% |
+
+### What changed since `8f3a566`
+
+| Failure | Now | Why |
+|---|---|---|
+| F-1, G1-28 ×3 (AC-13, SR-12) | Pass | Product fix in `0618d9f`: any file in the report folder besides the named report rejects the session |
+| F-2, G1-36 (AC-17, SR-11, FR-1) | Pass | Product fix in `0618d9f`: a Gate 1 worktree left by an earlier run is removed before git prunes, so a later run can start |
+| F-3, G1-15 (AC-7, FR-9) | Pass, as rewritten for spec v13 | The owner decided (spec v13, Gate 2 M1): an answer in other words counts only once the owner approves the analyst's "Gate 1 #n: <requirement>" assumption. G1-15 now tests that, and the new G1-15b tests the refusal |
+
+### Criteria map changes
+
+| Criterion | Tests | Status |
+|---|---|---|
+| AC-7 | G1-12, G1-13, G1-14, G1-15 (v13: own words with an approved Gate 1 assumption) | Pass |
+| AC-13 | G1-25 to G1-28 | Pass |
+| AC-17 | G1-12, G1-36, G1-37, G1-38, G1-40 | Pass |
+| AC-18 (v13 adds the own-words clause) | G1-15, G1-15b, G1-37, G1-38, G1-39 | Pass |
+| SR-11 (v14: the reviewer's caps cover the whole run, correction and restart resumes included) | G1-36, G1-40 for the run limit. **The v14 caps rule has no independent test yet** (for example a correction session whose turn cap is what the first session left) | Run limit pass; caps rule not tested |
+| SR-12 | G1-28 ×3 | Pass |
+
+All other rows are unchanged and pass. AC-11 is still out of scope, and
+AC-3's network route on a real daemon is still not run here.
+
+### Review of the edits others made to my test files
+
+I read every change to `gate1.test.ts` and `support/gate1.ts` from
+`0618d9f` to `db1d01d`:
+
+| Edit | Verdict |
+|---|---|
+| `waitStage`: 90 s limit on Windows; a failed `engine.status` poll counts as "not there yet", with 200 ms between polls (`ef8c761`, `2649568`) | **Accepted.** The test still asserts the same stage. A channel that keeps failing still times out and fails, and the error still reports the last stage seen |
+| G1-7 and G1-20 wait up to 30 s for the transcript and the log instead of reading them after a fixed pause (`ce34d63`) | **Accepted.** The same texts are required; only the timing is looser, and the tests still fail if the text never appears |
+| `dropSection` keeps the final line break (`623337f`) | **Accepted.** It's a fixture fix for CRLF checkouts and asserts nothing |
+| `AnalystStep.assume` (the analyst proposes an assumption after the owner's reply) and G1-15 rewritten for v13 | **Accepted.** It follows spec v13 FR-9 and AC-18: own words, then the "Gate 1 #1: <wording>" assumption approved by the owner, then the Approved SR, then `readiness_gate` |
+| New G1-15b | **Accepted with a reservation.** Its owner answer is "No.", so it shows that a refusal files the risk item, which G1-37 already covers. It doesn't show what its title says: a real alternative wording copied into section 9 without an approved assumption. Using a real wording (as in G1-15) would close that gap. Its check is also loose: any new Security item that names the feature counts, not the FR-13 risk item specifically. I haven't changed it, since I was asked to edit only this report |
+
+No edit skips, deletes or weakens a check on product behaviour.

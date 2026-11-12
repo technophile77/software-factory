@@ -459,12 +459,17 @@ describe("AC-7, AC-17 / FR-8, FR-9: a finding resolved by a new requirement", ()
   it("[G1-15b] FR-9 / FR-13 (v13, Gate 2 M1): an own-words answer copied into section 9 without an approved assumption doesn't resolve the finding; the owner is asked to accept the risk", T, async () => {
     const r = await rig();
     const before = securityItems(r.w);
-    const f = requirementFinding();
-    const own = "No.";
+    const word = `ownwording${rand(4)}`;
+    const f = requirementFinding({ explanation: `Formula cells are not handled ${word}.` });
+    const own = `Cells that start with = are exported as plain text ${rand(4)}.`;
     const { feature } = await sentBack(r, f, stepsWithOwnerText(f, own));
     await ownerReplies(r, feature, "answer", own);
     await analystSettled(r.w, feature, 2);
-    await waitFor(() => newSecurityItems(r.w, before).some((i) => i.text.includes(feature)), 30_000, "a Security item asking to accept the risk");
+    await waitFor(
+      () => newSecurityItems(r.w, before).some((i) => i.text.includes(feature) && i.text.includes(word) && /accept the risk/i.test(i.text)),
+      30_000,
+      "the FR-13 risk item quoting the finding",
+    );
     expect(await stageOf(r.w, feature)).not.toBe(READINESS);
   });
 });
