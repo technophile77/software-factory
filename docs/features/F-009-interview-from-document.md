@@ -1,9 +1,9 @@
 # Feature: Start an interview from an existing document
 
 - **Id:** F-009
-- **Status:** Draft (open questions decided; Security Gate 1 next)
+- **Status:** Draft (Security Gate 1 done; G1 #3 and the new SRs await the owner)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 2
+- **Spec version:** 3
 
 ## 1. Objective and business purpose
 The owner often has a finished spec or a working document before a feature
@@ -119,8 +119,17 @@ None yet. Each will be proposed to the owner.
 | SR-3 | Secrets scan before anything is stored or sent to a model. | Analyst | Draft |
 | SR-4 | The script reads only a regular file the owner named, refuses symlinks and devices, and opens it read-only. | Analyst | Draft |
 | SR-5 | The stored document is write-denied to every agent role. | Analyst | Draft |
+| SR-6 | The client refuses UNC and device paths, opens without following symlinks, checks the open handle is a regular file, and reads at most the limit + 1 bytes. | G1 #1 | Draft |
+| SR-7 | Every spec line drawn from the document carries a quote of its source. The engine's readiness check refuses unless each quote is in the stored document word for word, and the engine, not the analyst, builds the source-confirmation list from those quotes. | G1 #2 | Draft |
+| SR-8 | Hidden content (HTML comments, raw HTML, zero-width and bidi characters): handling pending the owner's Security decision. | G1 #3 | Open |
+| SR-9 | The engine validates every `document` field itself (UTF-8, no control characters but tab, LF, CR, allowed `media_type` and `provenance`, size) and fails closed. | G1 #4 | Draft |
+| SR-10 | The engine fixes the stored file name from `media_type`; `name` is display text only, length-limited, control characters stripped, never in a path or git argument. | G1 #5 | Draft |
+| SR-11 | Sensitive data is the whole document: it goes to the config repo remote and the model API. The skill says so before the owner picks a file. A secrets refusal names line and rule, never the value. | G1 #6 | Draft |
+| SR-12 | The analyst never quotes the document in a request to the web reader; every reader request stays in the transcript. Residual risk at Rapid prototype. | G1 #7 | Draft |
+| SR-13 | The engine counts the document against the ADR 0012 budget at start and refuses a start the budget can't cover. | G1 #8 | Draft |
+| SR-14 | The skill sends `provenance` only from the owner's pick in the picker in that turn. | G1 #9 | Draft |
 
-Security Gate 1 hasn't run.
+Security Gate 1 ran on spec v2: `F-009-security-gate1.md` (0 Critical, 3 High, 4 Medium, 2 Low).
 
 ## 10. Interface requirements
 - Engine control channel: `feature.start` gains `document` (Interfaces
@@ -145,6 +154,7 @@ Security Gate 1 hasn't run.
 |---|---|---|---|
 | 1 | 2026-11-12 | First draft from the owner's request | — |
 | 2 | 2026-11-12 | OQ-1 (c) owner picks per document; OQ-2 Markdown and plain text only; OQ-3 256 KiB; OQ-4 no replacing the document mid-interview | Owner, 2026-11-12 (thread) |
+| 3 | 2026-11-12 | Security Gate 1 findings drafted as SR-6 to SR-14 | — |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
