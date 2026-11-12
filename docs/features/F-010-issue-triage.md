@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (readiness checks 1 to 5 pass; check 6 waits on the owner's approval of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 26
+- **Spec version:** 27
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -383,7 +383,7 @@ the PR. `actions.jsonl` has one line per GitHub write: `{ at, action
 (comment | label_add | label_remove | label_create), template, labels,
 comment_id, approval: "ADR <nnnn>" }`, with no secrets (S9.6).
 
-### H-0112 (draft): new role `issue-triager`, Role policy v2.6
+### H-0112 (approved, owner, 2026-11-12, decision card): new role `issue-triager`, Role policy v2.6
 Architecture. Adds an optional role; a manifest without it stays valid, but
 triage can't run in it.
 
@@ -505,6 +505,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 24 | 2026-11-12 | SR-1 to SR-11 amended per Gate 1 and accepted; Gate 1 abuse cases added; H-0111 storage follows SR-14; readiness checks 1 to 5 pass | — |
 | 25 | 2026-11-12 | H-0110 approved as drafted | Owner, 2026-11-12 (decision card) |
 | 26 | 2026-11-12 | H-0111 approved as drafted | Owner, 2026-11-12 (decision card) |
+| 27 | 2026-11-12 | H-0112 approved as drafted | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
