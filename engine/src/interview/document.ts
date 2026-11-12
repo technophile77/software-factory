@@ -241,29 +241,118 @@ export function sourcesTable(spec: string): SourceRow[] | null {
   return found ? rows : null;
 }
 
-/** A stable hash of the table's content, so a later spec version with a changed table needs a new confirmation. */
-export function tableHash(rows: SourceRow[]): string {
-  const canon = rows.map((r) => [collapse(r.spec_ref), collapse(r.section), collapse(r.quote)]);
-  return crypto.createHash("sha256").update(JSON.stringify(canon)).digest("hex");
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const plainCell = (c: string) => collapse(c.replace(/[*_`]/g, ""));
+
+/**
+ * The spec's own line for a spec ref, outside the Sources table: a table row
+ * whose first cell is the ref, a line that opens with it (`FR-3:`,
+ * `- **FR-3** ...`), or a heading that starts with it (`## 4. Behaviour`).
+ * Null when the spec has none. The owner sees this line beside its quote, and
+ * the confirmation is bound to it (Gate 2 M3, owner decision 2026-11-12).
+ */
+export function specLine(spec: string, ref: string): string | null {
+  const want = collapse(ref).replace(/^\u00a7\s*/, "");
+  const opens = new RegExp(`^(?:[-*+]\\s+)?[*_\`]*${escapeRe(want)}[*_\`]*(?:[:.)]|\\s|$)`, "i");
+  let inSources = false;
+  for (const raw of spec.split(/\r?\n/)) {
+    const line = raw.trim();
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (h) {
+      inSources = /^(\d+\.\s+)?Sources\s*$/i.test(h[2]!.trim());
+      if (!inSources && opens.test(h[2]!.replace(/^\u00a7\s*/, ""))) return line;
+      continue;
+    }
+    if (inSources || !line) continue;
+    if (line.startsWith("|")) {
+      if (plainCell(cells(line)[0] ?? "").toLowerCase() === want.toLowerCase()) return line;
+    } else if (opens.test(line)) return line;
+  }
+  return null;
 }
 
 /**
- * Problems with the table against the stored document (SR-7): each row needs
- * a spec ref, a section and a quote within the limit, and each quote must be
- * in the document word for word after runs of whitespace are collapsed.
+ * A stable hash of the table's content and of each spec ref's own line, so a
+ * later spec version that changes the table, or a line the owner confirmed,
+ * needs a new confirmation.
+ */
+export function tableHash(rows: SourceRow[], spec: string): string {
+  const canon = rows.map((r) => [collapse(r.spec_ref), collapse(r.section), collapse(r.quote), collapse(specLine(spec, r.spec_ref) ?? "")]);
+  return crypto.createHash("sha256").update(JSON.stringify(canon)).digest("hex");
+}
+
+interface DocSection {
+  heading: string;
+  /** Text blocks under the heading, its subsections included, each collapsed. */
+  blocks: string[];
+}
+
+/**
+ * The document's headings, each with the blocks under it. A block ends at a
+ * blank line, a heading, a list item, a table row or a code fence, so a quote
+ * can't be stitched together across structure (Gate 2 M3).
+ */
+function documentSections(text: string): DocSection[] {
+  const lines = text.split(/\r\n|\r|\n/);
+  const out: Array<DocSection & { level: number; open: boolean }> = [];
+  const whole: DocSection & { level: number; open: boolean } = { heading: "", blocks: [], level: 0, open: true };
+  let block: string[] = [];
+  const flush = () => {
+    if (!block.length) return;
+    const b = collapse(block.join(" "));
+    block = [];
+    if (!b) return;
+    whole.blocks.push(b);
+    for (const s of out) if (s.open) s.blocks.push(b);
+  };
+  lines.forEach((raw, i) => {
+    const atx = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/.exec(raw);
+    const next = lines[i + 1] ?? "";
+    const setext = raw.trim() && !block.length && /^ {0,3}(=+|-+)[ \t]*$/.test(next) ? (next.trim()[0] === "=" ? 1 : 2) : 0;
+    if (atx || setext) {
+      flush();
+      const level = atx ? atx[1]!.length : setext;
+      for (const s of out) if (s.level >= level) s.open = false;
+      out.push({ heading: collapse(atx ? (atx[2] ?? "") : raw), blocks: [], level, open: true });
+      return;
+    }
+    if (/^ {0,3}(=+|-+)[ \t]*$/.test(raw) && out.length && i > 0 && collapse(lines[i - 1]!) === out[out.length - 1]!.heading) return;
+    if (!raw.trim() || /^ {0,3}([-*_])[ \t]*(\1[ \t]*){2,}$/.test(raw)) return flush();
+    if (/^\s*([-*+]|\d{1,9}[.)])\s/.test(raw) || /^\s*\|/.test(raw) || /^\s*(```|~~~)/.test(raw)) flush();
+    block.push(raw);
+    if (/^\s*\|/.test(raw)) flush();
+  });
+  flush();
+  return [whole, ...out];
+}
+
+const words = (s: string) => s.split(" ").filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+
+/**
+ * Problems with the table against the stored document and the spec (SR-7,
+ * Gate 2 M3): each row needs a spec ref the spec has a line for, a Section
+ * that is one of the document's headings ("-" when it has none), and a quote
+ * of at least 5 words or 25 characters that sits in one block under that
+ * heading, matching after runs of whitespace are collapsed.
  * Returns the spec's line numbers with what is wrong; no document text.
  */
-export function tableProblems(rows: SourceRow[], documentText: string): string[] {
-  const doc = collapse(documentText);
+export function tableProblems(rows: SourceRow[], documentText: string, spec: string): string[] {
+  const sections = documentSections(documentText);
+  const headed = sections.length > 1;
   const out: string[] = [];
   if (rows.length === 0) out.push("the Sources table has no rows");
   if (rows.length > TOOL_LIMITS.sourceRows) out.push(`the Sources table has over ${TOOL_LIMITS.sourceRows} rows`);
   for (const r of rows.slice(0, TOOL_LIMITS.sourceRows)) {
-    if (!r.spec_ref || !/^[A-Za-z0-9][A-Za-z0-9 ._\u00a7-]{0,40}$/.test(r.spec_ref)) out.push(`line ${r.line}: Spec ref must be an FR, AC, SR or section id`);
-    else if (!r.section || [...r.section].length > 200) out.push(`line ${r.line}: Section must name the document's heading`);
-    else if (!r.quote) out.push(`line ${r.line}: the quote is empty`);
+    const quote = collapse(r.quote);
+    const section = collapse(r.section);
+    const under = headed ? sections.slice(1).filter((s) => s.heading.toLowerCase() === section.toLowerCase()) : section === "-" ? sections.slice(0, 1) : [];
+    if (!r.spec_ref || !/^[A-Za-z0-9\u00a7][A-Za-z0-9 ._\u00a7-]{0,40}$/.test(r.spec_ref)) out.push(`line ${r.line}: Spec ref must be an FR, AC, SR or section id`);
+    else if (specLine(spec, r.spec_ref) === null) out.push(`line ${r.line}: the spec has no line for ${r.spec_ref}`);
+    else if (!under.length) out.push(`line ${r.line}: Section must be one of the document's headings${headed ? "" : " (\"-\" for a document without headings)"}`);
+    else if (!quote) out.push(`line ${r.line}: the quote is empty`);
     else if ([...r.quote].length > TOOL_LIMITS.sourceQuote) out.push(`line ${r.line}: the quote is over ${TOOL_LIMITS.sourceQuote} characters`);
-    else if (!doc.includes(collapse(r.quote))) out.push(`line ${r.line}: the quote isn't in the document word for word`);
+    else if (words(quote) < 5 && [...quote].length < 25) out.push(`line ${r.line}: the quote is under 5 words and 25 characters`);
+    else if (!under.some((s) => s.blocks.some((b) => b.includes(quote)))) out.push(`line ${r.line}: the quote isn't in one paragraph, list item or table row under that heading`);
   }
   return out;
 }

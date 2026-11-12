@@ -564,7 +564,7 @@ describe("SR-7 / FR-8: the engine builds the source confirmation from quotes it 
     const item = await confirmedItem(w, feature, session, worktree, rel);
     expect(item.kind).toBe("source_confirmation");
     expect(item.status).toBe("open");
-    expect(item.sources).toEqual(ROWS.map((r) => ({ spec_ref: r.ref, section: r.section, quote: r.quote })));
+    expect(item.sources).toEqual(ROWS.map((r) => ({ spec_ref: r.ref, section: r.section, quote: r.quote, spec_line: expect.stringContaining(r.ref) })));
     expect((await w.reply(session, item, "confirm_sources", "Confirm the list")).result).toBeDefined();
     expect((await sourcesCheck(w, feature, rel)).passed).toBe(true);
   });
@@ -605,7 +605,7 @@ describe("SR-7 / FR-8: the engine builds the source confirmation from quotes it 
     const { feature, session, worktree, rel } = await docInterview(w);
     const item = await confirmedItem(w, feature, session, worktree, rel);
     await w.reply(session, item, "confirm_sources", "Confirm the list");
-    const more = [...ROWS, { ref: "FR-2", section: "Behaviour", quote: "Exports are limited to 10,000 rows." }];
+    const more = [...ROWS, { ref: "FR-1", section: "Behaviour", quote: "Exports are limited to 10,000 rows." }];
     writeSpec(worktree, rel, specText(feature, [], sourcesSection(more)));
     expect((await sourcesCheck(w, feature, rel)).passed).toBe(false);
     const again = await confirmedItem(w, feature, session, worktree, rel, more);

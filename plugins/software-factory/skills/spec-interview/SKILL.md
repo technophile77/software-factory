@@ -257,7 +257,9 @@ text. Free text: ask whether they approve or reject, then send their words.
 
 **Source confirmation** (a feature started from the owner's own document):
 the engine lists every spec line the analyst took from the document, with
-its quote, each checked word for word against the stored document. Ask with
+the spec line's own text, the document's section and the quote, which the
+engine found in the stored document under that section. Confirming locks
+those spec lines: a later change to one needs a new confirmation. Ask with
 AskUserQuestion: "Confirm the list" or "Reopen some lines". Confirm sends
 `confirm_sources` with the text "Confirm the list". Reopen asks which spec
 refs (free text, the owner's words) and sends them as `reopen_sources`; the

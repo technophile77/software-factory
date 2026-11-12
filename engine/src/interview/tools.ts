@@ -5,7 +5,7 @@ import { SecretFound } from "../state/state-repo";
 import { FeatureInterview, InterviewError } from "./feature";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { DocumentMeta, SourceRow, sha256, sourcesTable, tableHash, tableProblems } from "./document";
+import { DocumentMeta, SourceRow, sha256, sourcesTable, specLine, tableHash, tableProblems } from "./document";
 import { Finding, ItemContent, QUESTION_TYPES, QuestionType, WireItem } from "./model";
 import { Check, SpecPathRefused, readSpec, readinessChecks } from "./readiness";
 
@@ -278,16 +278,16 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
         if (!rows) return fail("invalid", "The spec has no '## Sources' table.");
         const text = ctx.documentText ? await ctx.documentText() : null;
         if (text === null) return fail("unavailable", "The engine couldn't read the stored source document, or it no longer matches its recorded hash.");
-        const problems = tableProblems(rows, text);
+        const problems = tableProblems(rows, text, spec);
         if (problems.length) fail("invalid", `The Sources table doesn't match the document: ${problems.slice(0, 20).join("; ")}.`);
         await checkItemCap();
-        const sources = rows.map((r) => ({ spec_ref: r.spec_ref, section: r.section, quote: r.quote }));
+        const sources = rows.map((r) => ({ spec_ref: r.spec_ref, section: r.section, quote: r.quote, spec_line: specLine(spec, r.spec_ref)! }));
         // Engine words only: the list itself is the table, read from the spec (SR-7).
         const c: ItemContent = {
-          text: `The spec (version ${specVersion}) takes these ${sources.length} lines from your document. Each quote was checked against the stored document word for word.`,
+          text: `The spec (version ${specVersion}) takes these ${sources.length} lines from your document. For each, the engine found the quote in one paragraph, list item or table row under the named heading of your stored document, ignoring line breaks and repeated spaces, and copied the spec's own line. Check that each spec line says what its quote says.`,
           why: "Statements from your own document count as your answers. Confirm the list, or name the spec refs you want asked as questions instead.",
         };
-        return { item: await f.createSourceConfirmation(c, sources, specVersion, tableHash(rows)) };
+        return { item: await f.createSourceConfirmation(c, sources, specVersion, tableHash(rows, spec)) };
       }),
   };
 }

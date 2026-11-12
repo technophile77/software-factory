@@ -27,6 +27,8 @@ export interface SourceRef {
   spec_ref: string;
   section: string;
   quote: string;
+  /** The spec's own line for spec_ref, copied by the engine (Gate 2 M3). */
+  spec_line: string;
 }
 
 export interface Item extends ItemContent {
@@ -130,7 +132,7 @@ export class InterviewState {
           created_at: e.at, research_calls: 0,
         };
         if (item.kind === "source_confirmation") {
-          item.sources = (src.sources as SourceRef[]).map((r) => ({ spec_ref: r.spec_ref, section: r.section, quote: r.quote }));
+          item.sources = (src.sources as SourceRef[]).map((r) => ({ spec_ref: r.spec_ref, section: r.section, quote: r.quote, spec_line: r.spec_line ?? "" }));
           item.spec_version = src.spec_version as number;
           item.table_sha256 = src.table_sha256 as string;
           // A newer confirmation replaces any earlier one still waiting.

@@ -220,10 +220,10 @@ export function readinessChecks(input: {
     if (!rows) evidence = "The spec has no '## Sources' table.";
     else if (!latest) evidence = "No source confirmation was filed (interview_confirm_sources).";
     else if (latest.status !== "approved") evidence = `${latest.id} is ${latest.status}, not confirmed by the owner.`;
-    else if (latest.table_sha256 !== tableHash(rows)) evidence = `The Sources table changed after ${latest.id} was confirmed; file a new confirmation.`;
+    else if (latest.table_sha256 !== tableHash(rows, spec)) evidence = `The Sources table, or a spec line it backs, changed after ${latest.id} was confirmed; file a new confirmation.`;
     else {
       passed = true;
-      evidence = `${latest.id} confirmed by the owner, for this Sources table.`;
+      evidence = `${latest.id} confirmed by the owner, for this Sources table and these spec lines.`;
     }
     checks.push({ name: "sources_confirmed", passed, evidence });
   }

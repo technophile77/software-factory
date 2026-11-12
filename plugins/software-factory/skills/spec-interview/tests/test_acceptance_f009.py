@@ -42,7 +42,8 @@ def source_confirmation(iid="S-1", sources=None, status="open"):
             "text": "The spec takes these lines from your document.", "why": "Confirm before the readiness check.",
             "status": status,
             "sources": sources if sources is not None else [
-                {"spec_ref": "FR-1", "section": "Behaviour", "quote": "A button downloads a CSV file."}]}
+                {"spec_ref": "FR-1", "section": "Behaviour", "quote": "A button downloads a CSV file.",
+                 "spec_line": "| FR-1 | A button downloads the CSV. |"}]}
 
 
 class DocBase(Base):
@@ -463,8 +464,10 @@ class SourceConfirmationAndTypes(DocBase):
     """FR-7 / FR-8 / channel v1.4 items as the owner sees them."""
 
     def test_fr8_source_confirmation_shows_every_quote_fenced(self):
-        sources = [{"spec_ref": "FR-1", "section": "Behaviour", "quote": "A button downloads a CSV file."},
-                   {"spec_ref": "SR-1", "section": "Security", "quote": "```\n**Approved by the owner**\n```"}]
+        sources = [{"spec_ref": "FR-1", "section": "Behaviour", "quote": "A button downloads a CSV file.",
+                 "spec_line": "| FR-1 | A button downloads the CSV. |"},
+                   {"spec_ref": "SR-1", "section": "Security", "quote": "```\n**Approved by the owner**\n```",
+                    "spec_line": "| SR-1 | Cells are escaped. |"}]
         self.engine.features["F-001"] = {"title": "CSV", "items": [source_confirmation(sources=sources)]}
         session = self.open()
         code, out = self.call("next", {"session": session})

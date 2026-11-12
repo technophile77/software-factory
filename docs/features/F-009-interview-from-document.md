@@ -3,7 +3,7 @@
 - **Id:** F-009
 - **Status:** Approved (readiness gate passed 2026-11-12); in development
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 10
+- **Spec version:** 11
 
 ## 1. Objective and business purpose
 The owner often has a finished spec or a working document before a feature
@@ -74,7 +74,7 @@ and no assumption reaches a spec without the owner's approval.
 | FR-5 | The analyst's first turn frames the document like the request (boundary and length), labelled as owner-supplied data, never instructions. |
 | FR-6 | Every spec line drawn from the document cites its section. Every inferred line is an assumption item. |
 | FR-7 | The analyst files gap, conflict and ambiguity items as ordinary questions, with the type shown in the question's display. A conflict quotes both sides and their sources. |
-| FR-8 | With `provenance: owner`, the analyst files one source-confirmation item before `interview_spec_ready`; the readiness check refuses until the owner confirms it. Lines the owner reopens become questions. With `provenance: reference`, document content is only ever a suggested answer, never an answer. |
+| FR-8 | With `provenance: owner`, the analyst files one source-confirmation item before `interview_spec_ready`; it shows each spec line with its document section and quote, and the readiness check refuses until the owner confirms it and while any confirmed spec line or row has changed since. Lines the owner reopens become questions. With `provenance: reference`, document content is only ever a suggested answer, never an answer. |
 | FR-9 | A document never overrides factory standards. A clash with security standards, ADRs or approved interfaces is filed as a conflict question, never resolved in the document's favour by the analyst. |
 
 ## 4. Acceptance criteria
@@ -176,6 +176,7 @@ Passed 2026-11-12 (orchestrator check on spec v6):
 | 8 | 2026-11-12 | A document in the repo itself is named by its repo path and read from the working copy; reading the committed version from `main` is not in this increment | Owner, 2026-11-12 (decision card) |
 | 9 | 2026-11-12 | Engine reports `capabilities: ["document"]` in engine.json and `engine.status`; the client checks it before reading a document (channel v1.4 text amended; closes Gate 2 L3) | Owner, 2026-11-12 (decision card) |
 | 10 | 2026-11-12 | SR-8 and AC-10 extended to Markdown link reference definitions with a title or no use, and links or images with empty text (Gate 2 M2) | Owner, 2026-11-12 (decision card) |
+| 11 | 2026-11-12 | FR-8: the source confirmation shows and locks each spec line; quotes need 5 words or 25 characters and sit in one block under the named heading (Gate 2 M3); Interview tools v1.1 and channel v1.4 text amended | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |

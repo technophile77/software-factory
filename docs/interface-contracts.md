@@ -378,8 +378,9 @@ treat a missing list as empty; an engine without the capability refuses
 decision card.)
 
 `Item.kind` may also be `"source_confirmation"` (v1.4): `{ id, revision,
-kind, sources: [{ spec_ref, section, quote }], status }`, built by the
-engine, not the analyst (F-009 SR-7). Reply kinds: `confirm_sources` and
+kind, sources: [{ spec_ref, section, quote, spec_line }], status }`, built
+by the engine, not the analyst (F-009 SR-7); `spec_line` is the spec's own
+line for `spec_ref`, copied by the engine (F-009 Gate 2 M3). Reply kinds: `confirm_sources` and
 `reopen_sources`, whose `text` names the `spec_ref`s the owner wants asked
 as questions. A question may carry `type?: "gap" | "conflict" |
 "ambiguity"` (v1.4).
@@ -840,7 +841,9 @@ config repo's `factory/state` branch.
 - Status: Approved
 - Owner decision: F-007 OQ-8, H-0082, tightened by Security Gate 1 #10;
   owner, decision card, 2026-11-11; v1.1 (F-009, H-0106) approved by the
-  owner, 2026-11-12 (decision card, as drafted)
+  owner, 2026-11-12 (decision card, as drafted); spec lines shown and
+  locked, source checks tightened (F-009 Gate 2 M3), owner, 2026-11-12
+  (decision card)
 - Used by: engine (serves them), requirements analyst (calls them)
 - Compatibility: adding a tool or an optional parameter is non-breaking;
   changing a parameter, a result or a limit is breaking.
@@ -894,13 +897,19 @@ Rules:
   and `Quote` (up to 1,000 characters). Required when `provenance` is
   `owner`; allowed when it is `reference`.
 - New tool `interview_confirm_sources { spec_path, spec_version }` →
-  `{ item }`. The engine reads the table, checks every quote is in the
-  stored document (whose hash must still match the transcript) after
-  collapsing runs of whitespace, and refuses with `invalid`, naming the
-  failing rows, if any is not. Otherwise it builds the
-  `source_confirmation` item from the table itself. A later spec version
-  with a changed table needs a new confirmation.
+  `{ item }`. The engine reads the table and checks every row against the
+  stored document (whose hash must still match the transcript) and the
+  spec: the spec has a line for `Spec ref` (outside the Sources table: a
+  table row whose first cell is the ref, a line that opens with it, or a
+  heading that starts with it); `Section` is one of the document's
+  headings, or `-` when it has none; the quote is at least 5 words or 25
+  characters, and sits in one paragraph, list item or table row under that
+  heading, matching after runs of whitespace are collapsed. It refuses with
+  `invalid`, naming the failing rows, if any row fails. Otherwise it builds
+  the `source_confirmation` item from the table itself, with each spec
+  ref's own line. A later spec version that changes the table, or any of
+  those spec lines, needs a new confirmation.
 - `interview_spec_ready` adds the check `sources_confirmed` when
   `provenance` is `owner`: the latest `source_confirmation` item is
-  confirmed and its table matches the spec's current one.
+  confirmed and its table and spec lines match the spec's current ones.
 - `spec_path` may not be a `*-source.*` file.
