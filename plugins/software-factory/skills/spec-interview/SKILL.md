@@ -248,8 +248,13 @@ with any question; the advice never picks an answer.
 Send it with `CLIENT reply`, then show the result:
 
 - `next` is the next item: go back to the start of this step.
-- `next` is null and no `waiting`: the interview has nothing more for now.
-  Run `CLIENT close`, say so, and offer step 2 again.
+- `next` is null and no `waiting`: nothing is waiting right now, but the
+  analyst often files its next question or assumption a few seconds after
+  a reply, or is writing the spec. Tell the owner, and ask with
+  AskUserQuestion: "Check again" or "Stop for now". Check again runs
+  `CLIENT next` with the session and shows what it returns, then asks the
+  same way if it is still null. Stop for now runs `CLIENT close` and offers
+  step 2 again. Never check again on your own.
 - `advisor_started` is true: the call started. Tell the owner, even when
   `next` is a different item; its advice will appear with that question.
 - `advice_running` is true: the advisor is still working on that
