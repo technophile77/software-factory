@@ -1,9 +1,9 @@
 # Feature: Start an interview from an existing document
 
 - **Id:** F-009
-- **Status:** Draft (Security Gate 1 done; SR-6, SR-7 and SR-9 to SR-14 await the owner)
+- **Status:** Draft (security requirements approved; interface changes H-0105 to H-0108 drafted, awaiting the owner)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 4
+- **Spec version:** 5
 
 ## 1. Objective and business purpose
 The owner often has a finished spec or a working document before a feature
@@ -115,32 +115,38 @@ None yet. Each will be proposed to the owner.
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | The document is data: framed with a fresh boundary, never followed as instructions by the analyst, the skill or the advisor. | Analyst | Draft |
-| SR-2 | Claude in the skill never reads, shows or summarizes the document; only the script reads the file. | Analyst | Draft |
-| SR-3 | Secrets scan before anything is stored or sent to a model. | Analyst | Draft |
-| SR-4 | The script reads only a regular file the owner named, refuses symlinks and devices, and opens it read-only. | Analyst | Draft |
-| SR-5 | The stored document is write-denied to every agent role. | Analyst | Draft |
-| SR-6 | The client refuses UNC and device paths, opens without following symlinks, checks the open handle is a regular file, and reads at most the limit + 1 bytes. | G1 #1 | Draft |
-| SR-7 | Every spec line drawn from the document carries a quote of its source. The engine's readiness check refuses unless each quote is in the stored document word for word, and the engine, not the analyst, builds the source-confirmation list from those quotes. | G1 #2 | Draft |
+| SR-1 | The document is data: framed with a fresh boundary, never followed as instructions by the analyst, the skill or the advisor. | Analyst; owner 2026-11-12 (thread) | Approved |
+| SR-2 | Claude in the skill never reads, shows or summarizes the document; only the script reads the file. | Analyst; owner 2026-11-12 (thread) | Approved |
+| SR-3 | Secrets scan before anything is stored or sent to a model. | Analyst; owner 2026-11-12 (thread) | Approved |
+| SR-4 | The script reads only a regular file the owner named, refuses symlinks and devices, and opens it read-only. | Analyst; owner 2026-11-12 (thread) | Approved |
+| SR-5 | The stored document is write-denied to every agent role. | Analyst; owner 2026-11-12 (thread) | Approved |
+| SR-6 | The client refuses UNC and device paths, opens without following symlinks, checks the open handle is a regular file, and reads at most the limit + 1 bytes. | G1 #1; owner 2026-11-12 (thread) | Approved |
+| SR-7 | Every spec line drawn from the document carries a quote of its source. The engine's readiness check refuses unless each quote is in the stored document word for word, and the engine, not the analyst, builds the source-confirmation list from those quotes. | G1 #2; owner 2026-11-12 (thread) | Approved |
 | SR-8 | The engine refuses a document that contains HTML comments, raw HTML, or zero-width or bidi characters, and names the line numbers so the owner can remove them and retry. | G1 #3; owner decision 2026-11-12 (decision card) | Approved |
-| SR-9 | The engine validates every `document` field itself (UTF-8, no control characters but tab, LF, CR, allowed `media_type` and `provenance`, size) and fails closed. | G1 #4 | Draft |
-| SR-10 | The engine fixes the stored file name from `media_type`; `name` is display text only, length-limited, control characters stripped, never in a path or git argument. | G1 #5 | Draft |
-| SR-11 | Sensitive data is the whole document: it goes to the config repo remote and the model API. The skill says so before the owner picks a file. A secrets refusal names line and rule, never the value. | G1 #6 | Draft |
-| SR-12 | The analyst never quotes the document in a request to the web reader; every reader request stays in the transcript. Residual risk at Rapid prototype. | G1 #7 | Draft |
-| SR-13 | The engine counts the document against the ADR 0012 budget at start and refuses a start the budget can't cover. | G1 #8 | Draft |
-| SR-14 | The skill sends `provenance` only from the owner's pick in the picker in that turn. | G1 #9 | Draft |
+| SR-9 | The engine validates every `document` field itself (UTF-8, no control characters but tab, LF, CR, allowed `media_type` and `provenance`, size) and fails closed. | G1 #4; owner 2026-11-12 (thread) | Approved |
+| SR-10 | The engine fixes the stored file name from `media_type`; `name` is display text only, length-limited, control characters stripped, never in a path or git argument. | G1 #5; owner 2026-11-12 (thread) | Approved |
+| SR-11 | Sensitive data is the whole document: it goes to the config repo remote and the model API. The skill says so before the owner picks a file. A secrets refusal names line and rule, never the value. | G1 #6; owner 2026-11-12 (thread) | Approved |
+| SR-12 | The analyst never quotes the document in a request to the web reader; every reader request stays in the transcript. Residual risk at Rapid prototype. | G1 #7; owner 2026-11-12 (thread) | Approved |
+| SR-13 | The engine counts the document against the ADR 0012 budget at start and refuses a start the budget can't cover. | G1 #8; owner 2026-11-12 (thread) | Approved |
+| SR-14 | The skill sends `provenance` only from the owner's pick in the picker in that turn. | G1 #9; owner 2026-11-12 (thread) | Approved |
 
 Security Gate 1 ran on spec v2: `F-009-security-gate1.md` (0 Critical, 3 High, 4 Medium, 2 Low).
 
 ## 10. Interface requirements
-- Engine control channel: `feature.start` gains `document` (Interfaces
-  decision, hygiene H-0105).
-- Interview tools: a `source_confirmation` item kind, or a flag on a
-  question (Interfaces decision, H-0106).
-- Role policy: write deny on `docs/features/*-source.*` for every role
-  (H-0107).
-- `agents/requirements-analyst/AGENT.md` and the `spec-interview` skill
-  change (change-controlled; H-0108).
+Drafted in this PR, each awaiting the owner's approval:
+- **H-0105** Engine control channel v1.4: `feature.start` gains `document`;
+  the `source_confirmation` item kind with `confirm_sources` and
+  `reopen_sources` replies; question `type`; error -32009
+  `document_refused` (`docs/interface-contracts.md`).
+- **H-0106** Interview tools v1.1: `type` on questions, the `## Sources`
+  table, the engine-built `interview_confirm_sources` tool, the
+  `sources_confirmed` readiness check, and `spec_path` never a source file.
+- **H-0107** Role policy v2.6: every role that writes outside `.factory/`
+  denies `docs/features/*-source.md` and `*-source.txt`. The onboarding
+  manifest template gets the same entries during development.
+- **H-0108** `agents/requirements-analyst/AGENT.md`: how to work from a
+  document. The `spec-interview` skill and client script change during
+  development under this spec.
 
 ## 11. Readiness gate
 - [ ] Clear objective
@@ -157,6 +163,7 @@ Security Gate 1 ran on spec v2: `F-009-security-gate1.md` (0 Critical, 3 High, 4
 | 2 | 2026-11-12 | OQ-1 (c) owner picks per document; OQ-2 Markdown and plain text only; OQ-3 256 KiB; OQ-4 no replacing the document mid-interview | Owner, 2026-11-12 (thread) |
 | 3 | 2026-11-12 | Security Gate 1 findings drafted as SR-6 to SR-14 | — |
 | 4 | 2026-11-12 | SR-8: refuse documents with hidden content (G1 #3 option a); AC-10 added | Owner, 2026-11-12 (decision card) |
+| 5 | 2026-11-12 | SR-1 to SR-7 and SR-9 to SR-14 approved as written | Owner, 2026-11-12 (thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |

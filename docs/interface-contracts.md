@@ -29,7 +29,9 @@ Interview tools v1.0 (H-0082) for F-007 approved by the owner 2026-11-11
 (decision card, as drafted after Security Gate 1). Channel v1.3 amendment
 H-0084 (error code -32008 `refused`) approved by the owner 2026-11-11
 (decision card). Project manifest v1.4 (`limits`, H-0087) approved by the
-owner 2026-11-11 (decision card).
+owner 2026-11-11 (decision card). Drafts for F-009 (start an interview from
+a document), awaiting owner approval: Engine control channel v1.4 (H-0105),
+Interview tools v1.1 (H-0106), Role policy v2.6 (H-0107).
 
 ## Contract entry format
 
@@ -200,7 +202,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
   (F-006, the advisor) approved by the owner, 2026-11-10 (H-0063 and
   amendment H-0075: advisor fields stated exactly, call limits, budget flag,
   advice revision and hash; decision card, as drafted; renumbered from v1.2
-  when merged with main)
+  when merged with main); v1.4 (F-009, H-0105): draft, awaiting owner approval
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -240,7 +242,7 @@ it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 | `engine.pause` | `{ feature? }` | `{ paused: [feature ids] }` |
 | `engine.resume` | `{ feature? }` | `{ resumed: [feature ids] }` |
 | `engine.shutdown` | none | `{ ok: true }` after agents reach a safe stop |
-| `feature.start` | `{ request: string }` | `{ feature: id }` (assigns the requirements analyst) |
+| `feature.start` | `{ request: string, document?: Document }` | `{ feature: id }` (assigns the requirements analyst; `document` from v1.4) |
 | `interview.list` | none | `{ features: [{ id, title, open, deferred, pending_assumptions }] }` (v1.1) |
 | `interview.open` | `{ feature, takeover?: bool }` | `{ session, started_at, approval: { user_code, verification_uri, expires_at } }`, takes the feature's session lock; the session is pending until approved (v1.1; `approval` from v1.2) |
 | `interview.awaitApproval` | `{ session, wait_s?: int }` | `{ approved: true }` once GitHub confirms the owner; waits up to `wait_s` (at most 900) (v1.2) |
@@ -344,6 +346,41 @@ Interview rules (v1.1):
   such as a found secret or a tampered transcript. Its message is fixed and
   reveals nothing; the reason is in a Security inbox item.
 
+**Starting from a document (v1.4, F-009, draft H-0105).** `Document` is
+`{ name, media_type, text, provenance }`:
+- `name`: display text only, up to 200 characters, control characters
+  stripped by the engine; never used in a path, commit message or git
+  argument. The engine stores the file as `docs/features/F-nnn-source.md`
+  (`text/markdown`) or `F-nnn-source.txt` (`text/plain`) on the feature
+  branch, byte for byte, and records its SHA-256 in the transcript.
+- `media_type`: `text/markdown` or `text/plain`.
+- `text`: valid UTF-8, at most 262,144 bytes, no control characters other
+  than tab, LF and CR.
+- `provenance`: `owner` (the owner's requirements: statements count as the
+  owner's answers, subject to the source confirmation) or `reference`
+  (document text is only ever a suggested answer).
+The engine checks every field itself and fails closed. Before storing
+anything it refuses a document that contains an HTML comment, a raw HTML
+tag, or a zero-width or bidi character, or in which the secrets scan finds
+a secret, or whose estimated cost the remaining project budget can't cover.
+A refused start creates no feature, commit, transcript entry or session.
+The document can't be added or replaced after the start. An engine on v1.3
+or earlier refuses `document` as an unknown key; clients check `version`
+first and don't send it.
+
+`Item.kind` may also be `"source_confirmation"` (v1.4): `{ id, revision,
+kind, sources: [{ spec_ref, section, quote }], status }`, built by the
+engine, not the analyst (F-009 SR-7). Reply kinds: `confirm_sources` and
+`reopen_sources`, whose `text` names the `spec_ref`s the owner wants asked
+as questions. A question may carry `type?: "gap" | "conflict" |
+"ambiguity"` (v1.4).
+
+Error -32009 `document_refused` (v1.4): `data` is `{ reason: "invalid" |
+"hidden_content" | "secret" | "budget", lines?: [int], rule?: string }`.
+`lines` are 1-based line numbers in the document and `rule` is the secrets
+scanner's rule id; neither ever carries document text. Clients may show
+`data` after checking its shape.
+
 **Notifications** (engine to client): `feature.stageChanged`,
 `inbox.itemFiled`, `agent.started`, `agent.finished`, and from v1.1
 `interview.itemReady { feature, item: id }` when `more_info` research finishes,
@@ -363,7 +400,8 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   card); v2.4 approved by the owner, 2026-11-10 (H-0061 and amendment
   H-0076, the advisor denied all of `.factory/`; decision card, as drafted;
   renumbered from v2.3 when merged with main); v2.5 approved by the owner,
-  2026-11-11 (H-0083, F-007 Security Gate 1 #20; decision card)
+  2026-11-11 (H-0083, F-007 Security Gate 1 #20; decision card); v2.6
+  (F-009, H-0107): draft, awaiting owner approval
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
   Security decision. v2.0 moved the policy from `.factory/policy/roles.yaml`
@@ -397,7 +435,9 @@ list at least one tool. Every role with a file tool (`Read`, `Grep`, `Glob`,
 must deny reading secret files and, from v2.2, the engine's channel file:
 `**/.env`, `**/.env.*`, `**/.envrc`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`, `**/*.jks`, `**/*.keystore`, `**/id_rsa*`, `**/id_dsa*`, `**/id_ecdsa*`, `**/id_ed25519*`, `**/.npmrc`, `**/.pypirc`, `**/.netrc`, `**/.git-credentials`, `**/*.tfvars`, `**/credentials*.json`, `**/*.tfstate`, `**/*.tfstate.*`, `**/.aws/credentials`, `**/.docker/config.json`, `**/*.ppk`, `**/kubeconfig`, `**/.kube/config`, `.factory/engine.json`, `**/.factory/engine.json`.
 Every core role must be present, and every role that may write outside
-`.factory/` must deny the change-controlled paths: `CLAUDE.md`, `**/CLAUDE.md`, `CLAUDE.local.md`, `**/CLAUDE.local.md`, `.claude/**`, `.mcp.json`, `.github/**`, `.gitignore`, `.gitattributes`, `.husky/**`, `.pre-commit-config.yaml`, `lefthook.yml`, `osv-scanner.toml`, `agents/**`, `skills/**`, `plugins/**`, `.claude-plugin/**`, `workflows/**`, `**/.claude/**`, `.envrc`, `**/.envrc`, `.git`, `.git/**`, `.gitmodules`, `.vscode/**`, `.devcontainer/**`. Globs are relative to the worktree: no absolute paths, `\`, or segments
+`.factory/` must deny the change-controlled paths: `CLAUDE.md`, `**/CLAUDE.md`, `CLAUDE.local.md`, `**/CLAUDE.local.md`, `.claude/**`, `.mcp.json`, `.github/**`, `.gitignore`, `.gitattributes`, `.husky/**`, `.pre-commit-config.yaml`, `lefthook.yml`, `osv-scanner.toml`, `agents/**`, `skills/**`, `plugins/**`, `.claude-plugin/**`, `workflows/**`, `**/.claude/**`, `.envrc`, `**/.envrc`, `.git`, `.git/**`, `.gitmodules`, `.vscode/**`, `.devcontainer/**`, and from
+v2.6 (draft, H-0107) the source documents the engine stores for F-009:
+`docs/features/*-source.md`, `docs/features/*-source.txt`. Globs are relative to the worktree: no absolute paths, `\`, or segments
 that can match `..`. **Glob dialect and matching (H-0046, owner,
 2026-11-10):** a glob is literal segments separated by `/`, where `*`
 matches any characters within one segment (dot files included) and `**`
@@ -790,7 +830,8 @@ config repo's `factory/state` branch.
 
 - Status: Approved
 - Owner decision: F-007 OQ-8, H-0082, tightened by Security Gate 1 #10;
-  owner, decision card, 2026-11-11
+  owner, decision card, 2026-11-11; v1.1 (F-009, H-0106): draft, awaiting
+  owner approval
 - Used by: engine (serves them), requirements analyst (calls them)
 - Compatibility: adding a tool or an optional parameter is non-breaking;
   changing a parameter, a result or a limit is breaking.
@@ -834,3 +875,23 @@ Rules:
 - Errors: `one_at_a_time`, `invalid`, `limit`, `unknown_item`,
   `wrong_status` (for example revising an item that had no `more_info`
   reply).
+
+**v1.1 (F-009, draft H-0106).** For a feature started from a document:
+- `interview_ask` and `interview_revise` take an optional `type`: `gap`,
+  `conflict` or `ambiguity`. A `conflict` question quotes both sides in
+  `findings`, with `source` either an `https` URL or a worktree path.
+- The spec carries a `## Sources` table with columns `Spec ref` (an FR,
+  AC, SR or section id in the spec), `Section` (the document's heading)
+  and `Quote` (up to 1,000 characters). Required when `provenance` is
+  `owner`; allowed when it is `reference`.
+- New tool `interview_confirm_sources { spec_path, spec_version }` →
+  `{ item }`. The engine reads the table, checks every quote is in the
+  stored document (whose hash must still match the transcript) after
+  collapsing runs of whitespace, and refuses with `invalid`, naming the
+  failing rows, if any is not. Otherwise it builds the
+  `source_confirmation` item from the table itself. A later spec version
+  with a changed table needs a new confirmation.
+- `interview_spec_ready` adds the check `sources_confirmed` when
+  `provenance` is `owner`: the latest `source_confirmation` item is
+  confirmed and its table matches the spec's current one.
+- `spec_path` may not be a `*-source.*` file.
