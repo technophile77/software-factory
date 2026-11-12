@@ -208,3 +208,9 @@ None.
 2. **Owner (M4):** run AC-11 on the PC as set out above, or decide that the trial follows the merge as F-002's next step. Either way, record the result in the run report.
 3. **Test engineer (M1, m7):** a run report addendum on `dced5c3`, confirming the later edits to G1-15, G1-15b and the waits, plus a test for the whole-run caps.
 4. Before the PR: the orchestrator review note (m13), and the README and dev report updates (m12).
+
+## After validation
+
+- **M3:** the owner chose option A (decision card, 2026-11-12). Spec v15 rewords FR-3: the Gate 1 checklist and standards in the reviewer's first turn stand in for the `security-review` skill. No code change.
+- **M1:** the test engineer's addendum for `db1d01d` is in `F-008-test-report.md`: 616 tests, 602 passed, 14 skipped, 0 failed. G1-15b now uses a real alternative wording and checks for the FR-13 risk item itself.
+- **M4:** the AC-11 trial on F-002 still waits for a factory release.
