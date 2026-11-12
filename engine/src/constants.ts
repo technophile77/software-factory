@@ -32,6 +32,8 @@ export const RPC = {
   approvalFailed: -32007,
   /** A security refusal (H-0084). The message is always REFUSED_MESSAGE; the reason goes in a Security item. */
   refused: -32008,
+  /** Channel v1.4 (H-0105): a feature.start document the engine won't store; `data` names lines and rules only. */
+  documentRefused: -32009,
 } as const;
 
 /** The one message -32008 carries, so a refusal never tells the client what was found or where. */
@@ -65,6 +67,15 @@ export const TOOL_LIMITS = {
   query: 400,
   openAssumptions: 5,
   itemsPerFeature: 200,
+  /** Interview tools v1.1 (H-0106): one `## Sources` row's quote, and rows per table. */
+  sourceQuote: 1000,
+  sourceRows: 200,
+} as const;
+
+/** Channel v1.4 (H-0105, F-009 OQ-3): a document handed over at feature.start. */
+export const DOCUMENT_LIMITS = {
+  textBytes: 262_144,
+  name: 200,
 } as const;
 
 /** The secrets scanner, pinned by Gate 1 component review 5. */

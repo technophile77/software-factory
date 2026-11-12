@@ -13,7 +13,13 @@ export interface Blob {
   content: Buffer;
 }
 
-export type ScanResult = { clean: true } | { clean: false; blobs: string[]; rules: string[] };
+/** `hits` maps each finding to its blob, rule and 1-based start line, for a refusal that names lines (F-009 SR-11). */
+export interface ScanHit {
+  blob: string;
+  rule: string;
+  line: number;
+}
+export type ScanResult = { clean: true } | { clean: false; blobs: string[]; rules: string[]; hits?: ScanHit[] };
 
 export interface SecretsScanner {
   scan(blobs: Blob[]): Promise<ScanResult>;
@@ -138,10 +144,11 @@ export class Gitleaks implements SecretsScanner {
   }
 
   /** Maps findings back to blobs by file name; the redacted report holds no secret. */
-  private findings(stdout: Buffer, blobs: Blob[]): { blobs: string[]; rules: string[] } {
+  private findings(stdout: Buffer, blobs: Blob[]): { blobs: string[]; rules: string[]; hits: ScanHit[] } {
     const known = new Set(blobs.map((b) => b.sha));
     const hit = new Set<string>();
     const rules = new Set<string>();
+    const hits: ScanHit[] = [];
     try {
       const report = JSON.parse(stdout.toString("utf8")) as unknown;
       if (Array.isArray(report)) {
@@ -150,12 +157,17 @@ export class Gitleaks implements SecretsScanner {
           const file = (f as Record<string, unknown>).File;
           const rule = (f as Record<string, unknown>).RuleID;
           if (typeof file === "string" && known.has(path.basename(file))) hit.add(path.basename(file));
-          if (typeof rule === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(rule)) rules.add(rule);
+          const okRule = typeof rule === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(rule);
+          if (okRule) rules.add(rule);
+          const line = (f as Record<string, unknown>).StartLine;
+          if (typeof file === "string" && known.has(path.basename(file)) && Number.isSafeInteger(line) && (line as number) > 0) {
+            hits.push({ blob: path.basename(file), rule: okRule ? rule : "unnamed", line: line as number });
+          }
         }
       }
     } catch {
       // Exit 99 already says there is a finding; an unreadable report still blocks.
     }
-    return { blobs: hit.size ? [...hit] : [...known], rules: [...rules] };
+    return { blobs: hit.size ? [...hit] : [...known], rules: [...rules], hits };
   }
 }

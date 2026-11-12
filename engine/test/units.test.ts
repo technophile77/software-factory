@@ -387,7 +387,7 @@ describe("gitleaks (Gate 1 component review 5)", () => {
     const fake = fakeGitleaks(path.join(root, "bin"));
     const g = new Gitleaks({ binary: fake.path, workDir: path.join(root, "work"), children: new Children(), expectSha256: fake.sha256 });
     const hit = await g.scan([{ sha: "b".repeat(40), content: Buffer.from("FAKE-SECRET-1") }, { sha: "c".repeat(40), content: Buffer.from("ok") }]);
-    expect(hit).toEqual({ clean: false, blobs: ["b".repeat(40)], rules: ["generic-api-key"] });
+    expect(hit).toEqual({ clean: false, blobs: ["b".repeat(40)], rules: ["generic-api-key"], hits: [{ blob: "b".repeat(40), rule: "generic-api-key", line: 1 }] });
     fs.writeFileSync(fake.failFlag, "");
     await expect(g.scan([{ sha: "d".repeat(40), content: Buffer.from("x") }])).rejects.toThrow(ScanError);
   });

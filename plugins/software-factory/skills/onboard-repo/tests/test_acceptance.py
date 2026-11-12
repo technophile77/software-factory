@@ -1082,7 +1082,9 @@ CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.
                      ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml",
                      "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**",
                      "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**", ".gitmodules",
-                     ".vscode/**", ".devcontainer/**"]
+                     ".vscode/**", ".devcontainer/**",
+                     # Role policy v2.6 (H-0107, F-009).
+                     "docs/features/*-source.md", "docs/features/*-source.txt"]
 # "commands may not name a shell, interpreter or command wrapper": the contract names no list, so these are
 # members that are one of the three by any reading, including versioned and path-qualified spellings.
 SHELLS_AND_INTERPRETERS = ["sh", "bash", "zsh", "dash", "ash", "ksh", "mksh", "rbash", "fish", "csh", "tcsh",

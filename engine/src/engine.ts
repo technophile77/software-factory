@@ -9,7 +9,8 @@ import type { SessionOutcome } from "./agent/session";
 import { commitWorktree } from "./agent/worktree-commit";
 import { DockerError } from "./docker/cli";
 import { baseImageId, ensureAgentImage, skillsPluginDir } from "./docker/image";
-import { frameRequest } from "./interview/frame";
+import { DocumentRefused, SourceDocument, documentMeta, lineOfByte, sha256 as sha256Of, sourcePath } from "./interview/document";
+import { frameDocument, frameRequest } from "./interview/frame";
 import { Conn, notification, serve } from "./channel/framing";
 import { EngineControl, ProjectChannel, methods } from "./channel/methods";
 import { SessionManager } from "./channel/sessions";
@@ -554,6 +555,38 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   let startLock: Promise<unknown> = Promise.resolve();
 
+  /** F-009 FR-3, SR-11: gitleaks on the exact bytes; a hit names lines and rule ids only. */
+  async function scanDocument(doc: SourceDocument): Promise<void> {
+    const content = Buffer.from(doc.text, "utf8");
+    const res = await scanner.scan([{ sha: sha256Of(content), content }]);
+    if (res.clean) return;
+    const lines = [...new Set((res.hits ?? []).map((h) => h.line))].sort((a, b) => a - b);
+    throw new DocumentRefused("secret", "The secrets scan found a secret in the document; nothing was stored. Remove it and try again.", lines, res.rules[0]);
+  }
+
+  /**
+   * Commits the document byte for byte to a new commit on top of main, at the
+   * engine's own path for the feature (F-009 FR-4, SR-10), through a private
+   * index so the project's checkout and index are never touched.
+   */
+  async function storeDocument(p: Project, fid: string, main: string, doc: SourceDocument): Promise<{ commit: string; blob: string }> {
+    const content = Buffer.from(doc.text, "utf8");
+    const blob = (await git.out(p.real!, ["hash-object", "-w", "--no-filters", "--stdin"], { input: content })).trim();
+    const back = await git.catBlob(p.real!, blob);
+    if (!back.equals(content)) throw new Error("git stored a different blob than the document");
+    ensureOwnerDir(tmpDir);
+    const index = path.join(tmpDir, `doc-index-${crypto.randomBytes(8).toString("hex")}`);
+    try {
+      await git.run(p.real!, ["read-tree", main], { indexFile: index });
+      await git.run(p.real!, ["update-index", "--add", "--cacheinfo", `100644,${blob},${sourcePath(fid, doc.media_type)}`], { indexFile: index });
+      const tree = (await git.out(p.real!, ["write-tree"], { indexFile: index })).trim();
+      const commit = (await git.out(p.real!, ["commit-tree", tree, "-p", main, "-F", "-"], { input: `${fid}: source document from the owner\n` })).trim();
+      return { commit, blob };
+    } finally {
+      fs.rmSync(index, { force: true });
+    }
+  }
+
   function channelFor(p: Project): ProjectChannel {
     return {
       name: p.name!,
@@ -570,18 +603,22 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           confirm: "It was a real secret: rotate it", hold: "It was a false positive: no action", recommendation: "A",
         });
       },
-      startFeature: (request) => {
+      startFeature: (request, doc) => {
         // One at a time across projects, so two requests can't take the same id.
         const run = startLock.then(async () => {
+          // The document is scanned before anything else happens: a refusal leaves no id, branch, commit or transcript (F-009 AC-3).
+          if (doc) await scanDocument(doc);
           const n = (await knownFeatureIds()) + 1;
           const fid = `F-${String(n).padStart(3, "0")}`;
           const branch = `feature/${fid}-${slug(request)}`;
           const main = await git.revParse(p.real!, "refs/heads/main");
           if (!main) throw new Error("the config repo has no main branch");
+          const stored = doc ? await storeDocument(p, fid, main, doc) : null;
           record.assignFeature(fid, p.real!);
-          await git.run(p.real!, ["update-ref", `refs/heads/${branch}`, main, "0".repeat(40)]);
+          await git.run(p.real!, ["update-ref", `refs/heads/${branch}`, stored?.commit ?? main, "0".repeat(40)]);
           const f = newFeature(p, fid);
-          await f.exclusive(() => f.append([{ type: "feature_started", feature: fid, title: title(request), branch, request }], "feature requested"));
+          const document = stored && doc ? documentMeta(fid, doc, stored.blob) : null;
+          await f.exclusive(() => f.append([{ type: "feature_started", feature: fid, title: title(request), branch, request, ...(document ? { document } : {}) }], "feature requested"));
           log.info(`${p.name}: ${fid} started on ${branch}`);
           launchAnalyst(p, f);
           return fid;
@@ -593,6 +630,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   const analystRuns = new Map<string, string>();
+
+  /** The stored source document, by the blob id in the transcript, only if it still matches its SHA-256 (F-009 FR-4). */
+  async function documentText(p: Project, f: FeatureInterview): Promise<string | null> {
+    const d = f.state.document;
+    if (!d || !/^[0-9a-f]{40,64}$/.test(d.blob)) return null;
+    const buf = await git.catBlob(p.real!, d.blob).catch(() => null);
+    if (!buf || sha256Of(buf) !== d.sha256) return null;
+    return buf.toString("utf8");
+  }
 
   /** The feature's analyst run in this engine, started on the first call for its tools. */
   function analystRun(p: Project, fid: string, worktree: string): string {
@@ -712,11 +758,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       let summary = plan?.mode === "from_commit" ? plan.summary : "";
       if (plan?.mode === "session" && !resumeId) summary = transcriptSummary(f.state);
       const facts: RunFacts = { model: models["requirements-analyst"] };
+      const docText = f.state.document ? await documentText(p, f) : null;
+      if (f.state.document && docText === null) throw new SessionRefused("the feature's source document is missing or doesn't match its recorded hash");
+      const sourceDoc = f.state.document && docText !== null ? frameDocument(f.id, f.state.document, docText) : null;
       let r: Awaited<ReturnType<typeof runAnalystSession>>;
       for (;;) {
         const first = resumeId
           ? "The engine restarted. Continue where you left off; owner replies, if any, follow as further turns."
-          : [intro, frameRequest(f.id, f.state.request), ...(summary ? [summary] : [])].join("\n\n");
+          : [intro, frameRequest(f.id, f.state.request), ...(sourceDoc ? [sourceDoc] : []), ...(summary ? [summary] : [])].join("\n\n");
         const turns = new TurnQueue(f, first);
         job.turns = turns;
         if (shuttingDown || dead) turns.close();
@@ -897,6 +946,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         feature: f,
         worktree,
         log,
+        documentText: () => documentText(p, f),
         ...(research ? { research } : {}),
         onSpecReady: (passed) => {
           if (passed && !dead && record.run(runId)?.status === "running") runs.finish(runId, "complete");

@@ -3,7 +3,7 @@
 - **Id:** F-009
 - **Status:** Approved (readiness gate passed 2026-11-12); in development
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 6
+- **Spec version:** 7
 
 ## 1. Objective and business purpose
 The owner often has a finished spec or a working document before a feature
@@ -127,7 +127,7 @@ None yet. Each will be proposed to the owner.
 | SR-10 | The engine fixes the stored file name from `media_type`; `name` is display text only, length-limited, control characters stripped, never in a path or git argument. | G1 #5; owner 2026-11-12 (thread) | Approved |
 | SR-11 | Sensitive data is the whole document: it goes to the config repo remote and the model API. The skill says so before the owner picks a file. A secrets refusal names line and rule, never the value. | G1 #6; owner 2026-11-12 (thread) | Approved |
 | SR-12 | The analyst never quotes the document in a request to the web reader; every reader request stays in the transcript. Residual risk at Rapid prototype. | G1 #7; owner 2026-11-12 (thread) | Approved |
-| SR-13 | The engine counts the document against the ADR 0012 budget at start and refuses a start the budget can't cover. | G1 #8; owner 2026-11-12 (thread) | Approved |
+| SR-13 | The engine counts the document against the ADR 0012 budget at start and refuses a start the budget can't cover. | G1 #8; owner 2026-11-12 (thread) | Deferred to Alpha: the engine has no project budget ledger yet; until then the 256 KiB cap is the only size guard (owner, decision card, 2026-11-12). Known issue; must be fixed before promotion to Alpha |
 | SR-14 | The skill sends `provenance` only from the owner's pick in the picker in that turn. | G1 #9; owner 2026-11-12 (thread) | Approved |
 
 Security Gate 1 ran on spec v2: `F-009-security-gate1.md` (0 Critical, 3 High, 4 Medium, 2 Low).
@@ -169,6 +169,7 @@ Passed 2026-11-12 (orchestrator check on spec v6):
 | 4 | 2026-11-12 | SR-8: refuse documents with hidden content (G1 #3 option a); AC-10 added | Owner, 2026-11-12 (decision card) |
 | 5 | 2026-11-12 | SR-1 to SR-7 and SR-9 to SR-14 approved as written | Owner, 2026-11-12 (thread) |
 | 6 | 2026-11-12 | H-0105 to H-0108 approved as drafted; readiness gate passed; development starts | Owner, 2026-11-12 (decision card) |
+| 7 | 2026-11-12 | SR-13 deferred to Alpha as a known issue (no project budget ledger in the engine yet) | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |

@@ -83,7 +83,7 @@ policy:
         deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]   # secret files (Role policy v2.2)
       write:
         allow: ["docs/features/**"]
-        deny: ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json", ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml", "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**", "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**", ".gitmodules", ".vscode/**", ".devcontainer/**"]
+        deny: ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json", ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml", "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**", "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**", ".gitmodules", ".vscode/**", ".devcontainer/**", "docs/features/*-source.md", "docs/features/*-source.txt"]
       commands:
         allow: []
       network:
@@ -96,7 +96,7 @@ policy:
         deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
       write:
         allow: []
-        deny: ["docs/features/**", "CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json", ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml", "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**", "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**", ".gitmodules", ".vscode/**", ".devcontainer/**"]
+        deny: ["docs/features/**", "CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json", ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml", "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**", "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**", ".gitmodules", ".vscode/**", ".devcontainer/**", "docs/features/*-source.md", "docs/features/*-source.txt"]
       commands:
         allow: []
       network:
@@ -109,7 +109,7 @@ policy:
         deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
       write:
         allow: []
-        deny: ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json", ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml", "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**", "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**", ".gitmodules", ".vscode/**", ".devcontainer/**"]
+        deny: ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.local.md", ".claude/**", ".mcp.json", ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml", "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**", ".claude-plugin/**", "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**", ".gitmodules", ".vscode/**", ".devcontainer/**", "docs/features/*-source.md", "docs/features/*-source.txt"]
       commands:
         allow: []
       network:

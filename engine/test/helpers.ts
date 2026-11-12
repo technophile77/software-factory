@@ -131,7 +131,9 @@ function scan() {
   const hits = [];
   for (const f of fs.readdirSync(argv[1])) {
     const file = path.join(argv[1], f);
-    if (fs.readFileSync(file, "latin1").includes("FAKE-SECRET-")) hits.push({ File: file, RuleID: "generic-api-key", Secret: "REDACTED" });
+    const text = fs.readFileSync(file, "latin1");
+    const at = text.indexOf("FAKE-SECRET-");
+    if (at >= 0) hits.push({ File: file, RuleID: "generic-api-key", Secret: "REDACTED", StartLine: text.slice(0, at).split("\n").length });
   }
   finish(hits.length ? 99 : 0, JSON.stringify(hits) + "\n");
 }
