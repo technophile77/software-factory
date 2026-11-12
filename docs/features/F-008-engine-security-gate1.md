@@ -3,13 +3,13 @@
 - **Id:** F-008
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 1
+- **Spec version:** 2
 
 This is part of the engine's increment 3 ("Requirements to ready", F-007
-section 13). OQ-1 asks the owner whether Security Gate 1 is built on its own
-first, with reading inbox decisions under signed owner actions (ADR 0015)
-and the full readiness gate as the next feature. This draft is written for
-that recommended scope; if the owner chooses otherwise, it is widened.
+section 13). The owner chose to build Security Gate 1 on its own first
+(OQ-1, decision card, 2026-11-12). Reading inbox decisions under signed
+owner actions (ADR 0015) and the full readiness gate come in the next
+feature.
 
 ## 1. Objective and business purpose
 The engine now takes a feature from request to a spec that passes the
@@ -150,7 +150,7 @@ Asked one at a time. None is assumed.
 
 | Id | Question | Category | Status |
 |---|---|---|---|
-| OQ-1 | Build Gate 1 on its own first, or all of increment 3 together? | Product | Asked (card, 2026-11-12) |
+| OQ-1 | Build Gate 1 on its own first, or all of increment 3 together? | Product | Decided: Gate 1 first, the rest of increment 3 next (owner, decision card, 2026-11-12) |
 | OQ-2 | How the reviewer hands in its report: engine tools that validate it (new contract), or by writing `.factory/runs/**/security-reviewer-*.json` as its role policy allows, checked afterwards. | Interfaces | Open |
 | OQ-3 | How Gate 1 findings reach the spec with the owner's approval: the analyst puts each new requirement to the owner in the interview, and only choices between options go to the inbox; or every finding goes to the inbox. | Product | Open |
 | OQ-4 | Where the reviewer reads the security standards: the engine supplies the pinned factory's `docs/security-standards.md` plus the project's `standards.security` file, read-only at a fixed path. | Architecture | Open |
@@ -159,3 +159,4 @@ Asked one at a time. None is assumed.
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-12 | First draft, on the recommended scope of OQ-1 | |
+| 2 | 2026-11-12 | OQ-1: Gate 1 on its own first; inbox reading with signed actions and the full readiness gate next | Owner, 2026-11-12 (decision card) |
