@@ -1,9 +1,9 @@
 # Feature: Triage GitHub issues into the factory
 
 - **Id:** F-010
-- **Status:** Draft (OQ-8 open; then the readiness gate)
+- **Status:** Draft (all open questions decided; readiness gate next)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 21
+- **Spec version:** 22
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -265,7 +265,7 @@ Drafted by the analyst; SR-12 to SR-29 come from Gate 1 (`F-010-security-gate1.m
 | SR-28 | `duplicate_of` must name an open issue the engine has triaged that isn't a security report. Duplicates post nothing about the other issue. | Gate 1 #17 | Accepted from Gate 1 |
 | SR-29 | The action log adds agent, repo id, issue number and a body hash. Dropped text is never logged. | Gate 1 #18 | Accepted from Gate 1 |
 | SR-10 | A `security_report` gets no public reply or label. | Analyst | Draft |
-| SR-30 | A vulnerability report is made private until it is resolved (owner, 2026-11-12, thread): the engine moves it out of public view as OQ-8 decides, before any other step, and the fix happens only in private. Notification emails GitHub already sent when the issue opened can't be recalled; the Security item says so. | Owner | Approved in substance; mechanism in OQ-8 |
+| SR-30 | A vulnerability report is made private until it is resolved (owner, 2026-11-12, thread): the engine moves it out of public view as OQ-8 decides, before any other step, and the fix happens only in private. Notification emails GitHub already sent when the issue opened can't be recalled; the Security item says so. | Owner | Approved (owner, 2026-11-12, thread; mechanism OQ-8 (b), decision card) |
 
 ## 10. Interface requirements
 Drafts below. Each is filed as its own hygiene item in the inbox and applied
@@ -426,7 +426,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
   the labels in section 2 step 11, creating any that are missing. Nothing
   else: no close, assign, edit, lock, reaction or comment on a
   `security_report`.
-- Amends ADR 0006: the factory token gets `issues: write` on those repos.
+- Amends ADR 0006: the factory token gets `issues: write` on those repos, and for OQ-8 (b) `administration: write` and `repository security advisories: write`, used only for the advisory and transfer calls on the fixed list (SR-17). The admin right is a stated, accepted exception to S8 least privilege; the ADR records it.
 - Templates and labels ship in `templates/issue-replies/` in the master
   repo (change-controlled; add to CLAUDE.md's list); a project may
   override them in its config repo, and a factory pull never overwrites the
@@ -480,6 +480,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 19 | 2026-11-12 | Corrected v17: the owner did not accept a stated risk; Gate 1 #3 risks put to the owner | — |
 | 20 | 2026-11-12 | Gate 1 #9: per-reporter limits and inbox digest (SR-20, H-0110 limits) | Owner, 2026-11-12 (decision card) |
 | 21 | 2026-11-12 | Owner rule: sensitive information never goes into a public repo (SR-14 adopted); vulnerability reports made private until resolved (SR-30); OQ-8 added | Owner, 2026-11-12 (thread) |
+| 22 | 2026-11-12 | OQ-8: the factory opens the private advisory, adds the reporter and transfers the issue; the factory token gains admin and advisory rights (H-0114) | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -491,4 +492,4 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | OQ-5 | How does the engine learn of new issues? (a) It checks GitHub every few minutes (default 5) while running, and catches up on start. (b) A GitHub Actions workflow in each repo relays issue events to somewhere the engine reads. Recommended: (a); no inbound port, no new workflow in every repo, and conditional requests cost no rate limit. **Decided: (a).** | Architecture | Decided (owner, 2026-11-12, decision card) |
 | OQ-6 | What about issues already open when triage is turned on? (a) Ignore them; only new issues. (b) Triage the backlog too, inside the daily cap. (c) Ask once when triage is turned on. Recommended: (c). **Decided: (b).** | Product | Decided (owner, 2026-11-12, decision card) |
 | OQ-7 | How specific can "need more information" be? (a) Only items from the fixed list in section 10. (b) The fixed list plus one short question written by the factory, plain text, at most 200 characters, with no links, @-mentions or code. Recommended: (a). The text in (b) would come from a session that read the issue, so a crafted issue could make the factory's account post words chosen by its author. **Decided: (b)**, with the filter in FR-17. | Security | Decided (owner, 2026-11-12, decision card) |
-| OQ-8 | How does the factory make a public vulnerability report private? (a) The engine transfers the issue to a private "security intake" repo of the same owner, named in the manifest (needs only `issues: write` there), then files a Security item; the owner opens a private security advisory and adds the reporter to it. (b) The factory token also gets admin and advisory rights, and the engine opens the draft advisory itself, adds the reporter, then transfers the issue. (c) The owner does it all by hand from a Security item; the issue stays public until then. Recommended: (a). GitHub lets only admins or security managers open advisories, and admin rights for the factory would break least privilege (S8). | Security | Open |
+| OQ-8 | How does the factory make a public vulnerability report private? (a) The engine transfers the issue to a private "security intake" repo of the same owner, named in the manifest (needs only `issues: write` there), then files a Security item; the owner opens a private security advisory and adds the reporter to it. (b) The factory token also gets admin and advisory rights, and the engine opens the draft advisory itself, adds the reporter, then transfers the issue. (c) The owner does it all by hand from a Security item; the issue stays public until then. Recommended: (a). GitHub lets only admins or security managers open advisories, and admin rights for the factory would break least privilege (S8). **Decided: (b).** The engine opens a draft private security advisory with the report, adds the reporter as a collaborator, then transfers the issue to a private repo of the same owner named in the manifest. Residual risk, stated to the owner: the factory token holds admin on every repo it covers, so a leak or a bug in the engine could change repo settings, branch rules or collaborators; the engine's fixed call list (SR-17) is the only limit on what it does with that right. | Security | Decided (owner, 2026-11-12, decision card) |
