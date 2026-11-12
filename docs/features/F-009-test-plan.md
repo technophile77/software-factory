@@ -2,7 +2,8 @@
 
 - **Feature:** F-009 Start an interview from an existing document, spec v11
   (written against v7; the rows marked v9, v10 and v11 were added after the
-  owner's decisions of 2026-11-12, in answer to validation round 1, M2)
+  owner's decisions of 2026-11-12, in answer to validation round 1, M2;
+  the rows marked "round 2" answer validation round 2, M1 and m13, and D-1)
 - **Author:** test-engineer, 2026-11-12
 - **Written from:** the spec (FR-1 to FR-9, AC-1 to AC-10, SR-1 to SR-14,
   section 6), `docs/testing-strategy.md`, and the contracts in
@@ -22,9 +23,10 @@
     against the shared `fake_engine.py`, using `test_interview_client.Base`
     with `engine.json` at channel v1.4. Run with
     `python3 -m unittest discover -s plugins/software-factory/skills/spec-interview/tests -p 'test_acceptance_f009.py'`.
-- **Size:** engine 50 test ids, 134 cases (parameterised ids count once per
-  case); client 43 tests. Before the v9 to v11 additions: engine 38 ids, 76
-  cases; client 40 tests.
+- **Size:** engine 55 test ids, 167 cases (parameterised ids count once per
+  case); client 43 tests. Before the round 2 additions: engine 50 ids, 134
+  cases. Before the v9 to v11 additions: engine 38 ids, 76 cases; client 40
+  tests.
 - **Out of scope:** SR-13 (deferred by the owner to Alpha, spec v7).
 
 ## Tool choice
@@ -66,6 +68,7 @@ can show.
 | AC-9 | An analyst session that overwrites or deletes the source (alone or with its spec) has nothing committed, the run fails, a Security item names the path; a session writing only its spec is committed and leaves the source unchanged (control); the onboarding template denies both source globs in every role that writes outside `.factory/` | DOC-20 ×3, DOC-21, DOC-22 | Acceptance |
 | AC-10 | An HTML comment (one line and multi-line), a raw tag, a `<script>` tag, ZWSP, ZWJ, RLO and a bidi isolate are each refused as `hidden_content` naming the line, nothing stored; all four kinds in one document name each line; the same in `text/plain`; ordinary `<`, `>`, links and image references are accepted (control); the client shows the lines | DOC-11 ×8, DOC-12, DOC-13 ×2, DOC-14; client `test_ac10_hidden_content_lines_are_named` | Acceptance |
 | AC-10 (v10) | A link reference definition with a title (double-quoted, single-quoted, parenthesised, on the next line), an unused one, and the `[//]: # (…)` idiom, at the top level, in a block quote, a nested block quote, a bullet or ordered list item, a list item's second paragraph (also indented 4 spaces) and a block quote in a list item; an empty inline link or image, link text of only spaces, `&nbsp;`, `&#160;`, `&#xA0;`, a literal U+00A0 or an em space, an image alt of only `&nbsp;`, an empty full reference link, and empty links inside a block quote and a list item: each refused as `hidden_content` naming its line, nothing stored. Every kind in one document names each line. Controls accepted: used untitled definitions (full, collapsed and shortcut references, matched without case or extra spaces; a definition inside a block quote or list item; a reference used from a block quote), links and images with text and a title, task-list boxes and `[]` in prose | LNK-1 ×26, LNK-2, LNK-3 ×7 | Acceptance |
+| AC-10 (v10, round 2) | A link label or link text over two lines: the `[//]: # (…)` idiom with its label split, link text of only a line break (LF and CRLF), spaces around one, or `&nbsp;` and one, an image alt of only a line break, a full reference link of only a line break, an unused untitled definition and a used titled one with split labels; the split idiom in a block quote (second line marked or lazy), a nested block quote and a list item; line-break link text in a block quote (marked or lazy) and a list item. Link text of only a blank code span: one space, a double-backtick span of spaces, a line break, a no-break space; an image alt, a full reference link and a link in a block quote of one. A shortcut reference link or image whose text is `&nbsp;` or a blank code span. Each refused as `hidden_content` naming a line it covers, nothing stored. Controls accepted: link text with words over two lines, a used untitled definition with a split label (also in a block quote), a code span with words as link text, a `[` left open across a blank line | LNK-4 ×16, LNK-5 ×7, LNK-6 ×3, LNK-7 ×5 | Acceptance |
 
 ## Security requirements to tests
 
@@ -79,6 +82,7 @@ can show.
 | SR-6 | Client: `\\server\share`, `//server/share`, `\\?\`, `\\.\pipe\`, `\\.\COM1` refused before any open; a file whose reported size is small but whose content is 768 KiB is read only up to 262,145 bytes and refused | Acceptance (client) |
 | SR-7 | SRC-1 (item built from the table with each ref's exact spec line, confirm passes), SRC-4 (unanswered), SRC-5 (reopened), SRC-6 (changed table needs a new confirmation), SRC-7 ×3 (fabricated, paraphrased, over 1,000 characters: refused naming the row, no item), SRC-8 (whitespace collapse), SRC-9 (analyst can't pass its own list), SRC-10 (quotes checked against the stored blob, not a changed copy on the branch), SRC-11, SRC-12 | Acceptance / contract |
 | SR-7 (v11) | SPL-1 ×7 (accepted: 5 words under 25 characters, 4 words of 25 or more, two lines of one paragraph, one list item, one table row with and without outer pipes, a second heading), SPL-2 ×8 (refused naming the row, no item: 4 words under 25 characters, across paragraphs, list items or table rows, from a heading into its paragraph, under another heading, a Section that isn't a heading, `-` when headings exist), SPL-3 (`-` without headings; a name refused), SPL-4 ×2 (a ref with no spec line, or only mid-sentence) | Acceptance / contract |
+| SR-7 (v11, round 2: D-1 regression) | SPL-8 ×2: in a table without outer pipes, one row is accepted; a quote across a row and the pipe-less line after it (a further row in GFM) is refused naming the row | Acceptance / contract |
 | SR-8 | As AC-10 | Acceptance |
 | SR-9 | DOC-15 ×19 (media types, provenance, missing fields, 262,145 bytes ASCII and multi-byte, NUL, ESC, DEL, C1, lone surrogate, wrong types, empty, long name, unknown key, non-object): refused and nothing kept; DOC-16 (tab, LF, CR allowed) | Acceptance / contract |
 | SR-10 | DOC-3 (`.txt` from `text/plain`), DOC-17 ×4 (path, shell and git option text, control characters, 200 characters: stored at the fixed path, never in a commit message or git argument) | Acceptance |
@@ -129,6 +133,8 @@ can show.
 | An engine that echoes document text in -32009 data | Client `test_sr2_refusal_output_never_holds_the_text` |
 | An engine without the `document` capability | Client `ChannelVersion` |
 | A comment or title hidden in a link definition, at the top level or in a container | LNK-1 |
-| A link whose only text is a no-break space or another blank | LNK-1 |
+| A link whose only text is a no-break space or another blank | LNK-1, LNK-6 |
+| A link label or link text split over two lines, in any container | LNK-4 |
+| A link whose only text is a blank code span | LNK-5 |
 | A short or cross-block quote, or a Section that isn't the quote's heading | SPL-2, SPL-3 |
 | The analyst rewords a confirmed spec line | SPL-6 |

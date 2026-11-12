@@ -271,3 +271,101 @@ the new tests accept either, as SRC-7 already did.
   "never followed", SR-12): unchanged from above; validation M3 is with the
   owner.
 - **SR-13:** deferred to Alpha.
+
+## Addendum 2: validation round 2 fixes on `e88678a`
+
+Validation round 2 found link labels and link text that run over two lines
+accepted against SR-8 and AC-10 (M1), and link text that is only a blank code
+span accepted (m13). The developer fixed them in `e88678a`, and fixed D-1 and
+T-1 from Addendum 1 in `fe24185`. This addendum adds tests for those cases
+from the spec (SR-8, AC-10, as extended in v10) and Interview tools v1.1 (as
+amended in v11), and re-runs everything on the final commit. The plan's new
+rows are marked "round 2" in `F-009-test-plan.md`.
+
+### Run
+
+| | |
+|---|---|
+| Code tested | `e88678a` (`claude/project-thread-qzenwf`), plus the new tests in this commit. No product code changed |
+| Commands | `cd engine && npm run typecheck && npx vitest run`; `python3 -m unittest discover -s plugins/software-factory/skills/spec-interview/tests` |
+| Environment | Linux container, Node 22.23.4, Python 3.13.18, system git, running as root. No Docker |
+| Typecheck | Clean (engine and `test/acceptance`) |
+| Renderings | Each new case's rendering was checked against the CommonMark reference renderer (commonmark.js 0.31.2, installed in the scratch area only, not in the repo) |
+
+| Suite | Run | Passed | Failed | Skipped |
+|---|---|---|---|---|
+| Engine, whole (35 files) | 694 | 677 | **3** | 14 |
+| of which F-009 acceptance (`f009-document.test.ts`) | 167 | 164 | **3** | 0 |
+| Client, whole (`spec-interview/tests`) | 428 | 428 | 0 | 0 |
+| of which F-009 acceptance (`test_acceptance_f009.py`) | 43 | 43 | 0 | 0 |
+
+The 14 engine skips are the same gated real-Docker files and platform gates
+as before; no F-009 test is skipped. Coverage was not re-measured.
+
+**Result: fail.** Three new F-009 tests fail on product code (D-2). Every
+other test passes, including all of Addendum 1's tests.
+
+### Earlier failures
+
+| Failure | Now |
+|---|---|
+| D-1 (SPL-2, a quote across two rows of a table without outer pipes) | Pass. SPL-8 adds a regression (below) |
+| T-1 (F-006 pin on channel v1.3) | Pass. The test now accepts `v1\.[3-9]`, the fix Addendum 1 gave; the F-006 intent (a channel version with the advisor) is kept. Both F-006 tests pass |
+
+### New tests
+
+| Rule | Tests | Result |
+|---|---|---|
+| SR-8 / AC-10, link label or link text over two lines (round 2 M1) | LNK-4 ×16: the `[//]: # (…)` idiom with its label split; link text of only a line break (LF and CRLF), of spaces around one, of `&nbsp;` and one; an image alt and a full reference link of only a line break; an unused untitled definition and a used titled one with split labels; the split idiom in a block quote (second line marked, or lazy), a nested block quote and a list item; line-break link text in a block quote (marked, or lazy) and a list item. Each refused as `hidden_content` naming a line the construct covers, nothing kept | Pass (16) |
+| SR-8 / AC-10, blank code span (round 2 m13) | LNK-5 ×7: one space; a double-backtick span of spaces; a span holding only a line break; a span holding only a no-break space; an image alt, a full reference link, and a link in a block quote, each of a blank span | Pass (7) |
+| SR-8 / AC-10, shortcut reference links | LNK-6 ×3: a shortcut reference link (`[text]` with a matching definition) whose text is `&nbsp;` or a blank code span, and a shortcut image whose alt is `&nbsp;` | **Fail (D-2)** |
+| AC-10 controls | LNK-7 ×5: link text with words over two lines; a used untitled definition with its label over two lines, also in a block quote; a code span with words as link text; a `[` left open across a blank line (not a link in CommonMark) | Pass (5) |
+| Interview tools v1.1 (v11), D-1 regression | SPL-8 ×2: in a table without outer pipes, one row is accepted; a quote across a row and the pipe-less line after it (a further table row in GFM) is refused as `invalid`, naming the row | Pass (2) |
+
+### Failures
+
+#### D-2 (LNK-6 ×3): a shortcut reference link with blank text is accepted
+
+- **Expected** (SR-8, AC-10 as extended in v10): a document with "a link or
+  image with empty text" is refused as `hidden_content`, naming the line.
+- **Documents** (`M` stands for the test's marker):
+  ```
+  See [&nbsp;].
+
+  [&nbsp;]: https://example.org/M
+  ```
+  ```
+  See [` `].
+
+  [` `]: https://example.org/M
+  ```
+  ```
+  See ![&nbsp;].
+
+  [&nbsp;]: https://example.org/M.png
+  ```
+- **CommonMark renders** them as `<p>See <a href="https://example.org/M"> </a>.</p>`,
+  `<p>See <a href="https://example.org/M"><code> </code></a>.</p>` and
+  `<p>See <img src="https://example.org/M.png" alt=" " />.</p>`: a link or
+  image with no visible text, its target hidden. A label of `&nbsp;` or
+  `` ` ` `` is a valid label (it holds a non-whitespace character), and the
+  definition is used and untitled, so the definition rules don't catch it.
+- **Actual:** `feature.start` succeeds (`{"feature":"F-001"}`); the document
+  is stored.
+- **Likely cause:** the link-text check at `engine/src/interview/document.ts:171`
+  only looks at brackets followed by `(` or `[` (inline, full and collapsed
+  references). A shortcut reference is `[text]` alone, so its text is never
+  checked. The collapsed form `[&nbsp;][]` is refused, which shows the gap is
+  only the shortcut form.
+- **Class:** product code; developer fix. Same class as round 2 M1, smaller:
+  no title can be hidden this way (a titled definition is refused already),
+  only the link's target.
+- **Logs:** the run log, failing assertion `expected error -32009, got result
+  {"feature":"F-001"}` at `f009-document.test.ts` (LNK-6).
+
+### Not tested, and why
+
+Unchanged from Addendum 1 (link rules in `text/plain`; link-definition text
+in code; model behaviour, validation M3; SR-13). Also: a `[` and `]` with a
+blank line between them is not a link in CommonMark; LNK-7 asserts it is
+accepted, and the engine's "a blank line ends the paragraph" check holds it.
