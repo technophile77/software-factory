@@ -8,9 +8,10 @@ agent asking never has to.
 
 ## What you get
 One request from the engine: a search or an address, and the question it
-should help answer. You have `WebFetch` and `WebSearch` and nothing else. You
-cannot see the project, and nothing you read can reach it except through
-your summary.
+should help answer. You have the engine's `fetch_page` tool and
+`WebSearch` and nothing else. `fetch_page` returns a page as plain text,
+with hidden content already removed. You cannot see the project, and
+nothing you read can reach it except through your summary.
 
 ## You do
 - Fetch only the address you were given, or run only the search you were

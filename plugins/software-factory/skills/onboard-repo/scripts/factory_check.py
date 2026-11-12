@@ -1121,6 +1121,91 @@ def _inside(path):
     return ".." not in re.split(r"[\\/]", path)
 
 
+
+def _is_id(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _check_owner_keys(data):
+    """Project manifest v1.3: optional here, but typed when present, so a
+    placeholder left in by mistake is caught before the engine refuses it."""
+    errors = []
+    if "enabled" in data and not isinstance(data["enabled"], bool):
+        errors.append("enabled must be true or false")
+    if "owner" in data:
+        owner = data["owner"]
+        if not isinstance(owner, dict):
+            errors.append("owner must be a mapping with github_id and oauth_client_id")
+        else:
+            if not _is_id(owner.get("github_id")):
+                errors.append("owner.github_id must be the owner's numeric GitHub id")
+            if not isinstance(owner.get("oauth_client_id"), str) or not owner["oauth_client_id"].strip():
+                errors.append("owner.oauth_client_id must be the OAuth app's client id")
+    if "allowed_repo_owners" in data:
+        allowed = data["allowed_repo_owners"]
+        if not isinstance(allowed, list) or not allowed:
+            errors.append("allowed_repo_owners must list at least one account")
+        else:
+            for i, entry in enumerate(allowed):
+                if not isinstance(entry, dict) or not _is_id(entry.get("id")) or not isinstance(entry.get("login"), str):
+                    errors.append(f"allowed_repo_owners[{i}] must have a login and a numeric id")
+    return errors
+
+# Project manifest v1.4 (H-0087): the keys of the master's
+# engine/config/limits.yaml. "int" keys are whole numbers; "num" keys may be
+# fractions. The engine also refuses any value above the master default.
+_CONTAINER_LIMITS = {"cpus": "num", "memory_mib": "num", "pids": "int", "tmp_mib": "num"}
+_SESSION_LIMITS = {"turns": "int", "output_tokens": "int", "dollars": "num", "wall_time_minutes": "int", **_CONTAINER_LIMITS}
+LIMIT_KEYS = {
+    "analyst": _SESSION_LIMITS,
+    "web_reader": _SESSION_LIMITS,
+    "proxy": _CONTAINER_LIMITS,
+    "research_web": {"per_question": "int", "per_session": "int"},
+    "fetch_page": {"max_download_mib": "num", "max_chars": "int"},
+    "research_result": {"summary_chars": "int", "max_sources": "int"},
+    "worktree_commit": {"max_files": "int", "max_total_mib": "num", "max_file_mib": "num"},
+}
+
+
+def _limit_number(value, kind):
+    """The value as a number, or None. This parser hands back a plain decimal
+    like 0.5 as text, so text in decimal form counts as a number."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if kind == "num" and isinstance(value, str) and re.fullmatch(r"(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?", value):
+        return float(value)
+    return None
+
+
+def _check_limits(data):
+    if "limits" not in data:
+        return []
+    block = data["limits"]
+    if not isinstance(block, dict):
+        return ["limits must be a mapping of sections (see the master's engine/config/limits.yaml)"]
+    errors = []
+    for section, values in block.items():
+        keys = LIMIT_KEYS.get(section)
+        if keys is None:
+            errors.append(f"limits.{section} is not a known section ({', '.join(LIMIT_KEYS)})")
+            continue
+        if not isinstance(values, dict):
+            errors.append(f"limits.{section} must be a mapping")
+            continue
+        for key, value in values.items():
+            kind = keys.get(key)
+            if kind is None:
+                errors.append(f"limits.{section}.{key} is not a known key ({', '.join(keys)})")
+                continue
+            n = _limit_number(value, kind)
+            if n is None or n <= 0:
+                what = "a positive whole number" if kind == "int" else "a positive number"
+                errors.append(f"limits.{section}.{key} must be {what}")
+    return errors
+
+
 def validate_manifest(data, master=None):
     errors = []
     if not isinstance(data, dict):
@@ -1154,6 +1239,8 @@ def validate_manifest(data, master=None):
                 errors.append(f"repos[{i}].maturity must be one of {', '.join(LEVELS)}")
             elif r.get("maturity"):
                 repo_levels.append(r["maturity"])
+    errors += _check_owner_keys(data)
+    errors += _check_limits(data)
     maturity = data.get("maturity")
     if maturity not in LEVELS:
         errors.append(f"maturity must be one of {', '.join(LEVELS)}")
@@ -1221,8 +1308,9 @@ CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.
                      ".gitmodules", ".vscode/**", ".devcontainer/**"]
 POLICY_KEYS = {"tools": {"allow"}, "read": {"allow", "deny"}, "write": {"allow", "deny"},
                "commands": {"allow"}, "network": {"allow"}}
-AGENT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill"}
-FILE_TOOLS = AGENT_TOOLS - {"WebFetch", "WebSearch"}
+# fetch_page is the engine's own page fetch, which strips hidden content (Role policy v2.5).
+AGENT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill", "fetch_page"}
+FILE_TOOLS = AGENT_TOOLS - {"WebFetch", "WebSearch", "fetch_page"}
 # Role policy v2.2: no agent reads these, whatever its allow list says. The
 # channel file would let an agent answer the owner's interview (F-005 SR-14).
 SECRET_FILES = ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks",
@@ -1437,7 +1525,7 @@ def validate_policy(data, agents):
             # Open web content must never reach an agent that can see project files (F-005 SR-17).
             if "*" in ((rule.get("network") or {}).get("allow") or []) and tools & FILE_TOOLS:
                 errors.append(f"policy for {role} in {where} allows any host but has file tools "
-                              f"({', '.join(sorted(tools & FILE_TOOLS))}); only a WebFetch/WebSearch-only role may")
+                              f"({', '.join(sorted(tools & FILE_TOOLS))}); only a role with web tools alone may")
             missing = [f for f in SECRET_FILES if f not in set((rule.get("read") or {}).get("deny") or [])]
             if missing:
                 errors.append(f"policy for {role} in {where} must deny reading {', '.join(missing)}")

@@ -5,6 +5,29 @@ description: <one line on what the project is>
 factory:
   version: <tag or commit of the master factory>
 
+enabled: false                # ADR 0012: work starts only when the owner switches this on
+
+# Owner and authorization (Project manifest v1.3). The engine won't run the
+# project until the owner fills these in with their own values. Placeholders
+# only: real values belong in the project's config repo, never in the master
+# factory repo.
+# owner:
+#   github_id: <numeric id>        # the only account whose device approval opens an interview
+#   oauth_client_id: <client id>   # the owner's OAuth app, device flow, no scopes, no secret
+# allowed_repo_owners:             # accounts whose repos this project may work on
+#   - { login: <login>, id: <numeric id> }
+
+# Session limits (Project manifest v1.4, H-0087). Optional. The defaults are in
+# the master factory's engine/config/limits.yaml, with the same sections and
+# keys. A project may only lower values: the engine takes the lower of the two,
+# and refuses the project, with a Security item, if any value here is higher.
+# limits:
+#   analyst:
+#     turns: 150
+#     wall_time_minutes: 120
+#   worktree_commit:
+#     max_files: 100
+
 repos:
   - name: <repo-name>
     url: https://github.com/<owner>/<repo>
@@ -129,7 +152,7 @@ policy:
         allow: ["github.com", "api.github.com"]
     web-reader:                # reads web pages for the analyst; sees no project files
       tools:
-        allow: ["WebFetch", "WebSearch"]
+        allow: ["fetch_page", "WebSearch"]   # fetch_page is the engine's stripped fetch (Role policy v2.5)
       read:
         allow: []
         deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]

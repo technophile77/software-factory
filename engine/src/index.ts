@@ -1,0 +1,14 @@
+export { startEngine, defaultEngineHome, StartError } from "./engine";
+export type { EngineHandle, EngineOptions, ProjectStatus } from "./engine";
+export type { Clock } from "./clock";
+export { systemClock } from "./clock";
+export type { GitHubClient, DeviceCode, PollResult, RepoInfo } from "./github";
+export { HttpGitHub } from "./github";
+export type { CredentialStore } from "./secrets";
+export { MemoryCredentialStore, OsCredentialStore, MODEL_CREDENTIAL, factoryTokenName } from "./secrets";
+export type { OsApi, UnixApi, WindowsApi, CredentialApi } from "./os/ffi";
+export { realOsApi } from "./os/ffi";
+export type { InterviewTools, ToolResult } from "./interview/tools";
+export { frameTurn } from "./interview/frame";
+export { MemoryLogger, FileLogger } from "./log";
+export { SERVED_CHANNEL_VERSION } from "./constants";

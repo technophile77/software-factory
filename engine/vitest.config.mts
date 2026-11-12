@@ -1,0 +1,15 @@
+import { defineConfig } from "vitest/config";
+
+// Unit tests run with the defaults; the acceptance suite keeps its own config
+// (longer timeouts, one process per file).
+export default defineConfig({
+  test: {
+    projects: [
+      // Some unit tests run real git over loopback HTTP, which hosted macOS and Windows runners make slow.
+      { extends: false, test: { name: "unit", include: ["test/*.test.ts"], setupFiles: ["test/setup.ts"], testTimeout: 30_000 } },
+      "test/acceptance/vitest.config.mts",
+    ],
+    // Reported only; CI doesn't gate on a threshold.
+    coverage: { provider: "v8", include: ["src/**"], reporter: ["text-summary", "html"], reportsDirectory: "coverage" },
+  },
+});

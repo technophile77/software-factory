@@ -1064,7 +1064,8 @@ class AC11Manifest(Base):
 
 CORE_ROLES = ["orchestrator", "requirements-analyst", "software-developer", "test-engineer",
               "security-reviewer", "validation-judge"]
-CONTRACT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill"}
+# Role policy v2.5 adds the engine tool fetch_page (H-0083).
+CONTRACT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill", "fetch_page"}
 SUPPORT_ROLES = ["web-reader", "project-evaluator", "context-hygiene", "advisor"]
 # Copied from interface-contracts.md, Role policy v2.4 (H-0061) as amended by H-0076: the advisor's
 # fixed policy. H-0076 replaced the four inbox and transcript denies with all of .factory/.
