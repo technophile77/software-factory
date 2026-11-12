@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (all open questions decided; next: Gate 1 and the drafts of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 15
+- **Spec version:** 16
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -246,7 +246,7 @@ Drafted by the analyst; SR-12 to SR-29 come from Gate 1 (`F-010-security-gate1.m
 | SR-8 | Every GitHub call is logged with agent, action, target and time, without secrets (S9.6). | Analyst | Draft |
 | SR-9 | Replies are posted by engine code, never by a session that read issue text (S9.3). Apart from the question slot, no reply contains text from the issue or text a model wrote. | Analyst | Draft |
 | SR-11 | The question slot is the one place a crafted issue could choose words the factory's account posts (owner accepted this risk, OQ-7). Questions only, three at most, each with a checked purpose. The FR-17 filter keeps out links, mentions, references and formatting, and the length cap and one-sentence rule bound the rest. Gate 1 reviews whether that is enough. | Analyst | Draft |
-| SR-12 | Confirmation and fix branches stay local until Gate 2 and validation pass, and the PR opens as a draft. The fix lane is refused on a repo whose workflows give secrets to runs for factory branches. `instructions_found` routes to Security, not to the fix lane. Record text reaches code-writing sessions only as fenced data. Reproduction tests don't spawn processes, read the environment, use the network or run decoded code (subject to the owner's decision). | Gate 1 #1 | Pending owner decision (Security) |
+| SR-12 | Confirmation and fix branches stay local until Gate 2 and validation pass, and the PR opens as a draft. The fix lane is refused on a repo whose workflows give secrets to runs for factory branches. `instructions_found` routes to Security, not to the fix lane. Record text reaches code-writing sessions only as fenced data. Reproduction tests don't spawn processes, read the environment, use the network or run decoded code (subject to the owner's decision). | Gate 1 #1 | Approved (owner, 2026-11-12, decision card) |
 | SR-13 | The test engineer derives the expected output from the cited evidence. A crash fix changes only the crash. Gate 2 stops a fix that loosens a check. The PR body carries a fixed banner. | Gate 1 #2 | Accepted from Gate 1 |
 | SR-14 | Snapshots, records and drop logs live in a private, owner-only store. `factory/state` holds only hashes, kinds, routes, ids and the action log. Security-report material stays private (subject to the owner's decision). Sensitive data is listed. | Gate 1 #3 | Pending owner decision (Security) |
 | SR-15 | Question checks run on an NFKC-and-confusables fold, with drops for digit and hex runs, spelled-out domains, GitHub autolink forms, mixed scripts, verbatim overlap with the issue, a fixed word list and a profanity list. Questions start with a fixed interrogative. The question is Markdown-escaped. The rendered reply is secret-scanned. Questions are labelled as automated, and a per-repo switch turns them off. | Gate 1 #4 | Accepted from Gate 1 |
@@ -470,6 +470,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 13 | 2026-11-12 | Default caps: 20 issues a day, 1 fix at once per repo | Owner, 2026-11-12 (thread) |
 | 14 | 2026-11-12 | Section 10: drafts of H-0110 to H-0114 | — (drafts) |
 | 15 | 2026-11-12 | Gate 1: SR-12 to SR-29 added; SR-12, SR-14, SR-16, SR-20 wait for owner Security decisions | — |
+| 16 | 2026-11-12 | Gate 1 #1: fix branches stay local until Gate 2 and validation pass; no auto-fix on repos whose CI gives secrets to factory branches (SR-12) | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
