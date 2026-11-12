@@ -1,9 +1,9 @@
 # Feature: Triage GitHub issues into the factory
 
 - **Id:** F-010
-- **Status:** Draft (all open questions decided; readiness gate next)
+- **Status:** Draft (readiness checks 1 to 5 pass; check 6 waits on the owner's approval of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 22
+- **Spec version:** 24
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -217,6 +217,20 @@ The owner's existing rules still hold:
   on input they accept is a bug. Everything else goes to the owner.
 - **Issue closed before triage finishes.** The lane stops and the record says
   so.
+- **Abuse cases from Gate 1** (each covered by the SR named): a "minimal
+  example" that is exfiltration code (SR-12, SR-25); an issue citing a real
+  spec line to get a check removed (SR-13); a vulnerability report kept in
+  public history (SR-14, SR-30); a dropped phishing question kept in a log
+  (SR-14); a question with a full-width dot, "dot com", a phone number or a
+  commit hash (SR-15); a transferred issue redirecting a write (SR-17); an
+  issue edited after "Bug confirmed" (SR-18); a forged `route.json` (SR-19);
+  twenty fake security reports a day (SR-20); a crash that is really a
+  denial-of-service flaw (SR-21); a fix that edits `conftest.py` or a
+  package script (SR-22); an inbox summary phrased to win approval (SR-23); a
+  secret from a repo file copied into a question (SR-24); a reproduction that
+  needs an attachment URL (SR-25); a collaborator changing labels (SR-26); a
+  template override with a new slot (SR-27); `duplicate_of` pointing at a
+  security report (SR-28).
 
 ## 7. Dependencies
 - Engine increments 3 and 4 (F-007 section 13).
@@ -236,16 +250,16 @@ Drafted by the analyst; SR-12 to SR-29 come from Gate 1 (`F-010-security-gate1.m
 
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | External services (S9.1): GitHub issues API with the factory token: read issues, post template replies, set labels from the approved set. No other service and no other write. These writes are S9.2 actions, exempt only through the ADR in H-0114. | Analyst | Draft |
-| SR-2 | The triager is the only session that reads issue text. It has no network, no write and one tool (S9.3, S8). Instructions found in an issue are flagged in the record, never followed. | Analyst | Draft |
-| SR-3 | The triage record is schema-validated with length caps before any other session sees it (S1.1). | Analyst | Draft |
-| SR-4 | Issue snapshots are secret-scanned before they are stored (S3). | Analyst | Draft |
-| SR-5 | Security reports never enter the fix lane. | Analyst | Draft |
-| SR-6 | The fix scope guard keeps a bug fix away from contracts, dependencies, change-controlled and security-relevant files. | Analyst | Draft |
-| SR-7 | Daily and concurrency caps bound what an outside reporter can make the factory spend. Any reporter can reach the fix lane (OQ-4), so these caps and the ADR 0012 budget are the only spending limit on public repos. | Analyst | Draft |
-| SR-8 | Every GitHub call is logged with agent, action, target and time, without secrets (S9.6). | Analyst | Draft |
-| SR-9 | Replies are posted by engine code, never by a session that read issue text (S9.3). Apart from the question slot, no reply contains text from the issue or text a model wrote. | Analyst | Draft |
-| SR-11 | The question slot is the one place a crafted issue could choose words the factory's account posts (owner accepted this risk, OQ-7). Questions only, three at most, each with a checked purpose. The FR-17 filter keeps out links, mentions, references and formatting, and the length cap and one-sentence rule bound the rest. Gate 1 reviews whether that is enough. | Analyst | Draft |
+| SR-1 | External services (S9.1): GitHub, with the factory token, through exactly these calls: list issues; get one issue; list comments on one `needs_info` issue; list issue events; create a comment; add and remove labels on an issue; create a label; and for a `security_report` (OQ-8): create a draft repository security advisory, add its collaborators, and transfer the issue. No other service and no other call. Writes are S9.2 actions, exempt only through the ADR in H-0114. | Analyst, amended by Gate 1 | Accepted |
+| SR-2 | The triager is the only session that reads issue text, and it sees the redacted snapshot. It has no network, no write and one tool (S9.3, S8). Instructions found in an issue are flagged in the record, never followed, and a record with flagged instructions never reaches the fix lane (SR-12). | Analyst, amended by Gate 1 | Accepted |
+| SR-3 | The triage record is schema-validated with length caps before any other session sees it (S1.1). Passing that check doesn't make its text safe for sessions that write code; SR-12 and SR-25 govern that. | Analyst, amended by Gate 1 | Accepted |
+| SR-4 | Issue snapshots, triage records, rendered replies and fix specs are secret-scanned before they are stored or posted (S3). A scan that can't run stops the step. | Analyst, amended by Gate 1 | Accepted |
+| SR-5 | Security reports never enter the open fix lane, and a `security_relevant` flag stops any lane before a public action (SR-21). | Analyst, amended by Gate 1 | Accepted |
+| SR-6 | The fix scope guard keeps a bug fix away from contracts, dependencies, change-controlled and security-relevant files, using concrete path lists checked by engine code (SR-22). | Analyst, amended by Gate 1 | Accepted |
+| SR-7 | Daily and concurrency caps bound what an outside reporter can make the factory spend. Any reporter can reach the fix lane (OQ-4), so these caps and the ADR 0012 budget are the only spending limit on public repos, with the per-reporter limits in SR-20. | Analyst, amended by Gate 1 | Accepted |
+| SR-8 | Every GitHub call is logged with agent, action, target, repo id, issue number, approval id, time and a hash of any posted text, without secrets (S9.6, SR-29). | Analyst, amended by Gate 1 | Accepted |
+| SR-9 | Replies are posted by engine code, never by a session that read issue text (S9.3). Apart from the question slot, which is Markdown-escaped, no reply contains text from the issue or text a model wrote. | Analyst, amended by Gate 1 | Accepted |
+| SR-11 | The question slot is the one place a crafted issue could choose words the factory's account posts (owner chose this on OQ-7, with the risk stated on the card). Questions only, three at most, each with a checked purpose. The FR-17 filter plus SR-15's checks bound it; Gate 1 found FR-17 alone not enough. | Analyst, amended by Gate 1 | Accepted |
 | SR-12 | Confirmation and fix branches stay local until Gate 2 and validation pass, and the PR opens as a draft. The fix lane is refused on a repo whose workflows give secrets to runs for factory branches. `instructions_found` routes to Security, not to the fix lane. Record text reaches code-writing sessions only as fenced data. Reproduction tests don't spawn processes, read the environment, use the network or run decoded code (subject to the owner's decision). | Gate 1 #1 | Approved (owner, 2026-11-12, decision card) |
 | SR-13 | The test engineer derives the expected output from the cited evidence. A crash fix changes only the crash. Gate 2 stops a fix that loosens a check. The PR body carries a fixed banner. | Gate 1 #2 | Accepted from Gate 1 |
 | SR-14 | Sensitive information never goes into a public repo (owner, 2026-11-12, thread). `factory/state` holds issue material except: everything about a `security_report` or a `security_relevant` lane, dropped question text, redacted secret findings, and personal data beyond the GitHub login. Those go only to a private, owner-only store outside every repo, and `factory/state` keeps their hash and id. If the engine can't confirm a repo is private, it treats it as public. | Gate 1 #3 | Approved (owner, 2026-11-12, thread and decision card) |
@@ -254,7 +268,7 @@ Drafted by the analyst; SR-12 to SR-29 come from Gate 1 (`F-010-security-gate1.m
 | SR-17 | One GitHub client with a fixed list of calls. It follows links and redirects only to `api.github.com`, and on writes never. Repo and issue ids are checked before each write. Ids are compared as numbers. Responses are validated. Unexpected answers fail closed. | Gate 1 #6 | Accepted from Gate 1 |
 | SR-18 | Before each write the issue is fetched again and must be open, unlocked, in the same repo and unchanged since the snapshot. The record names the commit the triager read. | Gate 1 #7 | Accepted from Gate 1 |
 | SR-19 | The engine acts only on its own record or on files that extend its hash chain. Foreign files file a Security item. | Gate 1 #8 | Accepted from Gate 1 |
-| SR-20 | Per-author, fix-lanes-per-day and per-project inbox caps, with a daily digest. Re-triage counts against the daily cap. Confirmation sessions have limits. Triage work runs after the owner's own features (subject to the owner's decision). | Gate 1 #9 | Approved: per outside reporter 3 issues triaged a day and 1 fix a week; at most 10 triage inbox items a day per project, the rest in a daily digest; nothing dropped (owner, 2026-11-12, decision card). Running triage after the owner's own features is not yet decided. |
+| SR-20 | Per-author, fix-lanes-per-day and per-project inbox caps, with a daily digest. Re-triage counts against the daily cap. Confirmation sessions have limits. Triage work runs after the owner's own features (subject to the owner's decision). | Gate 1 #9 | Approved: per outside reporter 3 issues triaged a day and 1 fix a week; at most 10 triage inbox items a day per project, the rest in a daily digest; nothing dropped (owner, 2026-11-12, decision card). Triage and fix sessions run only when no owner feature is waiting on an agent (owner, 2026-11-12, decision card). |
 | SR-21 | A `security_relevant` flag from confirmation or Gate 2 stops the lane before any public action. The triager asks no questions about a suspected weakness. | Gate 1 #10 | Accepted from Gate 1 |
 | SR-22 | The fix scope guard is engine code with fixed path lists, a per-repo `security_paths` list, and binary and symlink stops, run after every session in the lane. | Gate 1 #11 | Accepted from Gate 1 |
 | SR-23 | Triage inbox items show engine fields first and model text as escaped, labelled plain text. Interview seeding waits for F-009's Gate 1. | Gate 1 #12 | Accepted from Gate 1 |
@@ -264,7 +278,7 @@ Drafted by the analyst; SR-12 to SR-29 come from Gate 1 (`F-010-security-gate1.m
 | SR-27 | Template overrides are checked and need a signed approval. `issues.enabled` is a pinned key. An `issues.pause` command stops issue writes at once. | Gate 1 #16 | Accepted from Gate 1 |
 | SR-28 | `duplicate_of` must name an open issue the engine has triaged that isn't a security report. Duplicates post nothing about the other issue. | Gate 1 #17 | Accepted from Gate 1 |
 | SR-29 | The action log adds agent, repo id, issue number and a body hash. Dropped text is never logged. | Gate 1 #18 | Accepted from Gate 1 |
-| SR-10 | A `security_report` gets no public reply or label. | Analyst | Draft |
+| SR-10 | A `security_report` gets no public reply or label, and its material stays off every public branch (SR-14). | Analyst, amended by Gate 1 | Accepted |
 | SR-30 | A vulnerability report is made private until it is resolved (owner, 2026-11-12, thread): the engine moves it out of public view as OQ-8 decides, before any other step, and the fix happens only in private. Notification emails GitHub already sent when the issue opened can't be recalled; the Security item says so. | Owner | Approved (owner, 2026-11-12, thread; mechanism OQ-8 (b), decision card) |
 
 ## 10. Interface requirements
@@ -319,7 +333,11 @@ Interfaces. Location: `.factory/issues/<repo>/<number>/`, on `factory/state`,
 where `<repo>` is `<owner>--<name>`. Files: `snapshot.json` (written by the
 engine), `snapshot.sha256`, `triage-<round>.json` (the triager's record as
 validated), `route.json` and `actions.jsonl` (written by the engine). No role
-may write `.factory/issues/**` (H-0112).
+may write `.factory/issues/**` (H-0112). Under SR-14, material about a
+`security_report` or `security_relevant` lane, dropped question text,
+secret findings and personal data are written instead to the same layout in
+the owner's private store outside every repo; `factory/state` keeps only
+their hashes and ids.
 
 Snapshot:
 
@@ -449,12 +467,14 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
   whether to take it on." 
 
 ## 11. Readiness gate
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+- [x] Clear objective
+- [x] Expected behavior defined
+- [x] Acceptance criteria testable
+- [x] Constraints documented
+- [x] Assumptions explicit (A-1, A-2 approved)
+- [ ] Blocking decisions resolved (approved, not deferred): OQ-1 to OQ-8 and
+  the Gate 1 decisions are decided; waiting on the owner's approval of the
+  drafts H-0110 to H-0114 (section 10)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -481,6 +501,8 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 20 | 2026-11-12 | Gate 1 #9: per-reporter limits and inbox digest (SR-20, H-0110 limits) | Owner, 2026-11-12 (decision card) |
 | 21 | 2026-11-12 | Owner rule: sensitive information never goes into a public repo (SR-14 adopted); vulnerability reports made private until resolved (SR-30); OQ-8 added | Owner, 2026-11-12 (thread) |
 | 22 | 2026-11-12 | OQ-8: the factory opens the private advisory, adds the reporter and transfers the issue; the factory token gains admin and advisory rights (H-0114) | Owner, 2026-11-12 (decision card) |
+| 23 | 2026-11-12 | Gate 1 #9 rest: issue work runs behind the owner's features (SR-20) | Owner, 2026-11-12 (decision card) |
+| 24 | 2026-11-12 | SR-1 to SR-11 amended per Gate 1 and accepted; Gate 1 abuse cases added; H-0111 storage follows SR-14; readiness checks 1 to 5 pass | — |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
