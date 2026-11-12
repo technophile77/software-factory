@@ -4,7 +4,7 @@
 Carries the requirements analyst's interview between the owner's Claude Code
 session and the engine, over Engine control channel v1.1, plus v1.3's
 advisor proposals, reply kinds and advice (H-0063, amended by H-0075).
-v1.2's GitHub approval of a session (H-0051) is not handled here yet.
+and v1.2's GitHub approval of a session (H-0051).
 Standard library
 only (FR-1), like factory_check.py, so it adds no component to review.
 
@@ -22,6 +22,7 @@ Subcommands and their stdin:
   start    {"request": str}
   list     {}
   open     {"feature": id, "takeover"?: bool}
+  approval {"session": token, "wait_s"?: int}
   next     {"session": token, "wait_s"?: int}
   reply    {"session": token, "feature": id, "item": id, "revision": int,
             "status": str, "kind": str, "text": str, "reply_id"?: id,
@@ -68,14 +69,22 @@ MAX_WAIT = 600                     # the engine's own cap on wait_s
 # Channel v1.1 error codes. The skill acts on the name; the owner sees only
 # `display`, which has the client's sentence for the code instead.
 ERROR_NAMES = {-32001: "busy", -32002: "stale", -32003: "unknown", -32004: "session_expired",
-               -32005: "kind_not_allowed"}
+               -32005: "kind_not_allowed", -32006: "approval_pending", -32007: "approval_failed",
+               -32008: "refused"}
 # What the owner is told, in the client's words; the engine's own message is
 # shown only fenced, as data (Gate 2 #3).
 ERROR_TEXT = {"busy": "Another session holds this feature.",
               "stale": "The analyst changed this item since it was shown.",
               "unknown": "The engine doesn't know that feature or item.",
               "session_expired": "This interview session has ended or expired.",
-              "kind_not_allowed": "That kind of reply doesn't fit this item."}
+              "kind_not_allowed": "That kind of reply doesn't fit this item.",
+              "approval_pending": "The session is waiting for your GitHub approval.",
+              "approval_failed": "GitHub approval failed or expired, so the session was closed.",
+              "refused": "The engine refused this for a security reason; see the Security inbox."}
+# Channel v1.2 (H-0051): the only codes and page the client will show.
+USER_CODE_RE = re.compile(r"^[A-Z0-9]{4}-[A-Z0-9]{4}$")
+DEVICE_URI = "https://github.com/login/device"
+MAX_APPROVAL_WAIT = 900
 VERSION_RE = re.compile(r"\d{1,6}\.\d{1,6}(?:\.\d{1,6})?")
 REPLY_KINDS = ("answer", "more_info", "defer", "approve_assumption", "reject_assumption",
                "ask_advisor", "approve_advisor", "decline_advisor")
@@ -92,6 +101,7 @@ FIELDS = {
     "start": {"request"},
     "list": set(),
     "open": {"feature", "takeover"},
+    "approval": {"session", "wait_s"},
     "next": {"session", "wait_s"},
     "reply": {"session", "feature", "item", "revision", "status", "kind", "text", "reply_id", "wait_s"},
     "state": {"feature", "item"},
@@ -913,12 +923,16 @@ def _validate(cmd, req):
             raise Refused("bad_request", "`request` must be the owner's feature request text.")
     if cmd in ("open", "reply", "state"):
         _need_id(req, "feature")
-    if cmd in ("next", "reply", "close"):
+    if cmd in ("next", "reply", "close", "approval"):
         _need_session(req)
     if cmd in ("reply", "state"):
         _need_id(req, "item")
     if cmd in ("next", "reply"):
         _wait_s(req)
+    if cmd == "approval":
+        w = req.get("wait_s", 120)
+        if isinstance(w, bool) or not isinstance(w, int) or not 0 <= w <= MAX_APPROVAL_WAIT:
+            raise Refused("bad_request", f"`wait_s` must be a whole number from 0 to {MAX_APPROVAL_WAIT}.")
     if cmd == "open" and not isinstance(req.get("takeover", False), bool):
         raise Refused("bad_request", "`takeover` must be true or false.")
     if cmd == "reply":
@@ -1002,7 +1016,32 @@ def cmd_open(ch, req):
         raise ChannelError("bad_response", "The engine sent an invalid session token.", sent=True)
     if not isinstance(started, str) or not TIMESTAMP_RE.fullmatch(started):
         raise ChannelError("bad_response", "The engine sent an invalid session start time.", sent=True)
-    return {"session": session, "started_at": started, "feature": req["feature"], "advisor": ch.advisor}
+    out = {"session": session, "started_at": started, "feature": req["feature"], "advisor": ch.advisor}
+    if "approval" in r:
+        out.update(_approval(r["approval"]))
+    return out
+
+
+def _approval(a):
+    # Shown only when every field has the contract's exact form; anything
+    # else could send the owner to a page or code the engine didn't get from
+    # GitHub, so the run stops instead.
+    if not isinstance(a, dict):
+        raise ChannelError("bad_response", "The engine sent an invalid approval.", sent=True)
+    code, uri, expires = a.get("user_code"), a.get("verification_uri"), a.get("expires_at")
+    if not isinstance(code, str) or not USER_CODE_RE.fullmatch(code) or uri != DEVICE_URI \
+            or not isinstance(expires, str) or not TIMESTAMP_RE.fullmatch(expires):
+        raise ChannelError("bad_response", "The engine sent an invalid GitHub approval code.", sent=True)
+    display = (f"Approve this interview session on GitHub: open {DEVICE_URI} (your phone is fine), "
+               f"sign in as yourself and enter the code {code}. It expires at {expires}.")
+    return {"approval": {"user_code": code, "verification_uri": uri, "expires_at": expires},
+            "approval_display": display}
+
+
+def cmd_approval(ch, req):
+    wait_s = min(req.get("wait_s", 120), max(0, int(remaining()) - WAIT_MARGIN))
+    r = _result(ch.call("interview.awaitApproval", {"session": req["session"], "wait_s": wait_s}, wait_s=wait_s))
+    return {"approved": r.get("approved") is True}
 
 
 def _next(ch, session, wait_s):
@@ -1103,7 +1142,7 @@ def cmd_close(ch, req):
     return {"closed": True}
 
 
-COMMANDS = {"status": cmd_status, "start": cmd_start, "list": cmd_list, "open": cmd_open,
+COMMANDS = {"status": cmd_status, "start": cmd_start, "list": cmd_list, "open": cmd_open, "approval": cmd_approval,
             "next": cmd_next, "reply": cmd_reply, "state": cmd_state, "close": cmd_close}
 
 

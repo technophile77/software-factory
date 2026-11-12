@@ -1,7 +1,9 @@
 """A fake engine for the client's developer tests: Engine control channel
 v1.1 (with H-0025) plus v1.3's advisor items (H-0063 as amended by H-0075)
 over a Unix socket, one JSON-RPC 2.0 message per line. v1.2's GitHub
-approval of a session (H-0051) is not modelled; the client doesn't speak it.
+approval of a session (H-0051) is modelled only as far as the client sees
+it: `open` carries `approval` when one is set, and `awaitApproval` answers
+from `approval_result`.
 
 It keeps just enough state to exercise the client: sessions by token with
 the per-feature lock and takeover, item revisions, the error codes, reply
@@ -73,6 +75,8 @@ class FakeEngine:
         self.error_data = None
         self.silent = False
         self.notify_first = False     # send a notification before each answer
+        self.approval = None          # the `approval` object `open` returns, if any
+        self.approval_result = True   # True approves; an RpcError code fails awaitApproval
         self.srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.srv.bind(self.path)
         self.srv.listen(8)
@@ -198,7 +202,10 @@ class FakeEngine:
                 if feature in self.locks and not params.get("takeover"):
                     raise RpcError(BUSY, "another session is open for this feature", {"started_at": STARTED_AT})
                 token = self.open_session(feature)
-            return {"session": token, "started_at": STARTED_AT}, False
+            out = {"session": token, "started_at": STARTED_AT}
+            if self.approval is not None:
+                out["approval"] = self.approval
+            return out, False
         if method == "interview.state":
             feature = params.get("feature")
             if feature not in self.features:
@@ -209,6 +216,10 @@ class FakeEngine:
                 out["recorded_at"] = it["recorded_at"]
             return out, False
         s = self._session(params.get("session"))
+        if method == "interview.awaitApproval":
+            if self.approval_result is True:
+                return {"approved": True}, False
+            raise RpcError(self.approval_result, "approval did not complete")
         if method == "interview.next":
             return {"item": self._next(s, min(params.get("wait_s", 0), 600))}, False
         if method == "interview.close":

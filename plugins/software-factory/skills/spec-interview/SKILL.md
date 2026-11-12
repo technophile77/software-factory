@@ -96,7 +96,8 @@ finds the engine only through `.factory/engine.json` in that repo's
 `factory/state` worktree. It prints one JSON object: `"ok": true` with the
 result, or `"ok": false` with `error` (`code`, `message`, and `name` for
 the channel's own errors: `busy`, `stale`, `unknown`, `session_expired`,
-`kind_not_allowed`) and a `display` to show. It writes nothing to disk.
+`kind_not_allowed`, `approval_pending`, `approval_failed`, `refused`) and a
+`display` to show. It writes nothing to disk.
 
 Each run is its own connection. The interview session lives in the engine
 and is named by the `session` token that `open` returns. Keep that token in
@@ -109,7 +110,8 @@ it to the owner or put it anywhere else.
 | `status` | `{}` | engine reachable, `advisor` |
 | `start` | `{"request": "<owner's text>"}` | `feature` |
 | `list` | `{}` | `features`, `display` |
-| `open` | `{"feature": "<id>"}` (+ `"takeover": true` only after the owner's yes) | `session`, `started_at`, `advisor` |
+| `open` | `{"feature": "<id>"}` (+ `"takeover": true` only after the owner's yes) | `session`, `started_at`, `advisor`, and from a v1.2 engine `approval` and `approval_display` |
+| `approval` | `{"session": "<token>", "wait_s": 120}` | `approved` |
 | `next` | `{"session": "<token>", "wait_s": 60}` | `item` (or null), `display`, `waiting`?, `advice_running`? |
 | `reply` | `{"session", "feature", "item", "revision", "status", "kind", "text", "wait_s": 60}` (+ `reply_id` on a retry) | `status`, `next`, `display`, `reply_id`, `waiting`?, `advice_running`?, `advisor_started`? or `already_recorded` |
 | `state` | `{"feature": "<id>", "item": "<id>"}` | `status`, `revision` |
@@ -157,6 +159,14 @@ feature request".
 
 Run `CLIENT open` with the feature id and keep the `session` and
 `advisor` it returns.
+
+If it also returned `approval_display`, the engine needs the owner's GitHub
+approval before the session takes any reply. Show `approval_display`
+exactly as printed, then run `CLIENT approval` with the session and
+`"wait_s": 120` until it returns `approved: true`. Each run waits up to two
+minutes; if it ends with `approval_pending`, run it again (the code is
+valid until the time in the display). If it ends with `approval_failed`,
+show its `display`, and go back to step 2.
 
 If the error is `busy`, another session holds the feature. Show the owner
 its `display`, which says when that session started, and ask with AskUserQuestion: "Take over that

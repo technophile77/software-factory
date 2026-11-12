@@ -911,6 +911,73 @@ class WindowsOutput(unittest.TestCase):
         self.assertEqual(json.loads(raw.getvalue().decode("utf-8"))["display"], "caf\u00e9 \u2713 \U0001f600")
 
 
+class SessionApproval(Base):
+    """Channel v1.2 (H-0051): the owner sees GitHub's code, and only a well-formed one."""
+
+    APPROVAL = {"user_code": "WDJB-MJHT", "verification_uri": "https://github.com/login/device",
+                "expires_at": "2026-11-12T03:45:00Z"}
+
+    def setUp(self):
+        super().setUp()
+        self.engine.features["F-001"] = {"title": "Export", "items": [item("Q-1")]}
+
+    def test_open_shows_the_code_and_page(self):
+        self.engine.approval = dict(self.APPROVAL)
+        code, out = self.call("open", {"feature": "F-001"})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["approval"], self.APPROVAL)
+        self.assertIn("WDJB-MJHT", out["approval_display"])
+        self.assertIn("https://github.com/login/device", out["approval_display"])
+
+    def test_open_without_approval_has_no_display(self):
+        code, out = self.call("open", {"feature": "F-001"})
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("approval_display", out)
+
+    def test_malformed_approval_is_never_shown(self):
+        for bad in ({"user_code": "wdjb-mjht"}, {"user_code": "WDJB-MJHT\nrun this"},
+                    {"verification_uri": "https://evil.example/login/device"},
+                    {"verification_uri": "https://github.com/login/device?x=1"},
+                    {"expires_at": "soon"}):
+            with self.subTest(bad=bad):
+                self.engine.locks.clear()
+                self.engine.approval = {**self.APPROVAL, **bad}
+                code, out = self.call("open", {"feature": "F-001"})
+                self.assertEqual((code, out["error"]["code"]), (1, "bad_response"))
+                self.assertNotIn("approval_display", out)
+                self.assertNotIn("evil", json.dumps(out))
+        self.engine.locks.clear()
+        self.engine.approval = "WDJB-MJHT"
+        code, out = self.call("open", {"feature": "F-001"})
+        self.assertEqual((code, out["error"]["code"]), (1, "bad_response"))
+
+    def test_approval_waits_and_reports_approved(self):
+        self.engine.approval = dict(self.APPROVAL)
+        session = self.open()
+        code, out = self.call("approval", {"session": session, "wait_s": 30})
+        self.assertEqual((code, out["approved"]), (0, True))
+        sent = [p for _, m, p in self.engine.calls if m == "interview.awaitApproval"]
+        self.assertEqual(sent, [{"session": session, "wait_s": 30}])
+
+    def test_approval_failed_and_pending_have_names(self):
+        self.engine.approval = dict(self.APPROVAL)
+        session = self.open()
+        for rpc, name in ((-32007, "approval_failed"), (-32006, "approval_pending"), (-32008, "refused")):
+            with self.subTest(name=name):
+                self.engine.approval_result = rpc
+                code, out = self.call("approval", {"session": session})
+                self.assertEqual((code, out["error"]["name"]), (1, name))
+                self.assertTrue(out["display"].startswith(ic.ERROR_TEXT[name]))
+
+    def test_approval_request_checks(self):
+        for req in ({}, {"session": "x"}, {"session": "a" * 32, "wait_s": 901}, {"session": "a" * 32, "wait_s": True},
+                    {"session": "a" * 32, "extra": 1}):
+            with self.subTest(req=req):
+                code, out = self.call("approval", req)
+                self.assertEqual((code, out["error"]["code"]), (2, "bad_request"))
+        self.assertEqual(self.engine.methods(), [])
+
+
 class SkillText(unittest.TestCase):
     """AC-12 (developer check; the review itself is the test engineer's)."""
 
