@@ -52,11 +52,18 @@ const CITES_SPEC = /\b(section|§)\s*\d+|\b(FR|SR|AC|A|OQ)-\d+\b/i;
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
-function depth(v: unknown, d = 0): number {
-  if (d > MAX_DEPTH) return d;
-  if (Array.isArray(v)) return Math.max(d, ...v.map((x) => depth(x, d + 1)));
-  if (isObj(v)) return Math.max(d, ...Object.values(v).map((x) => depth(x, d + 1)));
-  return d;
+// A loop, not recursion with spread arguments: a wide array within the size cap would overflow the call stack.
+function depth(v: unknown): number {
+  let max = 0;
+  const stack: Array<[unknown, number]> = [[v, 0]];
+  while (stack.length) {
+    const [x, d] = stack.pop()!;
+    if (d > max) max = d;
+    if (max > MAX_DEPTH) return max;
+    if (Array.isArray(x)) for (const y of x) stack.push([y, d + 1]);
+    else if (isObj(x)) for (const y of Object.values(x)) stack.push([y, d + 1]);
+  }
+  return max;
 }
 
 /**

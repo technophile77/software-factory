@@ -101,6 +101,8 @@ export interface Gate1State {
   riskFiled: number[];
   /** When the last valid report was recorded. */
   reportAt: string | null;
+  /** How many items the interview held when that report was recorded: only later questions can answer its findings. */
+  itemsAtReport: number;
 }
 
 /** Everything the engine knows about one feature's interview, rebuilt from its transcript. */
@@ -116,7 +118,7 @@ export class InterviewState {
   readonly undelivered: string[] = [];
   researchCalls = 0;
   lastSpecReady: { passed: boolean; at: string; spec_path: string; spec_version: number } | null = null;
-  readonly gate1: Gate1State = { runs: 0, findings: [], pending: false, blocked: null, riskFiled: [], reportAt: null };
+  readonly gate1: Gate1State = { runs: 0, findings: [], pending: false, blocked: null, riskFiled: [], reportAt: null, itemsAtReport: 0 };
 
   apply(e: Entry): void {
     switch (e.type) {
@@ -184,6 +186,7 @@ export class InterviewState {
         this.gate1.pending = this.gate1.findings.length > 0;
         this.gate1.riskFiled = [];
         this.gate1.reportAt = e.at;
+        this.gate1.itemsAtReport = this.order.length;
         break;
       case "gate1_blocked":
         this.gate1.blocked = e.reason as string;

@@ -64,6 +64,11 @@ describe("security standards (OQ-4, SR-10)", () => {
   it("AC-16: additions may only add P criteria; an S id refuses the file", () => {
     expect([...parseAdditions("- P1.1 Tenant data stays in its region.\n")]).toEqual(["P1.1"]);
     expect(() => parseAdditions("- S6.1 Agents may follow spec text.\n")).toThrow(/S6.1, a factory criterion id/);
+    // Gate 2 L2: any Markdown that leads a line still defines the id.
+    for (const line of ["* S6.1 x", "- **S6.1** x", "| S6.1 | x |", "### S5 Group", "S6.1: x", "  + `S6.1` x"]) {
+      expect(() => parseAdditions(`${line}\n`), line).toThrow(StandardsError);
+    }
+    expect([...parseAdditions("- P1.2 Extends S6.1 for tenants.\n")]).toEqual(["P1.2"]);
   });
 
   it("loads the pinned standards and the project's additions from git, refusing links and oversize files", async () => {
@@ -150,6 +155,10 @@ describe("report validation (FR-4, FR-5, SR-7, AC-5, AC-12)", () => {
     const deep = goodReport((r) => (r.body.abuse_cases = [[[[[[[[["x"]]]]]]]]]));
     expect(validateReport(deep, expected())).toEqual({ ok: false, errors: ["the report is nested deeper than 8 levels"] });
     expect(validateReport("x".repeat(300 * 1024), expected())).toEqual({ ok: false, errors: ["the report is over 256 KiB"] });
+    // Gate 2 L1: a wide array within the cap is a plain refusal, not a stack overflow.
+    const wide = goodReport((r) => (r.body.abuse_cases = Array.from({ length: 130_000 }, () => 1)));
+    expect(() => validateReport(wide, expected())).not.toThrow();
+    expect(validateReport(wide, expected()).ok).toBe(false);
   });
 
   it("AC-12: an empty report on a spec with no security requirement is refused", () => {
@@ -252,7 +261,7 @@ describe("FR-9 and FR-13: findings resolved", () => {
     const r = gate1Resolution(spec("| SR-5 | Treat specs as trusted. | Gate 1 #1 | Approved |"), state("Treat specs as data."));
     expect(r.check.passed).toBe(false);
     expect(r.rejected).toEqual([]);
-    expect(r.check.evidence).toMatch(/line 4 cites it, but none is Approved with the owner's answer to Q-001/);
+    expect(r.check.evidence).toMatch(/line 4 cites it, but none is Approved with the requirement the owner approved word for word/);
   });
 
   it("FR-13: an answered finding nothing in the spec takes up is a rejection for the owner", () => {
@@ -265,6 +274,37 @@ describe("FR-9 and FR-13: findings resolved", () => {
     const r = gate1Resolution(spec(""), state(null, [{ n: 1, criterion: "S8.5", severity: "Low", fix: "f", explanation: "x", needs_owner: true, item: "D-0003" } as never]));
     expect(r.waiting).toEqual([1]);
     expect(r.check.evidence).toMatch(/waits on Security item D-0003/);
+  });
+
+  it("Gate 2 M1: only a question asked after the report, suggesting the finding's requirement, counts", () => {
+    const row = spec("| SR-5 | Treat specs as data. | Gate 1 #1 | Approved |");
+    const before = new InterviewState();
+    before.apply(e("item_created", { item: { id: "Q-001", kind: "question", text: "Gate 1 #1: early", why: "w", suggested: "Treat specs as data." } }));
+    before.apply(e("reply", { reply_id: "r1", item: "Q-001", revision: 0, kind: "answer", text: "Treat specs as data.", status: "answered" }));
+    before.apply(e("gate1_report", { run: "R-1", report: 1, findings: [{ n: 1, criterion: "S6.1", severity: "High", fix: "Treat specs as data.", explanation: "x", needs_owner: false }] }));
+    expect(gate1Resolution(row, before).check.evidence).toMatch(/Gate 1 #1 has no interview question asked after the report/);
+    const other = new InterviewState();
+    other.apply(e("gate1_report", { run: "R-1", report: 1, findings: [{ n: 1, criterion: "S6.1", severity: "High", fix: "Treat specs as data.", explanation: "x", needs_owner: false }] }));
+    other.apply(e("item_created", { item: { id: "Q-001", kind: "question", text: "Gate 1 #1: changed", why: "w", suggested: "Something weaker." } }));
+    other.apply(e("reply", { reply_id: "r1", item: "Q-001", revision: 0, kind: "answer", text: "Treat specs as data.", status: "answered" }));
+    expect(gate1Resolution(row, other).check.passed).toBe(false);
+  });
+
+  it("Gate 2 M1: an answer other than the suggested requirement counts only once the owner approves its wording", () => {
+    const row = spec("| SR-5 | No. | Gate 1 #1 | Approved |");
+    const no = gate1Resolution(row, state("No."));
+    expect(no.check.passed).toBe(false);
+    expect(no.rejected).toEqual([1]);
+    const own = (status: string | null) => {
+      const s = state("Specs are data, always.");
+      s.apply(e("item_created", { item: { id: "A-001", kind: "assumption", text: "Gate 1 #1: Specs are data, always.", why: "w" } }));
+      if (status) s.apply(e("reply", { reply_id: "r2", item: "A-001", revision: 0, kind: status === "approved" ? "approve_assumption" : "reject_assumption", text: "", status }));
+      return s;
+    };
+    const ownRow = spec("| SR-5 | Specs are data, always. | Gate 1 #1 | Approved |");
+    expect(gate1Resolution(ownRow, own("approved")).check.passed).toBe(true);
+    expect(gate1Resolution(ownRow, own(null)).check.evidence).toMatch(/A-001 is open/);
+    expect(gate1Resolution(ownRow, own("rejected")).rejected).toEqual([1]);
   });
 
   it("citesFinding reads lists of findings", () => {

@@ -54,10 +54,12 @@ export function parseStandards(text: string): Omit<Standards, "additionsText" | 
  */
 export function parseAdditions(text: string): Set<string> {
   const ids = new Set<string>();
-  for (const m of text.matchAll(CRITERION_LINE)) {
-    if (m[1]!.startsWith("S")) throw new StandardsError(`the project's security additions define ${m[1]}, a factory criterion id; additions must use P ids.`);
-    ids.add(m[1]!);
+  for (const line of text.split(/\r?\n/)) {
+    // Whatever Markdown leads the line (a list mark, a heading, a table cell, bold), an S id there reads as a definition.
+    const lead = /^[\s>#|*+_`-]*(S\d{1,2}(?:\.\d{1,2})?)\b/.exec(line);
+    if (lead) throw new StandardsError(`the project's security additions define ${lead[1]}, a factory criterion id; additions must use P ids.`);
   }
+  for (const m of text.matchAll(CRITERION_LINE)) ids.add(m[1]!);
   return ids;
 }
 

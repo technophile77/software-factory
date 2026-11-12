@@ -112,6 +112,8 @@ export async function runReviewerSessions(i: ReviewerRunInput): Promise<Reviewer
       const v = await i.verify(i.policy);
       if (v.status !== "unchanged") {
         if (v.status === "rejected") await i.onBreach(v.breaches);
+        // Over a size limit is still a change outside the report, so the owner hears of it as of any other (AC-4).
+        if (v.status === "over_limit") await i.onBreach([{ path: `(${v.cap} limit)`, reason: "not_allowed" }]);
         return { outcome: total, invalid: "it changed files outside its report", breach: true, sessions: n };
       }
       if (outcome.status === "cap") return { outcome: total, invalid: `it reached the ${outcome.reason} cap`, breach: false, sessions: n };

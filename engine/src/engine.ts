@@ -42,7 +42,7 @@ import { READINESS_STAGE, analystGate1Turn, correctionTurn, gate1Resolution, rec
 import { findingRef, plain, renderReport } from "./gate1/render";
 import { GATE1_STAGE, Gate1Report, REVIEWER_ROLE, readReportFile, validateReport } from "./gate1/report";
 import { StandardsError, loadStandards } from "./gate1/standards";
-import { specPathPattern } from "./interview/readiness";
+import { readinessChecks, specPathPattern } from "./interview/readiness";
 import type { RolePolicy } from "./policy/role-policy";
 import { EngineRecord, RunRecord } from "./state/record";
 import { ResumePlan, RunBook, RunFacts, RunUsage, agentReport, transcriptSummary } from "./state/runs";
@@ -895,7 +895,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const commit = await git.revParse(p.real!, `refs/heads/${f.state.branch}`);
     if (!commit) throw new SessionRefused(`the branch ${f.state.branch} is gone`);
     const buf = await readFileAt(git, p.real!, commit, ready.spec_path, 1024 * 1024, "The spec");
-    return { spec: buf.toString("utf8"), path: ready.spec_path, version: ready.spec_version, commit };
+    const spec = buf.toString("utf8");
+    // The analyst can still edit the spec after interview_spec_ready in the same session, so the committed spec must pass the checks too.
+    const failed = readinessChecks({ spec, specVersion: ready.spec_version, state: f.state, chainIntact: f.chainIntact && !f.remoteRefused }).filter((c) => !c.passed);
+    if (failed.length) throw new SessionRefused(`the spec committed on ${f.state.branch} no longer passes the interview checks (${failed.map((c) => c.name).join(", ")})`);
+    return { spec, path: ready.spec_path, version: ready.spec_version, commit };
   }
 
   /** FR-9 and FR-13 after the findings interview: readiness, or the owner's call, or the gap named. */
@@ -1094,6 +1098,18 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     runId: string; n: number; commit: string; wt: { path: string; gitDir: string }; report: Gate1Report;
     specPath: string; specVersion: number | null; facts: RunFacts; limits: Limits;
   }): Promise<void> {
+    // SR-9: the reviewer's own text is scanned raw, before anything built from it is written. Escaped or
+    // quoted copies can hide a token from the scanner's patterns.
+    const strings: string[] = [];
+    const collect = (v: unknown): void => {
+      if (typeof v === "string") strings.push(v);
+      else if (Array.isArray(v)) v.forEach(collect);
+      else if (v && typeof v === "object") Object.values(v).forEach(collect);
+    };
+    collect(a.report);
+    const raw = Buffer.from(strings.join("\n"), "utf8");
+    const scan = await scanner.scan([{ sha: sha256Hex(raw), content: raw }]);
+    if (!scan.clean) throw new SecretFound([], []);
     const rendered = `docs/features/${f.id}-security-gate1.md`;
     fs.writeFileSync(path.join(a.wt.path, ...rendered.split("/")), renderReport({
       feature: f.id, title: f.state.title, specVersion: a.specVersion, date: iso(clock.now()).slice(0, 10), runId: a.runId, report: a.report,
@@ -1324,8 +1340,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (r.role === REVIEWER_ROLE) {
       // F-008 FR-10: a Gate 1 run resumes as an analyst run does.
       const plan = runs.resume(r.id);
-      if (plan.mode === "failed") log.warn(`Run ${r.id} (${f.id}, Gate 1) failed: ${plan.run.reason}.`);
-      else if (f.stage() === GATE1_STAGE) afterInterview(p, f, plan);
+      if (plan.mode === "failed") {
+        log.warn(`Run ${r.id} (${f.id}, Gate 1) failed: ${plan.run.reason}.`);
+        // FR-10: the failure is also recorded in the agent report and the transcript.
+        if (f.stage() === GATE1_STAGE) {
+          await endGate1(p, f, r.id, await nextGate1Report(p, f.id), "failed", plan.run.reason ?? "it was interrupted too often", { model: p.models?.["security-reviewer"] ?? "" }, r.last_commit ?? "")
+            .catch((e) => log.warn(`${f.id}: Gate 1 run ${r.id}'s failure wasn't recorded (${engineWords(e)}).`));
+        }
+      } else if (f.stage() === GATE1_STAGE) afterInterview(p, f, plan);
       else runs.finish(r.id, "failed", "the feature left Security Gate 1");
       continue;
     }
