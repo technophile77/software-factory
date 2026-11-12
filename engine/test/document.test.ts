@@ -118,6 +118,11 @@ describe("validateDocument (channel v1.4, SR-8, SR-9)", () => {
     expect(refused(() => validateDocument(doc(multi))).data()).toEqual({ reason: "hidden_content", lines: [2, 4, 5, 6, 8] });
     expect(validateDocument(doc("See [the\nguide].\n\n[the guide]: https://x.y\n")).text).toContain("guide");
     expect(validateDocument(doc("[a\n\nb]: #\n")).text).toContain("b]");
+    // Validation round 3 M4: a stray "[" before an empty link, and emphasis around a blank.
+    for (const bad of ['Visible [[ ](# "x") text.', '[![](# "x")', '[[&nbsp;](#)', '[*&nbsp;*](# "x")', '[_ _](#)', '[**&#160;**][r]\n\n[r]: #']) {
+      expect(refused(() => validateDocument(doc(bad))).reason, bad).toBe("hidden_content");
+    }
+    expect(validateDocument(doc("A [*real* link](https://x.y) and [[nested]](https://x.y).\n")).text).toContain("real");
   });
 
   it("strips control and invisible characters from the display name", () => {

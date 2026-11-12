@@ -118,10 +118,9 @@ const CONTAINER = /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*/;
 const TITLE_START = /^["'(]/;
 const SPACE_ENTITIES = /&(nbsp|ensp|emsp|emsp13|emsp14|numsp|puncsp|thinsp|ThinSpace|hairsp|VeryThinSpace|MediumSpace|NonBreakingSpace|Tab|NewLine);/gi;
 
-// A link or image whose text is only whitespace, invisible characters or
-// entities for them shows nothing; its title or target is hidden.
-// Link text made only of whitespace, invisible characters, entities for them
-// or backticks (a blank code span) shows nothing.
+// Link text made only of whitespace, invisible characters, entities for them,
+// backticks (a blank code span) or emphasis marks around those shows nothing,
+// so the link's title or target is hidden.
 function blankLinkText(text: string): boolean {
   const decoded = text
     .replace(SPACE_ENTITIES, " ")
@@ -129,7 +128,7 @@ function blankLinkText(text: string): boolean {
       const cp = n[0]!.toLowerCase() === "x" ? parseInt(n.slice(1), 16) : parseInt(n, 10);
       return cp <= 0x10ffff ? String.fromCodePoint(cp) : e;
     });
-  return !decoded.replace(new RegExp(INVISIBLE.source, "gu"), "").replace(/[\s`]/gu, "");
+  return !decoded.replace(new RegExp(INVISIBLE.source, "gu"), "").replace(/[\s`*_~]/gu, "");
 }
 
 function linkLabel(label: string): string {
@@ -168,7 +167,7 @@ export function hiddenLinkLines(lines: string[]): number[] {
   // A blank line ends a paragraph, so no label or link text crosses one.
   const oneParagraph = (t: string) => !/\n[ \t]*\n/.test(t);
 
-  for (const m of text.matchAll(/!?\[([^\]]*)\](?=[(\[])/g)) {
+  for (const m of text.matchAll(/!?\[([^[\]]*)\](?=[(\[])/g)) {
     if (oneParagraph(m[1]!) && blankLinkText(m[1]!)) {
       const lineHits = new Set<number>();
       span(m.index!, m.index! + m[0].length, lineHits);
