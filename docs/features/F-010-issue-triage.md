@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (all open questions decided; next: Gate 1 and the drafts of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 12
+- **Spec version:** 13
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -137,7 +137,7 @@ The owner's existing rules still hold:
 | FR-18 | A fix is done only with red, green and regression evidence as in section 2 step 6: the reproduction test fails on the base commit, passes unchanged on the final commit, and the full regression suite passes on the final commit. The validation judge fails a fix without all three. The reproduction test is kept as a regression test. |
 | FR-9 | The fix scope guard in section 2 step 8 stops the lane and files an item in the matching inbox. |
 | FR-10 | Owner approval of "Start an interview" queues a feature seeded from the snapshot in F-009 reference mode. |
-| FR-11 | Caps per repo: issues triaged per day (default 20), fix lanes running at once (default 2), and the ADR 0012 token budget per fix. Issues over a cap wait in order; none are dropped. |
+| FR-11 | Caps per repo: issues triaged per day (default 20), fix lanes running at once (default 1), and the ADR 0012 token budget per fix (owner, 2026-11-12, thread). A repo's manifest may override them. Issues over a cap wait in order; none are dropped. |
 | FR-12 | The engine, not an agent, posts the replies and sets the labels in section 2 steps 4 and 11, from the approved templates only. It never closes, assigns, edits or locks an issue, never comments on a `security_report`, and posts at most one reply per template per issue, plus the second "need more information" round. |
 | FR-14 | Template slots take only validated, typed values (issue number, PR link, items from the fixed list, the question). The engine rejects a reply whose rendered text differs from its template outside the slots. |
 | FR-17 | The question slot (OQ-7) holds up to three questions from the triage record. Each is one sentence ending in "?", plain text, at most 200 characters, and carries a purpose the engine checks against a fixed list: `use_case` (what the reporter is trying to do, to tell whether it is supported), `inputs` (the exact inputs supplied), `expected_output` (what they expected and where that is stated), `actual_output` (what happened, with any error), or `environment` (version, OS, setup). Questions only ask; the triager may not explain, suggest a workaround, give an opinion, promise anything, or answer a question the reporter asked. The engine drops a question, and posts the reply without it, if it has no valid purpose, does not end in "?", has more than one sentence, or holds a link or anything shaped like a domain, an @-mention, a `#` issue reference, an email address, Markdown or HTML, code formatting, or a line break. If every question and every list item is dropped, nothing is posted and the issue goes to the owner as a Product item. Each drop is logged. |
@@ -163,7 +163,7 @@ The owner's existing rules still hold:
 | AC-24 | Given a fix whose report lacks the red run, or where the reproduction test changed between red and green, or where the regression suite fails, then the validation judge fails it and no PR is marked ready. | FR-18 |
 | AC-11 | Given a fix whose diff touches an interface contract, a dependency manifest or a change-controlled file, then the lane stops before stage 6 and an item in the matching inbox exists. | FR-9 |
 | AC-12 | Given owner approval of "Start an interview", then a feature waiting for an interview exists with the snapshot attached as reference material. | FR-10 |
-| AC-13 | Given 25 new issues in one day with a cap of 20, then 20 are triaged and 5 wait for the next day, in order. | FR-11 |
+| AC-13 | Given 25 new issues in one day with a cap of 20, then 20 are triaged and 5 wait for the next day, in order. Given two confirmed bugs in one repo, then the second fix lane starts only after the first reaches its PR or stops. | FR-11 |
 | AC-14 | Given any run, then every write to the issues API is a template reply or a label from the approved set, made by the engine, and logged; there are no close, assign, edit or lock calls. | FR-12 |
 | AC-16 | For each kind, given a valid record, then exactly the reply and label in the routing table are posted, and a `security_report` gets neither. | FR-12 |
 | AC-17 | Given a triage record whose free-text fields other than the question hold text, links or @-mentions, then no posted reply contains any of it; given a slot value outside its type, then nothing is posted and a Testing item exists. | FR-14, SR-9 |
@@ -301,6 +301,7 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | 10 | 2026-11-12 | A fix's definition of done: red on the base commit, green on the final commit with the same inputs, full regression suite passes (FR-18) | Owner, 2026-11-12 (thread) |
 | 11 | 2026-11-12 | The triager writes to issues through questions only (up to three, each with a checked purpose: use case, inputs, expected or actual output, environment), never answers; `unclear` issues get questions before going to the owner | Owner, 2026-11-12 (thread) |
 | 12 | 2026-11-12 | A-2 approved | Owner, 2026-11-12 (decision card) |
+| 13 | 2026-11-12 | Default caps: 20 issues a day, 1 fix at once per repo | Owner, 2026-11-12 (thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
