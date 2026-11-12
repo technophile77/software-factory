@@ -3,7 +3,7 @@
 - **Id:** F-008
 - **Status:** In review
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 9
+- **Spec version:** 10
 
 This is part of the engine's increment 3 ("Requirements to ready", F-007
 section 13). The owner chose to build Security Gate 1 on its own first
@@ -180,11 +180,11 @@ approved security requirements are in the spec.
 - Interview tools v1.0 are used as they stand: Gate 1 requirements are
   ordinary questions with a suggested answer (OQ-3).
 - Role policy v2.5 is used as it stands (OQ-2).
-- H-0096: Agent report v1.3 adds optional `security-reviewer` body fields
+- H-0096 (approved: owner, decision card, 2026-11-12): Agent report v1.3 adds optional `security-reviewer` body fields
   for Gate 1, `checklist` (question, answer), `permissions_added`,
   `abuse_cases` and `not_applicable` (criterion, reason), and a finding's
   `needs_owner` with `options` and `recommendation`. Optional fields only,
-  so non-breaking, but an Interfaces change for the owner's approval.
+  so non-breaking.
 
 ## 11. Readiness gate
 - [ ] Clear objective
@@ -216,3 +216,4 @@ Asked one at a time. None is assumed.
 | 7 | 2026-11-12 | A-1 approved: no second reviewer run after findings are resolved | Owner, 2026-11-12 (decision card) |
 | 8 | 2026-11-12 | A-2 approved: the reviewer reads the interview transcript as labelled data | Owner, 2026-11-12 (decision card) |
 | 9 | 2026-11-12 | H-0095 approved with the reviewer on Sonnet 5.5 | Owner, 2026-11-12 (decision card) |
+| 10 | 2026-11-12 | H-0096 approved: Agent report v1.3 optional Gate 1 fields | Owner, 2026-11-12 (decision card) |
