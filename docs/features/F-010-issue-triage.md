@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (open questions in section 13)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 2
+- **Spec version:** 3
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -199,12 +199,13 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 |---|---|---|---|
 | 1 | 2026-11-12 | First draft from the owner's request | — |
 | 2 | 2026-11-12 | OQ-1: a confirmed bug is a spec contradiction, a regression from a tagged release, or a crash on documented input, each shown by a failing test | Owner, 2026-11-12 (decision card) |
+| 3 | 2026-11-12 | OQ-2: a fix spec that cites its OQ-1 evidence counts as approved; no owner step before the PR | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
 |---|---|---|---|
 | OQ-1 | What counts as a confirmed bug that the factory may fix without the owner? (a) Only behavior that contradicts an approved spec requirement, shown by a failing test. (b) (a), plus a regression from an earlier tagged release, or a crash or unhandled error on input the docs allow, each shown by a failing test. (c) Whatever the triager judges a bug, if a test reproduces it. Recommended: (b). (a) leaves most issues on onboarded repos with the owner; (c) lets an outside reporter define requirements. **Decided: (b).** | Product | Decided (owner, 2026-11-12, decision card) |
-| OQ-2 | How does "requirements approved" (DoD item 1) apply to a fix? (a) The fix spec cites an approved requirement or the OQ-1 evidence, and that stands in for approval; no owner step before the PR. (b) The owner approves each fix spec in the inbox first. Recommended: (a); (b) contradicts "without my input". The owner still merges either way. | Product | Open |
+| OQ-2 | How does "requirements approved" (DoD item 1) apply to a fix? (a) The fix spec cites an approved requirement or the OQ-1 evidence, and that stands in for approval; no owner step before the PR. (b) The owner approves each fix spec in the inbox first. Recommended: (a); (b) contradicts "without my input". The owner still merges either way. **Decided: (a).** | Product | Decided (owner, 2026-11-12, decision card) |
 | OQ-3 | May the factory write to an issue? (a) Never; the PR links the issue and the owner's merge closes it. Anything else the owner does by hand. (b) (a), plus the factory may propose a comment (can't reproduce, duplicate, question answered) as a Security item with the exact text; it posts only on approval (S9.2). (c) An ADR lets it add a fixed set of labels and one templated acknowledgement without asking. Recommended: (b). | Security | Open |
 | OQ-4 | Who may open an issue that reaches the fix lane? (a) Anyone. Confirmation is by the factory's own test, not the reporter's word, and caps bound cost. (b) Only the owner and repo collaborators; others' bugs go to the inbox first. Recommended: (a) for private repos and (b) for public ones, set per repo in the manifest. | Security | Open |
 | OQ-5 | How does the engine learn of new issues? (a) It checks GitHub every few minutes (default 5) while running, and catches up on start. (b) A GitHub Actions workflow in each repo relays issue events to somewhere the engine reads. Recommended: (a); no inbound port, no new workflow in every repo, and conditional requests cost no rate limit. | Architecture | Open |
