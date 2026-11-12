@@ -72,6 +72,7 @@
 
 ## Validation round 2 fixes
 - M1: the link checks run on the whole text (container markers dropped per line), so a link label or link text that runs over two lines is caught; a hit names every line it covers. Link text that is only a blank code span is refused too (m13).
+- Round 4 M5: a backslash hard break counts as blank link text; markup is dropped before entities are decoded, so `&#42;` stays visible text.
 - Round 3 M4: link text is read from the innermost `[`, so a stray `[` before an empty link no longer hides it, and emphasis marks around a blank count as blank.
 - D-2 (test Addendum 2): a link definition whose label is blank text, and every use of it (the shortcut `[&nbsp;]` form), are refused; the test engineer's LNK-6 now passes.
 - m4: `agents/requirements-analyst/AGENT.md` states the v11 Sources rules. Approved by the owner with the `source_unchanged` sentence in Interview tools v1.1 (H-0109, round 2 M2, 2026-11-12).
@@ -80,8 +81,8 @@
 A document inside the owner's repo is named by its repo path and read from the working copy, uncommitted edits included (owner decision, spec v8). A path that leaves the repo gets the same local checks as any other path. Covered by `test_a_requirements_document_in_the_repo_itself_by_its_repo_path`.
 
 ## Tests
-- Engine: `test/document.test.ts` (new, 24 tests) plus updated agent and gitleaks tests. Final full run (with the test engineer's Addendum 1 and 2 tests, after the round 3 fix): 680 passed, 14 skipped (the real-Docker and real-Claude files, as before). `npm run typecheck` (both the source and the acceptance-test projects) and the build are clean after the validation B1 fix; before it, the acceptance-test project failed on the `capabilities` field (validation B1).
-- Client: `tests/test_document_f009.py` (new, 14 tests). Full spec-interview suite: 381 passed. onboard-repo suite: 318 passed, 1 skipped.
+- Engine: `test/document.test.ts` (new, 24 tests) plus updated agent and gitleaks tests. Final full run (with the test engineer's Addendum 1 to 3 tests, after the round 4 fix): 707 or more passed, 14 skipped; see the latest validation round for the exact count (the real-Docker and real-Claude files, as before). `npm run typecheck` (both the source and the acceptance-test projects) and the build are clean after the validation B1 fix; before it, the acceptance-test project failed on the `capabilities` field (validation B1).
+- Client: `tests/test_document_f009.py` (new, 14 tests). Full spec-interview suite: 428 passed. onboard-repo suite: 318 passed, 1 skipped.
 - Docs checks and placeholder check pass.
 
 ## Interpretations and deviations

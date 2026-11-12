@@ -123,6 +123,12 @@ describe("validateDocument (channel v1.4, SR-8, SR-9)", () => {
       expect(refused(() => validateDocument(doc(bad))).reason, bad).toBe("hidden_content");
     }
     expect(validateDocument(doc("A [*real* link](https://x.y) and [[nested]](https://x.y).\n")).text).toContain("real");
+    // Validation round 4 M5: link text that is only a backslash hard break, with LF or CRLF.
+    for (const bad of ['Visible [\\\n](# "x") text.', 'Visible [\\\r\n](#) text.', '> ![\\\n> ](x.png)', '[\\\n][r]\n\n[r]: #']) {
+      expect(refused(() => validateDocument(doc(bad))).reason, bad).toBe("hidden_content");
+    }
+    // An escaped or entity-written "*" is visible text.
+    expect(validateDocument(doc("[&#42;&nbsp;&#42;](https://x.y)\n")).text).toContain("&#42;");
   });
 
   it("strips control and invisible characters from the display name", () => {

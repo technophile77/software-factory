@@ -118,17 +118,20 @@ const CONTAINER = /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*/;
 const TITLE_START = /^["'(]/;
 const SPACE_ENTITIES = /&(nbsp|ensp|emsp|emsp13|emsp14|numsp|puncsp|thinsp|ThinSpace|hairsp|VeryThinSpace|MediumSpace|NonBreakingSpace|Tab|NewLine);/gi;
 
-// Link text made only of whitespace, invisible characters, entities for them,
-// backticks (a blank code span) or emphasis marks around those shows nothing,
-// so the link's title or target is hidden.
+// Link text made only of whitespace, hard line breaks, invisible characters,
+// entities for them, backticks (a blank code span) or emphasis marks around
+// those shows nothing, so the link's title or target is hidden. Markup is
+// dropped before entities are decoded: `&#42;` shows a visible `*`.
 function blankLinkText(text: string): boolean {
   const decoded = text
+    .replace(/\\(?=\n)/g, "")
+    .replace(/[`*_~]/g, "")
     .replace(SPACE_ENTITIES, " ")
     .replace(/&#(x[0-9a-f]{1,8}|[0-9]{1,9});/gi, (e, n: string) => {
       const cp = n[0]!.toLowerCase() === "x" ? parseInt(n.slice(1), 16) : parseInt(n, 10);
       return cp <= 0x10ffff ? String.fromCodePoint(cp) : e;
     });
-  return !decoded.replace(new RegExp(INVISIBLE.source, "gu"), "").replace(/[\s`*_~]/gu, "");
+  return !decoded.replace(new RegExp(INVISIBLE.source, "gu"), "").replace(/\s/gu, "");
 }
 
 function linkLabel(label: string): string {
