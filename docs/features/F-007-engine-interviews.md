@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 39
+- **Spec version:** 40
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -486,3 +486,4 @@ section 9.
 | 37 | 2026-11-11 | Image CVEs: CI fails only on those with a fix and lists the rest; base image moved to `node:26.13.1-trixie-slim` (Node security release 2026-11-10), index digest `sha256:e6bedef2…20bc` | Owner, 2026-11-11 (decision card) |
 | 38 | 2026-11-11 | The agent image's final stage applies Debian's signed security updates (`apt-get upgrade`) at build time; builds need `deb.debian.org` and are no longer bit-for-bit repeatable | Owner, 2026-11-11 (decision card) |
 | 39 | 2026-11-12 | Exception to v33: the gateway passes Anthropic's `web_search_*` server tool on the web reader's credential only (role `web-reader` with `WebSearch` in its tools); every other server tool stays refused. Found by validation: v33 had blocked the reader's search (SR-21, §2 step 5) | Owner, 2026-11-12 (decision card) |
+| 40 | 2026-11-12 | Ratified after the fact: `a010208` (CI image build gets the empty `skills/` folder the engine adds) and `e8a6c0a` (`osv_fixable.py` counts only fixes for the image's own Debian release), both follow-ups to H-0088 / v37 | Owner, 2026-11-12 (decision card) |
