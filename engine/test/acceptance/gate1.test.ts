@@ -554,9 +554,8 @@ describe("AC-10 / FR-11: no reviewer entry at the pinned version", () => {
     await realWait(1000);
     expect(r.sdk.of("reviewer")).toEqual([]);
     expect(await reviewerRuns(r.w, feature)).toEqual([]);
-    const log = engineLog(r.w);
-    expect(log).toMatch(/security.reviewer/i);
-    expect(log).toMatch(file);
+    // The engine logs why after the analyst settles; a slow host (Windows CI) needs the wait.
+    await waitFor(() => /security.reviewer/i.test(engineLog(r.w)) && file.test(engineLog(r.w)), 30_000, "the engine log to say why");
     await waitFor(() => file.test(committedTranscript(r.w, feature) + r.w.transcriptText(r.w.project(), feature)), 30_000, "the transcript to say why");
   });
 
