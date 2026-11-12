@@ -49,14 +49,26 @@
   - The acceptance test's copy of the contract list is updated.
 - `agents/requirements-analyst/AGENT.md` (H-0108) was merged with PR #29.
 
+## Gate 2 fixes (`F-009-security-gate2.md`)
+- H1: the hidden-content check no longer trusts code spans or fences, and covers entities and plain text.
+- H2: the client refuses any mix of two leading slashes or backslashes and the `\??\` prefix.
+- M1: the invisible-character set now covers all format, private-use, unassigned and surrogate code points, plus the fillers and variation selectors.
+- L1: readiness check `source_unchanged` confirms the branch copy of the document still matches the stored blob.
+- L2: the client also runs the UNC check on the real path, after every link on the way.
+- Test defect E-2 (acceptance tests) fixed.
+- Open: M2 (Markdown link tricks), M3 (what the source confirmation binds), and the version capability (DOC-7, C-1), each waiting on an owner decision.
+
+## Repo documents
+A document inside the owner's repo is named by its repo path and read from the working copy, uncommitted edits included (owner decision, spec v8). A path that leaves the repo gets the same local checks as any other path. Covered by `test_a_requirements_document_in_the_repo_itself_by_its_repo_path`.
+
 ## Tests
-- Engine: `test/document.test.ts` (new, 19 tests) plus updated agent and gitleaks tests. Full run: 508 passed, 14 skipped (the real-Docker and real-Claude files, as before); typecheck and build clean.
-- Client: `tests/test_document_f009.py` (new, 12 tests). Full spec-interview suite: 381 passed. onboard-repo suite: 318 passed, 1 skipped.
+- Engine: `test/document.test.ts` (new, 21 tests) plus updated agent and gitleaks tests. Full run: 508 passed, 14 skipped (the real-Docker and real-Claude files, as before); typecheck and build clean.
+- Client: `tests/test_document_f009.py` (new, 14 tests). Full spec-interview suite: 381 passed. onboard-repo suite: 318 passed, 1 skipped.
 - Docs checks and placeholder check pass.
 
 ## Interpretations and deviations
 1. **Version gate.** Channel v1.4 says clients check the engine's version before sending `document`. The engine still reports 1.2, because it doesn't serve v1.3's advisor, and reporting 1.3 or later would make the client offer the advisor. So the client sends `document` and turns the old engine's -32602 "Unexpected parameter" into `document_unsupported`. Nothing is started either way. The owner should confirm this reading, or approve a capability flag in a later channel version.
-2. **Hidden Markdown.** "Raw HTML" follows CommonMark: a tag name must follow `<` directly, so `a < b` is text. HTML in fenced or inline code is shown as written, so it is allowed. In plain text documents only the invisible characters are refused, because nothing is rendered.
+2. **Hidden Markdown.** "Raw HTML" follows CommonMark: a tag name must follow `<` directly, so `a < b` is text. After Gate 2 (H1), HTML comments, tags, declarations, processing instructions and entities that decode to invisible characters are refused everywhere, inside code and in plain text documents too, because the tracking of code spans could be fooled and a plain text file can still be rendered as Markdown.
 3. **Secret refusals.** A document holding a secret gets -32009 `secret`, with lines and rule, and no Security item. The document never left the owner's machine, unlike a secret in a request, which keeps H-0084's -32008 and Security item.
 4. **Status words.** A confirmed source list is `approved` and a reopened one is `rejected`, reusing the contract's status values rather than adding new ones.
 
