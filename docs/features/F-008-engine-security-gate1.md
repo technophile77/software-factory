@@ -3,7 +3,7 @@
 - **Id:** F-008
 - **Status:** In review
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 8
+- **Spec version:** 9
 
 This is part of the engine's increment 3 ("Requirements to ready", F-007
 section 13). The owner chose to build Security Gate 1 on its own first
@@ -155,12 +155,13 @@ approved security requirements are in the spec.
 | SR-12 | The write check accepts exactly the run's named report path, not every path the role's write glob allows (S8.1). | Gate 1 #8 | Draft |
 
 ## 10. Interface requirements
-- H-0095 (draft, for owner approval): new entries in the change-controlled
+- H-0095 (approved: owner, decision card, 2026-11-12, with Sonnet 5.5 in
+  place of the drafted Opus 5.5): new entries in the change-controlled
   engine config.
 
   ```yaml
   # engine/config/models.yaml
-  security-reviewer: claude-opus-5-5   # a gate agent: same model as the analyst
+  security-reviewer: claude-sonnet-5-5   # owner's choice, H-0095
   # engine/config/limits.yaml
   security_reviewer:
     turns: 100
@@ -214,3 +215,4 @@ Asked one at a time. None is assumed.
 | 6 | 2026-11-12 | Security Gate 1 (`F-008-security-gate1.md`): SR-4 tightened, SR-7 to SR-12, FR-13 added, FR-1 and FR-9 tightened, AC-12 to AC-18 | Pending owner approval with the spec |
 | 7 | 2026-11-12 | A-1 approved: no second reviewer run after findings are resolved | Owner, 2026-11-12 (decision card) |
 | 8 | 2026-11-12 | A-2 approved: the reviewer reads the interview transcript as labelled data | Owner, 2026-11-12 (decision card) |
+| 9 | 2026-11-12 | H-0095 approved with the reviewer on Sonnet 5.5 | Owner, 2026-11-12 (decision card) |
