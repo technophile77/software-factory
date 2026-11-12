@@ -67,7 +67,9 @@ export function dropSection(text: string, key: string): string {
     skipping = false;
     out.push(l);
   }
-  return out.join("\n");
+  // Keep the final line break: on a CRLF checkout (Windows CI) a last line left as "256\r" parses as a string, not a number.
+  const joined = out.join("\n");
+  return text.endsWith("\n") && !joined.endsWith("\n") ? `${joined}\n` : joined;
 }
 
 /** Edits one role's block of the manifest policy. */
