@@ -114,5 +114,5 @@ describe("AC-21 / SR-21 / H-0083: fetch_page strips what a reader shouldn't see"
     expect(JSON.stringify(result)).toContain(url);
   });
 
-  it.skip("[RW-4] AC-21: text hidden only by a stylesheet class rule doesn't reach the reader (skipped: pending the owner's decision on F-007 validation M6(b), which proposes accepting this as a residual risk until Alpha; unskip if the owner asks for the fix)", () => undefined);
+  it.skip("[RW-4] AC-21: text hidden only by a stylesheet class rule doesn't reach the reader (skipped: accepted residual risk until Alpha, owner decision 2026-11-12, spec v43; unskip with the fix before Alpha)", () => undefined);
 });

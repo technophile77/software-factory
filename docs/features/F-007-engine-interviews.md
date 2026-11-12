@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 42
+- **Spec version:** 43
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -489,3 +489,4 @@ section 9.
 | 40 | 2026-11-12 | Ratified after the fact: `a010208` (CI image build gets the empty `skills/` folder the engine adds) and `e8a6c0a` (`osv_fixable.py` counts only fixes for the image's own Debian release), both follow-ups to H-0088 / v37 | Owner, 2026-11-12 (decision card) |
 | 41 | 2026-11-12 | Recorded exception to ADR 0009 and ADR 0005 for this increment: feature branches, specs, interview transcripts, Agent reports and `factory/state` live in the project's config repo (ADR 0010). Increment 4 (build to PR) moves feature work and `factory/state` to the managed code repos | Owner, 2026-11-12 (decision card) |
 | 42 | 2026-11-12 | SR-14: `DOCKER_CONFIG` points to an empty engine-owned folder instead of being cleared, because a cleared variable makes Docker read the owner's `~/.docker` (developer interpretation confirmed) | Owner, 2026-11-12 (decision card) |
+| 43 | 2026-11-12 | AC-21 residual risk accepted until Alpha: text hidden only by a page's stylesheet rules can reach the web reader (inline hiding, hidden elements, zero-width and bidi characters are stripped). Must be fixed before promotion to Alpha | Owner, 2026-11-12 (decision card) |
