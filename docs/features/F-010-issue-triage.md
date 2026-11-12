@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (readiness checks 1 to 5 pass; check 6 waits on the owner's approval of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 25
+- **Spec version:** 26
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -328,7 +328,7 @@ issue_triager:                  # session limits, same keys as web_reader
 for it a project value may only be higher. Turning `enabled` on is a change
 to the manifest, so it goes through the owner as any manifest change does.
 
-### H-0111 (draft): Issue triage record v1.0, a new contract
+### H-0111 (approved, owner, 2026-11-12, decision card): Issue triage record v1.0, a new contract
 Interfaces. Location: `.factory/issues/<repo>/<number>/`, on `factory/state`,
 where `<repo>` is `<owner>--<name>`. Files: `snapshot.json` (written by the
 engine), `snapshot.sha256`, `triage-<round>.json` (the triager's record as
@@ -504,6 +504,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 23 | 2026-11-12 | Gate 1 #9 rest: issue work runs behind the owner's features (SR-20) | Owner, 2026-11-12 (decision card) |
 | 24 | 2026-11-12 | SR-1 to SR-11 amended per Gate 1 and accepted; Gate 1 abuse cases added; H-0111 storage follows SR-14; readiness checks 1 to 5 pass | — |
 | 25 | 2026-11-12 | H-0110 approved as drafted | Owner, 2026-11-12 (decision card) |
+| 26 | 2026-11-12 | H-0111 approved as drafted | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
