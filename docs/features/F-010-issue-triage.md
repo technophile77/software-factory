@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (all open questions decided; next: Gate 1 and the drafts of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 14
+- **Spec version:** 15
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -221,7 +221,7 @@ The owner's existing rules still hold:
 ## 7. Dependencies
 - Engine increments 3 and 4 (F-007 section 13).
 - F-009 reference mode for seeding interviews from an issue.
-- F-008 Security Gate 1, for this feature's threat model (S9.7).
+- Gate 1 report `F-010-security-gate1.md` (threat model, S9.7). F-009 (draft PR #29) for interview seeding; seeding waits for F-009's own Gate 1 (SR-23).
 - ADR 0005 branches, ADR 0006 factory token and PRs, ADR 0012 budgets,
   ADR 0015 agent containers.
 
@@ -232,7 +232,7 @@ The owner's existing rules still hold:
 | A-2 | The test engineer can reproduce most bugs in the agent container. Bugs that need hardware, an outside service or a specific OS go to the owner as "couldn't reproduce". | Owner, 2026-11-12 (decision card) | Approved |
 
 ## 9. Security considerations
-Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
+Drafted by the analyst; SR-12 to SR-29 come from Gate 1 (`F-010-security-gate1.md`, which also holds the threat model).
 
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
@@ -246,6 +246,24 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | SR-8 | Every GitHub call is logged with agent, action, target and time, without secrets (S9.6). | Analyst | Draft |
 | SR-9 | Replies are posted by engine code, never by a session that read issue text (S9.3). Apart from the question slot, no reply contains text from the issue or text a model wrote. | Analyst | Draft |
 | SR-11 | The question slot is the one place a crafted issue could choose words the factory's account posts (owner accepted this risk, OQ-7). Questions only, three at most, each with a checked purpose. The FR-17 filter keeps out links, mentions, references and formatting, and the length cap and one-sentence rule bound the rest. Gate 1 reviews whether that is enough. | Analyst | Draft |
+| SR-12 | Confirmation and fix branches stay local until Gate 2 and validation pass, and the PR opens as a draft. The fix lane is refused on a repo whose workflows give secrets to runs for factory branches. `instructions_found` routes to Security, not to the fix lane. Record text reaches code-writing sessions only as fenced data. Reproduction tests don't spawn processes, read the environment, use the network or run decoded code (subject to the owner's decision). | Gate 1 #1 | Pending owner decision (Security) |
+| SR-13 | The test engineer derives the expected output from the cited evidence. A crash fix changes only the crash. Gate 2 stops a fix that loosens a check. The PR body carries a fixed banner. | Gate 1 #2 | Accepted from Gate 1 |
+| SR-14 | Snapshots, records and drop logs live in a private, owner-only store. `factory/state` holds only hashes, kinds, routes, ids and the action log. Security-report material stays private (subject to the owner's decision). Sensitive data is listed. | Gate 1 #3 | Pending owner decision (Security) |
+| SR-15 | Question checks run on an NFKC-and-confusables fold, with drops for digit and hex runs, spelled-out domains, GitHub autolink forms, mixed scripts, verbatim overlap with the issue, a fixed word list and a profanity list. Questions start with a fixed interrogative. The question is Markdown-escaped. The rendered reply is secret-scanned. Questions are labelled as automated, and a per-repo switch turns them off. | Gate 1 #4 | Accepted from Gate 1 |
+| SR-16 | Issue writes use an issues-only credential on triaged repos, never the owner's account, with short-lived or expiring tokens (subject to the owner's decision). | Gate 1 #5 | Pending owner decision (Security) |
+| SR-17 | One GitHub client with a fixed list of calls. It follows links and redirects only to `api.github.com`, and on writes never. Repo and issue ids are checked before each write. Ids are compared as numbers. Responses are validated. Unexpected answers fail closed. | Gate 1 #6 | Accepted from Gate 1 |
+| SR-18 | Before each write the issue is fetched again and must be open, unlocked, in the same repo and unchanged since the snapshot. The record names the commit the triager read. | Gate 1 #7 | Accepted from Gate 1 |
+| SR-19 | The engine acts only on its own record or on files that extend its hash chain. Foreign files file a Security item. | Gate 1 #8 | Accepted from Gate 1 |
+| SR-20 | Per-author, fix-lanes-per-day and per-project inbox caps, with a daily digest. Re-triage counts against the daily cap. Confirmation sessions have limits. Triage work runs after the owner's own features (subject to the owner's decision). | Gate 1 #9 | Pending owner decision (Security) |
+| SR-21 | A `security_relevant` flag from confirmation or Gate 2 stops the lane before any public action. The triager asks no questions about a suspected weakness. | Gate 1 #10 | Accepted from Gate 1 |
+| SR-22 | The fix scope guard is engine code with fixed path lists, a per-repo `security_paths` list, and binary and symlink stops, run after every session in the lane. | Gate 1 #11 | Accepted from Gate 1 |
+| SR-23 | Triage inbox items show engine fields first and model text as escaped, labelled plain text. Interview seeding waits for F-009's Gate 1. | Gate 1 #12 | Accepted from Gate 1 |
+| SR-24 | The triager sees the redacted snapshot. Records, replies and fix specs are secret-scanned. A scan that can't run stops everything. | Gate 1 #13 | Accepted from Gate 1 |
+| SR-25 | Confirmation has no network, writes only its test, fetches nothing named in an issue, and must fail on the new test itself. | Gate 1 #14 | Accepted from Gate 1 |
+| SR-26 | Issue state never comes from labels. Owner label changes are matched by numeric id. | Gate 1 #15 | Accepted from Gate 1 |
+| SR-27 | Template overrides are checked and need a signed approval. `issues.enabled` is a pinned key. An `issues.pause` command stops issue writes at once. | Gate 1 #16 | Accepted from Gate 1 |
+| SR-28 | `duplicate_of` must name an open issue the engine has triaged that isn't a security report. Duplicates post nothing about the other issue. | Gate 1 #17 | Accepted from Gate 1 |
+| SR-29 | The action log adds agent, repo id, issue number and a body hash. Dropped text is never logged. | Gate 1 #18 | Accepted from Gate 1 |
 | SR-10 | A `security_report` gets no public reply or label. | Analyst | Draft |
 
 ## 10. Interface requirements
@@ -451,6 +469,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 12 | 2026-11-12 | A-2 approved | Owner, 2026-11-12 (decision card) |
 | 13 | 2026-11-12 | Default caps: 20 issues a day, 1 fix at once per repo | Owner, 2026-11-12 (thread) |
 | 14 | 2026-11-12 | Section 10: drafts of H-0110 to H-0114 | — (drafts) |
+| 15 | 2026-11-12 | Gate 1: SR-12 to SR-29 added; SR-12, SR-14, SR-16, SR-20 wait for owner Security decisions | — |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
