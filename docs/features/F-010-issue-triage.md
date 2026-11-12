@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (all open questions decided; next: Gate 1 and the drafts of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 9
+- **Spec version:** 10
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -71,6 +71,19 @@ The owner's existing rules still hold:
    PR through the factory token whose body says it fixes the issue. The owner
    reviews and merges the PR, which is their only step. Stage failures go to
    the inboxes as they do for features.
+
+   **A fix is done** (owner, 2026-11-12) when the issue's valid inputs, as
+   the reproduction test supplies them, produce the expected output, and the
+   evidence shows all of:
+   - **Red:** the reproduction test fails on the commit the fix branched from,
+     for the stated reason.
+   - **Green:** the same test, with the same inputs and expected output,
+     passes on the fix's final commit.
+   - **Regression:** the repo's full regression suite passes on the final
+     commit (the bar for the repo's maturity level, `testing-strategy.md`).
+   The test engineer runs all three and records them in its run report; the
+   validation judge checks the report and fails the fix if any is missing.
+   The reproduction test stays in the repo as a regression test.
 7. **Feature requests.** If the owner approves "Start an interview", the engine
    queues a feature that waits for an interview, seeded with the issue snapshot
    as reference material written by someone else (F-009, reference mode). The
@@ -113,6 +126,7 @@ The owner's existing rules still hold:
 | FR-6 | The engine routes each valid record by the table in section 2 step 4. Routing is engine code, not a model decision. |
 | FR-7 | Confirmation runs as in section 2 step 5. The test engineer's session gets the triage record and the repo, never the issue snapshot. |
 | FR-8 | A confirmed bug gets a feature id, a branch per ADR 0005 and a fix spec per OQ-2, and runs stages 5 to 9. The PR body links the issue. |
+| FR-18 | A fix is done only with red, green and regression evidence as in section 2 step 6: the reproduction test fails on the base commit, passes unchanged on the final commit, and the full regression suite passes on the final commit. The validation judge fails a fix without all three. The reproduction test is kept as a regression test. |
 | FR-9 | The fix scope guard in section 2 step 8 stops the lane and files an item in the matching inbox. |
 | FR-10 | Owner approval of "Start an interview" queues a feature seeded from the snapshot in F-009 reference mode. |
 | FR-11 | Caps per repo: issues triaged per day (default 20), fix lanes running at once (default 2), and the ADR 0012 token budget per fix. Issues over a cap wait in order; none are dropped. |
@@ -137,6 +151,8 @@ The owner's existing rules still hold:
 | AC-8 | Given a `bug` record, then the test engineer's session inputs contain the record and not the snapshot. | FR-7 |
 | AC-9 | Given a reproduction test that passes on `main`, then no fix lane starts and a "Couldn't reproduce" Product item exists. | FR-7 |
 | AC-10 | Given a confirmed bug, then a feature id, branch and fix spec exist and the run reaches stage 9 with a PR linking the issue, with no owner action before the PR. | FR-8 |
+| AC-23 | Given a fix, then the test engineer's report shows the reproduction test failing on the base commit and passing on the final commit with the same inputs and expected output, and the regression suite passing on the final commit; the test is in the PR diff. | FR-18 |
+| AC-24 | Given a fix whose report lacks the red run, or where the reproduction test changed between red and green, or where the regression suite fails, then the validation judge fails it and no PR is marked ready. | FR-18 |
 | AC-11 | Given a fix whose diff touches an interface contract, a dependency manifest or a change-controlled file, then the lane stops before stage 6 and an item in the matching inbox exists. | FR-9 |
 | AC-12 | Given owner approval of "Start an interview", then a feature waiting for an interview exists with the snapshot attached as reference material. | FR-10 |
 | AC-13 | Given 25 new issues in one day with a cap of 20, then 20 are triaged and 5 wait for the next day, in order. | FR-11 |
@@ -229,7 +245,7 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
   caps, and the `submit_triage` tool. Interfaces.
 - **H-0112** New role `agents/issue-triager/AGENT.md` and its Role policy entry
   (no network, no write, one tool). Architecture.
-- **H-0113** `development-workflow.md`, `workflows/feature-development/` and
+- **H-0113** (includes the fix's definition of done, FR-18) `development-workflow.md`, `workflows/feature-development/` and
   `definition-of-done.md`: the bug-fix lane and how DoD item 1 applies to it
   (OQ-2). Product.
 - **H-0114** A new ADR: the factory may reply to and label issues on triaged
@@ -271,6 +287,7 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | 7 | 2026-11-12 | OQ-5: the engine checks every 5 minutes and catches up on start; A-1 approved | Owner, 2026-11-12 (decision card) |
 | 8 | 2026-11-12 | OQ-6: issues already open are triaged too, oldest first, after new issues inside the daily cap | Owner, 2026-11-12 (decision card) |
 | 9 | 2026-11-12 | OQ-1 restated in the owner's words: crash, error or unexpected output on correct input; correct and expected come from specs, docs or an earlier release | Owner, 2026-11-12 (thread) |
+| 10 | 2026-11-12 | A fix's definition of done: red on the base commit, green on the final commit with the same inputs, full regression suite passes (FR-18) | Owner, 2026-11-12 (thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
