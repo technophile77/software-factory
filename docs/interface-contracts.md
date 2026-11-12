@@ -29,9 +29,10 @@ Interview tools v1.0 (H-0082) for F-007 approved by the owner 2026-11-11
 (decision card, as drafted after Security Gate 1). Channel v1.3 amendment
 H-0084 (error code -32008 `refused`) approved by the owner 2026-11-11
 (decision card). Project manifest v1.4 (`limits`, H-0087) approved by the
-owner 2026-11-11 (decision card). Drafts for F-009 (start an interview from
-a document), awaiting owner approval: Engine control channel v1.4 (H-0105),
-Interview tools v1.1 (H-0106), Role policy v2.6 (H-0107).
+owner 2026-11-11 (decision card). Engine control channel v1.4 (H-0105),
+Interview tools v1.1 (H-0106) and Role policy v2.6 (H-0107) for F-009 (start
+an interview from a document) approved by the owner 2026-11-12 (PR #29
+merged; decision card, as drafted).
 
 ## Contract entry format
 
@@ -190,7 +191,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
 
 ---
 
-## Engine control channel — v1.3
+## Engine control channel — v1.4
 
 - Status: Approved
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
@@ -202,7 +203,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
   (F-006, the advisor) approved by the owner, 2026-11-10 (H-0063 and
   amendment H-0075: advisor fields stated exactly, call limits, budget flag,
   advice revision and hash; decision card, as drafted; renumbered from v1.2
-  when merged with main); v1.4 (F-009, H-0105): draft, awaiting owner approval
+  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -346,7 +347,7 @@ Interview rules (v1.1):
   such as a found secret or a tampered transcript. Its message is fixed and
   reveals nothing; the reason is in a Security inbox item.
 
-**Starting from a document (v1.4, F-009, draft H-0105).** `Document` is
+**Starting from a document (v1.4, F-009, H-0105).** `Document` is
 `{ name, media_type, text, provenance }`:
 - `name`: display text only, up to 200 characters, control characters
   stripped by the engine; never used in a path, commit message or git
@@ -388,7 +389,7 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
-## Role policy — v2.5
+## Role policy — v2.6
 
 - Status: Approved (v2.2); v2.3 draft, awaiting owner approval (H-0040);
   v2.4 approved (H-0061, H-0076); v2.5 approved (H-0083)
@@ -401,7 +402,7 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   H-0076, the advisor denied all of `.factory/`; decision card, as drafted;
   renumbered from v2.3 when merged with main); v2.5 approved by the owner,
   2026-11-11 (H-0083, F-007 Security Gate 1 #20; decision card); v2.6
-  (F-009, H-0107): draft, awaiting owner approval
+  (F-009, H-0107) approved by the owner, 2026-11-12 (decision card, as drafted)
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
   Security decision. v2.0 moved the policy from `.factory/policy/roles.yaml`
@@ -436,7 +437,7 @@ must deny reading secret files and, from v2.2, the engine's channel file:
 `**/.env`, `**/.env.*`, `**/.envrc`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`, `**/*.jks`, `**/*.keystore`, `**/id_rsa*`, `**/id_dsa*`, `**/id_ecdsa*`, `**/id_ed25519*`, `**/.npmrc`, `**/.pypirc`, `**/.netrc`, `**/.git-credentials`, `**/*.tfvars`, `**/credentials*.json`, `**/*.tfstate`, `**/*.tfstate.*`, `**/.aws/credentials`, `**/.docker/config.json`, `**/*.ppk`, `**/kubeconfig`, `**/.kube/config`, `.factory/engine.json`, `**/.factory/engine.json`.
 Every core role must be present, and every role that may write outside
 `.factory/` must deny the change-controlled paths: `CLAUDE.md`, `**/CLAUDE.md`, `CLAUDE.local.md`, `**/CLAUDE.local.md`, `.claude/**`, `.mcp.json`, `.github/**`, `.gitignore`, `.gitattributes`, `.husky/**`, `.pre-commit-config.yaml`, `lefthook.yml`, `osv-scanner.toml`, `agents/**`, `skills/**`, `plugins/**`, `.claude-plugin/**`, `workflows/**`, `**/.claude/**`, `.envrc`, `**/.envrc`, `.git`, `.git/**`, `.gitmodules`, `.vscode/**`, `.devcontainer/**`, and from
-v2.6 (draft, H-0107) the source documents the engine stores for F-009:
+v2.6 (H-0107) the source documents the engine stores for F-009:
 `docs/features/*-source.md`, `docs/features/*-source.txt`. Globs are relative to the worktree: no absolute paths, `\`, or segments
 that can match `..`. **Glob dialect and matching (H-0046, owner,
 2026-11-10):** a glob is literal segments separated by `/`, where `*`
@@ -826,12 +827,12 @@ config repo's `factory/state` branch.
 
 ---
 
-## Interview tools — v1.0
+## Interview tools — v1.1
 
 - Status: Approved
 - Owner decision: F-007 OQ-8, H-0082, tightened by Security Gate 1 #10;
-  owner, decision card, 2026-11-11; v1.1 (F-009, H-0106): draft, awaiting
-  owner approval
+  owner, decision card, 2026-11-11; v1.1 (F-009, H-0106) approved by the
+  owner, 2026-11-12 (decision card, as drafted)
 - Used by: engine (serves them), requirements analyst (calls them)
 - Compatibility: adding a tool or an optional parameter is non-breaking;
   changing a parameter, a result or a limit is breaking.
@@ -876,7 +877,7 @@ Rules:
   `wrong_status` (for example revising an item that had no `more_info`
   reply).
 
-**v1.1 (F-009, draft H-0106).** For a feature started from a document:
+**v1.1 (F-009, H-0106).** For a feature started from a document:
 - `interview_ask` and `interview_revise` take an optional `type`: `gap`,
   `conflict` or `ambiguity`. A `conflict` question quotes both sides in
   `findings`, with `source` either an `https` URL or a worktree path.

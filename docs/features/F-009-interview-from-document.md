@@ -1,9 +1,9 @@
 # Feature: Start an interview from an existing document
 
 - **Id:** F-009
-- **Status:** Draft (security requirements approved; interface changes H-0105 to H-0108 drafted, awaiting the owner)
+- **Status:** Approved (readiness gate passed 2026-11-12); in development
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 5
+- **Spec version:** 6
 
 ## 1. Objective and business purpose
 The owner often has a finished spec or a working document before a feature
@@ -133,7 +133,7 @@ None yet. Each will be proposed to the owner.
 Security Gate 1 ran on spec v2: `F-009-security-gate1.md` (0 Critical, 3 High, 4 Medium, 2 Low).
 
 ## 10. Interface requirements
-Drafted in this PR, each awaiting the owner's approval:
+Approved by the owner 2026-11-12 (PR #29 merged; decision card, as drafted):
 - **H-0105** Engine control channel v1.4: `feature.start` gains `document`;
   the `source_confirmation` item kind with `confirm_sources` and
   `reopen_sources` replies; question `type`; error -32009
@@ -149,12 +149,16 @@ Drafted in this PR, each awaiting the owner's approval:
   development under this spec.
 
 ## 11. Readiness gate
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+Passed 2026-11-12 (orchestrator check on spec v6):
+- [x] Clear objective (section 1)
+- [x] Expected behavior defined (section 2)
+- [x] Acceptance criteria testable (AC-1 to AC-10, each pass/fail)
+- [x] Constraints documented (section 5)
+- [x] Assumptions explicit: none. The interview ran in the project thread;
+  every answer is the owner's (OQ-1 to OQ-4, G1 #3, SR approvals, H-0105 to
+  H-0108)
+- [x] Blocking decisions resolved: OQ-1 to OQ-4 decided, SR-1 to SR-14
+  approved, H-0105 to H-0108 approved; nothing deferred
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -164,6 +168,7 @@ Drafted in this PR, each awaiting the owner's approval:
 | 3 | 2026-11-12 | Security Gate 1 findings drafted as SR-6 to SR-14 | — |
 | 4 | 2026-11-12 | SR-8: refuse documents with hidden content (G1 #3 option a); AC-10 added | Owner, 2026-11-12 (decision card) |
 | 5 | 2026-11-12 | SR-1 to SR-7 and SR-9 to SR-14 approved as written | Owner, 2026-11-12 (thread) |
+| 6 | 2026-11-12 | H-0105 to H-0108 approved as drafted; readiness gate passed; development starts | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
