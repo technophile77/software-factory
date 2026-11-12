@@ -148,3 +148,126 @@ is fooled, and the version rule (E-1, C-1).
 | Acceptance, client | `unittest` (stdlib), matching the stdlib-only client | `unittest` | F-005 |
 | Coverage (reported) | `@vitest/coverage-v8` 5.1.0 | Not run for this report; the whole-repo figures are in the F-007 report | OQ-9 follow-up |
 | Stochastic | Not required at Rapid prototype | None | None |
+
+## Addendum 1: spec v11 on `acd6e9e` (validation round 1, M2)
+
+The run above tested `9ae4c85` against spec v7 and ended **fail** (E-1, C-1,
+E-2). Since then the owner decided v8 to v11 and the developer fixed Gate 2
+and validation round 1 (B1, M1). This addendum re-runs everything on the
+final commit, confirms or corrects the developer's edits to these tests, and
+adds tests for v9, v10 and v11 from the spec and the contracts (Engine
+control channel v1.4, Interview tools v1.1). The plan's new rows are in
+`F-009-test-plan.md`.
+
+### Run
+
+| | |
+|---|---|
+| Code tested | `acd6e9e` (`claude/project-thread-qzenwf`), plus the new tests in this commit. No product code changed |
+| Commands | `cd engine && npm run typecheck && npx vitest run`; `npx vitest run --coverage --coverage.reportOnFailure=true`; `python3 -m unittest discover -s plugins/software-factory/skills/spec-interview/tests` |
+| Environment | Linux container, Node 22.23.4, Python 3.13.18, system git, running as root. No Docker |
+| Typecheck | Clean (engine and `test/acceptance`): B1 is fixed |
+
+| Suite | Run | Passed | Failed | Skipped |
+|---|---|---|---|---|
+| Engine, whole (35 files) | 661 | 646 | **1** | 14 |
+| of which F-009 acceptance (`f009-document.test.ts`) | 134 | 133 | **1** | 0 |
+| Client, whole (`spec-interview/tests`) | 428 | 426 | **2** | 0 |
+| of which F-009 acceptance (`test_acceptance_f009.py`) | 43 | 43 | 0 | 0 |
+
+The 14 engine skips are the same gated real-Docker files and platform gates
+as before; no F-009 test is skipped.
+
+Coverage (`@vitest/coverage-v8` 5.1.0, whole engine suite, `src/**`):
+statements 83.98%, branches 80.01%, functions 84.19%, lines 87.89%. F-009
+files (statements / branches / functions / lines): `document.ts` 96.9 / 95.4
+/ 97.6 / 98.4; `tools.ts` 95.6 / 92.8 / 97.1 / 98.6; `readiness.ts` 96.4 /
+92.1 / 100 / 97.2.
+
+**Result: fail.** One F-009 test fails on product code (D-1). Two F-006
+client tests fail because a pin in them is out of date after the skill's
+v1.4 wording (T-1); that is a test to update, not a product failure. E-1,
+C-1 and E-2 from the first run now pass.
+
+### Earlier failures
+
+| Failure | Now |
+|---|---|
+| E-1 (DOC-7) | Pass. The owner replaced the version rule with the capability list (v9); DOC-7 checks it (see below) |
+| C-1 (client `ChannelVersion`) | Pass. The client refuses a document when `"document"` isn't listed |
+| E-2 (DOC-13, HTML in `text/plain`) | Pass. The engine refuses it in plain text too |
+
+### The developer's edits to these tests
+
+| Test | Edit | Verdict |
+|---|---|---|
+| DOC-7 | Checks `"document"` in `capabilities` of engine.json and `engine.status`, not the version | **Confirmed.** It is what v9 and channel v1.4 now say. CAP-1 adds the rest of the contract's shape (same list in both, plain names, at most 32) |
+| SRC-1 | Expects `spec_line: expect.stringContaining(ref)` | **Corrected.** The contract says `spec_line` is "the spec's own line for `spec_ref`, copied by the engine"; containing the ref doesn't show that. SRC-1 now expects the exact lines (`\| FR-1 \| Export all rows as CSV. \|` and the whole SR-1 row). Passes |
+| SRC-6 | The added row cites FR-1, not FR-2 | **Confirmed.** Under v11 a `Spec ref` needs a line in the spec, and the fixture spec has no FR-2. The test still adds a row after confirmation, which is what it checks |
+| Client `ChannelVersion.test_v13_engine_gets_no_document` | engine.json written with `capabilities: []`; docstring states the capability rule | **Confirmed.** Two tests added beside it (below), because the version no longer decides |
+| Client fixtures (`source_confirmation`, `test_fr8_source_confirmation_shows_every_quote_fenced`) | Each source carries `spec_line` | **Confirmed.** Required by channel v1.4 as amended in v11 |
+| `write_engine_json` (shared helper) defaults to `["document"]`; `World.engineJson()` type gains `capabilities` | Harness only | **Confirmed.** A default v1.4 engine lists it; the type fix is B1 |
+
+### New tests
+
+| Rule | Tests | Result |
+|---|---|---|
+| v9 capability list | Engine DOC-7, CAP-1. Client `test_v9_without_the_document_capability_the_client_refuses_before_reading` (no list, `[]`, only other names; on v1.4 and v1.9: refused, the file never opened, no `feature.start`), `test_v9_the_capability_not_the_version_decides` (listed on v1.2, v1.3 and v1.4, with unknown names around it: the document is sent unchanged) | Pass |
+| v10 link rules (SR-8, AC-10) | LNK-1 ×26: titled definitions in three title styles and with the title on the next line, an unused definition, the `[//]: # (…)` idiom; in a block quote, a nested block quote, bullet and ordered list items, a list item's second paragraph (also indented 4 spaces), a block quote in a list item; empty links and images; link text of only spaces, `&nbsp;`, `&#160;`, `&#xA0;`, a literal U+00A0, an em space; an image alt of only `&nbsp;`; an empty full reference link; empty links in a block quote and a list item. Each refused as `hidden_content` naming its line, nothing kept. LNK-2: every kind in one document named line by line. LNK-3 ×7 controls accepted | Pass (all 34) |
+| v11 spec-line lock (FR-8) | SRC-1 (exact line), SPL-5 (the three spec-line forms), SPL-6 ×2 (a confirmed line reworded, or its status cell changed: `sources_confirmed` fails until a new item shows the new line and is confirmed), SPL-7 (control: an uncited line changes, the confirmation holds). Client `test_fr8_v11_each_spec_ref_shows_its_own_spec_line_as_data` (shown, fenced, a planted fence can't close it) | Pass |
+| v11 quote and Section rules (SR-7) | SPL-1 ×7 accepted; SPL-2 ×8 refused naming the row with no item filed; SPL-3 (`-` without headings); SPL-4 ×2 (a ref with no spec line, or only mid-sentence) | **SPL-2 "across two table rows" fails (D-1)**; the rest pass |
+| Interview tools v1.1 `source_unchanged` | SRC-14 | Pass |
+
+The engine names a failing row by its line number in the spec ("line 50:
+…"), not its ref. The contract asks only that it name the failing rows, so
+the new tests accept either, as SRC-7 already did.
+
+### Failures
+
+#### D-1 (SPL-2, "text that runs across two table rows"): a quote spanning two rows of a table without outer pipes is accepted
+
+- **Expected** (Interview tools v1.1, as amended in v11; spec v11 change
+  log): the quote "sits in one paragraph, list item or table row under that
+  heading"; otherwise `invalid`, naming the row.
+- **Document** (under `## Storage`), a GFM table whose rows have no pipe at
+  either end, which GFM allows ("The pipes on either end of the table are
+  optional"):
+  ```
+  Rule | Value
+  --- | ---
+  Limit | Rows stop at ten thousand per export
+  Retention | Files are kept for seven whole days
+  ```
+- **Row:** `| FR-1 | Storage | ten thousand per export Retention |`, which
+  joins the end of one row to the start of the next.
+- **Actual:** `{"ok":true,"value":{"item":{"id":"S-001","kind":"source_confirmation",…,"sources":[…,{"spec_ref":"FR-1","section":"Storage","quote":"ten thousand per export Retention","spec_line":"| FR-1 | Export all rows as CSV. |"}]}}}`.
+- **Likely cause:** the block splitter treats only lines starting with `|`
+  as table rows, so these lines read as one paragraph. With outer pipes a
+  quote can't span rows without containing `|`, so only this table form is
+  open.
+- **Class:** product code; developer fix. Impact is low: the words are in
+  the document in that order and the owner sees the quote, but the engine
+  doesn't hold the v11 rule for this table form.
+
+#### T-1 (client `test_acceptance_f006`, `SkillTextF006` and `SkillTextRound2`, `test_regression_v12_named_and_tools_unchanged`): out-of-date pin
+
+- **Expected by the test:** `SKILL.md` names "Engine control channel (v1.3".
+- **Actual:** since `acd6e9e` (validation m8) it says "(v1.4)", which is
+  right for F-009.
+- **Class:** test needs updating, not a product failure. The F-006 intent
+  is that the skill names a channel version that has the advisor (v1.3 or
+  later). Per my role I don't change it unasked: for the orchestrator, the
+  fix is to match `v1\.[3-9]` in that test.
+
+### Not tested, and why
+
+- **Link rules in `text/plain`.** SR-8 says "a Markdown link reference
+  definition", so whether it applies to plain text is open; not asserted
+  either way.
+- **Link-definition text inside fenced code.** CommonMark doesn't treat it
+  as a definition; the spec doesn't say whether the engine should refuse it
+  as it refuses HTML in code. Not asserted.
+- **Model behaviour** (AC-4 to AC-8's analyst half, FR-6, FR-9, SR-1's
+  "never followed", SR-12): unchanged from above; validation M3 is with the
+  owner.
+- **SR-13:** deferred to Alpha.

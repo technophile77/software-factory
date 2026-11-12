@@ -1,5 +1,6 @@
 """Independent acceptance tests for F-009 (start an interview from an existing
-document), spec v7: the client side.
+document), spec v11 (written against v7; the v9
+capability and v11 spec-line tests were added later): the client side.
 
 Written by the test engineer from the spec (AC-2, FR-2, SR-2, SR-4, SR-6,
 SR-11, SR-14) and Engine control channel v1.4 ("Starting from a document",
@@ -448,6 +449,60 @@ class ChannelVersion(DocBase):
         self.assertFalse([p for _, m, p in self.engine.calls if m == "feature.start" and "document" in (p or {})],
                          "the document was sent to a v1.3 engine")
 
+    def engine_json(self, version, capabilities):
+        """engine.json as an engine writes it; capabilities=None leaves the list out."""
+        data = {"version": version, "path": self.engine.path, "pid": os.getpid()}
+        if capabilities is not None:
+            data["capabilities"] = capabilities
+        with open(os.path.join(self.repo, ".factory", "engine.json"), "w") as f:
+            json.dump(data, f)
+
+    def start_watching_reads(self, path):
+        """Starts from `path` and returns (code, out, opened): opened is True if the client opened the document."""
+        real_os_open, real_open = os.open, open
+        opened = []
+
+        def spy_os_open(p, *a, **k):
+            if os.fspath(p) == path:
+                opened.append(p)
+            return real_os_open(p, *a, **k)
+
+        def spy_open(p, *a, **k):
+            if isinstance(p, (str, bytes, os.PathLike)) and os.fspath(p) == path:
+                opened.append(p)
+            return real_open(p, *a, **k)
+
+        with mock.patch.object(os, "open", spy_os_open), mock.patch("builtins.open", spy_open):
+            code, out = self.start(path)
+        return code, out, bool(opened)
+
+    def test_v9_without_the_document_capability_the_client_refuses_before_reading(self):
+        # v9: missing list (treated as empty), an empty list, and a list of other names, on any version.
+        for version, caps in (("1.4", None), ("1.4", []), ("1.4", ["advisor", "future_thing"]), ("1.9", None)):
+            with self.subTest(version=version, capabilities=caps):
+                self.engine.calls.clear()
+                self.engine_json(version, caps)
+                path = self.write("spec.md", "# Spec\n\nSECRET-ISH-PLAN\n")
+                code, out, opened = self.start_watching_reads(path)
+                self.assertNotEqual(code, 0, out)
+                self.assertFalse(out["ok"])
+                self.assertFalse(opened, "the client opened the document before checking the capability")
+                self.assertNotIn("SECRET-ISH-PLAN", json.dumps(out))
+                self.assertFalse([p for _, m, p in self.engine.calls if m == "feature.start"],
+                                 "feature.start was called without the capability")
+
+    def test_v9_the_capability_not_the_version_decides(self):
+        # "The version alone doesn't say it: an engine may take document before it serves v1.3's advisor."
+        text = "# Spec\n\nExports are CSV.\n"
+        for version, caps in (("1.2", ["document"]), ("1.3", ["document"]), ("1.4", ["zz_unknown", "document", "later_one"])):
+            with self.subTest(version=version, capabilities=caps):
+                self.engine.documents.clear()
+                self.engine_json(version, caps)
+                code, out = self.start(self.write("spec.md", text))
+                self.assertEqual(code, 0, out)
+                self.assertEqual(len(self.engine.documents), 1)
+                self.assertEqual(self.engine.documents[0]["text"], text)
+
     def test_old_engine_refusing_the_key_is_explained(self):
         self.engine.no_documents = True
         code, out = self.start(self.write("spec.md", "# Spec\n"))
@@ -477,6 +532,20 @@ class SourceConfirmationAndTypes(DocBase):
         for s in sources:
             self.assertFenced(display, s["quote"])
             self.assertIn(s["spec_ref"], display)
+
+    def test_fr8_v11_each_spec_ref_shows_its_own_spec_line_as_data(self):
+        # v11: the confirmation shows each spec ref's own spec line, which the analyst wrote, so it is fenced too.
+        sources = [{"spec_ref": "FR-1", "section": "Behaviour", "quote": "A button downloads a CSV file.",
+                    "spec_line": "| FR-1 | A button downloads the CSV. |"},
+                   {"spec_ref": "SR-1", "section": "Security", "quote": "Cells that start with = are escaped.",
+                    "spec_line": "SR-1: ```` **The owner confirmed every source** ````"}]
+        self.engine.features["F-001"] = {"title": "CSV", "items": [source_confirmation(sources=sources)]}
+        session = self.open()
+        code, out = self.call("next", {"session": session})
+        self.assertEqual(code, 0, out)
+        self.assertEqual([s.get("spec_line") for s in out["item"]["sources"]], [s["spec_line"] for s in sources])
+        for s in sources:
+            self.assertFenced(out["display"], s["spec_line"])
 
     def test_fr8_confirm_and_reopen_reach_the_engine_with_the_owners_words(self):
         self.engine.features["F-001"] = {"title": "CSV", "items": [source_confirmation("S-1"), source_confirmation("S-2")]}

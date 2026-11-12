@@ -1,6 +1,8 @@
 # F-009 test plan: start an interview from an existing document
 
-- **Feature:** F-009 Start an interview from an existing document, spec v7
+- **Feature:** F-009 Start an interview from an existing document, spec v11
+  (written against v7; the rows marked v9, v10 and v11 were added after the
+  owner's decisions of 2026-11-12, in answer to validation round 1, M2)
 - **Author:** test-engineer, 2026-11-12
 - **Written from:** the spec (FR-1 to FR-9, AC-1 to AC-10, SR-1 to SR-14,
   section 6), `docs/testing-strategy.md`, and the contracts in
@@ -20,8 +22,9 @@
     against the shared `fake_engine.py`, using `test_interview_client.Base`
     with `engine.json` at channel v1.4. Run with
     `python3 -m unittest discover -s plugins/software-factory/skills/spec-interview/tests -p 'test_acceptance_f009.py'`.
-- **Size:** engine 38 test ids, 76 cases (parameterised ids count once per
-  case); client 40 tests.
+- **Size:** engine 50 test ids, 134 cases (parameterised ids count once per
+  case); client 43 tests. Before the v9 to v11 additions: engine 38 ids, 76
+  cases; client 40 tests.
 - **Out of scope:** SR-13 (deferred by the owner to Alpha, spec v7).
 
 ## Tool choice
@@ -62,6 +65,7 @@ can show.
 | AC-8 | Engine part: with `reference`, the first turn says the text is only a suggested answer, and `sources_confirmed` doesn't block readiness. Asking every answer as a question: model behaviour | DOC-19, SRC-13 | Engine part; rest stochastic |
 | AC-9 | An analyst session that overwrites or deletes the source (alone or with its spec) has nothing committed, the run fails, a Security item names the path; a session writing only its spec is committed and leaves the source unchanged (control); the onboarding template denies both source globs in every role that writes outside `.factory/` | DOC-20 ×3, DOC-21, DOC-22 | Acceptance |
 | AC-10 | An HTML comment (one line and multi-line), a raw tag, a `<script>` tag, ZWSP, ZWJ, RLO and a bidi isolate are each refused as `hidden_content` naming the line, nothing stored; all four kinds in one document name each line; the same in `text/plain`; ordinary `<`, `>`, links and image references are accepted (control); the client shows the lines | DOC-11 ×8, DOC-12, DOC-13 ×2, DOC-14; client `test_ac10_hidden_content_lines_are_named` | Acceptance |
+| AC-10 (v10) | A link reference definition with a title (double-quoted, single-quoted, parenthesised, on the next line), an unused one, and the `[//]: # (…)` idiom, at the top level, in a block quote, a nested block quote, a bullet or ordered list item, a list item's second paragraph (also indented 4 spaces) and a block quote in a list item; an empty inline link or image, link text of only spaces, `&nbsp;`, `&#160;`, `&#xA0;`, a literal U+00A0 or an em space, an image alt of only `&nbsp;`, an empty full reference link, and empty links inside a block quote and a list item: each refused as `hidden_content` naming its line, nothing stored. Every kind in one document names each line. Controls accepted: used untitled definitions (full, collapsed and shortcut references, matched without case or extra spaces; a definition inside a block quote or list item; a reference used from a block quote), links and images with text and a title, task-list boxes and `[]` in prose | LNK-1 ×26, LNK-2, LNK-3 ×7 | Acceptance |
 
 ## Security requirements to tests
 
@@ -73,7 +77,8 @@ can show.
 | SR-4 | Client: symlink to a file, symlink to `/dev/null`, directory, FIFO (no hang), device node (root only), socket; opened `O_RDONLY` with `O_NOFOLLOW`; the file is left unchanged | Acceptance (client) |
 | SR-5 | DOC-20, DOC-22 | Acceptance |
 | SR-6 | Client: `\\server\share`, `//server/share`, `\\?\`, `\\.\pipe\`, `\\.\COM1` refused before any open; a file whose reported size is small but whose content is 768 KiB is read only up to 262,145 bytes and refused | Acceptance (client) |
-| SR-7 | SRC-1 (item built from the table, confirm passes), SRC-4 (unanswered), SRC-5 (reopened), SRC-6 (changed table needs a new confirmation), SRC-7 ×3 (fabricated, paraphrased, over 1,000 characters: refused naming the row, no item), SRC-8 (whitespace collapse), SRC-9 (analyst can't pass its own list), SRC-10 (quotes checked against the stored blob, not a changed copy on the branch), SRC-11, SRC-12 | Acceptance / contract |
+| SR-7 | SRC-1 (item built from the table with each ref's exact spec line, confirm passes), SRC-4 (unanswered), SRC-5 (reopened), SRC-6 (changed table needs a new confirmation), SRC-7 ×3 (fabricated, paraphrased, over 1,000 characters: refused naming the row, no item), SRC-8 (whitespace collapse), SRC-9 (analyst can't pass its own list), SRC-10 (quotes checked against the stored blob, not a changed copy on the branch), SRC-11, SRC-12 | Acceptance / contract |
+| SR-7 (v11) | SPL-1 ×7 (accepted: 5 words under 25 characters, 4 words of 25 or more, two lines of one paragraph, one list item, one table row with and without outer pipes, a second heading), SPL-2 ×8 (refused naming the row, no item: 4 words under 25 characters, across paragraphs, list items or table rows, from a heading into its paragraph, under another heading, a Section that isn't a heading, `-` when headings exist), SPL-3 (`-` without headings; a name refused), SPL-4 ×2 (a ref with no spec line, or only mid-sentence) | Acceptance / contract |
 | SR-8 | As AC-10 | Acceptance |
 | SR-9 | DOC-15 ×19 (media types, provenance, missing fields, 262,145 bytes ASCII and multi-byte, NUL, ESC, DEL, C1, lone surrogate, wrong types, empty, long name, unknown key, non-object): refused and nothing kept; DOC-16 (tab, LF, CR allowed) | Acceptance / contract |
 | SR-10 | DOC-3 (`.txt` from `text/plain`), DOC-17 ×4 (path, shell and git option text, control characters, 200 characters: stored at the fixed path, never in a commit message or git argument) | Acceptance |
@@ -95,8 +100,10 @@ can show.
 | FR-6 | Stochastic (citations are the analyst's); the engine's check of each quote is SR-7 |
 | FR-7 | QT-1 to QT-3; client `test_fr7_question_type_is_shown` |
 | FR-8 | SRC-1 to SRC-6, SRC-13, DOC-19; client `test_fr8_*` |
+| FR-8 (v11 spec-line lock) | SRC-1 (exact `spec_line`), SPL-5 (table row, a line opening with the ref, a heading starting with it), SPL-6 ×2 (rewording FR-1's line or changing SR-1's status cell after confirmation fails `sources_confirmed` until a new item shows the new line and is confirmed), SPL-7 (control: changing an uncited line keeps it); client `test_fr8_v11_each_spec_ref_shows_its_own_spec_line_as_data` |
+| Interview tools v1.1 `source_unchanged` (Gate 2 L1, contract amended) | SRC-14 (passes on the untouched copy, fails once the branch copy differs) |
 | FR-9 | Stochastic (QT-1 checks a conflict can cite the standards) |
-| Channel v1.4 version rule ("clients check `version` first") | DOC-7 (engine says v1.4 or later); client `ChannelVersion` (a v1.3 engine gets no document; an old engine's -32602 is explained; no document still works) |
+| Channel v1.4 capability rule (v9; replaced the version rule) | DOC-7 (`"document"` in engine.json and `engine.status`), CAP-1 (same list in both, plain names, at most 32); client `ChannelVersion`: no list, an empty list or only other names refuses before the document is opened and sends no `feature.start` (on v1.4 and v1.9); with `"document"` listed the document is sent on v1.2, v1.3 and v1.4, unknown names ignored; an engine without the capability gets no document; an old engine's -32602 is explained; no document still works |
 | -32009 display | Client `Err32009Display`: each reason explained, lines named, malformed `data` (string lines, booleans, negatives, a rule with spaces or over 100 characters, an unknown reason, extra keys, a non-object) never shown |
 
 ## Abuse cases (spec section 6 and beyond)
@@ -120,4 +127,8 @@ can show.
 | The analyst changes the Sources table after confirmation | SRC-6 |
 | A wrong reply kind on a source confirmation | SRC-12 |
 | An engine that echoes document text in -32009 data | Client `test_sr2_refusal_output_never_holds_the_text` |
-| A v1.3 engine | Client `ChannelVersion` |
+| An engine without the `document` capability | Client `ChannelVersion` |
+| A comment or title hidden in a link definition, at the top level or in a container | LNK-1 |
+| A link whose only text is a no-break space or another blank | LNK-1 |
+| A short or cross-block quote, or a Section that isn't the quote's heading | SPL-2, SPL-3 |
+| The analyst rewords a confirmed spec line | SPL-6 |
