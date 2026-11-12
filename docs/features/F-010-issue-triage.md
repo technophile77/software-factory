@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (open questions in section 13)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 6
+- **Spec version:** 7
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -29,7 +29,8 @@ The owner's existing rules still hold:
 
 ## 2. Expected behavior
 1. For each repo of an enabled project where the manifest turns issue triage
-   on, the engine checks for new issues on a schedule (OQ-5) with the factory
+   on, the engine checks for new issues every 5 minutes while it runs, and
+   catches up when it starts (OQ-5), with the factory
    token.
 2. It takes a snapshot of each new issue: title, body, author, the author's
    relation to the repo (owner, collaborator, other), labels and time. It runs
@@ -197,7 +198,7 @@ The owner's existing rules still hold:
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | Checking for issues every few minutes is fast enough; nothing needs a reply within seconds. | OQ-5 | Pending |
+| A-1 | Checking for issues every 5 minutes is fast enough; nothing needs a reply within seconds. | OQ-5 | Approved (owner, 2026-11-12, decision card) |
 | A-2 | The test engineer can reproduce most bugs in the agent container. | — | Pending |
 
 ## 9. Security considerations
@@ -263,6 +264,7 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | 4 | 2026-11-12 | OQ-3: the factory replies to and labels issues from fixed templates (bug confirmed, need more information, feature request); reporter answers on needs-info issues are triaged again; OQ-7 added | Owner, 2026-11-12 (thread) |
 | 5 | 2026-11-12 | OQ-7: "need more information" may add one short filtered question (FR-17, SR-11) | Owner, 2026-11-12 (decision card) |
 | 6 | 2026-11-12 | OQ-4: any reporter's confirmed bug reaches the fix lane, on every repo | Owner, 2026-11-12 (decision card) |
+| 7 | 2026-11-12 | OQ-5: the engine checks every 5 minutes and catches up on start; A-1 approved | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -271,6 +273,6 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | OQ-2 | How does "requirements approved" (DoD item 1) apply to a fix? (a) The fix spec cites an approved requirement or the OQ-1 evidence, and that stands in for approval; no owner step before the PR. (b) The owner approves each fix spec in the inbox first. Recommended: (a); (b) contradicts "without my input". The owner still merges either way. **Decided: (a).** | Product | Decided (owner, 2026-11-12, decision card) |
 | OQ-3 | May the factory write to an issue? (a) Never. (b) Only comments the owner approves one by one. (c) An ADR lets it reply and label without asking. **Decided: (c), extended by the owner:** replies for bug confirmed and fix underway, need more information (saying what is needed), and feature request sent to the owner, plus labels. | Security | Decided (owner, 2026-11-12, thread) |
 | OQ-4 | Who may open an issue that reaches the fix lane? (a) Anyone. Confirmation is by the factory's own test, not the reporter's word, and caps bound cost. (b) Only the owner and repo collaborators; others' bugs go to the inbox first. Recommended: (a) for private repos and (b) for public ones, set per repo in the manifest. **Decided: (a), anyone on every repo.** The factory's own failing test and the FR-11 caps are the guard. | Security | Decided (owner, 2026-11-12, decision card) |
-| OQ-5 | How does the engine learn of new issues? (a) It checks GitHub every few minutes (default 5) while running, and catches up on start. (b) A GitHub Actions workflow in each repo relays issue events to somewhere the engine reads. Recommended: (a); no inbound port, no new workflow in every repo, and conditional requests cost no rate limit. | Architecture | Open |
+| OQ-5 | How does the engine learn of new issues? (a) It checks GitHub every few minutes (default 5) while running, and catches up on start. (b) A GitHub Actions workflow in each repo relays issue events to somewhere the engine reads. Recommended: (a); no inbound port, no new workflow in every repo, and conditional requests cost no rate limit. **Decided: (a).** | Architecture | Decided (owner, 2026-11-12, decision card) |
 | OQ-6 | What about issues already open when triage is turned on? (a) Ignore them; only new issues. (b) Triage the backlog too, inside the daily cap. (c) Ask once when triage is turned on. Recommended: (c). | Product | Open |
 | OQ-7 | How specific can "need more information" be? (a) Only items from the fixed list in section 10. (b) The fixed list plus one short question written by the factory, plain text, at most 200 characters, with no links, @-mentions or code. Recommended: (a). The text in (b) would come from a session that read the issue, so a crafted issue could make the factory's account post words chosen by its author. **Decided: (b)**, with the filter in FR-17. | Security | Decided (owner, 2026-11-12, decision card) |
