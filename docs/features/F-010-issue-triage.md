@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (readiness checks 1 to 5 pass; check 6 waits on the owner's approval of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 27
+- **Spec version:** 28
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -420,7 +420,7 @@ read access to `.factory/`. Every role gets `.factory/issues/**` and
 `**/.factory/issues/**` in its write deny. The test engineer's confirmation
 session gets the validated record, never the snapshot (FR-7).
 
-### H-0113 (draft): the bug-fix lane in the workflow
+### H-0113 (approved, owner, 2026-11-12, decision card): the bug-fix lane in the workflow
 Product. Changes `development-workflow.md`, `definition-of-done.md` and
 `workflows/feature-development/`:
 
@@ -506,6 +506,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 25 | 2026-11-12 | H-0110 approved as drafted | Owner, 2026-11-12 (decision card) |
 | 26 | 2026-11-12 | H-0111 approved as drafted | Owner, 2026-11-12 (decision card) |
 | 27 | 2026-11-12 | H-0112 approved as drafted | Owner, 2026-11-12 (decision card) |
+| 28 | 2026-11-12 | H-0113 approved as drafted | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
