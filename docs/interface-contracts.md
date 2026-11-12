@@ -843,6 +843,7 @@ config repo's `factory/state` branch.
   owner, decision card, 2026-11-11; v1.1 (F-009, H-0106) approved by the
   owner, 2026-11-12 (decision card, as drafted); spec lines shown and
   locked, source checks tightened (F-009 Gate 2 M3), owner, 2026-11-12
+  (decision card); `source_unchanged` check stated (H-0109), owner, 2026-11-12
   (decision card)
 - Used by: engine (serves them), requirements analyst (calls them)
 - Compatibility: adding a tool or an optional parameter is non-breaking;

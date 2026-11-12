@@ -1,6 +1,6 @@
 # F-009 Developer completion report
 
-- **Feature:** F-009 Start an interview from an existing document, spec v12
+- **Feature:** F-009 Start an interview from an existing document, spec v13
 - **Role:** software-developer
 - **Date:** 2026-11-12
 - **Branch:** `claude/project-thread-qzenwf`
@@ -73,7 +73,7 @@
 ## Validation round 2 fixes
 - M1: the link checks run on the whole text (container markers dropped per line), so a link label or link text that runs over two lines is caught; a hit names every line it covers. Link text that is only a blank code span is refused too (m13).
 - D-2 (test Addendum 2): a link definition whose label is blank text, and every use of it (the shortcut `[&nbsp;]` form), are refused; the test engineer's LNK-6 now passes.
-- m4: `agents/requirements-analyst/AGENT.md` states the v11 Sources rules. Drafted; it is change-controlled and waits on the owner's approval, with the `source_unchanged` sentence in Interview tools v1.1 (round 2 M2).
+- m4: `agents/requirements-analyst/AGENT.md` states the v11 Sources rules. Approved by the owner with the `source_unchanged` sentence in Interview tools v1.1 (H-0109, round 2 M2, 2026-11-12).
 
 ## Repo documents
 A document inside the owner's repo is named by its repo path and read from the working copy, uncommitted edits included (owner decision, spec v8). A path that leaves the repo gets the same local checks as any other path. Covered by `test_a_requirements_document_in_the_repo_itself_by_its_repo_path`.
@@ -90,7 +90,7 @@ A document inside the owner's repo is named by its repo path and read from the w
 4. **Status words.** A confirmed source list is `approved` and a reopened one is `rejected`, reusing the contract's status values rather than adding new ones.
 
 ## Known issues
-- **Real-analyst evaluation (blocks Alpha).** AC-4 to AC-8 are tested with a scripted analyst only; the owner accepted that at Rapid prototype (spec v12). Before Alpha, run the real analyst against sample documents.
+- **Real-analyst evaluation (blocks Alpha).** AC-4 to AC-8 are tested with a scripted analyst only; the owner accepted that at Rapid prototype (spec v13). Before Alpha, run the real analyst against sample documents.
 - SR-13 (budget check at start) deferred to Alpha by the owner, 2026-11-12. Until then the 256 KiB cap is the only size guard.
 - **Existing project manifests.** Under Role policy v2.6, existing manifests must add `docs/features/*-source.md` and `docs/features/*-source.txt` to every outside writer's `write.deny`. Without them the engine refuses the project. This includes the e2e trial config repo.
 - The plugin's Python tests aren't run by GitHub CI, as before this feature. They were run here on Linux. The Windows checks in `tests/windows` weren't run.
