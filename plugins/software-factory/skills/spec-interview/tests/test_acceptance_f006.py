@@ -692,8 +692,8 @@ class SkillTextF006(unittest.TestCase):
 
     def test_fr11_ask_the_advisor_offered_on_every_question(self):
         self.assertRegex(self.text, r'(?i)"Ask the advisor"')
-        # The question picker's first step lists it with the other three choices.
-        self.sentence(r'"Answer"', r'"More information"', r'"Defer"', r'"Ask the advisor"',
+        # Every question's "Something else" picker lists it with the other actions.
+        self.sentence(r'"Something else"', r'"More information"', r'"Defer"', r'"Ask the advisor"',
                       why="the picker for every question offers it")
         self.assertIn("ask_advisor", self.text)
 

@@ -18,7 +18,7 @@ Start with [`CLAUDE.md`](CLAUDE.md) and the
 Install the factory's plugin once, then run it inside any repository:
 
 ```
-/plugin marketplace add technophile77/software-factory@v0.2.0
+/plugin marketplace add technophile77/software-factory@v0.3.0
 /plugin install software-factory@software-factory
 /software-factory:onboard-repo
 ```
