@@ -1,9 +1,9 @@
 # Feature: Triage GitHub issues into the factory
 
 - **Id:** F-010
-- **Status:** Draft (readiness checks 1 to 5 pass; check 6 waits on the owner's approval of H-0110 to H-0114)
+- **Status:** Approved (readiness gate passed 2026-11-12)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 28
+- **Spec version:** 30
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -437,7 +437,7 @@ Product. Changes `development-workflow.md`, `definition-of-done.md` and
   red, green and regression runs (FR-18).
 - The fix scope guard (FR-9) as an orchestrator check before stage 6.
 
-### H-0114 (draft): ADR "Factory replies to and labels issues"
+### H-0114 (approved, owner, 2026-11-12, decision card): ADR "Factory replies to and labels issues"
 Security. A new ADR (next free number), granting the S9.2 exemption:
 - On repos where `issues.enabled` is true, the engine may post the reply
   templates below, filled only as FR-14 and FR-17 allow, and add or remove
@@ -472,9 +472,8 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit (A-1, A-2 approved)
-- [ ] Blocking decisions resolved (approved, not deferred): OQ-1 to OQ-8 and
-  the Gate 1 decisions are decided; waiting on the owner's approval of the
-  drafts H-0110 to H-0114 (section 10)
+- [x] Blocking decisions resolved (approved, not deferred): OQ-1 to OQ-8,
+  the Gate 1 decisions, and H-0110 to H-0114 (owner, 2026-11-12)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -507,6 +506,8 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 26 | 2026-11-12 | H-0111 approved as drafted | Owner, 2026-11-12 (decision card) |
 | 27 | 2026-11-12 | H-0112 approved as drafted | Owner, 2026-11-12 (decision card) |
 | 28 | 2026-11-12 | H-0113 approved as drafted | Owner, 2026-11-12 (decision card) |
+| 29 | 2026-11-12 | H-0114 approved as drafted | Owner, 2026-11-12 (decision card) |
+| 30 | 2026-11-12 | Readiness gate passed; status Approved | Owner approvals as recorded above |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
