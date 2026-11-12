@@ -3,7 +3,7 @@
 - **Id:** F-008
 - **Status:** Approved (readiness gate passed 2026-11-12)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 12
+- **Spec version:** 13
 
 This is part of the engine's increment 3 ("Requirements to ready", F-007
 section 13). The owner chose to build Security Gate 1 on its own first
@@ -71,7 +71,7 @@ approved security requirements are in the spec.
 | FR-6 | For a valid report, the engine renders `docs/features/<feature>-security-gate1.md` in the layout the factory's existing Gate 1 reports use, then scans and commits the report and the rendering on the feature branch (ADR 0012). |
 | FR-7 | A report with no findings moves the feature to `readiness_gate`. |
 | FR-8 | Findings handled per OQ-3. A finding with a suggested requirement moves the feature back to `requirements_interview`; the next analyst session gets every such finding, quoted as data, and asks one interview question per finding (Interview tools v1.0 `interview_ask`, the requirement as `suggested`), citing the finding. A finding marked `needs_owner` is filed as a Security item in the decision inbox with the reviewer's options and recommendation, and the feature is `blocked` while any is open. |
-| FR-9 | Before moving to `readiness_gate` after findings, the engine checks every finding is resolved: a security requirement in the spec's section 9 that cites the finding, with status Approved and text matching the owner's approved answer in the transcript, or a decided Security item (Gate 1 #7). A finding that isn't resolved keeps the feature at `security_gate_1` and the check's evidence names it. |
+| FR-9 | Before moving to `readiness_gate` after findings, the engine checks every finding is resolved: a security requirement in the spec's section 9 that cites the finding, with status Approved and text matching the requirement the owner approved, or a decided Security item (Gate 1 #7). The owner approves a requirement by answering the finding's Gate 1 question (asked after the report, with the finding's requirement as its suggestion) with that requirement word for word, or, when the answer is anything else, by approving an assumption "Gate 1 #n: <requirement>" the analyst proposes after the question. An answer that is neither, or a rejected assumption, is a rejection under FR-13 (Gate 2 M1). A finding that isn't resolved keeps the feature at `security_gate_1` and the check's evidence names it. |
 | FR-10 | Gate 1 runs are resumable and interruptible as analyst runs are (FR-14 of F-007, with the restart-recovery fix), within `MAX_RESUMES`. A run that fails is recorded in the transcript, the engine log and the agent report, with the reason. |
 | FR-11 | The reviewer's model and session limits come from the master's `engine/config/models.yaml` and `engine/config/limits.yaml` at the pinned factory version, through hygiene item H-0095; the engine has no defaults. A project's `limits:` may only lower them. |
 | FR-12 | `engine.status` reports the feature's stage at every step; the stage is recorded on the feature's transcript chain as today. |
@@ -96,7 +96,7 @@ approved security requirements are in the spec.
 | AC-15 | Given finding text containing a secret the scanner detects, then no report, rendering, inbox item or analyst input carrying it is written or sent, and a Security item with engine text only is filed. | SR-9 |
 | AC-16 | Given a project additions file that defines an `S` criterion id, then the gate runs on the factory standards alone and a Security item says why. | SR-10 |
 | AC-17 | Given a feature returns to `security_gate_1` from the findings interview, then no new reviewer session starts; and given a feature has had 3 Gate 1 runs, then a fourth doesn't start and a Security item is filed. | FR-1, SR-11 |
-| AC-18 | Given the owner rejects a Gate 1 question, then a Security item is filed and the feature is `blocked`; given an SR that cites a finding but whose text differs from the owner's approved answer, then FR-9 fails naming it. | FR-9, FR-13 |
+| AC-18 | Given the owner rejects a Gate 1 question, then a Security item is filed and the feature is `blocked`; given an SR that cites a finding but whose text differs from the requirement the owner approved, then FR-9 fails naming it; given the owner answers in other words than the suggested requirement, then the finding is resolved only once the owner approves the analyst's "Gate 1 #n" assumption with that wording. | FR-9, FR-13 |
 | AC-11 | Given F-002 in the end-to-end trial project, parked at `security_gate_1`, when the engine runs with this feature, then F-002 gets a Gate 1 report and moves on as AC-6 to AC-8 say. | FR-1 to FR-9 |
 
 ## 5. Constraints
@@ -219,3 +219,4 @@ Asked one at a time. None is assumed.
 | 10 | 2026-11-12 | H-0096 approved: Agent report v1.3 optional Gate 1 fields | Owner, 2026-11-12 (decision card) |
 | 11 | 2026-11-12 | Spec v10 approved; all SRs Approved; readiness gate passed (six checks: objective, behavior, testable ACs, constraints, assumptions A-1 and A-2 approved, OQ-1 to OQ-4 decided) | Owner, 2026-11-12 (decision card) |
 | 12 | 2026-11-12 | Found in development: report-only roles get a read-only worktree, so the report goes to a separate engine-owned writable folder and is committed to factory/state (FR-2, SR-8 reworded) | Owner, 2026-11-12 (decision card) |
+| 13 | 2026-11-12 | Security Gate 2 M1: an owner answer other than the suggested requirement counts only once the owner approves its wording as a "Gate 1 #n" assumption; anything else is a rejection (FR-9, AC-18) | Owner, 2026-11-12 (decision card) |

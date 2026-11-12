@@ -442,14 +442,30 @@ describe("AC-7, AC-17 / FR-8, FR-9: a finding resolved by a new requirement", ()
     expect(r.sdk.of("reviewer").length).toBe(1);
   });
 
-  it("[G1-15] AC-7 / OQ-3: the owner answers the Gate 1 question in their own words; an Approved SR with exactly those words resolves the finding (spec: 'the owner approves, changes or rejects it')", T, async () => {
+  it("[G1-15] AC-7 / AC-18 / FR-9 (v13): the owner answers in their own words and approves that wording as the analyst's Gate 1 assumption; an Approved SR with exactly those words resolves the finding", T, async () => {
     const r = await rig();
     const f = requirementFinding();
     const own = "Exported cells starting with =, +, - or @ are wrapped in quotes and prefixed with a tab.";
+    const step = stepsWithOwnerText(f, own);
+    const { feature } = await sentBack(r, f, { ...step, assume: () => ({ text: `Gate 1 #1: ${own}`, why: "Your answer differs from the suggested requirement; this records your wording as the requirement." }) });
+    const { session } = await ownerReplies(r, feature, "answer", own);
+    const a = await waitFor(async () => (await r.w.ok("interview.next", { session })).item, 30_000, "the analyst's assumption");
+    expect(a.kind).toBe("assumption");
+    expect((await r.w.reply(session, a, "approve_assumption", "Yes, record it.")).error).toBeUndefined();
+    await analystSettled(r.w, feature, 2);
+    await waitStage(r.w, feature, READINESS, 30_000);
+  });
+
+  it("[G1-15b] FR-9 / FR-13 (v13, Gate 2 M1): an own-words answer copied into section 9 without an approved assumption doesn't resolve the finding; the owner is asked to accept the risk", T, async () => {
+    const r = await rig();
+    const before = securityItems(r.w);
+    const f = requirementFinding();
+    const own = "No.";
     const { feature } = await sentBack(r, f, stepsWithOwnerText(f, own));
     await ownerReplies(r, feature, "answer", own);
     await analystSettled(r.w, feature, 2);
-    await waitStage(r.w, feature, READINESS, 30_000);
+    await waitFor(() => newSecurityItems(r.w, before).some((i) => i.text.includes(feature)), 30_000, "a Security item asking to accept the risk");
+    expect(await stageOf(r.w, feature)).not.toBe(READINESS);
   });
 });
 

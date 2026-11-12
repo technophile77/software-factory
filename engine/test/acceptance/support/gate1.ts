@@ -201,6 +201,8 @@ export function specRel(w: World, feature: string): string {
 export interface AnalystStep {
   /** A question to ask first; the session then waits for the owner's reply turn. */
   ask?: (firstTurn: string) => { text: string; why: string; suggested?: string };
+  /** After the owner's reply: an assumption to propose; the session then waits for the owner's reply to it. */
+  assume?: (reply: string | null) => { text: string; why: string } | null;
   /** The spec to write; return null to write nothing. */
   spec: (ctx: { feature: string; firstTurn: string; reply: string | null }) => string | null;
   version?: number;
@@ -235,6 +237,12 @@ export function playAnalyst(r: Rig, feature: () => string, steps: AnalystStep[])
       const a = await s.call("interview_ask", step.ask(first));
       log.asked.push(a.value);
       reply = await s.nextTurn();
+      const a2 = step.assume?.(reply);
+      if (a2) {
+        const res = await s.call("interview_propose_assumption", a2);
+        log.asked.push(res.value);
+        await s.nextTurn();
+      }
     }
     const text = step.spec({ feature: f, firstTurn: first, reply });
     const rel = specRel(r.w, f);
