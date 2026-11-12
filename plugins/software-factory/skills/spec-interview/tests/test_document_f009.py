@@ -56,6 +56,25 @@ class StartFromDocument(Base):
         self.assertEqual(self.engine.documents[0]["media_type"], "text/plain")
         self.assertEqual(self.engine.documents[0]["provenance"], "reference")
 
+    def test_a_requirements_document_in_the_repo_itself_by_its_repo_path(self):
+        # The skill runs in the owner's repo, so a repo path reads the checkout as it is now.
+        os.makedirs(os.path.join(self.repo, "docs", "design"))
+        text = "# Design\n\nCommitted text.\n"
+        with open(os.path.join(self.repo, "docs", "design", "export.md"), "w") as f:
+            f.write(text)
+        code, out = self.start("docs/design/export.md")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.engine.documents[0]["text"], text)
+        self.assertEqual(out["document"]["name"], "export.md")
+        # Uncommitted edits are what is sent: the working copy, not main.
+        with open(os.path.join(self.repo, "docs", "design", "export.md"), "a") as f:
+            f.write("Edited.\n")
+        code, out = self.start("./docs/design/export.md")
+        self.assertEqual(self.engine.documents[1]["text"], text + "Edited.\n")
+        # A path that climbs out of the repo is still an ordinary local file path, checked the same way.
+        code, out = self.start("../nope.md")
+        self.assertEqual(code, 2, out)
+
     def test_ac2_refuses_before_connecting(self):
         big = self.write("big.md", "a" * (256 * 1024 + 1))
         exact = self.write("exact.md", "a" * (256 * 1024))

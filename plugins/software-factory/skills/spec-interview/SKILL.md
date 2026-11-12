@@ -167,7 +167,9 @@ feature request".
     model provider, like your interview answers. Don't use a document that
     holds secrets or data that mustn't go there. Only Markdown (.md) and
     plain text (.txt) up to 256 KiB are accepted." Then ask for the file's
-    path (free text), and a one-line title or note for the request (free
+    path (free text): a path on this computer, or a path in this repo such
+    as `docs/design.md`, which is read from this checkout as it is now,
+    uncommitted edits included, and a one-line title or note for the request (free
     text). Then ask with AskUserQuestion what the document is: "My
     requirements" (its statements count as my answers; I confirm the list
     at the end) or "Reference material" (written by someone else, or not
