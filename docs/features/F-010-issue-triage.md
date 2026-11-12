@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (open questions in section 13)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 5
+- **Spec version:** 6
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -211,7 +211,7 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | SR-4 | Issue snapshots are secret-scanned before they are stored (S3). | Analyst | Draft |
 | SR-5 | Security reports never enter the fix lane. | Analyst | Draft |
 | SR-6 | The fix scope guard keeps a bug fix away from contracts, dependencies, change-controlled and security-relevant files. | Analyst | Draft |
-| SR-7 | Daily and concurrency caps bound what an outside reporter can make the factory spend. | Analyst | Draft |
+| SR-7 | Daily and concurrency caps bound what an outside reporter can make the factory spend. Any reporter can reach the fix lane (OQ-4), so these caps and the ADR 0012 budget are the only spending limit on public repos. | Analyst | Draft |
 | SR-8 | Every GitHub call is logged with agent, action, target and time, without secrets (S9.6). | Analyst | Draft |
 | SR-9 | Replies are posted by engine code, never by a session that read issue text (S9.3). Apart from the question slot, no reply contains text from the issue or text a model wrote. | Analyst | Draft |
 | SR-11 | The question slot is the one place a crafted issue could choose words the factory's account posts (owner accepted this risk, OQ-7). The FR-17 filter keeps out links, mentions, references and formatting, and the length cap and one-sentence rule bound the rest. Gate 1 reviews whether that is enough. | Analyst | Draft |
@@ -262,6 +262,7 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | 3 | 2026-11-12 | OQ-2: a fix spec that cites its OQ-1 evidence counts as approved; no owner step before the PR | Owner, 2026-11-12 (decision card) |
 | 4 | 2026-11-12 | OQ-3: the factory replies to and labels issues from fixed templates (bug confirmed, need more information, feature request); reporter answers on needs-info issues are triaged again; OQ-7 added | Owner, 2026-11-12 (thread) |
 | 5 | 2026-11-12 | OQ-7: "need more information" may add one short filtered question (FR-17, SR-11) | Owner, 2026-11-12 (decision card) |
+| 6 | 2026-11-12 | OQ-4: any reporter's confirmed bug reaches the fix lane, on every repo | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -269,7 +270,7 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | OQ-1 | What counts as a confirmed bug that the factory may fix without the owner? (a) Only behavior that contradicts an approved spec requirement, shown by a failing test. (b) (a), plus a regression from an earlier tagged release, or a crash or unhandled error on input the docs allow, each shown by a failing test. (c) Whatever the triager judges a bug, if a test reproduces it. Recommended: (b). (a) leaves most issues on onboarded repos with the owner; (c) lets an outside reporter define requirements. **Decided: (b).** | Product | Decided (owner, 2026-11-12, decision card) |
 | OQ-2 | How does "requirements approved" (DoD item 1) apply to a fix? (a) The fix spec cites an approved requirement or the OQ-1 evidence, and that stands in for approval; no owner step before the PR. (b) The owner approves each fix spec in the inbox first. Recommended: (a); (b) contradicts "without my input". The owner still merges either way. **Decided: (a).** | Product | Decided (owner, 2026-11-12, decision card) |
 | OQ-3 | May the factory write to an issue? (a) Never. (b) Only comments the owner approves one by one. (c) An ADR lets it reply and label without asking. **Decided: (c), extended by the owner:** replies for bug confirmed and fix underway, need more information (saying what is needed), and feature request sent to the owner, plus labels. | Security | Decided (owner, 2026-11-12, thread) |
-| OQ-4 | Who may open an issue that reaches the fix lane? (a) Anyone. Confirmation is by the factory's own test, not the reporter's word, and caps bound cost. (b) Only the owner and repo collaborators; others' bugs go to the inbox first. Recommended: (a) for private repos and (b) for public ones, set per repo in the manifest. | Security | Open |
+| OQ-4 | Who may open an issue that reaches the fix lane? (a) Anyone. Confirmation is by the factory's own test, not the reporter's word, and caps bound cost. (b) Only the owner and repo collaborators; others' bugs go to the inbox first. Recommended: (a) for private repos and (b) for public ones, set per repo in the manifest. **Decided: (a), anyone on every repo.** The factory's own failing test and the FR-11 caps are the guard. | Security | Decided (owner, 2026-11-12, decision card) |
 | OQ-5 | How does the engine learn of new issues? (a) It checks GitHub every few minutes (default 5) while running, and catches up on start. (b) A GitHub Actions workflow in each repo relays issue events to somewhere the engine reads. Recommended: (a); no inbound port, no new workflow in every repo, and conditional requests cost no rate limit. | Architecture | Open |
 | OQ-6 | What about issues already open when triage is turned on? (a) Ignore them; only new issues. (b) Triage the backlog too, inside the daily cap. (c) Ask once when triage is turned on. Recommended: (c). | Product | Open |
 | OQ-7 | How specific can "need more information" be? (a) Only items from the fixed list in section 10. (b) The fixed list plus one short question written by the factory, plain text, at most 200 characters, with no links, @-mentions or code. Recommended: (a). The text in (b) would come from a session that read the issue, so a crafted issue could make the factory's account post words chosen by its author. **Decided: (b)**, with the filter in FR-17. | Security | Decided (owner, 2026-11-12, decision card) |
