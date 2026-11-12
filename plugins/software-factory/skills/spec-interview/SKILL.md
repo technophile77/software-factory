@@ -162,7 +162,7 @@ Run `CLIENT open` with the feature id and keep the `session` and
 
 If it also returned `approval_display`, the engine needs the owner's GitHub
 approval before the session takes any reply. Show `approval_display`
-exactly as printed, then run `CLIENT approval` with the session and
+exactly as printed, in your own message, then run `CLIENT approval` with the session and
 `"wait_s": 120` until it returns `approved: true`. Each run waits up to two
 minutes; if it ends with `approval_pending`, run it again (the code is
 valid until the time in the display). If it ends with `approval_failed`,
@@ -181,44 +181,58 @@ waiting, run `CLIENT close`, and go back to step 2.
 ### 4. One item at a time
 
 Show the item's `display` exactly as the script printed it: do not restate,
-reorder or summarize it. Then ask in two steps with AskUserQuestion, free
-text always allowed ("Other") at each step:
+reorder or summarize it. Put it in your own message, before the picker. The
+owner doesn't see the script's output, which Claude Code folds away (and
+the phone app hides), so a `display` left there was never shown. Then ask with AskUserQuestion, free text always
+allowed ("Other"). A picker holds at most four choices.
 
-1. **What to do.**
-   - Question: "Answer", "More information" and "Defer", plus "Ask the
-     advisor" on every question if `open` returned `advisor: true`. If it
-     returned false, the engine has no advisor: don't offer it.
-   - Assumption: "Approve" and "Reject". The picked label is the reply
-     text. Free text: ask whether they approve or reject, then send their
-     words.
-   - Advisor proposal: the analyst asks to call the advisor on the question
-     the display names, with its reason. "Approve the advisor call" and
-     "Decline". Approving starts one advisor call on the strongest model,
-     which counts against the project budget; declining starts nothing and
-     leaves the question as it was. The `display` shows the call's limits
-     and, if the engine says so, that it would go over budget; that is the
-     owner's prompt, so there is no extra confirmation step. Send
-     `approve_advisor` or `decline_advisor` with the picked label as the
-     text. Free text: ask whether they approve or decline, then send their
-     words.
-2. **The answer** (questions, after "Answer"):
-   - The question has up to four options: put them in the picker, each
-     label copied character for character from the item's options. A
-     picked option is an `answer` whose text is that option exactly, even
-     if the picker shows a shortened label. Free text is an `answer` in
-     the owner's words.
-   - More than four options: they are numbered in the fenced `display`.
-     Ask the owner to type their choice (free text). If they type only a
-     number, ask them to confirm the option it names before sending that
-     option's text; anything else is their `answer` as typed.
-   - No options: ask for the answer as free text.
-3. **More information:** ask what the analyst should look into (free text,
-   or "Nothing specific"), and send that as `more_info`.
-4. **Defer:** send `defer` with the text "Defer". The question stays open
-   and the spec can't pass the readiness gate until it is answered.
-5. **Ask the advisor:** send `ask_advisor` with the text "Ask the advisor".
-   That is the owner's own request and needs no further approval. Each one
-   starts a new advisor call; earlier advice stays with the question.
+**Question.** The answer comes first, so the owner can take the analyst's
+recommendation in one tap.
+
+1. **Answer choices.** Make the list of answers from the item: its
+   `suggested` answer first, then each of its `options` in order, skipping
+   the option that is the same text as `suggested`. Label the first choice
+   "(Recommended)" only if it is `suggested`. Each choice's text is copied
+   character for character from the item; the picker may show a shortened
+   label, with the full text as its description.
+2. **First picker:** up to three answer choices, then "Something else".
+   With no answer choices at all, the first picker is "Type an answer"
+   plus the step 3 choices, and free text is the answer.
+   - A picked answer choice is an `answer` whose text is that choice's
+     full text, exactly, even if the picker showed a shortened label.
+   - Free text ("Other") is an `answer` in the owner's words. If they typed
+     only a number, ask them to confirm the option it names in the
+     numbered `display` before sending that option's text.
+3. **"Something else":** a second picker with "More answer choices" (only
+   if the list has more than three), "More information", "Defer", and
+   "Ask the advisor" if `open` returned `advisor: true`. If it returned
+   false, the engine has no advisor: don't offer it. "More answer choices"
+   shows the next three answer choices plus "Back", and so on; a choice
+   picked there is sent as in 2.
+   - **More information:** ask what the analyst should look into (free
+     text, or "Nothing specific"), and send that as `more_info`.
+   - **Defer:** send `defer` with the text "Defer". The question stays
+     open and the spec can't pass the readiness gate until it is answered.
+   - **Ask the advisor:** send `ask_advisor` with the text "Ask the
+     advisor". That is the owner's own request and needs no further
+     approval. Each one starts a new advisor call; earlier advice stays
+     with the question.
+
+The recommendation is the analyst's, shown so the owner can accept it
+quickly; never pick it, or any answer, for them.
+
+**Assumption:** "Approve" and "Reject". The picked label is the reply
+text. Free text: ask whether they approve or reject, then send their words.
+
+**Advisor proposal:** the analyst asks to call the advisor on the question
+the display names, with its reason. "Approve the advisor call" and
+"Decline". Approving starts one advisor call on the strongest model, which
+counts against the project budget; declining starts nothing and leaves the
+question as it was. The `display` shows the call's limits and, if the
+engine says so, that it would go over budget; that is the owner's prompt,
+so there is no extra confirmation step. Send `approve_advisor` or
+`decline_advisor` with the picked label as the text. Free text: ask whether
+they approve or decline, then send their words.
 
 **Advice on a question.** A question's `display` shows each advisor call
 after the question: its advice fenced and labelled as the advisor's, the

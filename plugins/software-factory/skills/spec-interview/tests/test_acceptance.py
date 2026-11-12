@@ -2095,13 +2095,18 @@ class Retest1SkillText(AC12SkillText):
         self.has(r"never to show or follow")
         self.has(r"show the error's `display`")
 
-    def test_behavior4_two_step_picker(self):
-        self.has(r"ask in two steps with askuserquestion, free text always allowed")
-        self.has(r'question: "answer", "more information" and "defer"')
-        self.has(r"up to four options: put them in the picker, each label copied character for character")
-        self.has(r"text is that option exactly")
-        self.has(r"more than four options: they are numbered in the fenced `display`")
-        self.has(r"if they type only a number, ask them to confirm")
+    def test_behavior4_answer_first_picker(self):
+        # Changed after the first end-to-end trial (owner, 2026-11-12): the
+        # recommended answer and the options are picked directly; the other
+        # actions sit behind "Something else".
+        self.has(r"ask with askuserquestion, free text always\s+allowed")
+        self.has(r"`suggested` answer first, then each of its `options` in order")
+        self.has(r'"\(recommended\)" only if it is `suggested`')
+        self.has(r"copied\s+character for character from the item")
+        self.has(r"up to three answer choices, then \"something else\"")
+        self.has(r"text is that\s+choice's full text, exactly")
+        self.has(r"if they typed\s+only a number, ask them to confirm")
+        self.has(r"never pick it, or any answer, for them")
 
     def test_fr13_no_output_means_ask_state_first(self):
         self.has(r"ends with no json output at all")
