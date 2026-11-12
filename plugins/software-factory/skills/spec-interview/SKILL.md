@@ -181,7 +181,10 @@ waiting, run `CLIENT close`, and go back to step 2.
 ### 4. One item at a time
 
 Show the item's `display` exactly as the script printed it: do not restate,
-reorder or summarize it. Put it in your own message, before the picker. The
+reorder or summarize it. Put it in your own message, before the picker,
+whole: every heading and fenced block, the "Why it matters" part
+included. The owner decides on the analyst's exact words, which is what
+the transcript records, so a paraphrase is never enough. The
 owner doesn't see the script's output, which Claude Code folds away (and
 the phone app hides), so a `display` left there was never shown. Then ask with AskUserQuestion, free text always
 allowed ("Other"). A picker holds at most four choices.
