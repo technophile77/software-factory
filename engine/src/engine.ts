@@ -26,7 +26,7 @@ import { Manifest, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin } from "./config/pins";
 import { ConfirmIo, confirmProject as runConfirm } from "./config/confirm";
-import { ENGINE_JSON, FEATURE_ID_RE, GITHUB_WEB_BASE, INTERVIEW_STAGE, SERVED_CHANNEL_VERSION } from "./constants";
+import { CAPABILITIES, ENGINE_JSON, FEATURE_ID_RE, GITHUB_WEB_BASE, INTERVIEW_STAGE, SERVED_CHANNEL_VERSION } from "./constants";
 import { ensureOwnerDir, findOnPath, sha256Hex, writeFileAtomic } from "./fsutil";
 import { Git } from "./git";
 import { GitHubClient, HttpGitHub, checkBase } from "./github";
@@ -878,6 +878,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const control: EngineControl = {
     status: () => ({
       version: SERVED_CHANNEL_VERSION,
+      capabilities: [...CAPABILITIES],
       uptime_s: Math.floor((clock.now() - startedAt) / 1000),
       features: allFeatures().filter((f) => !ambiguous.has(f.id)).map((f) => ({ id: f.id, stage: f.stage() || INTERVIEW_STAGE, active_agents: 0 })),
     }),
@@ -918,7 +919,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         ? await listenPipe({ os: osApi.windows(), children, log, onConnection })
         : await listenUnix({ dir: runtimeDir, name: `${sha256Hex(p.real!).slice(0, 16)}.sock`, os: osApi.unix(), children, log, onConnection });
       p.channel = p.listener.path;
-      writeFileAtomic(path.join(p.state_repo.factoryDir, ENGINE_JSON), JSON.stringify({ version: SERVED_CHANNEL_VERSION, path: p.listener.path, pid: process.pid }) + "\n");
+      writeFileAtomic(path.join(p.state_repo.factoryDir, ENGINE_JSON), JSON.stringify({ version: SERVED_CHANNEL_VERSION, capabilities: CAPABILITIES, path: p.listener.path, pid: process.pid }) + "\n");
       log.info(`${p.manifest.name}: serving channel v${SERVED_CHANNEL_VERSION}`);
     }
   } catch (e) {

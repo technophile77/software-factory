@@ -203,7 +203,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
   (F-006, the advisor) approved by the owner, 2026-11-10 (H-0063 and
   amendment H-0075: advisor fields stated exactly, call limits, budget flag,
   advice revision and hash; decision card, as drafted; renumbered from v1.2
-  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted)
+  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted); v1.4 capability list approved by the owner, 2026-11-12 (decision card)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -218,7 +218,7 @@ the inbox.
 socket (macOS/Linux), path written to `.factory/engine.json` when the engine
 starts. Not reachable from the network. `engine.json` is never committed;
 from v1.1 it is `{ "version": "1.1", "path": "<socket or pipe path>", "pid": <int> }`,
-where `pid` is the process listening on the channel (clients check it against
+and from v1.4 it may also hold `"capabilities": [<name>, ...]`, where `pid` is the process listening on the channel (clients check it against
 the peer where the OS reports one). The engine writes it with mode 0600, and
 the `.factory` worktree directory must not be group- or world-writable;
 clients refuse otherwise.
@@ -239,7 +239,7 @@ it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 
 | Method | Params | Result |
 |---|---|---|
-| `engine.status` | none | `{ version, uptime_s, features: [{ id, stage, active_agents }] }` |
+| `engine.status` | none | `{ version, capabilities?, uptime_s, features: [{ id, stage, active_agents }] }` (`capabilities` from v1.4) |
 | `engine.pause` | `{ feature? }` | `{ paused: [feature ids] }` |
 | `engine.resume` | `{ feature? }` | `{ resumed: [feature ids] }` |
 | `engine.shutdown` | none | `{ ok: true }` after agents reach a safe stop |
@@ -365,9 +365,15 @@ anything it refuses a document that contains an HTML comment, a raw HTML
 tag, or a zero-width or bidi character, or in which the secrets scan finds
 a secret, or whose estimated cost the remaining project budget can't cover.
 A refused start creates no feature, commit, transcript entry or session.
-The document can't be added or replaced after the start. An engine on v1.3
-or earlier refuses `document` as an unknown key; clients check `version`
-first and don't send it.
+The document can't be added or replaced after the start. An engine that
+accepts `document` lists `"document"` in `capabilities`, an array of plain
+names (`^[a-z][a-z0-9_]{0,31}$`, at most 32) written to `engine.json` and
+returned by `engine.status`. The version alone doesn't say it: an engine may
+take `document` before it serves v1.3's advisor. Clients check the list
+before reading or sending a document, ignore names they don't know, and
+treat a missing list as empty; an engine without the capability refuses
+`document` as an unknown key. (Capability list: owner decision 2026-11-12,
+decision card.)
 
 `Item.kind` may also be `"source_confirmation"` (v1.4): `{ id, revision,
 kind, sources: [{ spec_ref, section, quote }], status }`, built by the

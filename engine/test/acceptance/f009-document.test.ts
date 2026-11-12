@@ -225,14 +225,14 @@ describe("AC-1 / FR-1 / FR-4: the document is stored byte for byte and its hash 
 });
 
 describe("H-0105: version negotiation for document", () => {
-  it("[DOC-7] channel v1.4: an engine that accepts document says v1.4 or later in engine.json and engine.status, so a client that checks version first sends it", async () => {
+  it("[DOC-7] channel v1.4: an engine that accepts document lists the capability \"document\" in engine.json and engine.status, so a client checks it before sending", async () => {
     w = await World.create();
     await w.boot();
     await startedDoc(w, doc());
-    const minor = (v: unknown) => (typeof v === "string" && /^1\.(\d+)/.test(v) ? parseInt(/^1\.(\d+)/.exec(v)![1]!, 10) : -1);
-    expect(minor(w.engineJson().version), `engine.json version ${w.engineJson().version}`).toBeGreaterThanOrEqual(4);
+    // Owner decision 2026-11-12: a capability list, not the version, says the engine takes `document`.
+    expect(w.engineJson().capabilities).toContain("document");
     const status = await w.ok("engine.status");
-    expect(minor(status.version), `engine.status version ${status.version}`).toBeGreaterThanOrEqual(4);
+    expect(status.capabilities).toContain("document");
   });
 });
 

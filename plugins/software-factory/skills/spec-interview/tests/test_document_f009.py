@@ -16,7 +16,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from fake_engine import item  # noqa: E402
-from test_interview_client import Base, SKILL, ic  # noqa: E402
+from test_interview_client import Base, SKILL, ic, write_engine_json  # noqa: E402
 
 DOC = "# Export\n\n## Goals\n\nOwners can export all orders as CSV.\n"
 
@@ -170,7 +170,35 @@ class StartFromDocument(Base):
         self.assertNotIn("Lines:", out["display"])
         self.assertNotIn("Scanner rule", out["display"])
 
-    def test_an_engine_before_v1_4_says_so_and_started_nothing(self):
+    def test_no_document_capability_refuses_before_reading_or_connecting(self):
+        for override in ({"capabilities": []}, {"capabilities": None}):
+            with self.subTest(override=override):
+                engine_json = {k: v for k, v in override.items() if v is not None}
+                if not engine_json:
+                    # No list at all: an engine from before channel v1.4.
+                    with open(os.path.join(self.repo, ".factory", "engine.json")) as f:
+                        data = json.load(f)
+                    data.pop("capabilities")
+                    with open(os.path.join(self.repo, ".factory", "engine.json"), "w") as f:
+                        json.dump(data, f)
+                else:
+                    write_engine_json(os.path.join(self.repo, ".factory"), self.engine.path, **engine_json)
+                with mock.patch.object(ic, "read_document", side_effect=AssertionError("read")):
+                    code, out = self.start(self.write("r.md", DOC))
+                self.assertEqual(code, 2, out)
+                self.assertEqual(out["error"]["code"], "document_unsupported")
+                self.assertIn("Nothing was read or sent", out["display"])
+        self.assertEqual(self.engine.calls, [])
+
+    def test_a_bad_capability_list_makes_engine_json_untrusted(self):
+        for caps in ("document", [1], ["Doc ument"], ["x"] * 33):
+            with self.subTest(caps=caps):
+                write_engine_json(os.path.join(self.repo, ".factory"), self.engine.path, capabilities=caps)
+                code, out = self.start(self.write("r.md", DOC))
+                self.assertEqual(code, 2, out)
+                self.assertEqual(out["error"]["code"], "bad_engine_file")
+
+    def test_an_engine_listing_the_capability_but_refusing_the_key_started_nothing(self):
         self.engine.no_documents = True
         code, out = self.start(self.write("r.md", DOC))
         self.assertEqual(code, 1, out)

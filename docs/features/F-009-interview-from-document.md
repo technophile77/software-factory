@@ -3,7 +3,7 @@
 - **Id:** F-009
 - **Status:** Approved (readiness gate passed 2026-11-12); in development
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 8
+- **Spec version:** 9
 
 ## 1. Objective and business purpose
 The owner often has a finished spec or a working document before a feature
@@ -174,6 +174,7 @@ Passed 2026-11-12 (orchestrator check on spec v6):
 | 6 | 2026-11-12 | H-0105 to H-0108 approved as drafted; readiness gate passed; development starts | Owner, 2026-11-12 (decision card) |
 | 7 | 2026-11-12 | SR-13 deferred to Alpha as a known issue (no project budget ledger in the engine yet) | Owner, 2026-11-12 (decision card) |
 | 8 | 2026-11-12 | A document in the repo itself is named by its repo path and read from the working copy; reading the committed version from `main` is not in this increment | Owner, 2026-11-12 (decision card) |
+| 9 | 2026-11-12 | Engine reports `capabilities: ["document"]` in engine.json and `engine.status`; the client checks it before reading a document (channel v1.4 text amended; closes Gate 2 L3) | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |

@@ -56,6 +56,7 @@ ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 SESSION_RE = re.compile(r"^[0-9a-f]{32}$")          # 128 random bits, hex
 TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$")
 ENGINE_VERSION_RE = re.compile(r"^1\.([1-9]\d*)$")
+CAPABILITY_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 # Only local pipes: `\\host\pipe\x` reaches another machine and `\\?\` skips
 # the namespace checks (SR-7).
 PIPE_RE = re.compile(r"^\\\\\.\\pipe\\[A-Za-z0-9._{}-]{1,200}$")
@@ -290,7 +291,7 @@ def _require_owner_only(st, path, name):
 
 
 def read_engine_address(path):
-    """(channel path, engine pid, channel minor version). The checks run on the opened descriptor, so
+    """(channel path, engine pid, channel minor version, capabilities). The checks run on the opened descriptor, so
     a file swapped in after find_engine_file's checks is caught too; with
     O_NONBLOCK a FIFO swapped in can't hang the open."""
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -321,7 +322,11 @@ def read_engine_address(path):
     addr = data.get("path")
     if not isinstance(addr, str) or not addr:
         raise Refused("bad_engine_file", "engine.json has no channel path.")
-    return addr, pid, int(match.group(1))
+    # Channel v1.4: what the engine accepts beyond its version. Absent means none.
+    caps = data.get("capabilities", [])
+    if not isinstance(caps, list) or len(caps) > 32 or not all(isinstance(c, str) and CAPABILITY_RE.fullmatch(c) for c in caps):
+        raise Refused("bad_engine_file", "engine.json has a capability list that isn't a short list of plain names.")
+    return addr, pid, int(match.group(1)), frozenset(caps)
 
 
 # ---------------------------------------------------------------------------
@@ -1155,7 +1160,7 @@ def cmd_start(ch, req):
         r = _result(ch.call("feature.start", params))
     except ChannelError as e:
         if "document" in params and e.answered and e.code == -32602:
-            # An engine before channel v1.4 refuses the unknown key (H-0105); nothing was started.
+            # An engine that lists the capability but refuses the key anyway; nothing was started.
             raise ChannelError("document_unsupported", "This engine can't start a feature from a document; it "
                                "needs channel v1.4 (F-009). Nothing was started.", sent=True) from None
         raise
@@ -1378,12 +1383,17 @@ def run(cmd, req, cwd):
     global _run_deadline
     _run_deadline = time.monotonic() + RUN_LIMIT
     _validate(cmd, req)
-    address, pid, minor = read_engine_address(find_engine_file(cwd))
+    address, pid, minor, caps = read_engine_address(find_engine_file(cwd))
     if cmd == "reply" and req["kind"] in ADVISOR_KINDS and minor < 3:
         # F-005 OQ-3: no escalation until the engine has the advisor (v1.3;
         # a v1.2 engine has only H-0051's session approval).
         raise Refused("advisor_unsupported", f"This engine speaks channel v1.{minor}, which has no advisor; "
                       "asking the advisor needs v1.3 or later. Nothing was sent.")
+    if cmd == "start" and "document" in req and "document" not in caps:
+        # Owner decision 2026-11-12: the capability list, not the version, says so.
+        raise Refused("document_unsupported", "This engine can't start a feature from a document; it needs "
+                      "an engine whose engine.json lists the \"document\" capability (channel v1.4, F-009). "
+                      "Nothing was read or sent.")
     # The file is read before connecting, so a refused document sends nothing.
     document = read_document(req["document"]["path"], req["document"]["provenance"], cwd) \
         if cmd == "start" and "document" in req else None

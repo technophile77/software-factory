@@ -432,12 +432,14 @@ class Err32009Display(DocBase):
 
 
 class ChannelVersion(DocBase):
-    """Channel v1.4: an engine on v1.3 or earlier refuses `document`; clients
-    check `version` first and don't send it."""
+    """Channel v1.4: an engine that takes `document` lists the "document"
+    capability in engine.json; clients check it first and don't send it
+    otherwise (owner decision 2026-11-12)."""
 
     VERSION = "1.3"
 
     def test_v13_engine_gets_no_document(self):
+        write_engine_json(os.path.join(self.repo, ".factory"), self.engine.path, version=self.VERSION, capabilities=[])
         path = self.write("spec.md", "# Spec\n\nSECRET-ISH-PLAN\n")
         code, out = self.start(path)
         self.assertNotEqual(code, 0, out)
