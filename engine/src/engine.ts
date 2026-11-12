@@ -962,13 +962,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (!resume && f.state.gate1.runs >= g1!.runsPerFeature) {
       // SR-11: a fourth run needs the owner.
       const why = `${f.id} has had ${f.state.gate1.runs} Gate 1 runs, the most allowed (F-008 SR-11)`;
+      // The transcript records the block before the owner is told, so the item never names a state the record lacks.
+      if (!f.state.gate1.blocked) await f.exclusive(() => f.append([{ type: "gate1_blocked", reason: why }], "gate 1 run limit"));
       await alert(p, `gate1cap:${f.id}:${f.state.gate1.runs}`, {
         title: `Gate 1 for ${f.id} reached its run limit`, feature: f.id,
         context: `${why}. Another run would cost another reviewer session.`,
         impact: `${f.id} stays at Security Gate 1.`,
         confirm: "Look at the Gate 1 reports and the engine log, then decide how to proceed", hold: "Keep the feature where it is", recommendation: "A",
       });
-      if (!f.state.gate1.blocked) await f.exclusive(() => f.append([{ type: "gate1_blocked", reason: why }], "gate 1 run limit"));
       return;
     }
     const { spec, path: specPath, version: specVersion, commit } = await branchSpec(p, f);
@@ -1049,10 +1050,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           log.warn(`${f.id}: Gate 1 report refused: ${errors.slice(0, 5).join("; ")}`);
           return correctionTurn(reportRel, errors);
         },
-        verify: (pol) => commitWorktree({
+        verify: async (pol) => {
+          // SR-12: the report folder may hold the named report and nothing else.
+          const extra = fs.existsSync(reportDir) ? fs.readdirSync(reportDir).filter((x) => x !== reportName) : [];
+          if (extra.length) return { status: "rejected" as const, breaches: extra.slice(0, 20).map((x) => ({ path: `${path.posix.dirname(reportRel)}/${x}`, reason: "not_allowed" as const })) };
+          return commitWorktree({
           git, gitDir: wt.gitDir, worktree: wt.path, branch: f.state.branch, base: commit, policy: { ...pol, write: { allow: [], deny: [] } }, scanner, tmpDir,
           message: `${f.id}: Gate 1 reviewer session (run ${runId})`, limits: worktreeLimits(limits),
-        }),
+          });
+        },
         onBreach: async (breaches) => {
           await alert(p, `breach:${runId}:${crypto.randomBytes(4).toString("hex")}`, {
             title: "Security reviewer changed files outside its report", feature: f.id,

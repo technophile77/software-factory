@@ -103,8 +103,9 @@ export async function prepareWorktree(git: Git, repo: string, dir: string, branc
     if (!realPath(gitDir).startsWith(path.join(common, "worktrees") + path.sep)) throw new Error("the run's git dir isn't one of the repo's worktrees");
     return { path: dir, gitDir };
   }
-  await git.run(repo, ["worktree", "prune"]);
+  // The folder goes first: prune forgets only worktrees whose folder is missing, and a stale registration makes `add` fail.
   fs.rmSync(dir, { recursive: true, force: true });
+  await git.run(repo, ["worktree", "prune"]);
   await git.run(repo, detachAt ? ["worktree", "add", "--no-checkout", "--detach", dir, detachAt] : ["worktree", "add", "--no-checkout", dir, branch]);
   const link = fs.readFileSync(path.join(dir, ".git"), "utf8").trim();
   const m = /^gitdir: (.+)$/.exec(link);
