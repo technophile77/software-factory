@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (all open questions decided; next: Gate 1 and the drafts of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 8
+- **Spec version:** 9
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -48,7 +48,7 @@ The owner's existing rules still hold:
 
    | Kind | Route | Reply and label on the issue (step 11) |
    |---|---|---|
-   | `bug` with evidence: it contradicts an approved spec requirement, is a regression from an earlier tagged release, or is a crash or unhandled error on input the docs allow (OQ-1) | Confirmation step (5) | None until confirmed; then "Bug confirmed" |
+   | `bug`: a crash, an error, or unexpected output when correct input was supplied (OQ-1, owner's definition). Correct input is input an approved spec, the docs, or an earlier release accepts. Expected output is what an approved spec or the docs say, or what an earlier tagged release produced. | Confirmation step (5) | None until confirmed; then "Bug confirmed" |
    | `needs_info`: the report is missing something needed to triage or reproduce it | Wait for the reporter (10) | "Need more information" |
    | `feature_request`, a `bug` against behavior no approved requirement covers, or `unclear` (expected behavior can't be told from specs or docs) | Decision inbox, Product: "Start an interview for this?" (7) | "Feature request" |
    | `security_report` | Decision inbox, Security, high priority. Never fixed in the open lane (OQ-4). | None. A public reply or label would point at the vulnerability. |
@@ -65,7 +65,7 @@ The owner's existing rules still hold:
    item ("Couldn't reproduce issue #N") with what was tried instead.
 6. **Fix lane.** A confirmed bug gets a feature id and a fix spec generated
    from a template (OQ-2). It names the issue, the approved requirement it
-   restores (or the regression or crash evidence), and the reproduction test
+   restores (or the docs, earlier release or crash it rests on), and the reproduction test
    as its acceptance criterion. It then runs stages 5 to 9 like any feature:
    developer, independent tests, orchestrator review, Gate 2, validation, and a
    PR through the factory token whose body says it fixes the issue. The owner
@@ -164,8 +164,11 @@ The owner's existing rules still hold:
   on as data. The test engineer and developer never see the issue.
 - **Issue spam or a flood.** The daily cap bounds cost. Issues over the cap
   wait. Spam is recorded as `not_actionable` with no inbox item.
-- **A "bug" that is really a feature.** No approved requirement or regression
-  evidence means it goes to the owner as Product, never to the fix lane.
+- **A "bug" that is really a feature.** If nothing (approved spec, docs or an
+  earlier release) says the input is correct or what the output should be,
+  the reporter's expectation is a request for new behavior. It goes to the
+  owner as a feature request, never to the fix lane. A crash or an unhandled
+  error on correct input needs no stated expected output.
 - **An issue reporting a vulnerability.** It goes to Security only. A public
   fix PR would disclose it before the owner chose how to handle it.
 - **Two issues for the same bug.** The triager can mark `duplicate` with the
@@ -183,9 +186,9 @@ The owner's existing rules still hold:
 - **A fix fails tests after retries.** Testing inbox, as for features.
 - **The reproduction test needs something the container lacks** (hardware,
   outside service, a specific OS). Not confirmed; the Product item says why.
-- **Repo has no approved specs yet** (onboarded with F-003). Only regression
-  or crash evidence (OQ-1) can confirm a bug; everything else goes to the
-  owner.
+- **Repo has no approved specs yet** (onboarded with F-003). The docs and
+  earlier releases define correct input and expected output; a crash or error
+  on input they accept is a bug. Everything else goes to the owner.
 - **Issue closed before triage finishes.** The lane stops and the record says
   so.
 
@@ -267,11 +270,12 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | 6 | 2026-11-12 | OQ-4: any reporter's confirmed bug reaches the fix lane, on every repo | Owner, 2026-11-12 (decision card) |
 | 7 | 2026-11-12 | OQ-5: the engine checks every 5 minutes and catches up on start; A-1 approved | Owner, 2026-11-12 (decision card) |
 | 8 | 2026-11-12 | OQ-6: issues already open are triaged too, oldest first, after new issues inside the daily cap | Owner, 2026-11-12 (decision card) |
+| 9 | 2026-11-12 | OQ-1 restated in the owner's words: crash, error or unexpected output on correct input; correct and expected come from specs, docs or an earlier release | Owner, 2026-11-12 (thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
 |---|---|---|---|
-| OQ-1 | What counts as a confirmed bug that the factory may fix without the owner? (a) Only behavior that contradicts an approved spec requirement, shown by a failing test. (b) (a), plus a regression from an earlier tagged release, or a crash or unhandled error on input the docs allow, each shown by a failing test. (c) Whatever the triager judges a bug, if a test reproduces it. Recommended: (b). (a) leaves most issues on onboarded repos with the owner; (c) lets an outside reporter define requirements. **Decided: (b).** | Product | Decided (owner, 2026-11-12, decision card) |
+| OQ-1 | What counts as a confirmed bug that the factory may fix without the owner? (a) Only behavior that contradicts an approved spec requirement, shown by a failing test. (b) (a), plus a regression from an earlier tagged release, or a crash or unhandled error on input the docs allow, each shown by a failing test. (c) Whatever the triager judges a bug, if a test reproduces it. Recommended: (b). (a) leaves most issues on onboarded repos with the owner; (c) lets an outside reporter define requirements. **Decided (owner's own words, 2026-11-12): a confirmed bug is a crash, error or unexpected output when correct inputs were supplied.** Correct input and expected output are read from approved specs, the docs, or an earlier tagged release, each shown by a failing test. | Product | Decided (owner, 2026-11-12, decision card) |
 | OQ-2 | How does "requirements approved" (DoD item 1) apply to a fix? (a) The fix spec cites an approved requirement or the OQ-1 evidence, and that stands in for approval; no owner step before the PR. (b) The owner approves each fix spec in the inbox first. Recommended: (a); (b) contradicts "without my input". The owner still merges either way. **Decided: (a).** | Product | Decided (owner, 2026-11-12, decision card) |
 | OQ-3 | May the factory write to an issue? (a) Never. (b) Only comments the owner approves one by one. (c) An ADR lets it reply and label without asking. **Decided: (c), extended by the owner:** replies for bug confirmed and fix underway, need more information (saying what is needed), and feature request sent to the owner, plus labels. | Security | Decided (owner, 2026-11-12, thread) |
 | OQ-4 | Who may open an issue that reaches the fix lane? (a) Anyone. Confirmation is by the factory's own test, not the reporter's word, and caps bound cost. (b) Only the owner and repo collaborators; others' bugs go to the inbox first. Recommended: (a) for private repos and (b) for public ones, set per repo in the manifest. **Decided: (a), anyone on every repo.** The factory's own failing test and the FR-11 caps are the guard. | Security | Decided (owner, 2026-11-12, decision card) |
