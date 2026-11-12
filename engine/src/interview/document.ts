@@ -115,57 +115,92 @@ export function hiddenMarkdownLines(lines: string[]): number[] {
 // inside a quote or list item renders as nothing too (validation M1), and one
 // in an indented code block is refused like HTML in code (Gate 2 H1).
 const CONTAINER = /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*/;
-const LINK_DEF = /^\[((?:\\.|[^\\\]])+)\]:[ \t]*(\S*)[ \t]*(.*)$/;
 const TITLE_START = /^["'(]/;
-const LINK_TEXT = /!?\[([^\]]*)\](?=[(\[])/g;
 const SPACE_ENTITIES = /&(nbsp|ensp|emsp|emsp13|emsp14|numsp|puncsp|thinsp|ThinSpace|hairsp|VeryThinSpace|MediumSpace|NonBreakingSpace|Tab|NewLine);/gi;
 
 // A link or image whose text is only whitespace, invisible characters or
 // entities for them shows nothing; its title or target is hidden.
-function emptyLinkText(line: string): boolean {
-  for (const m of line.matchAll(LINK_TEXT)) {
-    const decoded = m[1]!
-      .replace(SPACE_ENTITIES, " ")
-      .replace(/&#(x[0-9a-f]{1,8}|[0-9]{1,9});/gi, (e, n: string) => {
-        const cp = n[0]!.toLowerCase() === "x" ? parseInt(n.slice(1), 16) : parseInt(n, 10);
-        return cp <= 0x10ffff ? String.fromCodePoint(cp) : e;
-      });
-    if (!decoded.replace(new RegExp(INVISIBLE.source, "gu"), "").replace(/\s/gu, "")) return true;
-  }
-  return false;
+// Link text made only of whitespace, invisible characters, entities for them
+// or backticks (a blank code span) shows nothing.
+function blankLinkText(text: string): boolean {
+  const decoded = text
+    .replace(SPACE_ENTITIES, " ")
+    .replace(/&#(x[0-9a-f]{1,8}|[0-9]{1,9});/gi, (e, n: string) => {
+      const cp = n[0]!.toLowerCase() === "x" ? parseInt(n.slice(1), 16) : parseInt(n, 10);
+      return cp <= 0x10ffff ? String.fromCodePoint(cp) : e;
+    });
+  return !decoded.replace(new RegExp(INVISIBLE.source, "gu"), "").replace(/[\s`]/gu, "");
 }
 
 function linkLabel(label: string): string {
   return label.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+/**
+ * Lines with Markdown's own ways to hide text (SR-8 as extended, Gate 2 M2).
+ * Link labels and link text may run over several lines in CommonMark, so the
+ * checks run on the whole text, with block quote and list markers dropped
+ * from each line, and a hit names every line it covers (validation round 2 M1).
+ */
 export function hiddenLinkLines(lines: string[]): number[] {
   const hits = new Set<number>();
+  const bare = lines.map((l) => l.replace(CONTAINER, ""));
+  const text = bare.join("\n");
+  const starts: number[] = [];
+  let at = 0;
+  for (const l of bare) {
+    starts.push(at);
+    at += l.length + 1;
+  }
+  const lineAt = (offset: number) => {
+    let lo = 0;
+    let hi = starts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (starts[mid]! <= offset) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  };
+  const span = (from: number, to: number, into: Set<number>) => {
+    for (let i = lineAt(from); i <= lineAt(Math.max(from, to - 1)); i++) into.add(i);
+  };
+  // A blank line ends a paragraph, so no label or link text crosses one.
+  const oneParagraph = (t: string) => !/\n[ \t]*\n/.test(t);
+
+  for (const m of text.matchAll(/!?\[([^\]]*)\](?=[(\[])/g)) {
+    if (oneParagraph(m[1]!) && blankLinkText(m[1]!)) {
+      const lineHits = new Set<number>();
+      span(m.index!, m.index! + m[0].length, lineHits);
+      for (const i of lineHits) hits.add(i + 1);
+    }
+  }
+
   const defs: Array<{ line: number; label: string }> = [];
   const defLines = new Set<number>();
-  const bare = lines.map((l) => l.replace(CONTAINER, ""));
-  lines.forEach((line, i) => {
-    if (emptyLinkText(line)) hits.add(i + 1);
-    const m = LINK_DEF.exec(bare[i]!);
-    if (!m) return;
-    defLines.add(i);
-    defs.push({ line: i + 1, label: linkLabel(m[1]!) });
+  for (const m of text.matchAll(/^\[((?:\\.|[^\\\]])+)\]:[ \t]*(\S*)[ \t]*(.*)$/gm)) {
+    if (!oneParagraph(m[1]!)) continue;
+    const covered = new Set<number>();
+    span(m.index!, m.index! + m[0].length, covered);
+    const first = Math.min(...covered);
+    let last = Math.max(...covered);
+    for (const i of covered) defLines.add(i);
+    defs.push({ line: first + 1, label: linkLabel(m[1]!) });
     // The destination or the title may sit on the next line.
     let title = m[3]!;
-    let next = i + 1;
-    if (!m[2] && next < lines.length) {
-      defLines.add(next);
-      title = bare[next]!.trim().replace(/^\S+/, "");
-      next++;
+    if (!m[2] && last + 1 < bare.length) {
+      last++;
+      defLines.add(last);
+      title = bare[last]!.trim().replace(/^\S+/, "");
     }
-    if (title.trim()) hits.add(i + 1);
-    else if (next < lines.length && TITLE_START.test(bare[next]!)) {
-      hits.add(i + 1);
-      hits.add(next + 1);
+    if (title.trim()) hits.add(first + 1);
+    else if (last + 1 < bare.length && TITLE_START.test(bare[last + 1]!)) {
+      hits.add(first + 1);
+      hits.add(last + 2);
     }
-  });
+  }
   if (defs.length) {
-    const body = lines.filter((_, i) => !defLines.has(i)).join("\n");
+    const body = bare.filter((_, i) => !defLines.has(i)).join("\n");
     const used = new Set<string>();
     for (const u of body.matchAll(/\[((?:\\.|[^\\\]])+)\]/g)) used.add(linkLabel(u[1]!));
     for (const d of defs) if (!used.has(d.label)) hits.add(d.line);

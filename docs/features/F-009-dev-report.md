@@ -70,11 +70,15 @@
 - D-1: any line with an unescaped `|` is its own block, so a quote can't run across rows of a table written without outer pipes.
 - T-1: the F-006 skill-text check accepts channel v1.3 or later, since SKILL.md now names v1.4.
 
+## Validation round 2 fixes
+- M1: the link checks run on the whole text (container markers dropped per line), so a link label or link text that runs over two lines is caught; a hit names every line it covers. Link text that is only a blank code span is refused too (m13).
+- m4: `agents/requirements-analyst/AGENT.md` states the v11 Sources rules. Drafted; it is change-controlled and waits on the owner's approval, with the `source_unchanged` sentence in Interview tools v1.1 (round 2 M2).
+
 ## Repo documents
 A document inside the owner's repo is named by its repo path and read from the working copy, uncommitted edits included (owner decision, spec v8). A path that leaves the repo gets the same local checks as any other path. Covered by `test_a_requirements_document_in_the_repo_itself_by_its_repo_path`.
 
 ## Tests
-- Engine: `test/document.test.ts` (new, 24 tests) plus updated agent and gitleaks tests. Final full run: 589 passed, 14 skipped (the real-Docker and real-Claude files, as before). `npm run typecheck` (both the source and the acceptance-test projects) and the build are clean after the validation B1 fix; before it, the acceptance-test project failed on the `capabilities` field (validation B1).
+- Engine: `test/document.test.ts` (new, 24 tests) plus updated agent and gitleaks tests. Final full run (with the test engineer's Addendum 1 tests): 647 passed, 14 skipped (the real-Docker and real-Claude files, as before). `npm run typecheck` (both the source and the acceptance-test projects) and the build are clean after the validation B1 fix; before it, the acceptance-test project failed on the `capabilities` field (validation B1).
 - Client: `tests/test_document_f009.py` (new, 14 tests). Full spec-interview suite: 381 passed. onboard-repo suite: 318 passed, 1 skipped.
 - Docs checks and placeholder check pass.
 
