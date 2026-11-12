@@ -313,7 +313,9 @@ class Requests(Base):
         self.call("next", {"session": session})
         self.reply(session, "Q1")
         self.call("close", {"session": session})
-        self.assertEqual(self.engine.methods(), ["interview.open", "interview.next", "interview.reply", "interview.close"])
+        # With nothing next, the reply's run also reads the feature's stage.
+        self.assertEqual(self.engine.methods(), ["interview.open", "interview.next", "interview.reply",
+                                                 "engine.status", "interview.close"])
         self.assertEqual(len({n for n, _, _ in self.engine.calls}), 4)
         self.assertEqual(self.engine.locks, {})
         code, out = self.call("next", {"session": session})
@@ -385,7 +387,7 @@ class Sessions(Base):
         session = self.open()
         code, out = self.reply(session, "Q1", reply_id="abc123")
         self.assertEqual(code, 0, out)
-        self.assertEqual(self.engine.methods()[1:], ["interview.state", "interview.reply"])
+        self.assertEqual(self.engine.methods()[1:], ["interview.state", "interview.reply", "engine.status"])
         self.assertEqual(self.replies()[0]["reply_id"], "abc123")
 
     def test_duplicate_reply_id_changes_nothing(self):
