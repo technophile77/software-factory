@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (open questions in section 13)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 4
+- **Spec version:** 5
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -23,7 +23,8 @@ The owner's existing rules still hold:
 - Issue text is external content written by anyone (S9). It can't steer what
   the factory does. The factory replies to and labels issues only from fixed
   templates that the owner approved once (ADR in H-0114, the S9.2 exemption).
-  Nothing it posts is text a model wrote from the issue.
+  The only model-written text it posts is one short, filtered question in a
+  "need more information" reply (OQ-7).
 - The owner merges. Nobody else does (development workflow).
 
 ## 2. Expected behavior
@@ -90,8 +91,9 @@ The owner's existing rules still hold:
 11. **Replies and labels.** The engine posts them, not an agent, from fixed
     templates (section 10, H-0114). A template has fixed text and typed slots
     the engine fills from validated data only: the issue number, a link to the
-    fix PR, and for "need more information" items from a fixed list (OQ-7).
-    No slot holds text taken from the issue. The labels are
+    fix PR, and for "need more information" items from a fixed list plus
+    at most one short question (OQ-7). Apart from that question, no slot holds
+    text a model wrote or text taken from the issue. The labels are
     `factory: bug confirmed`, `factory: fix in progress`,
     `factory: needs info`, `factory: feature request`, `factory: duplicate`,
     `factory: question` and `factory: not actionable`. The engine creates any
@@ -114,7 +116,8 @@ The owner's existing rules still hold:
 | FR-10 | Owner approval of "Start an interview" queues a feature seeded from the snapshot in F-009 reference mode. |
 | FR-11 | Caps per repo: issues triaged per day (default 20), fix lanes running at once (default 2), and the ADR 0012 token budget per fix. Issues over a cap wait in order; none are dropped. |
 | FR-12 | The engine, not an agent, posts the replies and sets the labels in section 2 steps 4 and 11, from the approved templates only. It never closes, assigns, edits or locks an issue, never comments on a `security_report`, and posts at most one reply per template per issue, plus the second "need more information" round. |
-| FR-14 | Template slots take only validated, typed values (issue number, PR link, items from the fixed list). The engine rejects a reply whose rendered text differs from its template outside the slots. |
+| FR-14 | Template slots take only validated, typed values (issue number, PR link, items from the fixed list, the question). The engine rejects a reply whose rendered text differs from its template outside the slots. |
+| FR-17 | The question slot (OQ-7) is optional and holds one sentence ending in "?", plain text, at most 200 characters, from the triage record. The engine drops the question, and posts the reply without it, if it holds a link or anything shaped like a domain, an @-mention, a `#` issue reference, an email address, Markdown or HTML, code formatting, or a line break. It never retries with a different question. Each dropped question is logged. |
 | FR-15 | On a `needs_info` issue, the issue author's first new comment is snapshotted and the issue triaged again, as in section 2 step 10. Comments by anyone else, and the factory's own, are not read. |
 | FR-16 | Templates and label names ship in the master repo; a project may override them in its config repo (agents.override pattern), and a fresh factory pull never overwrites an override. |
 | FR-13 | Each issue's folder holds the snapshot, its hash, the triage record, the route, and links to inbox items, the feature and the PR. |
@@ -137,7 +140,8 @@ The owner's existing rules still hold:
 | AC-13 | Given 25 new issues in one day with a cap of 20, then 20 are triaged and 5 wait for the next day, in order. | FR-11 |
 | AC-14 | Given any run, then every write to the issues API is a template reply or a label from the approved set, made by the engine, and logged; there are no close, assign, edit or lock calls. | FR-12 |
 | AC-16 | For each kind, given a valid record, then exactly the reply and label in the routing table are posted, and a `security_report` gets neither. | FR-12 |
-| AC-17 | Given a triage record whose fields hold text, links or @-mentions, then no posted reply contains any of it; given a slot value outside its type, then nothing is posted and a Testing item exists. | FR-14, SR-9 |
+| AC-17 | Given a triage record whose free-text fields other than the question hold text, links or @-mentions, then no posted reply contains any of it; given a slot value outside its type, then nothing is posted and a Testing item exists. | FR-14, SR-9 |
+| AC-21 | Given a question that holds a link, a domain, an @-mention, a `#` reference, an email, Markdown, HTML, code or a line break, or is over 200 characters, then the reply is posted without the question and the drop is logged; given a clean question, then it appears in the reply word for word. | FR-17, SR-11 |
 | AC-18 | Given a `needs_info` issue, when its author comments, then it is triaged again with that comment; when someone else comments, then nothing happens; after two rounds without enough information, a Product item exists. | FR-15 |
 | AC-19 | Given a confirmed bug, then "Bug confirmed" and `factory: bug confirmed` are on the issue before the fix lane starts, and `factory: fix in progress` once the PR opens. | FR-12 |
 | AC-20 | Given a project override of a template, when the factory is updated, then the override is still used. | FR-16 |
@@ -209,7 +213,8 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | SR-6 | The fix scope guard keeps a bug fix away from contracts, dependencies, change-controlled and security-relevant files. | Analyst | Draft |
 | SR-7 | Daily and concurrency caps bound what an outside reporter can make the factory spend. | Analyst | Draft |
 | SR-8 | Every GitHub call is logged with agent, action, target and time, without secrets (S9.6). | Analyst | Draft |
-| SR-9 | Replies are posted by engine code, never by a session that read issue text (S9.3). No reply contains text from the issue or text a model wrote, so an issue can't make the factory's account say something. | Analyst | Draft |
+| SR-9 | Replies are posted by engine code, never by a session that read issue text (S9.3). Apart from the question slot, no reply contains text from the issue or text a model wrote. | Analyst | Draft |
+| SR-11 | The question slot is the one place a crafted issue could choose words the factory's account posts (owner accepted this risk, OQ-7). The FR-17 filter keeps out links, mentions, references and formatting, and the length cap and one-sentence rule bound the rest. Gate 1 reviews whether that is enough. | Analyst | Draft |
 | SR-10 | A `security_report` gets no public reply or label. | Analyst | Draft |
 
 ## 10. Interface requirements
@@ -232,10 +237,11 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 - **Bug confirmed:** "Thanks for the report. We've reproduced this bug and a
   fix is underway. The pull request will link here when it's ready."
 - **Need more information:** "Thanks for the report. To look into this we
-  need: {items}. Please add them in a comment on this issue." `{items}` is a
-  list from: steps to reproduce; expected and actual behavior; version or
-  commit; operating system and environment; error message or log output; a
-  minimal example that shows the problem (OQ-7).
+  need: {items}. {question} Please add them in a comment on this issue."
+  `{items}` is a list from: steps to reproduce; expected and actual behavior;
+  version or commit; operating system and environment; error message or log
+  output; a minimal example that shows the problem. `{question}` is the
+  optional question (OQ-7, FR-17).
 - **Feature request:** "Thanks for the suggestion. This reads as a feature
   request rather than a bug, so it has gone to the maintainer to decide
   whether to take it on." 
@@ -255,6 +261,7 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | 2 | 2026-11-12 | OQ-1: a confirmed bug is a spec contradiction, a regression from a tagged release, or a crash on documented input, each shown by a failing test | Owner, 2026-11-12 (decision card) |
 | 3 | 2026-11-12 | OQ-2: a fix spec that cites its OQ-1 evidence counts as approved; no owner step before the PR | Owner, 2026-11-12 (decision card) |
 | 4 | 2026-11-12 | OQ-3: the factory replies to and labels issues from fixed templates (bug confirmed, need more information, feature request); reporter answers on needs-info issues are triaged again; OQ-7 added | Owner, 2026-11-12 (thread) |
+| 5 | 2026-11-12 | OQ-7: "need more information" may add one short filtered question (FR-17, SR-11) | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -265,4 +272,4 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | OQ-4 | Who may open an issue that reaches the fix lane? (a) Anyone. Confirmation is by the factory's own test, not the reporter's word, and caps bound cost. (b) Only the owner and repo collaborators; others' bugs go to the inbox first. Recommended: (a) for private repos and (b) for public ones, set per repo in the manifest. | Security | Open |
 | OQ-5 | How does the engine learn of new issues? (a) It checks GitHub every few minutes (default 5) while running, and catches up on start. (b) A GitHub Actions workflow in each repo relays issue events to somewhere the engine reads. Recommended: (a); no inbound port, no new workflow in every repo, and conditional requests cost no rate limit. | Architecture | Open |
 | OQ-6 | What about issues already open when triage is turned on? (a) Ignore them; only new issues. (b) Triage the backlog too, inside the daily cap. (c) Ask once when triage is turned on. Recommended: (c). | Product | Open |
-| OQ-7 | How specific can "need more information" be? (a) Only items from the fixed list in section 10. (b) The fixed list plus one short question written by the factory, plain text, at most 200 characters, with no links, @-mentions or code. Recommended: (a). The text in (b) would come from a session that read the issue, so a crafted issue could make the factory's account post words chosen by its author. | Security | Open |
+| OQ-7 | How specific can "need more information" be? (a) Only items from the fixed list in section 10. (b) The fixed list plus one short question written by the factory, plain text, at most 200 characters, with no links, @-mentions or code. Recommended: (a). The text in (b) would come from a session that read the issue, so a crafted issue could make the factory's account post words chosen by its author. **Decided: (b)**, with the filter in FR-17. | Security | Decided (owner, 2026-11-12, decision card) |
