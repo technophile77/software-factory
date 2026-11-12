@@ -534,6 +534,11 @@ describe("running a session under SR-18 caps", () => {
     expect(await runSession(turns, opts(), oneTurn(), CAPS, {})).toMatchObject({ status: "cap", reason: "turns" });
   });
 
+  it("keeps Claude Code's error text for the log when a session fails", async () => {
+    const sdk = fakeSdk([{ type: "result", subtype: "error_during_execution", session_id: "s", errors: ["No tool result for tool_use toolu_1"] }]);
+    expect(await runSession(sdk, opts(), oneTurn(), CAPS, {})).toMatchObject({ status: "error", reason: "error_during_execution", detail: "No tool result for tool_use toolu_1", outputTokens: 0 });
+  });
+
   it("stops at the wall-time cap", async () => {
     const sdk = fakeSdk([{ type: "system", subtype: "init", session_id: "s" }], true);
     const out = await runSession(sdk, opts(), oneTurn(), { ...CAPS, wallTimeMs: 20 }, {});
