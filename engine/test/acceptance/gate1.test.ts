@@ -453,7 +453,7 @@ describe("AC-7, AC-17 / FR-8, FR-9: a finding resolved by a new requirement", ()
     expect(a.kind).toBe("assumption");
     expect((await r.w.reply(session, a, "approve_assumption", "Yes, record it.")).error).toBeUndefined();
     await analystSettled(r.w, feature, 2);
-    await waitStage(r.w, feature, READINESS, 30_000);
+    await waitStage(r.w, feature, READINESS);
   });
 
   it("[G1-15b] FR-9 / FR-13 (v13, Gate 2 M1): an own-words answer copied into section 9 without an approved assumption doesn't resolve the finding; the owner is asked to accept the risk", T, async () => {

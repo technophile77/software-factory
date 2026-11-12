@@ -398,7 +398,8 @@ export async function stageOf(w: World, feature: string): Promise<string | undef
   return (s.features as Array<{ id: string; stage: string }>).find((f) => f.id === feature)?.stage;
 }
 
-export async function waitStage(w: World, feature: string, stage: string, ms = 30_000): Promise<void> {
+// Windows CI runners take several times longer per git and pipe call; a Gate 1 run with a correction can pass 30 s there.
+export async function waitStage(w: World, feature: string, stage: string, ms = process.platform === "win32" ? 90_000 : 30_000): Promise<void> {
   try {
     // One channel connection per poll: polled every 25 ms, a Windows named pipe runs out of instances and drops
     // connections, so a failed poll counts as "not there yet" and the polls are spaced.
