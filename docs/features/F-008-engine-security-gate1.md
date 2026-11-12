@@ -1,9 +1,9 @@
 # Feature: Run Security Gate 1 on the real engine
 
 - **Id:** F-008
-- **Status:** In review
+- **Status:** Approved (readiness gate passed 2026-11-12)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 10
+- **Spec version:** 11
 
 This is part of the engine's increment 3 ("Requirements to ready", F-007
 section 13). The owner chose to build Security Gate 1 on its own first
@@ -141,18 +141,18 @@ approved security requirements are in the spec.
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | Least privilege (S8): the reviewer writes only its named report file, and has no shell, no commands and no network other than the model API. | Analyst | Draft |
-| SR-2 | The spec, transcript and project security additions are untrusted data to the reviewer (S6.1); its instructions say so, and the engine labels them as data. | Analyst | Draft |
-| SR-3 | Every engine read of a worktree file for this gate uses the ADR 0015 real-path rule (F-007 SR on `readSpec`). | Analyst | Draft |
-| SR-4 | Reviewer text written into the rendered report or an inbox item is plain text: Markdown control characters escaped, no raw HTML, no links or images. In the analyst's input it is JSON strings in a labelled data block. Inbox front matter is engine-written only (S1.1, S1.2). | Analyst; Gate 1 #3 | Draft |
-| SR-5 | The engine, not the reviewer, decides the stage. A report can't move a feature to `readiness_gate` unless FR-7 or FR-9 holds. | Analyst | Draft |
-| SR-6 | The Gate 1 session gets the same caps, container limits and billing check as the analyst (F-007 SR-18), from its own entries. | Analyst | Draft |
-| SR-7 | The reviewer's input puts factory instructions and standards first, then each untrusted text (spec, transcript, project additions) in a labelled data block with its source. A report with no findings must answer every checklist question with reasons citing spec sections and list the permissions the feature adds; an empty report on a spec whose section 9 has no requirement is invalid (S6.1). | Gate 1 #1 | Draft |
-| SR-8 | The engine reads the report from the session's commit in git, never through the file system: exactly the named path, mode 100644, at most 256 KiB, parsed with a nesting limit (S1.4). | Gate 1 #2 | Draft |
-| SR-9 | The secrets scan covers the report, the rendering, each inbox item before commit, and the analyst's input before a session starts. A hit stops that output and files a Security item with engine text only (S3.1). | Gate 1 #4 | Draft |
-| SR-10 | Project additions are data after the factory standards and can only add criteria, with `P`-prefixed ids. An `S` id defined there makes the file invalid and the gate runs on the factory standards alone, with a Security item. Severity definitions and the blocking table come only from the factory standards. The file is a regular file in the config repo, at most 64 KiB (S6.1, S7). | Gate 1 #5 | Draft |
-| SR-11 | At most 3 Gate 1 runs per feature, the correction resume included; a fourth needs the owner and files a Security item (S5.1). | Gate 1 #6 | Draft |
-| SR-12 | The write check accepts exactly the run's named report path, not every path the role's write glob allows (S8.1). | Gate 1 #8 | Draft |
+| SR-1 | Least privilege (S8): the reviewer writes only its named report file, and has no shell, no commands and no network other than the model API. | Analyst | Approved |
+| SR-2 | The spec, transcript and project security additions are untrusted data to the reviewer (S6.1); its instructions say so, and the engine labels them as data. | Analyst | Approved |
+| SR-3 | Every engine read of a worktree file for this gate uses the ADR 0015 real-path rule (F-007 SR on `readSpec`). | Analyst | Approved |
+| SR-4 | Reviewer text written into the rendered report or an inbox item is plain text: Markdown control characters escaped, no raw HTML, no links or images. In the analyst's input it is JSON strings in a labelled data block. Inbox front matter is engine-written only (S1.1, S1.2). | Analyst; Gate 1 #3 | Approved |
+| SR-5 | The engine, not the reviewer, decides the stage. A report can't move a feature to `readiness_gate` unless FR-7 or FR-9 holds. | Analyst | Approved |
+| SR-6 | The Gate 1 session gets the same caps, container limits and billing check as the analyst (F-007 SR-18), from its own entries. | Analyst | Approved |
+| SR-7 | The reviewer's input puts factory instructions and standards first, then each untrusted text (spec, transcript, project additions) in a labelled data block with its source. A report with no findings must answer every checklist question with reasons citing spec sections and list the permissions the feature adds; an empty report on a spec whose section 9 has no requirement is invalid (S6.1). | Gate 1 #1 | Approved |
+| SR-8 | The engine reads the report from the session's commit in git, never through the file system: exactly the named path, mode 100644, at most 256 KiB, parsed with a nesting limit (S1.4). | Gate 1 #2 | Approved |
+| SR-9 | The secrets scan covers the report, the rendering, each inbox item before commit, and the analyst's input before a session starts. A hit stops that output and files a Security item with engine text only (S3.1). | Gate 1 #4 | Approved |
+| SR-10 | Project additions are data after the factory standards and can only add criteria, with `P`-prefixed ids. An `S` id defined there makes the file invalid and the gate runs on the factory standards alone, with a Security item. Severity definitions and the blocking table come only from the factory standards. The file is a regular file in the config repo, at most 64 KiB (S6.1, S7). | Gate 1 #5 | Approved |
+| SR-11 | At most 3 Gate 1 runs per feature, the correction resume included; a fourth needs the owner and files a Security item (S5.1). | Gate 1 #6 | Approved |
+| SR-12 | The write check accepts exactly the run's named report path, not every path the role's write glob allows (S8.1). | Gate 1 #8 | Approved |
 
 ## 10. Interface requirements
 - H-0095 (approved: owner, decision card, 2026-11-12, with Sonnet 5.5 in
@@ -187,12 +187,12 @@ approved security requirements are in the spec.
   so non-breaking.
 
 ## 11. Readiness gate
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+- [x] Clear objective
+- [x] Expected behavior defined
+- [x] Acceptance criteria testable
+- [x] Constraints documented
+- [x] Assumptions explicit
+- [x] Blocking decisions resolved (approved, not deferred)
 
 ## 12. Open questions for the owner
 Asked one at a time. None is assumed.
@@ -212,8 +212,9 @@ Asked one at a time. None is assumed.
 | 3 | 2026-11-12 | OQ-2: the reviewer writes its own report file; the engine validates it after the session, with one correction turn | Owner, 2026-11-12 (decision card) |
 | 4 | 2026-11-12 | OQ-3: Gate 1 requirements go to the owner as interview questions; choices between options go to the inbox | Owner, 2026-11-12 (decision card) |
 | 5 | 2026-11-12 | OQ-4: pinned factory standards plus the project's additions | Owner, 2026-11-12 (decision card) |
-| 6 | 2026-11-12 | Security Gate 1 (`F-008-security-gate1.md`): SR-4 tightened, SR-7 to SR-12, FR-13 added, FR-1 and FR-9 tightened, AC-12 to AC-18 | Pending owner approval with the spec |
+| 6 | 2026-11-12 | Security Gate 1 (`F-008-security-gate1.md`): SR-4 tightened, SR-7 to SR-12, FR-13 added, FR-1 and FR-9 tightened, AC-12 to AC-18 | Owner, 2026-11-12 (decision card, with spec v10) |
 | 7 | 2026-11-12 | A-1 approved: no second reviewer run after findings are resolved | Owner, 2026-11-12 (decision card) |
 | 8 | 2026-11-12 | A-2 approved: the reviewer reads the interview transcript as labelled data | Owner, 2026-11-12 (decision card) |
 | 9 | 2026-11-12 | H-0095 approved with the reviewer on Sonnet 5.5 | Owner, 2026-11-12 (decision card) |
 | 10 | 2026-11-12 | H-0096 approved: Agent report v1.3 optional Gate 1 fields | Owner, 2026-11-12 (decision card) |
+| 11 | 2026-11-12 | Spec v10 approved; all SRs Approved; readiness gate passed (six checks: objective, behavior, testable ACs, constraints, assumptions A-1 and A-2 approved, OQ-1 to OQ-4 decided) | Owner, 2026-11-12 (decision card) |

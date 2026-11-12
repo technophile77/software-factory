@@ -130,9 +130,10 @@ Call ids are `A-0001`, numbered per repo.
 
 ---
 
-## Agent report — v1.2
+## Agent report — v1.3
 
-- Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0041)
+- Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0041);
+  v1.3 Gate 1 fields approved (H-0096, owner, decision card, 2026-11-12)
 - Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8);
   v1.2 adds the context-hygiene body and `proposed_items`, requested by the
   owner 2026-11-10 (PR #17)
@@ -175,7 +176,7 @@ engine fills them; agents do not.
 | requirements-analyst | `spec_path`, `spec_version`, `open_assumptions` (item ids) |
 | software-developer | `files_changed`, `spec_deviations`, `not_done` |
 | test-engineer | `tests_run`, `passed`, `failed`, `skipped`, `criteria_map` (AC id → test ids), `failures` (test, expected, actual, log ref), `not_run` (with reason) |
-| security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks) |
+| security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks; from v1.3 optional `needs_owner`, `options` (id, label), `recommendation`); from v1.3 optional for Gate 1: `checklist` (question, answer), `permissions_added`, `abuse_cases`, `not_applicable` (criterion, reason) |
 | validation-judge | `verdict` (PASS, FAIL, NEEDS_HUMAN_REVIEW), `checklist` (area, status, evidence), `findings` (grade, location, explanation) |
 | orchestrator | `gate`, `checks` (name, passed, evidence) |
 | project-evaluator | `scope` (project or feature), `complexity` (simple, moderate, complex), `predictions` (role → rung, reason), and from v1.2 `proposed_items` |
