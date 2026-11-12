@@ -3,7 +3,7 @@
 - **Id:** F-009
 - **Status:** Approved (readiness gate passed 2026-11-12); in development
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 7
+- **Spec version:** 8
 
 ## 1. Objective and business purpose
 The owner often has a finished spec or a working document before a feature
@@ -31,7 +31,10 @@ and no assumption reaches a spec without the owner's approval.
 ## 2. Expected behavior
 1. In `/software-factory:spec-interview`, "Request a new feature" offers
    "Describe it" (today's path) or "Start from a document".
-2. For a document, the owner names a file. The client script, not Claude,
+2. For a document, the owner names a file: a path on their computer, or a
+   path in the repo the skill runs in (such as `docs/design.md`), read from
+   that working copy as it is, uncommitted edits included (owner,
+   2026-11-12). The client script, not Claude,
    reads it, checks type and size, and sends it with a short request text
    (a title, or the owner's one-line note). Claude never reads or shows the
    document.
@@ -170,6 +173,7 @@ Passed 2026-11-12 (orchestrator check on spec v6):
 | 5 | 2026-11-12 | SR-1 to SR-7 and SR-9 to SR-14 approved as written | Owner, 2026-11-12 (thread) |
 | 6 | 2026-11-12 | H-0105 to H-0108 approved as drafted; readiness gate passed; development starts | Owner, 2026-11-12 (decision card) |
 | 7 | 2026-11-12 | SR-13 deferred to Alpha as a known issue (no project budget ledger in the engine yet) | Owner, 2026-11-12 (decision card) |
+| 8 | 2026-11-12 | A document in the repo itself is named by its repo path and read from the working copy; reading the committed version from `main` is not in this increment | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
