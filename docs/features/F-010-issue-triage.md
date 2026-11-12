@@ -1,9 +1,9 @@
 # Feature: Triage GitHub issues into the factory
 
 - **Id:** F-010
-- **Status:** Draft (open questions in section 13)
+- **Status:** Draft (all open questions decided; next: Gate 1 and the drafts of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 7
+- **Spec version:** 8
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -106,7 +106,7 @@ The owner's existing rules still hold:
 | Id | Requirement |
 |---|---|
 | FR-1 | Triage is off by default. It is turned on per repo in the project manifest (H-0110), which also holds the check interval and the caps in FR-11. Nothing owner-specific goes in the master repo. |
-| FR-2 | The engine lists new issues with the factory token, using conditional requests so an unchanged list costs no rate limit. Pull requests, issues opened by the factory's own account, and issues opened before triage was turned on are skipped (OQ-6). |
+| FR-2 | The engine lists new issues with the factory token, using conditional requests so an unchanged list costs no rate limit. Pull requests and issues opened by the factory's own account are skipped. Issues already open when triage is turned on are triaged too (OQ-6): new issues go first, and the backlog fills what is left of the daily cap, oldest first. |
 | FR-3 | The engine stores a snapshot of each new issue as in section 2 step 2, after the secrets scan. A snapshot that fails the scan is stored with the finding redacted, and a Security item is filed. |
 | FR-4 | A new `issue-triager` role (H-0112) runs in its own container with read access to the snapshot and the repo at `main`, no network, no write, and one tool, `submit_triage`. |
 | FR-5 | `submit_triage` accepts only the triage record contract (H-0111). The engine rejects a record that doesn't validate and retries once, then files a Testing item. |
@@ -129,6 +129,7 @@ The owner's existing rules still hold:
 | AC-1 | Given a repo with triage off, when an issue is opened, then the engine makes no request for it and stores nothing. | FR-1 |
 | AC-2 | Given triage on, when an issue is opened, then within one check interval a snapshot and its hash exist under `.factory/issues/<repo>/<number>/`. | FR-2, FR-3 |
 | AC-3 | Given a pull request or an issue by the factory account, then no snapshot is made. | FR-2 |
+| AC-22 | Given 30 open issues when triage is turned on and 5 new ones that day, with a cap of 20, then the 5 new ones and the 15 oldest open ones are triaged that day and the rest the next day, oldest first. | FR-2, FR-11 |
 | AC-4 | Given an issue body holding a test secret, then the stored snapshot has it redacted and a Security item exists. | FR-3 |
 | AC-5 | Given a triager session, then its container has no network and no writable mount, and its only tool is `submit_triage`. | FR-4 |
 | AC-6 | Given a record that fails validation twice, then no route is taken and a Testing item exists. | FR-5 |
@@ -265,6 +266,7 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | 5 | 2026-11-12 | OQ-7: "need more information" may add one short filtered question (FR-17, SR-11) | Owner, 2026-11-12 (decision card) |
 | 6 | 2026-11-12 | OQ-4: any reporter's confirmed bug reaches the fix lane, on every repo | Owner, 2026-11-12 (decision card) |
 | 7 | 2026-11-12 | OQ-5: the engine checks every 5 minutes and catches up on start; A-1 approved | Owner, 2026-11-12 (decision card) |
+| 8 | 2026-11-12 | OQ-6: issues already open are triaged too, oldest first, after new issues inside the daily cap | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -274,5 +276,5 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | OQ-3 | May the factory write to an issue? (a) Never. (b) Only comments the owner approves one by one. (c) An ADR lets it reply and label without asking. **Decided: (c), extended by the owner:** replies for bug confirmed and fix underway, need more information (saying what is needed), and feature request sent to the owner, plus labels. | Security | Decided (owner, 2026-11-12, thread) |
 | OQ-4 | Who may open an issue that reaches the fix lane? (a) Anyone. Confirmation is by the factory's own test, not the reporter's word, and caps bound cost. (b) Only the owner and repo collaborators; others' bugs go to the inbox first. Recommended: (a) for private repos and (b) for public ones, set per repo in the manifest. **Decided: (a), anyone on every repo.** The factory's own failing test and the FR-11 caps are the guard. | Security | Decided (owner, 2026-11-12, decision card) |
 | OQ-5 | How does the engine learn of new issues? (a) It checks GitHub every few minutes (default 5) while running, and catches up on start. (b) A GitHub Actions workflow in each repo relays issue events to somewhere the engine reads. Recommended: (a); no inbound port, no new workflow in every repo, and conditional requests cost no rate limit. **Decided: (a).** | Architecture | Decided (owner, 2026-11-12, decision card) |
-| OQ-6 | What about issues already open when triage is turned on? (a) Ignore them; only new issues. (b) Triage the backlog too, inside the daily cap. (c) Ask once when triage is turned on. Recommended: (c). | Product | Open |
+| OQ-6 | What about issues already open when triage is turned on? (a) Ignore them; only new issues. (b) Triage the backlog too, inside the daily cap. (c) Ask once when triage is turned on. Recommended: (c). **Decided: (b).** | Product | Decided (owner, 2026-11-12, decision card) |
 | OQ-7 | How specific can "need more information" be? (a) Only items from the fixed list in section 10. (b) The fixed list plus one short question written by the factory, plain text, at most 200 characters, with no links, @-mentions or code. Recommended: (a). The text in (b) would come from a session that read the issue, so a crafted issue could make the factory's account post words chosen by its author. **Decided: (b)**, with the filter in FR-17. | Security | Decided (owner, 2026-11-12, decision card) |
