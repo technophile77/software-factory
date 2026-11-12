@@ -238,6 +238,8 @@ export interface SessionOutcome {
   sessionId?: string;
   /** The final result text the CLI reported, if any. */
   result?: string;
+  /** The CLI's own error text for a failed session, for the engine log only: it isn't engine words, so the owner never sees it. */
+  detail?: string;
   turns: number;
   outputTokens: number;
   inputTokens: number;
@@ -290,6 +292,7 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
         if (r.subtype === "error_max_turns") stop("turns");
         else if (r.subtype === "error_max_budget_usd") stop("dollars");
         else if (r.subtype !== "success" && out.status === "complete") Object.assign(out, { status: "error", reason: r.subtype });
+        if (r.subtype !== "success" && Array.isArray(r.errors) && r.errors.length) out.detail = r.errors.map(String).join("; ").slice(0, 2000);
         if (caps.maxBudgetUsd !== undefined && out.costUsd > caps.maxBudgetUsd) stop("dollars");
       }
       if (opts.abortController.signal.aborted) break;

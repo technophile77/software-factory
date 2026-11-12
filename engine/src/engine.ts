@@ -38,7 +38,7 @@ import { Children, osParent } from "./proc";
 import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryTokenName } from "./secrets";
 import { SecurityAlert, fileSecurityItem } from "./state/inbox";
 import { EngineRecord, RunRecord } from "./state/record";
-import { ResumePlan, RunBook, RunFacts, RunUsage, agentReport } from "./state/runs";
+import { ResumePlan, RunBook, RunFacts, RunUsage, agentReport, transcriptSummary } from "./state/runs";
 import { Change, SecretFound, StateRepo } from "./state/state-repo";
 import { ChainError, Entry, checkAgainstHead, parseTranscript, transcriptPath } from "./state/transcript";
 
@@ -709,62 +709,77 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       }
       const slugName = branch.replace(/^feature\//, "");
       const intro = `You are working on ${f.id} on branch ${branch}, in /workspace. Write its spec at docs/features/${slugName}.md. Reach the owner only through your factory tools.`;
-      const first = resumeId
-        ? "The engine restarted. Continue where you left off; owner replies, if any, follow as further turns."
-        : [intro, frameRequest(f.id, f.state.request), ...(plan?.mode === "from_commit" && plan.summary ? [plan.summary] : [])].join("\n\n");
-      const turns = new TurnQueue(f, first);
-      job.turns = turns;
-      if (shuttingDown || dead) turns.close();
-      const base = await git.revParse(p.real!, `refs/heads/${branch}`);
-      if (!base) throw new SessionRefused(`the branch ${branch} is gone`);
-      const group = new SessionGroup({
-        docker: rt.docker, runId, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt.proxyScript,
-        agentLimits: roleContainerLimits(limits), proxyLimits: containerLimits(limits.proxy), maxPageBytes: maxPageBytes(limits),
-        credential, log, ...(rt.platform ? { platform: rt.platform } : {}), ...(rt.sleep ? { sleep: rt.sleep } : {}),
-      });
+      let summary = plan?.mode === "from_commit" ? plan.summary : "";
+      if (plan?.mode === "session" && !resumeId) summary = transcriptSummary(f.state);
       const facts: RunFacts = { model: models["requirements-analyst"] };
       let r: Awaited<ReturnType<typeof runAnalystSession>>;
-      try {
-        r = await runAnalystSession({
-          sdk, docker: rt.docker, group, manifest: m.raw, worktree: wt.path,
-          instructions: { analyst: analystMd.text, ...(readerMd ? { reader: readerMd.text } : {}) },
-          limits: agentLimits(limits, m.billingMode), skillsPluginDir: skillsPluginDir("requirements-analyst"),
-          models: { analyst: models["requirements-analyst"], reader: models["web-reader"] }, ...(resumeId ? { resume: resumeId } : {}), sessionVolume: "run",
-          billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
-          tools: (research) => handle.interviewTools(f.id, wt.path, facts, research),
-          turns,
-          commit: async (policy) => (dead ? { status: "unchanged" } : commitWorktree({
-            git, gitDir: wt.gitDir, worktree: wt.path, branch, base, policy, scanner, tmpDir,
-            message: `${f.id}: analyst session (run ${runId})`, limits: worktreeLimits(limits),
-          })),
-          onSessionId: (id) => void (dead || runs.update(runId, { session_id: id })),
-          onBreach: async (breaches) => {
-            await alert(p, `breach:${runId}:${crypto.randomBytes(4).toString("hex")}`, {
-              title: "Analyst wrote outside its rules", feature: f.id,
-              context: `The engine rejected run ${runId}'s changes: ${breaches.slice(0, 20).map((b) => `${b.path || "(history)"} (${b.reason})`).join(", ")} (F-007 FR-9, AC-9). Nothing was committed.`,
-              impact: "The analyst's run is stopped and its worktree reset to the branch.",
-              confirm: "Look at the agent's instructions and restart the feature", hold: "Keep the feature stopped", recommendation: "B",
-            });
-          },
-          log,
+      for (;;) {
+        const first = resumeId
+          ? "The engine restarted. Continue where you left off; owner replies, if any, follow as further turns."
+          : [intro, frameRequest(f.id, f.state.request), ...(summary ? [summary] : [])].join("\n\n");
+        const turns = new TurnQueue(f, first);
+        job.turns = turns;
+        if (shuttingDown || dead) turns.close();
+        const base = await git.revParse(p.real!, `refs/heads/${branch}`);
+        if (!base) throw new SessionRefused(`the branch ${branch} is gone`);
+        const group = new SessionGroup({
+          docker: rt.docker, runId, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt.proxyScript,
+          agentLimits: roleContainerLimits(limits), proxyLimits: containerLimits(limits.proxy), maxPageBytes: maxPageBytes(limits),
+          credential, log, ...(rt.platform ? { platform: rt.platform } : {}), ...(rt.sleep ? { sleep: rt.sleep } : {}),
         });
-      } catch (e) {
-        if (e instanceof SecretFound) {
-          await populateWorktree(git, p.real!, base, wt.path, wt.gitDir);
-          await alert(p, `secret:${crypto.randomBytes(8).toString("hex")}`, {
-            title: "Analyst change refused: the secrets scan found a secret", feature: f.id,
-            context: `The engine didn't commit run ${runId}'s changes because gitleaks flagged them (F-007 FR-11). The worktree was reset to the branch.`,
-            impact: "The analyst's run is stopped.", confirm: "Rotate the secret if it was real", hold: "It was a false positive: no action", recommendation: "A",
+        try {
+          r = await runAnalystSession({
+            sdk, docker: rt.docker, group, manifest: m.raw, worktree: wt.path,
+            instructions: { analyst: analystMd.text, ...(readerMd ? { reader: readerMd.text } : {}) },
+            limits: agentLimits(limits, m.billingMode), skillsPluginDir: skillsPluginDir("requirements-analyst"),
+            models: { analyst: models["requirements-analyst"], reader: models["web-reader"] }, ...(resumeId ? { resume: resumeId } : {}), sessionVolume: "run",
+            billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
+            tools: (research) => handle.interviewTools(f.id, wt.path, facts, research),
+            turns,
+            commit: async (policy) => (dead ? { status: "unchanged" } : commitWorktree({
+              git, gitDir: wt.gitDir, worktree: wt.path, branch, base, policy, scanner, tmpDir,
+              message: `${f.id}: analyst session (run ${runId})`, limits: worktreeLimits(limits),
+            })),
+            onSessionId: (id) => void (dead || runs.update(runId, { session_id: id })),
+            onBreach: async (breaches) => {
+              await alert(p, `breach:${runId}:${crypto.randomBytes(4).toString("hex")}`, {
+                title: "Analyst wrote outside its rules", feature: f.id,
+                context: `The engine rejected run ${runId}'s changes: ${breaches.slice(0, 20).map((b) => `${b.path || "(history)"} (${b.reason})`).join(", ")} (F-007 FR-9, AC-9). Nothing was committed.`,
+                impact: "The analyst's run is stopped and its worktree reset to the branch.",
+                confirm: "Look at the agent's instructions and restart the feature", hold: "Keep the feature stopped", recommendation: "B",
+              });
+            },
+            log,
           });
-          await endRun(p, f, runId, "failed", "the secrets scan found a secret in its change", facts);
-          return;
+        } catch (e) {
+          if (e instanceof SecretFound) {
+            await populateWorktree(git, p.real!, base, wt.path, wt.gitDir);
+            await alert(p, `secret:${crypto.randomBytes(8).toString("hex")}`, {
+              title: "Analyst change refused: the secrets scan found a secret", feature: f.id,
+              context: `The engine didn't commit run ${runId}'s changes because gitleaks flagged them (F-007 FR-11). The worktree was reset to the branch.`,
+              impact: "The analyst's run is stopped.", confirm: "Rotate the secret if it was real", hold: "It was a false positive: no action", recommendation: "A",
+            });
+            await endRun(p, f, runId, "failed", "the secrets scan found a secret in its change", facts);
+            return;
+          }
+          throw e;
         }
-        throw e;
+        if (dead) return;
+        if (r.outcome.status === "error") log.warn(`${f.id}: run ${runId}'s session failed (${r.outcome.reason})${r.outcome.detail ? `; Claude Code said: ${JSON.stringify(r.outcome.detail)}` : ""}`);
+        if (r.commit.status === "committed") runs.update(runId, { last_commit: r.commit.commit });
+        if (r.commit.status === "rejected" || r.commit.status === "over_limit") await populateWorktree(git, p.real!, base, wt.path, wt.gitDir);
+        // ADR 0012: a session that can't be resumed (it fails before the model produced anything, as when the
+        // engine stopped mid tool call) gives way to a new session from the last commit, in the same resume.
+        if (resumeId && !shuttingDown && r.outcome.status === "error" && r.outcome.outputTokens === 0 && r.commit.status !== "rejected" && r.commit.status !== "over_limit") {
+          log.warn(`${f.id}: run ${runId} couldn't resume its session; it starts a new one from its last commit with a summary of the transcript.`);
+          runs.update(runId, { session_id: undefined });
+          resumeId = undefined;
+          summary = transcriptSummary(f.state);
+          continue;
+        }
+        break;
       }
-      if (dead) return;
       const { outcome, commit } = r;
-      if (commit.status === "committed") runs.update(runId, { last_commit: commit.commit });
-      if (commit.status === "rejected" || commit.status === "over_limit") await populateWorktree(git, p.real!, base, wt.path, wt.gitDir);
       let failure: string | null = null;
       if (commit.status === "rejected") failure = "it wrote outside the role's rules (Security item filed)";
       else if (commit.status === "over_limit") failure = `its change went over the worktree ${commit.cap} cap`;
