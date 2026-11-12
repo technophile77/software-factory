@@ -299,8 +299,8 @@ describe("AC-3 / FR-2, SR-1: what a Gate 1 session can do", () => {
     await realWait(1500);
     expect(r.sdk.of("reviewer")).toEqual([]);
     expect(await stageOf(r.w, feature)).toBe(GATE1);
-    const said = committedTranscript(r.w, feature) + r.w.transcriptText(r.w.project(), feature);
-    expect(said).toMatch(/gate 1|security.reviewer/i);
+    // The note is committed after the engine logs the refusal; a slow host (Windows CI) needs the wait.
+    await waitFor(() => /gate 1|security.reviewer/i.test(committedTranscript(r.w, feature) + r.w.transcriptText(r.w.project(), feature)), 30_000, "the transcript to say why");
   });
 });
 
@@ -557,8 +557,7 @@ describe("AC-10 / FR-11: no reviewer entry at the pinned version", () => {
     const log = engineLog(r.w);
     expect(log).toMatch(/security.reviewer/i);
     expect(log).toMatch(file);
-    const t = committedTranscript(r.w, feature) + r.w.transcriptText(r.w.project(), feature);
-    expect(t).toMatch(file);
+    await waitFor(() => file.test(committedTranscript(r.w, feature) + r.w.transcriptText(r.w.project(), feature)), 30_000, "the transcript to say why");
   });
 
   it("[G1-21] FR-3: with no reviewer AGENT.md at the pinned version, no Gate 1 session starts, and the log says why", T, async () => {

@@ -1161,7 +1161,6 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   async function endGate1(p: Project, f: FeatureInterview, runId: string, n: number, status: "failed", why: string, facts: RunFacts, commit: string): Promise<void> {
-    runs.finish(runId, status, why);
     await o.agents?.docker.run(["volume", "rm", "--force", runVolume(runId)], { okCodes: [1] }).catch(() => log.warn(`volume ${runVolume(runId)} wasn't removed`));
     try {
       await p.state_repo!.commit([agentReport({
@@ -1173,6 +1172,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       log.warn(`${p.name}: the report for Gate 1 run ${runId} wasn't committed (${(e as Error).message}).`);
     }
     await noteGate1(f, "stopped", `The Gate 1 run stopped: ${why}.`);
+    // Last, so a run shown as ended already has its report and its transcript note (FR-10).
+    runs.finish(runId, status, why);
   }
 
   let done!: () => void;
