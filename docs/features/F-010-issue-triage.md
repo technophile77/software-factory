@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (open questions in section 13)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 3
+- **Spec version:** 4
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -21,19 +21,22 @@ The owner's existing rules still hold:
   decision, and the reporter's opinion of the right fix is a hint, not a
   requirement.
 - Issue text is external content written by anyone (S9). It can't steer what
-  the factory does, and the factory doesn't write to anyone's issue without the
-  owner's approval of the exact action (S9.2).
+  the factory does. The factory replies to and labels issues only from fixed
+  templates that the owner approved once (ADR in H-0114, the S9.2 exemption).
+  Nothing it posts is text a model wrote from the issue.
 - The owner merges. Nobody else does (development workflow).
 
 ## 2. Expected behavior
 1. For each repo of an enabled project where the manifest turns issue triage
    on, the engine checks for new issues on a schedule (OQ-5) with the factory
-   token, read only.
+   token.
 2. It takes a snapshot of each new issue: title, body, author, the author's
    relation to the repo (owner, collaborator, other), labels and time. It runs
    the secrets scan on the snapshot and stores it on `factory/state` at
    `.factory/issues/<repo>/<number>/snapshot.json`, with a hash. Later edits
-   and comments are not read in this increment.
+   and other people's comments are not read in this increment. The one
+   exception is the reporter's answer to a "need more information" reply
+   (step 10).
 3. The issue triager, a new role in its own container, reads the snapshot and
    the repo at `main` (read only, no network). It returns one triage record
    through a tool the engine provides. The record is structured: a kind, the
@@ -41,21 +44,23 @@ The owner's existing rules still hold:
    write files, file inbox items, or start anything.
 4. The engine (code, not a model) validates the record and routes it:
 
-   | Kind | Route |
-   |---|---|
-   | `bug` with evidence: it contradicts an approved spec requirement, is a regression from an earlier tagged release, or is a crash or unhandled error on input the docs allow (OQ-1) | Confirmation step (5) |
-   | `bug` against behavior no approved requirement covers | Decision inbox, Product: "Treat as a feature request?" |
-   | `feature_request` | Decision inbox, Product: "Start an interview for this?" (7) |
-   | `unclear` (expected behavior can't be told from specs or docs) | Decision inbox, Product, with the triager's reading as the question |
-   | `security_report` | Decision inbox, Security, high priority. Never fixed in the open lane (OQ-4). |
-   | `question`, `duplicate`, `not_actionable` | Recorded only (OQ-3) |
+   | Kind | Route | Reply and label on the issue (step 11) |
+   |---|---|---|
+   | `bug` with evidence: it contradicts an approved spec requirement, is a regression from an earlier tagged release, or is a crash or unhandled error on input the docs allow (OQ-1) | Confirmation step (5) | None until confirmed; then "Bug confirmed" |
+   | `needs_info`: the report is missing something needed to triage or reproduce it | Wait for the reporter (10) | "Need more information" |
+   | `feature_request`, a `bug` against behavior no approved requirement covers, or `unclear` (expected behavior can't be told from specs or docs) | Decision inbox, Product: "Start an interview for this?" (7) | "Feature request" |
+   | `security_report` | Decision inbox, Security, high priority. Never fixed in the open lane (OQ-4). | None. A public reply or label would point at the vulnerability. |
+   | `duplicate` of an open issue | Recorded | Label only |
+   | `question`, `not_actionable` | Recorded | Label only |
 
 5. **Confirmation.** The test engineer gets the triage record, never the
    issue text. It writes a test that reproduces the bug as stated in the
    record. The bug is confirmed when that test fails on `main` for the stated
-   reason and the test engineer's report says so. A test that passes, or fails
-   for another reason, means not confirmed: the engine files a Product item
-   ("Couldn't reproduce issue #N") with what was tried.
+   reason and the test engineer's report says so. The engine then posts
+   "Bug confirmed". A test that passes, or fails for another reason, means not
+   confirmed: the engine posts "Need more information" with the items the test
+   engineer says it lacked. After the second failed attempt it files a Product
+   item ("Couldn't reproduce issue #N") with what was tried instead.
 6. **Fix lane.** A confirmed bug gets a feature id and a fix spec generated
    from a template (OQ-2). It names the issue, the approved requirement it
    restores (or the regression or crash evidence), and the reproduction test
@@ -68,21 +73,37 @@ The owner's existing rules still hold:
    queues a feature that waits for an interview, seeded with the issue snapshot
    as reference material written by someone else (F-009, reference mode). The
    owner holds the interview from `/software-factory:spec-interview` as usual.
-   Reject leaves the issue alone.
+   Reject leaves the issue alone; any reply about it is the owner's own.
 8. **Fix scope guard.** If the fix needs a change to an interface contract, a
    dependency, a change-controlled file, or a security-relevant file
    (`security-standards.md` S8), the lane stops and files an item in the right
    inbox (Interfaces, Architecture, Security, or Hygiene). A bug fix that needs
    one of those is the owner's call.
-9. Every route writes the triage record, the route taken and any inbox item
-   or feature id next to the snapshot, so the owner can see why each issue went
-   where it did.
+9. Every route writes the triage record, the route taken, every reply and
+   label posted, and any inbox item or feature id next to the snapshot, so the
+   owner can see why each issue went where it did.
+10. **Reporter's answer.** On a `needs_info` issue, the first comment the
+    issue's author adds is snapshotted and secret-scanned like the issue, and
+    the issue is triaged again with it. At most two "need more information"
+    rounds per issue; after that, a Product item. With no answer in 30 days
+    the issue is recorded as stale and nothing more is done.
+11. **Replies and labels.** The engine posts them, not an agent, from fixed
+    templates (section 10, H-0114). A template has fixed text and typed slots
+    the engine fills from validated data only: the issue number, a link to the
+    fix PR, and for "need more information" items from a fixed list (OQ-7).
+    No slot holds text taken from the issue. The labels are
+    `factory: bug confirmed`, `factory: fix in progress`,
+    `factory: needs info`, `factory: feature request`, `factory: duplicate`,
+    `factory: question` and `factory: not actionable`. The engine creates any
+    that are missing, sets one triage label per issue, and swaps it as the
+    issue moves on. When the fix PR opens it adds `factory: fix in progress`.
+    The owner's merge closes the issue through the PR link.
 
 ## 3. Functional requirements
 | Id | Requirement |
 |---|---|
 | FR-1 | Triage is off by default. It is turned on per repo in the project manifest (H-0110), which also holds the check interval and the caps in FR-11. Nothing owner-specific goes in the master repo. |
-| FR-2 | The engine lists new issues with the factory token, read only, using conditional requests so an unchanged list costs no rate limit. Pull requests, issues opened by the factory's own account, and issues opened before triage was turned on are skipped (OQ-6). |
+| FR-2 | The engine lists new issues with the factory token, using conditional requests so an unchanged list costs no rate limit. Pull requests, issues opened by the factory's own account, and issues opened before triage was turned on are skipped (OQ-6). |
 | FR-3 | The engine stores a snapshot of each new issue as in section 2 step 2, after the secrets scan. A snapshot that fails the scan is stored with the finding redacted, and a Security item is filed. |
 | FR-4 | A new `issue-triager` role (H-0112) runs in its own container with read access to the snapshot and the repo at `main`, no network, no write, and one tool, `submit_triage`. |
 | FR-5 | `submit_triage` accepts only the triage record contract (H-0111). The engine rejects a record that doesn't validate and retries once, then files a Testing item. |
@@ -92,7 +113,10 @@ The owner's existing rules still hold:
 | FR-9 | The fix scope guard in section 2 step 8 stops the lane and files an item in the matching inbox. |
 | FR-10 | Owner approval of "Start an interview" queues a feature seeded from the snapshot in F-009 reference mode. |
 | FR-11 | Caps per repo: issues triaged per day (default 20), fix lanes running at once (default 2), and the ADR 0012 token budget per fix. Issues over a cap wait in order; none are dropped. |
-| FR-12 | The factory takes no action on the issue itself (comment, label, close, assign) except as OQ-3 decides. |
+| FR-12 | The engine, not an agent, posts the replies and sets the labels in section 2 steps 4 and 11, from the approved templates only. It never closes, assigns, edits or locks an issue, never comments on a `security_report`, and posts at most one reply per template per issue, plus the second "need more information" round. |
+| FR-14 | Template slots take only validated, typed values (issue number, PR link, items from the fixed list). The engine rejects a reply whose rendered text differs from its template outside the slots. |
+| FR-15 | On a `needs_info` issue, the issue author's first new comment is snapshotted and the issue triaged again, as in section 2 step 10. Comments by anyone else, and the factory's own, are not read. |
+| FR-16 | Templates and label names ship in the master repo; a project may override them in its config repo (agents.override pattern), and a fresh factory pull never overwrites an override. |
 | FR-13 | Each issue's folder holds the snapshot, its hash, the triage record, the route, and links to inbox items, the feature and the PR. |
 
 ## 4. Acceptance criteria
@@ -111,7 +135,12 @@ The owner's existing rules still hold:
 | AC-11 | Given a fix whose diff touches an interface contract, a dependency manifest or a change-controlled file, then the lane stops before stage 6 and an item in the matching inbox exists. | FR-9 |
 | AC-12 | Given owner approval of "Start an interview", then a feature waiting for an interview exists with the snapshot attached as reference material. | FR-10 |
 | AC-13 | Given 25 new issues in one day with a cap of 20, then 20 are triaged and 5 wait for the next day, in order. | FR-11 |
-| AC-14 | Given any run of this feature, then the factory made no write call to the issues API (unless OQ-3 allows one and it was approved). | FR-12 |
+| AC-14 | Given any run, then every write to the issues API is a template reply or a label from the approved set, made by the engine, and logged; there are no close, assign, edit or lock calls. | FR-12 |
+| AC-16 | For each kind, given a valid record, then exactly the reply and label in the routing table are posted, and a `security_report` gets neither. | FR-12 |
+| AC-17 | Given a triage record whose fields hold text, links or @-mentions, then no posted reply contains any of it; given a slot value outside its type, then nothing is posted and a Testing item exists. | FR-14, SR-9 |
+| AC-18 | Given a `needs_info` issue, when its author comments, then it is triaged again with that comment; when someone else comments, then nothing happens; after two rounds without enough information, a Product item exists. | FR-15 |
+| AC-19 | Given a confirmed bug, then "Bug confirmed" and `factory: bug confirmed` are on the issue before the fix lane starts, and `factory: fix in progress` once the PR opens. | FR-12 |
+| AC-20 | Given a project override of a template, when the factory is updated, then the override is still used. | FR-16 |
 | AC-15 | Given an issue whose body asks the factory to do something else (prompt injection test set), then the route matches the issue's real content and the record flags the instructions. | FR-4, FR-6, SR-2 |
 
 ## 5. Constraints
@@ -120,7 +149,8 @@ The owner's existing rules still hold:
   inbox routing could ship after increment 3.
 - The engine runs on the owner's machine with no inbound port, so issues are
   found by checking, not by webhook (OQ-5).
-- The factory token needs `issues: read` on each triaged repo (H-0114).
+- The factory token needs `issues: write` on each triaged repo, which also
+  covers reading issues and managing labels (H-0114).
 
 ## 6. Edge cases
 - **Prompt injection in an issue.** Only the triager reads the text, and it can
@@ -136,7 +166,14 @@ The owner's existing rules still hold:
   other number. If both reach confirmation, the second lane stops when the
   first PR exists and links to it.
 - **Issue edited after triage.** The snapshot and hash stay what was triaged.
-  Re-triage is a later increment.
+  Re-triage on edits is a later increment.
+- **Reply loops.** The factory ignores its own comments, and a reporter's
+  answer only counts on a `needs_info` issue, so two bots can't keep each
+  other going.
+- **Someone removes a factory label or deletes a reply.** The factory doesn't
+  put it back; the record keeps what it posted.
+- **Owner changes a label by hand.** The factory doesn't change that issue's
+  labels again.
 - **A fix fails tests after retries.** Testing inbox, as for features.
 - **The reproduction test needs something the container lacks** (hardware,
   outside service, a specific OS). Not confirmed; the Product item says why.
@@ -164,7 +201,7 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | External services (S9.1): GitHub issues API, read only, factory token. No other service. Any write to an issue is an S9.2 action and needs the owner's approval of the exact text (OQ-3). | Analyst | Draft |
+| SR-1 | External services (S9.1): GitHub issues API with the factory token: read issues, post template replies, set labels from the approved set. No other service and no other write. These writes are S9.2 actions, exempt only through the ADR in H-0114. | Analyst | Draft |
 | SR-2 | The triager is the only session that reads issue text. It has no network, no write and one tool (S9.3, S8). Instructions found in an issue are flagged in the record, never followed. | Analyst | Draft |
 | SR-3 | The triage record is schema-validated with length caps before any other session sees it (S1.1). | Analyst | Draft |
 | SR-4 | Issue snapshots are secret-scanned before they are stored (S3). | Analyst | Draft |
@@ -172,6 +209,8 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | SR-6 | The fix scope guard keeps a bug fix away from contracts, dependencies, change-controlled and security-relevant files. | Analyst | Draft |
 | SR-7 | Daily and concurrency caps bound what an outside reporter can make the factory spend. | Analyst | Draft |
 | SR-8 | Every GitHub call is logged with agent, action, target and time, without secrets (S9.6). | Analyst | Draft |
+| SR-9 | Replies are posted by engine code, never by a session that read issue text (S9.3). No reply contains text from the issue or text a model wrote, so an issue can't make the factory's account say something. | Analyst | Draft |
+| SR-10 | A `security_report` gets no public reply or label. | Analyst | Draft |
 
 ## 10. Interface requirements
 - **H-0110** Project manifest: per-repo `issues` block (`enabled`, check
@@ -183,8 +222,23 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 - **H-0113** `development-workflow.md`, `workflows/feature-development/` and
   `definition-of-done.md`: the bug-fix lane and how DoD item 1 applies to it
   (OQ-2). Product.
-- **H-0114** Factory token gains `issues: read` on triaged repos (ADR 0006
-  amendment). Security.
+- **H-0114** A new ADR: the factory may reply to and label issues on triaged
+  repos from the approved templates, without asking each time (the S9.2
+  exemption, owner, 2026-11-12, thread). It also gives the factory token
+  `issues: write` on those repos (ADR 0006 amendment) and adds the templates
+  and labels. Security.
+
+### Reply templates (draft, part of H-0114)
+- **Bug confirmed:** "Thanks for the report. We've reproduced this bug and a
+  fix is underway. The pull request will link here when it's ready."
+- **Need more information:** "Thanks for the report. To look into this we
+  need: {items}. Please add them in a comment on this issue." `{items}` is a
+  list from: steps to reproduce; expected and actual behavior; version or
+  commit; operating system and environment; error message or log output; a
+  minimal example that shows the problem (OQ-7).
+- **Feature request:** "Thanks for the suggestion. This reads as a feature
+  request rather than a bug, so it has gone to the maintainer to decide
+  whether to take it on." 
 
 ## 11. Readiness gate
 - [ ] Clear objective
@@ -200,13 +254,15 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | 1 | 2026-11-12 | First draft from the owner's request | — |
 | 2 | 2026-11-12 | OQ-1: a confirmed bug is a spec contradiction, a regression from a tagged release, or a crash on documented input, each shown by a failing test | Owner, 2026-11-12 (decision card) |
 | 3 | 2026-11-12 | OQ-2: a fix spec that cites its OQ-1 evidence counts as approved; no owner step before the PR | Owner, 2026-11-12 (decision card) |
+| 4 | 2026-11-12 | OQ-3: the factory replies to and labels issues from fixed templates (bug confirmed, need more information, feature request); reporter answers on needs-info issues are triaged again; OQ-7 added | Owner, 2026-11-12 (thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
 |---|---|---|---|
 | OQ-1 | What counts as a confirmed bug that the factory may fix without the owner? (a) Only behavior that contradicts an approved spec requirement, shown by a failing test. (b) (a), plus a regression from an earlier tagged release, or a crash or unhandled error on input the docs allow, each shown by a failing test. (c) Whatever the triager judges a bug, if a test reproduces it. Recommended: (b). (a) leaves most issues on onboarded repos with the owner; (c) lets an outside reporter define requirements. **Decided: (b).** | Product | Decided (owner, 2026-11-12, decision card) |
 | OQ-2 | How does "requirements approved" (DoD item 1) apply to a fix? (a) The fix spec cites an approved requirement or the OQ-1 evidence, and that stands in for approval; no owner step before the PR. (b) The owner approves each fix spec in the inbox first. Recommended: (a); (b) contradicts "without my input". The owner still merges either way. **Decided: (a).** | Product | Decided (owner, 2026-11-12, decision card) |
-| OQ-3 | May the factory write to an issue? (a) Never; the PR links the issue and the owner's merge closes it. Anything else the owner does by hand. (b) (a), plus the factory may propose a comment (can't reproduce, duplicate, question answered) as a Security item with the exact text; it posts only on approval (S9.2). (c) An ADR lets it add a fixed set of labels and one templated acknowledgement without asking. Recommended: (b). | Security | Open |
+| OQ-3 | May the factory write to an issue? (a) Never. (b) Only comments the owner approves one by one. (c) An ADR lets it reply and label without asking. **Decided: (c), extended by the owner:** replies for bug confirmed and fix underway, need more information (saying what is needed), and feature request sent to the owner, plus labels. | Security | Decided (owner, 2026-11-12, thread) |
 | OQ-4 | Who may open an issue that reaches the fix lane? (a) Anyone. Confirmation is by the factory's own test, not the reporter's word, and caps bound cost. (b) Only the owner and repo collaborators; others' bugs go to the inbox first. Recommended: (a) for private repos and (b) for public ones, set per repo in the manifest. | Security | Open |
 | OQ-5 | How does the engine learn of new issues? (a) It checks GitHub every few minutes (default 5) while running, and catches up on start. (b) A GitHub Actions workflow in each repo relays issue events to somewhere the engine reads. Recommended: (a); no inbound port, no new workflow in every repo, and conditional requests cost no rate limit. | Architecture | Open |
 | OQ-6 | What about issues already open when triage is turned on? (a) Ignore them; only new issues. (b) Triage the backlog too, inside the daily cap. (c) Ask once when triage is turned on. Recommended: (c). | Product | Open |
+| OQ-7 | How specific can "need more information" be? (a) Only items from the fixed list in section 10. (b) The fixed list plus one short question written by the factory, plain text, at most 200 characters, with no links, @-mentions or code. Recommended: (a). The text in (b) would come from a session that read the issue, so a crafted issue could make the factory's account post words chosen by its author. | Security | Open |
