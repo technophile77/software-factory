@@ -5,6 +5,7 @@ import { SessionRefused } from "./analyst";
 import type { SessionGroup } from "./sandbox";
 import type { AgentSdk, UserTurn } from "./sdk";
 import { SessionCaps, SessionOutcome, WORKSPACE, containerSpawn, runSession, sessionOptions } from "./session";
+import type { RunUsed } from "../state/record";
 import type { WorktreeCommitResult } from "./worktree-commit";
 import type { Breach } from "./write-check";
 
@@ -50,6 +51,9 @@ export interface ReviewerRunInput {
   first: string;
   /** Resume from an SDK session on the run's volume (FR-10). */
   resume?: string;
+  /** What the run's earlier sessions used: the caps cover the whole run, restarts included (SR-11). */
+  used?: RunUsed;
+  onUsed(used: RunUsed): void;
   billingCheck(): string | null;
   /**
    * FR-5: called after each session, with the container gone. Returns null
@@ -83,6 +87,7 @@ export async function runReviewerSessions(i: ReviewerRunInput): Promise<Reviewer
   let turn = i.first;
   let resume = i.resume;
   let total: SessionOutcome | null = null;
+  let used: RunUsed = i.used ?? { turns: 0, outputTokens: 0, costUsd: 0, durationMs: 0 };
   const why = i.billingCheck();
   if (why) throw new SessionRefused(why);
   await i.group.open();
@@ -92,23 +97,29 @@ export async function runReviewerSessions(i: ReviewerRunInput): Promise<Reviewer
         const again = i.billingCheck();
         if (again) throw new SessionRefused(again);
       }
+      const caps = remaining(i.caps, used);
+      if (typeof caps === "string") {
+        return { outcome: total ?? { status: "cap", reason: caps, turns: 0, outputTokens: 0, inputTokens: 0, costUsd: 0, durationMs: 0 }, invalid: `it reached the run's ${caps} cap`, breach: false, sessions: n - 1 };
+      }
       let outcome: SessionOutcome;
       const agent = await i.group.startAgent(i.policy, i.worktree, { sessionVolume: "run", reportDir: i.reportDir });
       try {
         const abort = new AbortController();
         const opts = sessionOptions({
           policy: i.policy, worktree: i.worktree, instructions: i.instructions,
-          factoryServer: i.sdk.createFactoryServer([]), factoryTools: [], caps: i.caps,
+          factoryServer: i.sdk.createFactoryServer([]), factoryTools: [], caps,
           ...(i.skillsPluginDir ? { skillsPluginDir: i.skillsPluginDir } : {}),
           model: i.model, ...(resume ? { resume } : {}),
           spawn: containerSpawn(i.docker, agent.name, WORKSPACE), log: i.log,
         }, abort);
-        outcome = await runSession(i.sdk, opts, once(turn), i.caps, { onSessionId: i.onSessionId });
+        outcome = await runSession(i.sdk, opts, once(turn), caps, { onSessionId: i.onSessionId });
       } finally {
         // The container must be gone before the worktree and the report are read, so nothing changes under the checks.
         await i.group.stopAgent(agent);
       }
       total = total ? add(total, outcome) : outcome;
+      used = { turns: used.turns + outcome.turns, outputTokens: used.outputTokens + outcome.outputTokens, costUsd: used.costUsd + outcome.costUsd, durationMs: used.durationMs + outcome.durationMs };
+      i.onUsed(used);
       const v = await i.verify(i.policy);
       if (v.status !== "unchanged") {
         if (v.status === "rejected") await i.onBreach(v.breaches);
@@ -128,6 +139,23 @@ export async function runReviewerSessions(i: ReviewerRunInput): Promise<Reviewer
     await i.group.close();
   }
   throw new Error("unreachable");
+}
+
+/** The caps left for the next session, or the name of the cap the run has used up. */
+export function remaining(c: SessionCaps, u: RunUsed): SessionCaps | string {
+  const turns = c.maxTurns - u.turns;
+  const wall = c.wallTimeMs - u.durationMs;
+  const tokens = c.maxOutputTokens !== undefined ? c.maxOutputTokens - u.outputTokens : undefined;
+  const dollars = c.maxBudgetUsd !== undefined ? c.maxBudgetUsd - u.costUsd : undefined;
+  if (turns < 1) return "turns";
+  if (wall <= 0) return "wall time";
+  if (tokens !== undefined && tokens < 1) return "output tokens";
+  if (dollars !== undefined && dollars <= 0) return "dollars";
+  return {
+    maxTurns: Math.floor(turns), wallTimeMs: wall,
+    ...(tokens !== undefined ? { maxOutputTokens: Math.floor(tokens) } : {}),
+    ...(dollars !== undefined ? { maxBudgetUsd: dollars } : {}),
+  };
 }
 
 function add(a: SessionOutcome, b: SessionOutcome): SessionOutcome {

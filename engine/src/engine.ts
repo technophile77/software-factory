@@ -1036,6 +1036,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         reportDir: { source: reportDir, target: `${WORKSPACE}/${path.posix.dirname(reportRel)}` },
         instructions: instructions!.text, caps: g1!.caps, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), model: model!, first,
         ...(resumeId ? { resume: resumeId } : {}),
+        ...(known?.used ? { used: known.used } : {}),
+        onUsed: (u) => void (dead || runs.update(runId, { used: u })),
         billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
         check: async () => {
           const read = readReportFile(reportDir, reportName, g1!.reportBytes);

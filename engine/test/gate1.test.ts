@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { reviewerPolicy } from "../src/agent/reviewer";
+import { remaining, reviewerPolicy } from "../src/agent/reviewer";
 import { SessionRefused } from "../src/agent/analyst";
 import { Git } from "../src/git";
 import { analystGate1Turn, citesFinding, correctionTurn, gate1Resolution, records, reviewerTurn } from "../src/gate1/flow";
@@ -212,6 +212,15 @@ describe("reviewer policy (SR-1, SR-12, AC-3)", () => {
     const p = reviewerPolicy(policyDoc({ "security-reviewer": reviewer }), undefined, ".factory/runs/F-002/security_gate_1/security-reviewer-1.json");
     expect(p.write.allow).toEqual([".factory/runs/F-002/security_gate_1/security-reviewer-1.json"]);
   });
+  it("SR-11: the caps cover the whole run; what earlier sessions used is taken off, and a spent cap is named", () => {
+    const caps = { maxTurns: 100, maxOutputTokens: 200_000, maxBudgetUsd: 5, wallTimeMs: 3_600_000 };
+    expect(remaining(caps, { turns: 40, outputTokens: 50_000, costUsd: 1.5, durationMs: 600_000 })).toEqual({ maxTurns: 60, maxOutputTokens: 150_000, maxBudgetUsd: 3.5, wallTimeMs: 3_000_000 });
+    expect(remaining(caps, { turns: 100, outputTokens: 0, costUsd: 0, durationMs: 0 })).toBe("turns");
+    expect(remaining(caps, { turns: 1, outputTokens: 0, costUsd: 5, durationMs: 0 })).toBe("dollars");
+    expect(remaining(caps, { turns: 1, outputTokens: 0, costUsd: 0, durationMs: 3_600_000 })).toBe("wall time");
+    expect(remaining({ maxTurns: 10, maxBudgetUsd: 1, wallTimeMs: 10 }, { turns: 0, outputTokens: 9e9, costUsd: 0, durationMs: 0 })).toEqual({ maxTurns: 10, maxBudgetUsd: 1, wallTimeMs: 10 });
+  });
+
   it("refuses a policy with more than Gate 1 allows", () => {
     expect(() => reviewerPolicy(policyDoc({ "security-reviewer": { ...reviewer, tools: { allow: ["Read", "Bash"] }, commands: { allow: ["ls"] } } }), undefined, "r.json")).toThrow(SessionRefused);
     expect(() => reviewerPolicy(policyDoc({ "security-reviewer": { ...reviewer, network: { allow: ["example.com"] } } }), undefined, "r.json")).toThrow(/network/);

@@ -299,6 +299,8 @@ describe("Security Gate 1 on the engine, with fake Docker and SDK (F-008)", () =
     await until("the failed run", () => runsOf(w, feature, "security-reviewer")[0]?.status === "failed");
     expect(s.count.reviewer).toBe(2);
     expect(s.seen.filter((x) => x.systemPrompt === REVIEWER_MD)[1]!.resume).toBe("r-4");
+    // SR-11 (Gate 2 L3): the caps cover the run, so the correction gets what the first session left.
+    expect(s.seen.filter((x) => x.systemPrompt === REVIEWER_MD).map((x) => x.maxTurns)).toEqual([100, 99]);
     expect(runsOf(w, feature, "security-reviewer")[0]!.reason).toBe("its report was still invalid after one correction");
     const branch = e.feature(feature)!.state.branch;
     expect(() => git(w.config, "show", `${branch}:docs/features/${feature}-security-gate1.md`)).toThrow();

@@ -21,6 +21,13 @@ export interface ChainHead {
 
 export type RunStatus = "running" | "interrupted" | "complete" | "failed";
 
+export interface RunUsed {
+  turns: number;
+  outputTokens: number;
+  costUsd: number;
+  durationMs: number;
+}
+
 export interface RunRecord {
   id: string;
   project: string;
@@ -39,6 +46,8 @@ export interface RunRecord {
   git_dir?: string;
   /** The analyst's checkout, so a resumed run starts where it was. */
   worktree?: string;
+  /** What the run's ended sessions used, for caps that cover the whole run (F-008 SR-11). */
+  used?: RunUsed;
   reason?: string;
 }
 
