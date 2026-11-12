@@ -21,6 +21,8 @@ export interface Grant {
   role: string;
   /** The role's `network.allow`: host names, or ["*"]. */
   allow: string[];
+  /** Only the web reader, and only with WebSearch in its tools (owner decision 2026-11-12). */
+  webSearch?: boolean;
 }
 
 export interface ModelCredential {
@@ -132,7 +134,7 @@ export const ALLOWED_BETAS: ReadonlySet<string> = new Set([
  * that isn't a JSON object, or a tools list that isn't a list of objects, is
  * refused too.
  */
-export function refusedBody(body: Buffer): string | null {
+export function refusedBody(body: Buffer, opts: { webSearch?: boolean } = {}): string | null {
   let j: unknown;
   try {
     j = JSON.parse(body.toString("utf8"));
@@ -147,10 +149,16 @@ export function refusedBody(body: Buffer): string | null {
   for (const t of o.tools as unknown[]) {
     if (typeof t !== "object" || t === null || Array.isArray(t)) return "the request's tools aren't a list";
     const type = (t as Record<string, unknown>).type;
-    if (type !== undefined && type !== "custom") return `the request has a server-side tool (${safeToken(type)})`;
+    if (type === undefined || type === "custom") continue;
+    // The one exception (owner decision 2026-11-12): Anthropic's web search,
+    // for the web reader's credential only, so research can find sources.
+    if (opts.webSearch && typeof type === "string" && WEB_SEARCH_TYPE.test(type)) continue;
+    return `the request has a server-side tool (${safeToken(type)})`;
   }
   return null;
 }
+
+const WEB_SEARCH_TYPE = /^web_search_\d{8}$/;
 
 /** A value from the request, cut down so a log line can't carry content. */
 function safeToken(v: unknown): string {
@@ -288,7 +296,7 @@ export class EgressProxy {
       req.on("error", () => resolve(null));
     });
     if (body === null) return refuse(413, "request too large", g);
-    const bad = refusedBody(body);
+    const bad = refusedBody(body, { webSearch: g.webSearch === true });
     if (bad) return refuse(403, bad, g);
     let address: string;
     try {

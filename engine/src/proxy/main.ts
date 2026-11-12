@@ -19,7 +19,7 @@ export interface ProxyStart {
 
 export type ToProxy =
   | ProxyStart
-  | { t: "grant"; cred: string; session: string; role: string; allow: string[] }
+  | { t: "grant"; cred: string; session: string; role: string; allow: string[]; webSearch?: boolean }
   | { t: "revoke"; cred: string }
   | { t: "fetch"; id: number; cred: string; url: string };
 
@@ -70,7 +70,7 @@ function main(): void {
     }
     if (!proxy) return send({ t: "error", reason: "not started" });
     try {
-      if (m.t === "grant") proxy.grant(m.cred, { session: m.session, role: m.role, allow: m.allow });
+      if (m.t === "grant") proxy.grant(m.cred, { session: m.session, role: m.role, allow: m.allow, webSearch: m.webSearch === true });
       else if (m.t === "revoke") proxy.revoke(m.cred);
       else if (m.t === "fetch") {
         const id = m.id;

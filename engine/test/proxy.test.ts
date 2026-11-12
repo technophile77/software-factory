@@ -258,6 +258,24 @@ describe("credential gateway (SR-9, AC-16)", () => {
     expect(refusedBody(Buffer.from("{}"))).toBeNull();
   });
 
+  it("web search passes only for a grant that allows it, and no other server tool does (owner decision 2026-11-12)", async () => {
+    const h = await harness();
+    const SEARCHER = "s".repeat(43);
+    h.proxy.grant(SEARCHER, { session: "s3", role: "web-reader", allow: ["*"], webSearch: true });
+    const client = { name: "fetch_page", description: "d", input_schema: { type: "object" } };
+    const search = JSON.stringify({ model: "m", messages: [{ role: "user", content: "q" }], tools: [client, { type: "web_search_20250305", name: "web_search", max_uses: 5 }] });
+    expect((await post(h.port, `/gw/${SEARCHER}/v1/messages`, { "x-api-key": DUMMY }, search)).status).toBe(200);
+    expect((await post(h.port, `/gw/${CRED}/v1/messages`, { "x-api-key": DUMMY }, search)).status).toBe(403);
+    expect((await post(h.port, `/gw/${OTHER}/v1/messages`, { "x-api-key": DUMMY }, search)).status).toBe(403);
+    for (const tool of [{ type: "web_fetch_20250910", name: "web_fetch" }, { type: "code_execution_20250825", name: "code_execution" }, { type: "web_search_latest", name: "web_search" }]) {
+      const body = JSON.stringify({ model: "m", messages: [], tools: [{ type: "web_search_20250305", name: "web_search" }, tool] });
+      expect((await post(h.port, `/gw/${SEARCHER}/v1/messages`, { "x-api-key": DUMMY }, body)).status, tool.type).toBe(403);
+    }
+    expect(refusedBody(Buffer.from(search), { webSearch: true })).toBeNull();
+    expect(refusedBody(Buffer.from(search))).toMatch(/server-side tool/);
+    expect(h.upstream.paths).toHaveLength(1);
+  });
+
   it("M1: passes only allow-listed anthropic-beta values, drops the rest and logs which", async () => {
     const h = await harness();
     await post(h.port, `/gw/${CRED}/v1/messages`, { "x-api-key": DUMMY, "anthropic-beta": "claude-code-20250219, mcp-client-2025-04-04,effort-2025-11-24,code-execution-2025-08-25,claude-code-20250219" });

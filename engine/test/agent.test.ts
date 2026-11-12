@@ -304,7 +304,7 @@ describe("session group (SR-6, SR-7, SR-9, SR-14)", () => {
     const b = await g.startAgent(reader, null);
     expect(b.cred).not.toBe(a.cred);
     const proxyIn = d.spawned[0]!.child.sent();
-    expect(proxyIn.filter((m) => m.t === "grant").map((m) => [m.role, m.allow])).toEqual([["requirements-analyst", []], ["web-reader", ["*"]]]);
+    expect(proxyIn.filter((m) => m.t === "grant").map((m) => [m.role, m.allow, m.webSearch])).toEqual([["requirements-analyst", [], false], ["web-reader", ["*"], true]]);
   });
 
   it("H-0087: each role's container gets that role's limits; a role without limits gets no container", async () => {

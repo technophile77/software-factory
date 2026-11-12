@@ -274,7 +274,8 @@ export class SessionGroup {
       command: ["sleep", "infinity"],
       labels: { ...this.labels(), "factory.role": policy.role },
     };
-    this.proxy.send({ t: "grant", cred, session: name, role: policy.role, allow: policy.network });
+    const webSearch = policy.role === "web-reader" && policy.tools.includes("WebSearch");
+    this.proxy.send({ t: "grant", cred, session: name, role: policy.role, allow: policy.network, webSearch });
     try {
       await this.c.docker.run(runArgs(spec), { env: values });
       await this.verify(spec);

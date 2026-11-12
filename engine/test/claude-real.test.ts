@@ -97,10 +97,45 @@ function toolResults(bodies: string[]): Map<string, string> {
   return out;
 }
 
+/** Runs one session of the real binary under `policy` in `ws`, against a fake API that makes the scripted tool calls. */
+async function runReal(policy: RolePolicy, ws: string, steps: Step[]) {
+  const home = tmpdir();
+  const api = await fakeApi(steps);
+  try {
+    const sdk = await loadAgentSdk();
+    const log = new MemoryLogger();
+    const abort = new AbortController();
+    const spawnLocal = (o: SpawnOptions): SpawnedProcess => {
+      const child = spawn(BIN, o.args, {
+        cwd: ws,
+        env: {
+          // As in the container: only what the SDK sets for its protocol and the fixed flags, nothing of this process.
+          ...Object.fromEntries(Object.entries(o.env).filter(([k]) => /^(CLAUDE_CODE_ENTRYPOINT|CLAUDE_AGENT_SDK_VERSION|CLAUDE_CODE_SDK_READS_SESSION_STATE)$/.test(k) || k in CONTAINER_FLAGS)),
+          PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home, CLAUDE_CONFIG_DIR: path.join(home, ".claude"),
+          ANTHROPIC_BASE_URL: `http://127.0.0.1:${api.port}`, ANTHROPIC_API_KEY: "sk-ant-placeholder-not-a-key",
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      o.signal.addEventListener("abort", () => child.kill("SIGKILL"), { once: true });
+      return child as unknown as SpawnedProcess;
+    };
+    const opts = sessionOptions({
+      policy, worktree: ws, workspace: ws, cwd: ws, instructions: "Test session.", factoryServer: sdk.createFactoryServer([]), factoryTools: [],
+      caps: { maxTurns: 20, maxBudgetUsd: 5, wallTimeMs: 150_000 }, spawn: spawnLocal, log,
+    }, abort);
+    async function* turns() {
+      yield { type: "user" as const, message: { role: "user" as const, content: "go" }, parent_tool_use_id: null, session_id: "" };
+    }
+    await runSession(sdk, opts, turns(), { maxTurns: 20, maxBudgetUsd: 5, wallTimeMs: 150_000 }, { onSessionId: () => undefined, onWebSearch: () => undefined });
+  } finally {
+    await api.close();
+  }
+  return api;
+}
+
 describe.skipIf(!runnable)(`H1: the tool gate holds against the real Claude Code binary${runnable ? "" : " (skipped: no host binary for this platform in the SDK package, or Windows)"}`, () => {
   it("denies Read, Grep, Glob and Bash on denied paths even where Claude Code would approve them itself", { timeout: 180_000 }, async () => {
     const ws = tmpdir();
-    const home = tmpdir();
     fs.writeFileSync(path.join(ws, ".env"), `API_TOKEN=${SECRET}\n`);
     fs.mkdirSync(path.join(ws, "private"));
     fs.writeFileSync(path.join(ws, "private", "plan.md"), `${SECRET}\n`);
@@ -122,45 +157,35 @@ describe.skipIf(!runnable)(`H1: the tool gate holds against the real Claude Code
       { name: "Read", input: { file_path: `${ws}/notes.md` } },
       { name: "Bash", input: { command: "ls", description: "list" } },
     ];
-    const api = await fakeApi(steps);
-    try {
-      const sdk = await loadAgentSdk();
-      const log = new MemoryLogger();
-      const abort = new AbortController();
-      const spawnLocal = (o: SpawnOptions): SpawnedProcess => {
-        const child = spawn(BIN, o.args, {
-          cwd: ws,
-          env: {
-            // As in the container: only what the SDK sets for its protocol and the fixed flags, nothing of this process.
-            ...Object.fromEntries(Object.entries(o.env).filter(([k]) => /^(CLAUDE_CODE_ENTRYPOINT|CLAUDE_AGENT_SDK_VERSION|CLAUDE_CODE_SDK_READS_SESSION_STATE)$/.test(k) || k in CONTAINER_FLAGS)),
-            PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home, CLAUDE_CONFIG_DIR: path.join(home, ".claude"),
-            ANTHROPIC_BASE_URL: `http://127.0.0.1:${api.port}`, ANTHROPIC_API_KEY: "sk-ant-placeholder-not-a-key",
-          },
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-        o.signal.addEventListener("abort", () => child.kill("SIGKILL"), { once: true });
-        return child as unknown as SpawnedProcess;
-      };
-      const opts = sessionOptions({
-        policy, worktree: ws, workspace: ws, cwd: ws, instructions: "Test session.", factoryServer: sdk.createFactoryServer([]), factoryTools: [],
-        caps: { maxTurns: 20, maxBudgetUsd: 5, wallTimeMs: 150_000 }, spawn: spawnLocal, log,
-      }, abort);
-      async function* turns() {
-        yield { type: "user" as const, message: { role: "user" as const, content: "go" }, parent_tool_use_id: null, session_id: "" };
-      }
-      await runSession(sdk, opts, turns(), { maxTurns: 20, maxBudgetUsd: 5, wallTimeMs: 150_000 }, { onSessionId: () => undefined, onWebSearch: () => undefined });
-      expect(api.done(), "every scripted tool call was made").toBe(steps.length);
-      const results = toolResults(api.bodies);
-      const r = (i: number) => results.get(`toolu_${i + 1}`) ?? "";
-      for (const i of [0, 1, 2, 3]) expect(r(i), `${steps[i]!.name} ${JSON.stringify(steps[i]!.input)}`).toMatch(/Refused by the factory engine/);
-      expect(r(4)).toContain("NOTES-OK");
-      expect(r(5)).toContain("notes.md");
-      // M1: the gateway would pass this CLI's requests as they are. A new beta here means ALLOWED_BETAS needs the owner's review.
-      expect([...api.betas].filter((b) => !ALLOWED_BETAS.has(b))).toEqual([]);
-      for (const b of api.bodies) expect(refusedBody(Buffer.from(b))).toBeNull();
-      for (const b of api.bodies) expect(b.includes(SECRET), "a denied file's content reached the model").toBe(false);
-    } finally {
-      await api.close();
+    const api = await runReal(policy, ws, steps);
+    expect(api.done(), "every scripted tool call was made").toBe(steps.length);
+    const results = toolResults(api.bodies);
+    const r = (i: number) => results.get(`toolu_${i + 1}`) ?? "";
+    for (const i of [0, 1, 2, 3]) expect(r(i), `${steps[i]!.name} ${JSON.stringify(steps[i]!.input)}`).toMatch(/Refused by the factory engine/);
+    expect(r(4)).toContain("NOTES-OK");
+    expect(r(5)).toContain("notes.md");
+    // M1: the gateway would pass this CLI's requests as they are. A new beta here means ALLOWED_BETAS needs the owner's review.
+    expect([...api.betas].filter((b) => !ALLOWED_BETAS.has(b))).toEqual([]);
+    for (const b of api.bodies) expect(refusedBody(Buffer.from(b))).toBeNull();
+    for (const b of api.bodies) expect(b.includes(SECRET), "a denied file's content reached the model").toBe(false);
+  });
+
+  it("the web reader's search reaches the gateway as web_search, which passes only on a grant that allows it", { timeout: 180_000 }, async () => {
+    const policy: RolePolicy = {
+      role: "web-reader", tools: ["fetch_page", "WebSearch"], read: { allow: [], deny: [] }, write: { allow: [], deny: [] },
+      commands: [], network: ["*"], mayRequest: [],
+    };
+    // Claude Code's WebSearch is a client tool that, when called, makes its own request carrying the server tool.
+    const api = await runReal(policy, tmpdir(), [{ name: "WebSearch", input: { query: "csv export libraries" } }]);
+    const types = new Set<string>();
+    for (const b of api.bodies) {
+      for (const t of (JSON.parse(b) as { tools?: Array<{ type?: string }> }).tools ?? []) if (t.type) types.add(t.type);
     }
+    // If this fails, the CLI no longer sends search as a server tool and the gateway's exception needs another look.
+    expect([...types].filter((t) => /^web_search_\d{8}$/.test(t))).toHaveLength(1);
+    expect([...types].filter((t) => t !== "custom" && !/^web_search_\d{8}$/.test(t))).toEqual([]);
+    for (const b of api.bodies) expect(refusedBody(Buffer.from(b), { webSearch: true })).toBeNull();
+    expect(api.bodies.some((b) => refusedBody(Buffer.from(b)) !== null)).toBe(true);
+    expect([...api.betas].filter((b) => !ALLOWED_BETAS.has(b))).toEqual([]);
   });
 });
