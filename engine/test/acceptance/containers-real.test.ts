@@ -180,12 +180,14 @@ describe.skipIf(!ON)(`F-007 milestone 2 on a real Docker daemon (AC-8, AC-14, AC
     analystGo.open();
     readerGo.open();
     if (homeDir) rmSync(homeDir, { recursive: true, force: true });
-    await w?.cleanup();
     // The engine keeps a stopped run's session volume so the run can resume (FR-14); this run never will.
+    // Removed after the engine stops but before cleanup deletes the docker CLI's config folder (its working folder).
+    await w?.stop();
     if (docker) {
-      const vols = (await docker.out(["volume", "ls", "-q", "--filter", "label=factory.project=proj0"]).catch(() => "")).split(/\s+/).filter((v: string) => /^factory-r-[0-9a-f]+-session$/.test(v));
-      for (const v of vols) await docker.run(["volume", "rm", v], { okCodes: [1] }).catch(() => undefined);
+      const vols = (await docker.out(["volume", "ls", "-q", "--filter", "label=factory.project=proj0"])).split(/\s+/).filter((v: string) => /^factory-r-[0-9a-f]+-session$/.test(v));
+      for (const v of vols) await docker.run(["volume", "rm", v]);
     }
+    await w?.cleanup();
   }, 120_000);
 
   it("[DR-1] AC-8: the analyst runs as a non-root user with a read-only root file system, and no Docker socket", { timeout: 300_000 }, async () => {
