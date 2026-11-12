@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (all open questions decided; next: Gate 1 and the drafts of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 19
+- **Spec version:** 20
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -254,7 +254,7 @@ Drafted by the analyst; SR-12 to SR-29 come from Gate 1 (`F-010-security-gate1.m
 | SR-17 | One GitHub client with a fixed list of calls. It follows links and redirects only to `api.github.com`, and on writes never. Repo and issue ids are checked before each write. Ids are compared as numbers. Responses are validated. Unexpected answers fail closed. | Gate 1 #6 | Accepted from Gate 1 |
 | SR-18 | Before each write the issue is fetched again and must be open, unlocked, in the same repo and unchanged since the snapshot. The record names the commit the triager read. | Gate 1 #7 | Accepted from Gate 1 |
 | SR-19 | The engine acts only on its own record or on files that extend its hash chain. Foreign files file a Security item. | Gate 1 #8 | Accepted from Gate 1 |
-| SR-20 | Per-author, fix-lanes-per-day and per-project inbox caps, with a daily digest. Re-triage counts against the daily cap. Confirmation sessions have limits. Triage work runs after the owner's own features (subject to the owner's decision). | Gate 1 #9 | Pending owner decision (Security) |
+| SR-20 | Per-author, fix-lanes-per-day and per-project inbox caps, with a daily digest. Re-triage counts against the daily cap. Confirmation sessions have limits. Triage work runs after the owner's own features (subject to the owner's decision). | Gate 1 #9 | Approved: per outside reporter 3 issues triaged a day and 1 fix a week; at most 10 triage inbox items a day per project, the rest in a daily digest; nothing dropped (owner, 2026-11-12, decision card). Running triage after the owner's own features is not yet decided. |
 | SR-21 | A `security_relevant` flag from confirmation or Gate 2 stops the lane before any public action. The triager asks no questions about a suspected weakness. | Gate 1 #10 | Accepted from Gate 1 |
 | SR-22 | The fix scope guard is engine code with fixed path lists, a per-repo `security_paths` list, and binary and symlink stops, run after every session in the lane. | Gate 1 #11 | Accepted from Gate 1 |
 | SR-23 | Triage inbox items show engine fields first and model text as escaped, labelled plain text. Interview seeding waits for F-009's Gate 1. | Gate 1 #12 | Accepted from Gate 1 |
@@ -294,6 +294,9 @@ issues:
   needs_info_rounds: 2          # section 2 step 10
   stale_days: 30
   questions_per_reply: 3        # FR-17
+  per_reporter_per_day: 3       # SR-20, owner 2026-11-12; outside reporters only
+  fixes_per_reporter_per_week: 1
+  inbox_items_per_project_per_day: 10   # the rest go in a daily digest item
   question_chars: 200
 issue_triager:                  # session limits, same keys as web_reader
   turns: 30
@@ -474,6 +477,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 17 | 2026-11-12 | Gate 1 #3: owner chose storage on `factory/state` as drafted; risks to be stated and confirmed (SR-14) | Owner, 2026-11-12 (decision card) |
 | 18 | 2026-11-12 | Gate 1 #5: issue writes use the factory token with `issues: write`, not a GitHub App (SR-16) | Owner, 2026-11-12 (decision card) |
 | 19 | 2026-11-12 | Corrected v17: the owner did not accept a stated risk; Gate 1 #3 risks put to the owner | — |
+| 20 | 2026-11-12 | Gate 1 #9: per-reporter limits and inbox digest (SR-20, H-0110 limits) | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
