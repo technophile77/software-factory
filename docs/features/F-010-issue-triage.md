@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Draft (all open questions decided; next: Gate 1 and the drafts of H-0110 to H-0114)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 11
+- **Spec version:** 12
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -229,7 +229,7 @@ The owner's existing rules still hold:
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
 | A-1 | Checking for issues every 5 minutes is fast enough; nothing needs a reply within seconds. | OQ-5 | Approved (owner, 2026-11-12, decision card) |
-| A-2 | The test engineer can reproduce most bugs in the agent container. | — | Pending |
+| A-2 | The test engineer can reproduce most bugs in the agent container. Bugs that need hardware, an outside service or a specific OS go to the owner as "couldn't reproduce". | Owner, 2026-11-12 (decision card) | Approved |
 
 ## 9. Security considerations
 Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
@@ -300,6 +300,7 @@ Drafted by the analyst; Gate 1 (F-008) reviews them and adds the threat model.
 | 9 | 2026-11-12 | OQ-1 restated in the owner's words: crash, error or unexpected output on correct input; correct and expected come from specs, docs or an earlier release | Owner, 2026-11-12 (thread) |
 | 10 | 2026-11-12 | A fix's definition of done: red on the base commit, green on the final commit with the same inputs, full regression suite passes (FR-18) | Owner, 2026-11-12 (thread) |
 | 11 | 2026-11-12 | The triager writes to issues through questions only (up to three, each with a checked purpose: use case, inputs, expected or actual output, environment), never answers; `unclear` issues get questions before going to the owner | Owner, 2026-11-12 (thread) |
+| 12 | 2026-11-12 | A-2 approved | Owner, 2026-11-12 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
