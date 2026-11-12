@@ -3,7 +3,7 @@
 - **Id:** F-008
 - **Status:** Approved (readiness gate passed 2026-11-12)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 11
+- **Spec version:** 12
 
 This is part of the engine's increment 3 ("Requirements to ready", F-007
 section 13). The owner chose to build Security Gate 1 on its own first
@@ -64,7 +64,7 @@ approved security requirements are in the spec.
 | Id | Requirement |
 |---|---|
 | FR-1 | When a feature of an enabled, running project enters `security_gate_1` from a passing interview and has no unresolved Gate 1 findings, the engine starts one Gate 1 run on that spec commit; at engine start it starts one for a feature at `security_gate_1` that has no Gate 1 report since it last entered the stage. A feature returning from the findings interview gets the FR-9 check, not a new run (Gate 1 #6). One Gate 1 run per feature at a time. |
-| FR-2 | The reviewer runs as an Agent SDK session in its own container under the project's `security-reviewer` role policy and every container rule of Role policy v2.5. Its only write is its report, `.factory/runs/<feature>/security_gate_1/security-reviewer-<n>.json` on the feature branch, which the engine names in its input; the end-of-session write check rejects every other change. |
+| FR-2 | The reviewer runs as an Agent SDK session in its own container under the project's `security-reviewer` role policy and every container rule of Role policy v2.5. Its worktree is mounted read-only (Role policy v2.5); its only write is its report, `.factory/runs/<feature>/security_gate_1/security-reviewer-<n>.json`, which the engine names in its input and which lands in an empty engine-owned folder mounted writable at that path. The engine commits the valid report to `factory/state` with the analyst's reports. The end-of-session check rejects any worktree change. |
 | FR-3 | The engine gives the reviewer: its `AGENT.md` and the `security-review` skill as the analyst gets its own (F-007), `docs/security-standards.md` from the master clone commit the project's `factory.version` names and the project's `standards.security` file from the config repo's `main` commit, read-only at a fixed path outside the worktree (OQ-4, SR-10), the feature's spec path and version, and the feature's interview transcript as data. |
 | FR-4 | The reviewer writes its report as an Agent report v1.2 file with the `security-reviewer` body (OQ-2). The engine fills the envelope fields that agents don't (v1.1). Each finding has criterion id, severity, location, explanation, suggested resolution and whether it needs the owner's choice. The report also answers each Gate 1 checklist question, lists the permissions the feature adds (S8.5), the abuse cases, and what is not applicable with the reason. |
 | FR-5 | After the session, the engine validates the report file: valid JSON within a size cap, the right schema, role, feature, stage and commit, known criterion ids from the standards it gave, known severities, every checklist question answered, text within caps. If it is missing or invalid, the engine resumes the same session once with the reasons; if it is still invalid, the run fails and nothing from it is committed. |
@@ -148,7 +148,7 @@ approved security requirements are in the spec.
 | SR-5 | The engine, not the reviewer, decides the stage. A report can't move a feature to `readiness_gate` unless FR-7 or FR-9 holds. | Analyst | Approved |
 | SR-6 | The Gate 1 session gets the same caps, container limits and billing check as the analyst (F-007 SR-18), from its own entries. | Analyst | Approved |
 | SR-7 | The reviewer's input puts factory instructions and standards first, then each untrusted text (spec, transcript, project additions) in a labelled data block with its source. A report with no findings must answer every checklist question with reasons citing spec sections and list the permissions the feature adds; an empty report on a spec whose section 9 has no requirement is invalid (S6.1). | Gate 1 #1 | Approved |
-| SR-8 | The engine reads the report from the session's commit in git, never through the file system: exactly the named path, mode 100644, at most 256 KiB, parsed with a nesting limit (S1.4). | Gate 1 #2 | Approved |
+| SR-8 | The engine reads the report only from its engine-owned report folder, after the container is gone: exactly the named file, a regular file opened without following links, at most 256 KiB, parsed with a nesting limit (S1.4). | Gate 1 #2; owner, decision card, 2026-11-12 | Approved |
 | SR-9 | The secrets scan covers the report, the rendering, each inbox item before commit, and the analyst's input before a session starts. A hit stops that output and files a Security item with engine text only (S3.1). | Gate 1 #4 | Approved |
 | SR-10 | Project additions are data after the factory standards and can only add criteria, with `P`-prefixed ids. An `S` id defined there makes the file invalid and the gate runs on the factory standards alone, with a Security item. Severity definitions and the blocking table come only from the factory standards. The file is a regular file in the config repo, at most 64 KiB (S6.1, S7). | Gate 1 #5 | Approved |
 | SR-11 | At most 3 Gate 1 runs per feature, the correction resume included; a fourth needs the owner and files a Security item (S5.1). | Gate 1 #6 | Approved |
@@ -218,3 +218,4 @@ Asked one at a time. None is assumed.
 | 9 | 2026-11-12 | H-0095 approved with the reviewer on Sonnet 5.5 | Owner, 2026-11-12 (decision card) |
 | 10 | 2026-11-12 | H-0096 approved: Agent report v1.3 optional Gate 1 fields | Owner, 2026-11-12 (decision card) |
 | 11 | 2026-11-12 | Spec v10 approved; all SRs Approved; readiness gate passed (six checks: objective, behavior, testable ACs, constraints, assumptions A-1 and A-2 approved, OQ-1 to OQ-4 decided) | Owner, 2026-11-12 (decision card) |
+| 12 | 2026-11-12 | Found in development: report-only roles get a read-only worktree, so the report goes to a separate engine-owned writable folder and is committed to factory/state (FR-2, SR-8 reworded) | Owner, 2026-11-12 (decision card) |
