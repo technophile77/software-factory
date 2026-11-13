@@ -3,7 +3,10 @@ import { Logger } from "../log";
 import type { Change } from "../state/state-repo";
 import { SecretFound } from "../state/state-repo";
 import { FeatureInterview, InterviewError } from "./feature";
-import { Finding, ItemContent, WireItem } from "./model";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { DocumentMeta, SourceRow, sha256, sourcesTable, specLine, tableHash, tableProblems } from "./document";
+import { Finding, ItemContent, QUESTION_TYPES, QuestionType, WireItem } from "./model";
 import { Check, SpecPathRefused, readSpec, readinessChecks } from "./readiness";
 
 export type ToolErrorCode = "one_at_a_time" | "invalid" | "limit" | "unknown_item" | "wrong_status" | "unavailable";
@@ -35,20 +38,29 @@ function str(v: unknown, name: string, max: number, required = true): string | u
   return v;
 }
 
-function httpsUrl(v: unknown): string {
+/** A worktree path a conflict may cite (Interview tools v1.1): relative, `/`-separated, no `..`. */
+const WORKTREE_PATH_RE = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
+
+function source(v: unknown, allowPath: boolean): string {
+  if (allowPath && typeof v === "string" && WORKTREE_PATH_RE.test(v) && chars(v) <= L.findingSource) return v;
+  return httpsUrl(v, allowPath);
+}
+
+function httpsUrl(v: unknown, allowPath = false): string {
+  const what = allowPath ? "an https URL or a worktree path" : "an https URL";
   const s = str(v, "findings[].source", L.findingSource)!;
   let u: URL;
   try {
     u = new URL(s);
   } catch {
-    return fail("invalid", "findings[].source must be an https URL.");
+    return fail("invalid", `findings[].source must be ${what}.`);
   }
-  if (u.protocol !== "https:" || /\s/.test(s)) fail("invalid", "findings[].source must be an https URL.");
+  if (u.protocol !== "https:" || /\s/.test(s)) fail("invalid", `findings[].source must be ${what}.`);
   return s;
 }
 
 /** Text fields are stored and shown exactly as written: checked, never rewritten (SR-3). */
-function itemContent(a: Record<string, unknown>, full: boolean): ItemContent {
+function itemContent(a: Record<string, unknown>, full: boolean, fromDocument = false): ItemContent {
   const c: ItemContent = { text: str(a.text, "text", L.text)!, why: str(a.why, "why", L.why)! };
   if (!full) return c;
   // `suggested` has no limit of its own in the contract; it is a text field, so text's applies.
@@ -62,10 +74,36 @@ function itemContent(a: Record<string, unknown>, full: boolean): ItemContent {
     if (!Array.isArray(a.findings) || a.findings.length > L.findings) fail("invalid", `findings must be a list of at most ${L.findings}.`);
     c.findings = (a.findings as unknown[]).map((f): Finding => {
       const fo = obj(f, ["text", "source"]);
-      return { text: str(fo.text, "findings[].text", L.findingText)!, source: httpsUrl(fo.source) };
+      return { text: str(fo.text, "findings[].text", L.findingText)!, source: source(fo.source, fromDocument) };
     });
   }
+  if (a.type !== undefined) {
+    if (!fromDocument) fail("invalid", "type is only for a feature started from a document.");
+    if (typeof a.type !== "string" || !QUESTION_TYPES.includes(a.type)) fail("invalid", "type must be gap, conflict or ambiguity.");
+    c.type = a.type as QuestionType;
+  }
   return c;
+}
+
+/** The branch's copy of the source document, read without following links, against the recorded hash (Gate 2 L1). */
+function branchCopyIntact(worktree: string, d: DocumentMeta): boolean {
+  let fd: number;
+  try {
+    fd = fs.openSync(path.join(worktree, ...d.path.split("/")), fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+  } catch {
+    return false;
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size !== d.bytes) return false;
+    const buf = Buffer.alloc(st.size);
+    fs.readSync(fd, buf, 0, st.size, 0);
+    return sha256(buf) === d.sha256;
+  } catch {
+    return false;
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function itemId(v: unknown): string {
@@ -84,6 +122,11 @@ export interface ToolContext {
   onSpecReady?(passed: boolean): void;
   /** The web reader (milestone 2). Without it, research_web answers `unavailable`. */
   research?: ResearchConfig;
+  /**
+   * The feature's stored source document, read from git and checked against the
+   * SHA-256 in the transcript (F-009 FR-4); null if it is missing or changed.
+   */
+  documentText?(): Promise<string | null>;
 }
 
 export interface ResearchConfig {
@@ -100,6 +143,7 @@ export interface InterviewTools {
   interview_revise(args: unknown): Promise<ToolResult<{ revision: number }>>;
   research_web(args: unknown): Promise<ToolResult<{ summary: string; sources: string[] }>>;
   interview_spec_ready(args: unknown): Promise<ToolResult<{ checks: Check[] }>>;
+  interview_confirm_sources(args: unknown): Promise<ToolResult<{ item: WireItem }>>;
 }
 
 /**
@@ -109,7 +153,22 @@ export interface InterviewTools {
  */
 export function createInterviewTools(ctx: ToolContext): InterviewTools {
   const f = ctx.feature;
+  const fromDocument = () => f.state.document !== null;
   let sessionResearch = 0;
+
+  function specArgs(args: unknown): { specPath: string; specVersion: number; spec: string } {
+    const a = obj(args, ["spec_path", "spec_version"]);
+    if (typeof a.spec_path !== "string") fail("invalid", "spec_path must be a string.");
+    if (typeof a.spec_version !== "number" || !Number.isSafeInteger(a.spec_version) || a.spec_version < 0) {
+      fail("invalid", "spec_version must be a non-negative integer.");
+    }
+    try {
+      return { specPath: a.spec_path as string, specVersion: a.spec_version as number, spec: readSpec(ctx.worktree, f.id, a.spec_path as string) };
+    } catch (e) {
+      if (e instanceof SpecPathRefused) return fail("invalid", e.message);
+      throw e;
+    }
+  }
 
   async function run<T>(name: string, body: () => Promise<T>): Promise<ToolResult<T>> {
     try {
@@ -137,7 +196,7 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
   return {
     interview_ask: (args) =>
       run("interview_ask", async () => {
-        const c = itemContent(obj(args, ["text", "why", "suggested", "options", "findings"]), true);
+        const c = itemContent(obj(args, ["text", "why", "suggested", "options", "findings", "type"]), true, fromDocument());
         if (f.openQuestion()) fail("one_at_a_time", "An earlier question is still open.");
         await checkItemCap();
         return { item: await f.create("question", c) };
@@ -155,9 +214,9 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
 
     interview_revise: (args) =>
       run("interview_revise", async () => {
-        const a = obj(args, ["item", "text", "why", "suggested", "options", "findings"]);
+        const a = obj(args, ["item", "text", "why", "suggested", "options", "findings", "type"]);
         const id = itemId(a.item);
-        const c = itemContent(a, true);
+        const c = itemContent(a, true, fromDocument());
         const item = f.state.items.get(id);
         if (!item) return fail("unknown_item", "No such item in this feature.");
         if (item.kind !== "question" || item.status !== "researching") {
@@ -194,19 +253,12 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
 
     interview_spec_ready: (args) =>
       run("interview_spec_ready", async () => {
-        const a = obj(args, ["spec_path", "spec_version"]);
-        if (typeof a.spec_path !== "string") fail("invalid", "spec_path must be a string.");
-        if (typeof a.spec_version !== "number" || !Number.isSafeInteger(a.spec_version) || a.spec_version < 0) {
-          fail("invalid", "spec_version must be a non-negative integer.");
-        }
-        let spec: string;
-        try {
-          spec = readSpec(ctx.worktree, f.id, a.spec_path as string);
-        } catch (e) {
-          if (e instanceof SpecPathRefused) return fail("invalid", e.message);
-          throw e;
-        }
-        const checks = readinessChecks({ spec, specVersion: a.spec_version as number, state: f.state, chainIntact: f.chainIntact && !f.remoteRefused });
+        const { specPath, specVersion: version, spec } = specArgs(args);
+        const a = { spec_path: specPath, spec_version: version };
+        const sourceIntact = f.state.document ? branchCopyIntact(ctx.worktree, f.state.document) : undefined;
+        const checks = readinessChecks({
+          spec, specVersion: version, state: f.state, chainIntact: f.chainIntact && !f.remoteRefused, ...(sourceIntact !== undefined ? { sourceIntact } : {}),
+        });
         const passed = checks.every((c) => c.passed);
         // A transcript someone else changed can't take more entries; the failed check is the answer.
         if (!f.chainIntact) return { checks };
@@ -216,6 +268,26 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
         await f.append(bodies, passed ? "spec ready: interview checks pass" : "spec ready: interview checks fail", extra);
         ctx.onSpecReady?.(passed);
         return { checks };
+      }),
+
+    interview_confirm_sources: (args) =>
+      run("interview_confirm_sources", async () => {
+        if (!fromDocument()) fail("invalid", "This feature didn't start from a document.");
+        const { specVersion, spec } = specArgs(args);
+        const rows: SourceRow[] | null = sourcesTable(spec);
+        if (!rows) return fail("invalid", "The spec has no '## Sources' table.");
+        const text = ctx.documentText ? await ctx.documentText() : null;
+        if (text === null) return fail("unavailable", "The engine couldn't read the stored source document, or it no longer matches its recorded hash.");
+        const problems = tableProblems(rows, text, spec);
+        if (problems.length) fail("invalid", `The Sources table doesn't match the document: ${problems.slice(0, 20).join("; ")}.`);
+        await checkItemCap();
+        const sources = rows.map((r) => ({ spec_ref: r.spec_ref, section: r.section, quote: r.quote, spec_line: specLine(spec, r.spec_ref)! }));
+        // Engine words only: the list itself is the table, read from the spec (SR-7).
+        const c: ItemContent = {
+          text: `The spec (version ${specVersion}) takes these ${sources.length} lines from your document. For each, the engine found the quote in one paragraph, list item or table row under the named heading of your stored document, ignoring line breaks and repeated spaces, and copied the spec's own line. Check that each spec line says what its quote says.`,
+          why: "Statements from your own document count as your answers. Confirm the list, or name the spec refs you want asked as questions instead.",
+        };
+        return { item: await f.createSourceConfirmation(c, sources, specVersion, tableHash(rows, spec)) };
       }),
   };
 }

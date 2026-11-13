@@ -1305,7 +1305,9 @@ CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.
                      ".github/**", ".gitignore", ".gitattributes", ".husky/**", ".pre-commit-config.yaml",
                      "lefthook.yml", "osv-scanner.toml", "agents/**", "skills/**", "plugins/**",
                      ".claude-plugin/**", "workflows/**", "**/.claude/**", ".envrc", "**/.envrc", ".git", ".git/**",
-                     ".gitmodules", ".vscode/**", ".devcontainer/**"]
+                     ".gitmodules", ".vscode/**", ".devcontainer/**",
+                     # Role policy v2.6 (H-0107): the engine's stored source documents (F-009).
+                     "docs/features/*-source.md", "docs/features/*-source.txt"]
 POLICY_KEYS = {"tools": {"allow"}, "read": {"allow", "deny"}, "write": {"allow", "deny"},
                "commands": {"allow"}, "network": {"allow"}}
 # fetch_page is the engine's own page fetch, which strips hidden content (Role policy v2.5).

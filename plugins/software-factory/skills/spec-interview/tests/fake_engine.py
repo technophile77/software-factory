@@ -38,10 +38,12 @@ def proposal(iid, about, revision=1, status="open", **extra):
 # v1.3: which reply kinds each item kind takes; anything else is -32005.
 KINDS = {"question": {"answer", "more_info", "defer", "ask_advisor"},
          "assumption": {"approve_assumption", "reject_assumption"},
-         "advisor_proposal": {"approve_advisor", "decline_advisor"}}
+         "advisor_proposal": {"approve_advisor", "decline_advisor"},
+         "source_confirmation": {"confirm_sources", "reopen_sources"}}
 NEW_STATUS = {"answer": "answered", "defer": "deferred", "more_info": "researching",
               "approve_assumption": "approved", "reject_assumption": "rejected",
-              "approve_advisor": "approved", "decline_advisor": "rejected"}
+              "approve_advisor": "approved", "decline_advisor": "rejected",
+              "confirm_sources": "approved", "reopen_sources": "rejected"}
 
 
 class RpcError(Exception):
@@ -62,6 +64,9 @@ class FakeEngine:
         self.locks = {}               # feature -> token
         self.replies = {}             # reply_id -> result
         self.started = []
+        self.documents = []          # each feature.start's `document`, or None (v1.4, F-009)
+        self.start_error = None      # (code, message, data) to answer feature.start with
+        self.no_documents = False    # behave like an engine before v1.4
         self.lock = threading.Lock()
         # Misbehaviour switches
         self.drop_after_reply = False
@@ -186,7 +191,12 @@ class FakeEngine:
         if method == "engine.status":
             return {"version": "1.3.0", "uptime_s": 5, "features": self.status_features}, False
         if method == "feature.start":
+            if self.start_error:
+                raise RpcError(*self.start_error)
+            if "document" in params and self.no_documents:
+                raise RpcError(-32602, "Unexpected parameter.")
             self.started.append(params["request"])
+            self.documents.append(params.get("document"))
             return {"feature": "F-100"}, False
         if method == "interview.list":
             return {"features": [

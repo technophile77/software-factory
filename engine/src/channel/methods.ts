@@ -1,5 +1,6 @@
 import { Clock } from "../clock";
 import { ID_RE, MAX_NEXT_WAIT_S, REFUSED_MESSAGE, RPC } from "../constants";
+import { DocumentRefused, SourceDocument, validateDocument } from "../interview/document";
 import { FeatureInterview, InterviewError } from "../interview/feature";
 import { wire } from "../interview/model";
 import { SecretFound } from "../state/state-repo";
@@ -13,13 +14,14 @@ export interface ProjectChannel {
   features(): FeatureInterview[];
   /** One of this project's features, or null (also null for an id two projects share, SR-16). */
   feature(id: string): FeatureInterview | null;
-  startFeature(request: string): Promise<string>;
+  /** Channel v1.4: `document` has passed validateDocument; the engine scans and stores it (F-009). */
+  startFeature(request: string, document?: SourceDocument): Promise<string>;
   /** Files the Security item behind a -32008 for a secret the scan found (H-0084). */
   secretRefused(where: string, found: SecretFound, feature?: string): Promise<void>;
 }
 
 export interface EngineControl {
-  status(): { version: string; uptime_s: number; features: Array<{ id: string; stage: string; active_agents: number }> };
+  status(): { version: string; capabilities: string[]; uptime_s: number; features: Array<{ id: string; stage: string; active_agents: number }> };
   pause(feature?: string): string[];
   resume(feature?: string): string[];
   shutdown(): void;
@@ -42,7 +44,7 @@ function only(params: Record<string, unknown>, keys: string[]): void {
   for (const k of Object.keys(params)) if (!keys.includes(k)) throw new RpcError(RPC.invalidParams, "Unexpected parameter.");
 }
 
-/** Channel v1.1-v1.3 methods for one project's channel. Session state never crosses projects (SR-16). */
+/** Channel v1.1-v1.4 methods for one project's channel. Session state never crosses projects (SR-16). */
 export function methods(project: ProjectChannel, engine: EngineControl, clock: Clock): Handler {
   const feature = (fid: unknown): FeatureInterview => {
     const f = project.feature(id(fid, "feature"));
@@ -85,13 +87,16 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
         setImmediate(() => engine.shutdown());
         return { ok: true };
       case "feature.start": {
-        only(p, ["request"]);
+        only(p, ["request", "document"]);
         if (typeof p.request !== "string" || !p.request.trim() || [...p.request].length > MAX_REQUEST_CHARS) {
           throw new RpcError(RPC.invalidParams, `request must be non-empty text up to ${MAX_REQUEST_CHARS} characters.`);
         }
         try {
-          return { feature: await project.startFeature(p.request) };
+          const doc = p.document === undefined ? undefined : validateDocument(p.document);
+          return { feature: await project.startFeature(p.request, doc) };
         } catch (e) {
+          // The owner's own document, refused before anything is stored: the client may show lines and rule ids (H-0105).
+          if (e instanceof DocumentRefused) throw new RpcError(RPC.documentRefused, e.message, e.data());
           if (e instanceof SecretFound) {
             await project.secretRefused("feature.start", e);
             throw new RpcError(RPC.refused, REFUSED_MESSAGE);

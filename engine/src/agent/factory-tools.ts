@@ -4,16 +4,19 @@ import { pageText } from "./page-text";
 import type { CallToolResult, FactoryTool } from "./sdk";
 
 const text = (max: number) => ({ type: "string", minLength: 1, maxLength: max });
-const finding = { type: "object", additionalProperties: false, required: ["text", "source"], properties: { text: text(L.findingText), source: { type: "string", format: "uri", pattern: "^https://", maxLength: L.findingSource } } };
+// The engine checks the source itself: an https URL, or on a feature started from a document also a worktree path (v1.1).
+const finding = { type: "object", additionalProperties: false, required: ["text", "source"], properties: { text: text(L.findingText), source: { type: "string", minLength: 1, maxLength: L.findingSource } } };
 const askProps = {
   text: text(L.text),
   why: text(L.why),
   suggested: text(L.text),
   options: { type: "array", maxItems: L.options, items: text(L.option) },
   findings: { type: "array", maxItems: L.findings, items: finding },
+  type: { type: "string", enum: ["gap", "conflict", "ambiguity"] },
 };
+const specProps = { spec_path: { type: "string" }, spec_version: { type: "integer", minimum: 0 } };
 
-/** Interview tools v1.0 (H-0082) as JSON Schema, for the model. The engine checks every call itself (SR-3). */
+/** Interview tools v1.1 (H-0082, H-0106) as JSON Schema, for the model. The engine checks every call itself (SR-3). */
 export const INTERVIEW_SCHEMAS: Record<keyof InterviewTools, { description: string; schema: Record<string, unknown> }> = {
   interview_ask: {
     description: "Ask the owner one question. Your turn ends after you ask; the reply comes as the next message.",
@@ -33,7 +36,11 @@ export const INTERVIEW_SCHEMAS: Record<keyof InterviewTools, { description: stri
   },
   interview_spec_ready: {
     description: "Report the spec ready; the engine runs the interview readiness checks.",
-    schema: { type: "object", additionalProperties: false, required: ["spec_path", "spec_version"], properties: { spec_path: { type: "string" }, spec_version: { type: "integer", minimum: 0 } } },
+    schema: { type: "object", additionalProperties: false, required: ["spec_path", "spec_version"], properties: specProps },
+  },
+  interview_confirm_sources: {
+    description: "For a feature started from the owner's own document: the engine checks every quote in the spec's '## Sources' table against the document and files the owner's source confirmation.",
+    schema: { type: "object", additionalProperties: false, required: ["spec_path", "spec_version"], properties: specProps },
   },
 };
 

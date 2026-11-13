@@ -52,7 +52,7 @@ describe("engine start (FR-1 to FR-4)", () => {
     expect(e.projects[0]).toMatchObject({ name: "acme", state: "running" });
     const file = path.join(w.config, ".factory", "engine.json");
     const ej = engineJson(w);
-    expect(ej).toEqual({ version: SERVED_CHANNEL_VERSION, path: e.projects[0]!.channel, pid: process.pid });
+    expect(ej).toEqual({ version: SERVED_CHANNEL_VERSION, capabilities: ["document"], path: e.projects[0]!.channel, pid: process.pid });
     expect(SERVED_CHANNEL_VERSION).toBe("1.2");
     // POSIX modes only: on Windows the pipe's ACL is read back by the engine itself (SR-15, units: SDDL).
     if (process.platform !== "win32") {

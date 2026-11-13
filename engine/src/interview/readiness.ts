@@ -1,6 +1,7 @@
 import { realPath } from "../fsutil";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { SOURCE_PATH_RE, sourcesTable, tableHash } from "./document";
 import type { InterviewState } from "./model";
 
 export interface Check {
@@ -28,7 +29,7 @@ export function specPathPattern(feature: string): RegExp {
  */
 export function readSpec(worktree: string, feature: string, specPath: string): string {
   const refuse = () => new SpecPathRefused("spec_path must be this feature's own docs/features spec, as a regular file.");
-  if (typeof specPath !== "string" || specPath.normalize("NFC") !== specPath || !specPathPattern(feature).test(specPath)) throw refuse();
+  if (typeof specPath !== "string" || specPath.normalize("NFC") !== specPath || !specPathPattern(feature).test(specPath) || SOURCE_PATH_RE.test(specPath)) throw refuse();
   let root: string;
   try {
     root = realPath(worktree);
@@ -172,6 +173,8 @@ export function readinessChecks(input: {
   specVersion: number;
   state: InterviewState;
   chainIntact: boolean;
+  /** For a document-started feature: whether the branch's copy still matches the stored hash (Gate 2 L1). */
+  sourceIntact?: boolean;
 }): Check[] {
   const { spec, state } = input;
   const checks: Check[] = [];
@@ -220,6 +223,32 @@ export function readinessChecks(input: {
     passed: problems.length === 0,
     evidence: problems.length ? `${problems.join("; ")}.` : "No pending assumption; every approved assumption in the spec matches an approve_assumption entry.",
   });
+
+  // Interview tools v1.1 (SR-7): for the owner's own document, the latest
+  // confirmation must be approved and built from the spec's current table.
+  if (state.document) {
+    checks.push({
+      name: "source_unchanged",
+      passed: input.sourceIntact === true,
+      evidence: input.sourceIntact === true ? `${state.document.path} matches the SHA-256 recorded at the start.` : `${state.document.path} is missing, not a regular file, or changed since the start.`,
+    });
+  }
+  if (state.document?.provenance === "owner") {
+    const confirmations = state.list("source_confirmation");
+    const latest = confirmations[confirmations.length - 1];
+    const rows = sourcesTable(spec);
+    let evidence: string;
+    let passed = false;
+    if (!rows) evidence = "The spec has no '## Sources' table.";
+    else if (!latest) evidence = "No source confirmation was filed (interview_confirm_sources).";
+    else if (latest.status !== "approved") evidence = `${latest.id} is ${latest.status}, not confirmed by the owner.`;
+    else if (latest.table_sha256 !== tableHash(rows, spec)) evidence = `The Sources table, or a spec line it backs, changed after ${latest.id} was confirmed; file a new confirmation.`;
+    else {
+      passed = true;
+      evidence = `${latest.id} confirmed by the owner, for this Sources table and these spec lines.`;
+    }
+    checks.push({ name: "sources_confirmed", passed, evidence });
+  }
 
   const remote = remoteContentLines(spec);
   checks.push({

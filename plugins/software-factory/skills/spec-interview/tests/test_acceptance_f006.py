@@ -747,7 +747,7 @@ class SkillTextF006(unittest.TestCase):
         self.assertIn("ask_advisor", joined)
 
     def test_regression_v12_named_and_tools_unchanged(self):
-        self.assertRegex(self.flat, r"Engine control channel \(?v1\.3")
+        self.assertRegex(self.flat, r"Engine control channel \(?v1\.[3-9]")
         # Still only the client script and the picker (F-005 SR-10).
         self.assertRegex(self.flat, re.compile(r"only the client script and (the )?(claude code's )?"
                                                r"(askuserquestion|question) picker", re.I))

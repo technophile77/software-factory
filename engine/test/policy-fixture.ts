@@ -1,11 +1,11 @@
-import { CHANGE_CONTROLLED_DENIES, CORE_ROLES, SECRET_DENIES } from "../src/policy/role-policy";
+import { CHANGE_CONTROLLED_DENIES, CORE_ROLES, SECRET_DENIES, SOURCE_DOCUMENT_DENIES } from "../src/policy/role-policy";
 
 type Role = Record<string, unknown>;
 
 export const ANALYST: Role = {
   tools: { allow: ["Read", "Grep", "Glob", "Write", "Edit", "Skill"] },
   read: { allow: ["**"], deny: [...SECRET_DENIES] },
-  write: { allow: ["docs/features/**"], deny: [...CHANGE_CONTROLLED_DENIES] },
+  write: { allow: ["docs/features/**"], deny: [...CHANGE_CONTROLLED_DENIES, ...SOURCE_DOCUMENT_DENIES] },
   commands: { allow: [] },
   network: { allow: [] },
 };

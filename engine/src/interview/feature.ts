@@ -8,7 +8,7 @@ import { Entry, EntryBody, makeEntry, serialize } from "../state/transcript";
 import { FramedReply, frameTurn } from "./frame";
 import {
   ADVISOR_REPLIES, ASSUMPTION_REPLIES, InterviewState, Item, ItemContent, ItemKind, QUESTION_REPLIES, REPLY_STATUS,
-  REPLYABLE, ReplyKind, WireItem, wire,
+  REPLYABLE, ReplyKind, SOURCE_REPLIES, SourceRef, WireItem, wire,
 } from "./model";
 
 /** Commits the feature's whole transcript text, plus any other state files, as one commit. */
@@ -116,6 +116,15 @@ export class FeatureInterview {
     return wire(this.state.items.get(id)!);
   }
 
+  /** The engine-built confirmation of the spec's Sources table (Interview tools v1.1, SR-7). */
+  async createSourceConfirmation(c: ItemContent, sources: SourceRef[], specVersion: number, tableSha256: string): Promise<WireItem> {
+    const id = this.state.nextId("source_confirmation");
+    await this.append([{
+      type: "item_created", item: { id, kind: "source_confirmation", ...c, sources, spec_version: specVersion, table_sha256: tableSha256 },
+    }], `source confirmation ${id}`);
+    return wire(this.state.items.get(id)!);
+  }
+
   async revise(id: string, c: ItemContent): Promise<number> {
     const item = this.state.items.get(id)!;
     const revision = item.revision + 1;
@@ -152,7 +161,7 @@ export class FeatureInterview {
       if (p.revision !== item.revision || !REPLYABLE.includes(item.status)) {
         throw new InterviewError("stale", "The item has changed since it was shown.");
       }
-      const allowed = item.kind === "question" ? QUESTION_REPLIES : ASSUMPTION_REPLIES;
+      const allowed = { question: QUESTION_REPLIES, assumption: ASSUMPTION_REPLIES, source_confirmation: SOURCE_REPLIES }[item.kind];
       if (ADVISOR_REPLIES.includes(p.kind) || !allowed.includes(p.kind)) {
         throw new InterviewError("kind", "That reply kind isn't allowed for this item.");
       }
