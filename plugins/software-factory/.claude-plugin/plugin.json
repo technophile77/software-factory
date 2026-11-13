@@ -1,8 +1,16 @@
 {
   "name": "software-factory",
-  "version": "0.4.1",
-  "description": "Onboard a repository into the software factory, check it against the factory's standards, and answer the requirements analyst's spec interview from Claude Code.",
+  "version": "0.5.0",
+  "description": "Onboard a repository into the software factory, check it against the factory's standards, and answer the requirements analyst's spec interview from Claude Code through the engine's interview tools.",
   "author": {"name": "technophile77"},
   "repository": "https://github.com/technophile77/software-factory",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "userConfig": {
+    "engine_path": {
+      "type": "file",
+      "title": "Factory engine",
+      "description": "The engine.js file of your factory engine build (in the engine's dist folder). The spec interview's tools run it.",
+      "required": true
+    }
+  }
 }
