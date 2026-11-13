@@ -107,7 +107,7 @@ function world(endpoints = "[lan]"): World {
 async function boot(w: World, rt: AgentRuntime, probe: EndpointProbe = async () => ({ ok: true, toolChecked: true })) {
   const e = await start(w, {
     agents: rt,
-    endpoints: { lookup: async () => [{ address: PRIVATE, family: 4 }], probe, litellmSignature: { verifiedOutOfBand: true } },
+    endpoints: { lookup: async () => [{ address: PRIVATE, family: 4 }], probe, litellm: { pin: { version: "1.108.1", digest: `sha256:${"d".repeat(64)}`, publishedAt: "2020-01-01T00:00:00Z" }, verify: async () => undefined } },
   });
   engines.push(e);
   const c = await RpcClient.connect(engineJson(w).path);
@@ -278,36 +278,31 @@ describe("the advisory first pass of the security reviewer on the engine (F-013 
     expect(rep.advisory.match).toBeUndefined();
   });
 
-  it("AC-13, FR-11: an endpoint that failed its start check, or that the project doesn't list, is skipped with the reason and no router starts", async () => {
-    for (const [endpoints, probe, reason] of [
-      ["[lan]", async () => ({ ok: false as const, reason: "it doesn't list the configured model" }), /doesn't list the configured model/],
-      ["[]", undefined, /manifest doesn't list this endpoint/],
-    ] as const) {
-      const w = world(endpoints);
-      const d = new FakeDocker();
-      let feature = "";
-      const s = scriptedSdk({
-        analyst: analyst(w, () => feature),
-        reviewer: async function* (sc) {
-          expect(isAdvisory(sc)).toBe(false);
-          const first = (await sc.next())!;
-          expect(first).not.toContain("ADVISORY HINTS");
-          fs.writeFileSync(path.join(reportDir(d), "security-reviewer-1.json"), claudeReport(feature, commitOf(first)));
-          await sc.next();
-          yield { type: "result", subtype: "success", session_id: "r-3", num_turns: 3 };
-        },
-      });
-      const { e, c } = await boot(w, runtime(d, s.sdk), probe);
-      await interview(w, e, c, (f) => (feature = f));
-      await until("readiness_gate", () => e.feature(feature)?.stage() === "readiness_gate");
-      expect(agentReportOf(w, feature).advisory).toMatchObject({ endpoint: "lan", status: "skipped", reason: expect.stringMatching(reason) });
-      expect(d.calls.some((x) => x.args.includes("factory.role=router"))).toBe(false);
-      expect(s.count.reviewer).toBe(1);
-      expect(e.endpoints()).toEqual(endpoints === "[lan]" ? [{ name: "lan", model: "qwen3", available: false, reason: "it doesn't list the configured model" }] : [{ name: "lan", model: "qwen3", available: true }]);
-      for (const x of clients) x.close();
-      for (const x of engines) await x.stop();
-      engines = [];
-      clients = [];
-    }
+  // One engine boot and interview per case: both in one test took twice as long and hit the 30 s limit on hosted Windows runners.
+  it.each([
+    ["failed its start check", "[lan]", async () => ({ ok: false as const, reason: "it doesn't list the configured model" }), /doesn't list the configured model/],
+    ["isn't listed by the project", "[]", undefined, /manifest doesn't list this endpoint/],
+  ] as const)("AC-13, FR-11: an endpoint that %s is skipped with the reason and no router starts", async (_name, endpoints, probe, reason) => {
+    const w = world(endpoints);
+    const d = new FakeDocker();
+    let feature = "";
+    const s = scriptedSdk({
+      analyst: analyst(w, () => feature),
+      reviewer: async function* (sc) {
+        expect(isAdvisory(sc)).toBe(false);
+        const first = (await sc.next())!;
+        expect(first).not.toContain("ADVISORY HINTS");
+        fs.writeFileSync(path.join(reportDir(d), "security-reviewer-1.json"), claudeReport(feature, commitOf(first)));
+        await sc.next();
+        yield { type: "result", subtype: "success", session_id: "r-3", num_turns: 3 };
+      },
+    });
+    const { e, c } = await boot(w, runtime(d, s.sdk), probe);
+    await interview(w, e, c, (f) => (feature = f));
+    await until("readiness_gate", () => e.feature(feature)?.stage() === "readiness_gate");
+    expect(agentReportOf(w, feature).advisory).toMatchObject({ endpoint: "lan", status: "skipped", reason: expect.stringMatching(reason) });
+    expect(d.calls.some((x) => x.args.includes("factory.role=router"))).toBe(false);
+    expect(s.count.reviewer).toBe(1);
+    expect(e.endpoints()).toEqual(endpoints === "[lan]" ? [{ name: "lan", model: "qwen3", available: false, reason: "it doesn't list the configured model" }] : [{ name: "lan", model: "qwen3", available: true }]);
   });
 });

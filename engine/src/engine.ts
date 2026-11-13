@@ -14,7 +14,8 @@ import { WORKSPACE, type SessionOutcome } from "./agent/session";
 import { commitWorktree } from "./agent/worktree-commit";
 import { DockerError } from "./docker/cli";
 import { baseImageId, ensureAgentImage, skillsPluginDir } from "./docker/image";
-import { type LitellmImage, type LitellmSignatureCheck, litellmImageId } from "./docker/litellm-image";
+import { makeCosignVerifier, parseCosignPins } from "./docker/cosign";
+import { type LitellmImage, type LitellmPin, litellmImageId } from "./docker/litellm-image";
 import { DocumentRefused, SourceDocument, documentMeta, lineOfByte, sha256 as sha256Of, sourcePath } from "./interview/document";
 import { frameDocument, frameRequest } from "./interview/frame";
 import { Conn, notification, serve } from "./channel/framing";
@@ -102,8 +103,11 @@ export interface EngineOptions {
    * swept at start. Without it no agent starts (and resumeAnalyst is called).
    */
   agents?: AgentRuntime;
-  /** F-013: replacements for the network and the LiteLLM image check (tests only; the defaults are the real ones). */
-  endpoints?: { lookup?: EndpointLookup; probe?: EndpointProbe; litellmSignature?: LitellmSignatureCheck; slotWaitMs?: number };
+  /**
+   * F-013: replacements for the network and the LiteLLM image check (tests only; the defaults are the real ones).
+   * `litellm.verify` replaces the cosign check, `pin` the pinned release, `cosignPath` where the bundled cosign is looked for.
+   */
+  endpoints?: { lookup?: EndpointLookup; probe?: EndpointProbe; litellm?: { verify?: (imageRef: string) => Promise<void>; pin?: LitellmPin | null; cosignPath?: string }; slotWaitMs?: number };
 }
 
 export type ProjectState = "running" | "stopped" | "disabled";
@@ -260,7 +264,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     ...(o.endpoints?.slotWaitMs !== undefined ? { slotWaitMs: o.endpoints.slotWaitMs } : {}),
     ...(o.agents ? {
       image: () => {
-        litellm ??= litellmImageId(o.agents!.docker, { signature: { env, ...o.endpoints?.litellmSignature } });
+        const cosignPath = path.join(home, "bin", process.platform === "win32" ? "cosign.exe" : "cosign");
+        // Read at each attempt, so installing cosign (a hygiene step) takes effect without a code change.
+        const verify = o.endpoints?.litellm?.verify ?? makeCosignVerifier({
+          path: o.endpoints?.litellm?.cosignPath ?? cosignPath,
+          pins: parseCosignPins(fs.readFileSync(path.join(o.agents!.dockerDir, "cosign-sha256.json"), "utf8")),
+          keyFile: path.join(o.agents!.dockerDir, "litellm-cosign.pub"),
+        });
+        litellm ??= litellmImageId(o.agents!.docker, { verify, now: () => clock.now(), ...(o.endpoints?.litellm?.pin !== undefined ? { pin: o.endpoints.litellm.pin } : {}) });
         litellm.catch(() => (litellm = null));
         return litellm;
       },
