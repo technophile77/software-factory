@@ -1,5 +1,6 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { DockerError } from "../src/docker/cli";
@@ -58,9 +59,36 @@ describe("parseCosignPins and cosignPlatformKey", () => {
 });
 
 describe("ensureCosign", () => {
-  it("returns the path of a binary that matches the pinned hash", () => {
+  it("returns a private copy of a binary that matches the pinned hash, removed by cleanup", () => {
     const r = rig();
-    expect(ensureCosign(r.opts)).toBe(r.bin);
+    const c = ensureCosign(r.opts);
+    try {
+      expect(c.path).not.toBe(r.bin);
+      expect(path.basename(c.path)).toBe("cosign");
+      expect(fs.readFileSync(c.path).equals(BINARY)).toBe(true);
+    } finally {
+      c.cleanup();
+    }
+    expect(fs.existsSync(c.path)).toBe(false);
+    expect(fs.existsSync(path.dirname(c.path))).toBe(false);
+    expect(() => c.cleanup()).not.toThrow();
+  });
+
+  it.skipIf(process.platform === "win32")("makes the copy owner-only", () => {
+    const c = ensureCosign(rig().opts);
+    try {
+      expect(fs.statSync(c.path).mode & 0o077).toBe(0);
+      expect(fs.statSync(path.dirname(c.path)).mode & 0o077).toBe(0);
+    } finally {
+      c.cleanup();
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("refuses a symlink at the configured path", () => {
+    const r = rig();
+    const link = path.join(r.dir, "link");
+    fs.symlinkSync(r.bin, link);
+    expect(() => ensureCosign({ ...r.opts, path: link })).toThrow(/isn't installed/);
   });
 
   it("refuses with 'cosign checksum not pinned' when the pin map is empty, or has no entry for this platform", () => {
@@ -83,7 +111,26 @@ describe("makeCosignVerifier", () => {
   it("runs the hash-checked cosign with an argument array: verify --key <file> <image@digest>", async () => {
     const r = rig();
     await makeCosignVerifier(r.opts)(REF);
-    expect(r.calls).toEqual([{ binary: r.bin, args: ["verify", "--key", r.opts.keyFile, REF] }]);
+    expect(r.calls).toHaveLength(1);
+    expect(r.calls[0]!.args).toEqual(["verify", "--key", r.opts.keyFile, REF]);
+    expect(r.calls[0]!.binary).not.toBe(r.bin);
+  });
+
+  it("removes the verified copy after the run, whether cosign accepts or the key is refused", async () => {
+    let copy = "";
+    const run: CosignRunner = async (binary) => {
+      copy = binary;
+      expect(fs.readFileSync(binary).equals(BINARY)).toBe(true);
+      return { code: 0, stderr: "" };
+    };
+    const r = rig({ run });
+    await makeCosignVerifier(r.opts)(REF);
+    expect(fs.existsSync(copy)).toBe(false);
+    expect(fs.existsSync(path.dirname(copy))).toBe(false);
+
+    const before = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith("sf-cosign-")).length;
+    await expect(makeCosignVerifier({ ...r.opts, keyFile: path.join(r.dir, "none.pub") })(REF)).rejects.toThrow(/key file is missing/);
+    expect(fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith("sf-cosign-")).length).toBeLessThanOrEqual(before);
   });
 
   it("refuses, without running anything, when the binary's hash doesn't match", async () => {
