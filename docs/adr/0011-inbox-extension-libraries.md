@@ -1,6 +1,6 @@
 # 0011. Libraries for the VS Code inbox extension
 
-- **Status:** Accepted
+- **Status:** Superseded by 0022 for inbox items
 - **Date:** 2026-11-09
 - **Decided by:** owner (decision card, F-001)
 
