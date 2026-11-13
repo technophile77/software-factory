@@ -116,7 +116,7 @@ export function hiddenMarkdownLines(lines: string[]): number[] {
 // in an indented code block is refused like HTML in code (Gate 2 H1).
 const CONTAINER = /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*/;
 const TITLE_START = /^["'(]/;
-const SPACE_ENTITIES = /&(nbsp|ensp|emsp|emsp13|emsp14|numsp|puncsp|thinsp|ThinSpace|hairsp|VeryThinSpace|MediumSpace|NonBreakingSpace|Tab|NewLine);/gi;
+const SPACE_ENTITIES = /&(nbsp|ensp|emsp|emsp13|emsp14|numsp|puncsp|thinsp|ThinSpace|hairsp|VeryThinSpace|MediumSpace|NonBreakingSpace|ThickSpace|Tab|NewLine);/gi;
 
 // Link text made only of whitespace, hard line breaks, invisible characters,
 // entities for them, backticks (a blank code span) or emphasis marks around
@@ -125,13 +125,16 @@ const SPACE_ENTITIES = /&(nbsp|ensp|emsp|emsp13|emsp14|numsp|puncsp|thinsp|ThinS
 function blankLinkText(text: string): boolean {
   const decoded = text
     .replace(/\\(?=\n)/g, "")
+    // A code span shows its content as written, entities included.
+    .replace(/(`+)([\s\S]*?)\1/g, (_m, _t, body: string) => (body.trim() ? "x" : ""))
     .replace(/[`*_~]/g, "")
     .replace(SPACE_ENTITIES, " ")
     .replace(/&#(x[0-9a-f]{1,8}|[0-9]{1,9});/gi, (e, n: string) => {
       const cp = n[0]!.toLowerCase() === "x" ? parseInt(n.slice(1), 16) : parseInt(n, 10);
       return cp <= 0x10ffff ? String.fromCodePoint(cp) : e;
     });
-  return !decoded.replace(new RegExp(INVISIBLE.source, "gu"), "").replace(/\s/gu, "");
+  // A variation selector with no character before it draws nothing (D-5).
+  return !decoded.replace(new RegExp(INVISIBLE.source, "gu"), "").replace(/[\s\ufe0e\ufe0f]/gu, "");
 }
 
 function linkLabel(label: string): string {
@@ -178,16 +181,16 @@ export function hiddenLinkLines(lines: string[]): number[] {
     }
   }
 
-  const defs: Array<{ line: number; label: string }> = [];
+  const defs: Array<{ line: number; label: string; blank: boolean }> = [];
   const defLines = new Set<number>();
-  for (const m of text.matchAll(/^\[((?:\\.|[^\\\]])+)\]:[ \t]*(\S*)[ \t]*(.*)$/gm)) {
+  for (const m of text.matchAll(/^\[((?:\\[\s\S]|[^\\\]])+)\]:[ \t]*(\S*)[ \t]*(.*)$/gm)) {
     if (!oneParagraph(m[1]!)) continue;
     const covered = new Set<number>();
     span(m.index!, m.index! + m[0].length, covered);
     const first = Math.min(...covered);
     let last = Math.max(...covered);
     for (const i of covered) defLines.add(i);
-    defs.push({ line: first + 1, label: linkLabel(m[1]!) });
+    defs.push({ line: first + 1, label: linkLabel(m[1]!), blank: blankLinkText(m[1]!) });
     // Every use of a label with blank text, such as the shortcut `[&nbsp;]`,
     // renders as a link with no visible text (test defect D-2).
     if (blankLinkText(m[1]!)) hits.add(first + 1);
@@ -205,15 +208,20 @@ export function hiddenLinkLines(lines: string[]): number[] {
     }
   }
   if (defs.length) {
-    const body = bare.filter((_, i) => !defLines.has(i)).join("\n");
+    // Definition lines blanked out in place, so offsets still map to lines.
+    const body = bare.map((l, i) => (defLines.has(i) ? " ".repeat(l.length) : l)).join("\n");
     const used = new Set<string>();
-    for (const u of body.matchAll(/\[((?:\\.|[^\\\]])+)\]/g)) used.add(linkLabel(u[1]!));
-    const blank = new Set(defs.filter((d) => blankLinkText(d.label)).map((d) => d.label));
-    if (blank.size) {
-      bare.forEach((l, i) => {
-        if (defLines.has(i)) return;
-        for (const u of l.matchAll(/\[((?:\\.|[^\\\]])+)\]/g)) if (blank.has(linkLabel(u[1]!))) hits.add(i + 1);
-      });
+    // Every use of a label with blank text, such as the shortcut `[&nbsp;]` or
+    // a backslash hard break over two lines, shows no text (D-2, D-3).
+    const blank = new Set(defs.filter((d) => d.blank).map((d) => d.label));
+    for (const u of body.matchAll(/\[((?:\\[\s\S]|[^\\\]])+)\]/g)) {
+      const label = linkLabel(u[1]!);
+      used.add(label);
+      if (blank.has(label) && oneParagraph(u[1]!)) {
+        const lineHits = new Set<number>();
+        span(u.index!, u.index! + u[0].length, lineHits);
+        for (const i of lineHits) hits.add(i + 1);
+      }
     }
     for (const d of defs) if (!used.has(d.label)) hits.add(d.line);
   }

@@ -72,6 +72,7 @@
 
 ## Validation round 2 fixes
 - M1: the link checks run on the whole text (container markers dropped per line), so a link label or link text that runs over two lines is caught; a hit names every line it covers. Link text that is only a blank code span is refused too (m13).
+- Addendum 4 D-3 to D-5: shortcut links whose label is a backslash hard break (labels and uses may now span lines), `&ThickSpace;`, and link text that is only a variation selector are refused. A code span in link text counts as its content as written, so `` `&ThickSpace;` `` stays visible.
 - Round 4 M5: a backslash hard break counts as blank link text; markup is dropped before entities are decoded, so `&#42;` stays visible text.
 - Round 3 M4: link text is read from the innermost `[`, so a stray `[` before an empty link no longer hides it, and emphasis marks around a blank count as blank.
 - D-2 (test Addendum 2): a link definition whose label is blank text, and every use of it (the shortcut `[&nbsp;]` form), are refused; the test engineer's LNK-6 now passes.
