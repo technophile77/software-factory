@@ -103,6 +103,10 @@ Where the time goes today (profile of the full acceptance suite on
 | SR-2 | The reader runs with the same `overrideArgs` and environment as every engine git process (F-007 SR-11), and is only fed validated object ids and ref names. | Analyst | Draft |
 | SR-3 | The Gate 2 L7 config check still runs before every push and fetch; FR-5 only reuses its output. | Analyst | Draft |
 | SR-4 | Nothing cached outlives the engine process, and no cache crosses repos. | Analyst | Draft |
+| SR-5 | The tree parser refuses a tree with an entry name that is empty, `.`, `..`, or holds `/` or NUL, a duplicate name, an unknown mode, or an id of the wrong length; such a tree reads as unreadable. A test feeds each as a hand-built tree object. | Gate 1 #1 | Proposed |
+| SR-6 | Each reader reply's header must name the object the engine asked for, with an expected type and a size within the read's limit, or the reader is killed and FR-2's fallback runs. Bodies over the limit are never read into memory. | Gate 1 #2 | Proposed |
+| SR-7 | Every reader is registered with the engine's `Children`, each read has the same timeout as a git call today, and a timed-out reader is killed before the fallback runs. | Gate 1 #3 | Proposed |
+| SR-8 | Cached values only feed steps that git then checks: factory/state writes keep their compare-and-swap, and a failed swap clears the cache. | Gate 1 #4 | Proposed |
 
 ## 10. Interface requirements
 None. `Git` gains methods internal to the engine; no contract in
