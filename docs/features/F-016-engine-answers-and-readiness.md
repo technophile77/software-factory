@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until I
   can start onboarding some of my existing projects?"; chose to build engine
   increment 3 next, decision card)
-- **Spec version:** 1
+- **Spec version:** 2
 
 This is the rest of the engine's increment 3 ("Requirements to ready", F-007
 section 13). F-008 built Security Gate 1 and said that reading inbox answers
@@ -137,7 +137,7 @@ signs the spec off, and the feature is handed to development
 | A-1 | The trial project's config repo gets the F-011 workflow and `FACTORY_OWNER_LOGIN` by hand for AC-11, until the F-003 amendment installs them. | — | Pending |
 
 ## 9. Security considerations
-Drafted by the analyst; Security Gate 1 still to run.
+SR-1 to SR-5 drafted by the analyst; SR-6 to SR-10 from Security Gate 1 (`F-016-security-gate1.md`, 0 Critical, 0 High, 2 Medium, 3 Low).
 
 | Id | Requirement | Source | Status |
 |---|---|---|---|
@@ -146,6 +146,11 @@ Drafted by the analyst; Security Gate 1 still to run.
 | SR-3 | Spec sign-off binds to the spec commit: Approve counts only if the feature branch head equals the commit named in the item at that revision (FR-9). | Analyst (S2.1) | Proposed |
 | SR-4 | Effects per Security item type are fixed in code; an item's text or options can't choose its effect. An unknown type gets "record only". | Analyst (S6.2) | Proposed |
 | SR-5 | Effects are idempotent and keyed on the record entry, so a re-read or restart never carries out an action twice. | Analyst | Proposed |
+| SR-6 | A Gate 1 choice is resolved only by an Approved section 9 row whose source cites `Gate 1 #<n>; <item id>` and whose text contains the chosen option's label word for word (normalized whitespace); otherwise the check names the finding. | Gate 1 #1 (S2.1, S6.2) | Proposed |
+| SR-7 | The stage change and the `effect_done` entry are one commit on the feature's chain, after the inbox record; a failed effect leaves the stage unchanged and is retried next poll; after 3 failed tries a Notice is filed and the feature stays where it is. | Gate 1 #2 (S2.1, S5.1) | Proposed |
+| SR-8 | A resume restart counts against the feature's run caps (F-007 `MAX_RESUMES`, F-008 SR-11); at a cap, option A files a Notice and restarts nothing. | Gate 1 #3 (S6.1, S6.2) | Proposed |
+| SR-9 | The factory token's added permission is Issues read and write on the config repo only, to file and read inbox items (F-011 SR-1); managed code repos get no Issues permission in this increment. The engine checks it at start and reports a missing permission instead of filing. | Gate 1 #4 (S8.5, S8.2) | Proposed |
+| SR-10 | The analyst records each accepted risk in section 9 with status `Accepted risk`, citing `Gate 1 #<n>; <item id>`; the readiness gate fails if a recorded accepted risk has no such row. | Gate 1 #5 (S7.1, S3.2) | Proposed |
 
 ## 10. Interface requirements
 Drafts, for the owner's approval:
@@ -173,6 +178,7 @@ Drafts, for the owner's approval:
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-13 | Draft from F-007 section 13, F-008 and F-011 v29, before the owner's answers | — |
+| 2 | 2026-11-13 | Security Gate 1: SR-6 to SR-10 proposed | — |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
