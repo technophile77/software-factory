@@ -190,7 +190,9 @@ Run `CLIENT open` with the feature id and keep the `session` and
 
 If it also returned `approval_display`, the engine needs the owner's GitHub
 approval before the session takes any reply. Show `approval_display`
-exactly as printed, in your own message, then run `CLIENT approval` with the session and
+exactly as printed, in your own message, with the full link
+`https://github.com/login/device` on its own line so the owner can click it;
+never shorten, hide or replace the link. Then run `CLIENT approval` with the session and
 `"wait_s": 120` until it returns `approved: true`. Each run waits up to two
 minutes; if it ends with `approval_pending`, run it again (the code is
 valid until the time in the display). If it ends with `approval_failed`,

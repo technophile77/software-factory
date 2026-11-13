@@ -930,6 +930,8 @@ class SessionApproval(Base):
         self.assertEqual(out["approval"], self.APPROVAL)
         self.assertIn("WDJB-MJHT", out["approval_display"])
         self.assertIn("https://github.com/login/device", out["approval_display"])
+        # The link is alone on its line, so chat surfaces make it clickable.
+        self.assertIn("\nhttps://github.com/login/device\n", out["approval_display"])
 
     def test_open_without_approval_has_no_display(self):
         code, out = self.call("open", {"feature": "F-001"})

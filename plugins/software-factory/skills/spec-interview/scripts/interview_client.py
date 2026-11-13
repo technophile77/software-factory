@@ -1225,8 +1225,10 @@ def _approval(a):
     if not isinstance(code, str) or not USER_CODE_RE.fullmatch(code) or uri != DEVICE_URI \
             or not isinstance(expires, str) or not TIMESTAMP_RE.fullmatch(expires):
         raise ChannelError("bad_response", "The engine sent an invalid GitHub approval code.", sent=True)
-    display = (f"Approve this interview session on GitHub: open {DEVICE_URI} (your phone is fine), "
-               f"sign in as yourself and enter the code {code}. It expires at {expires}.")
+    # The link stands on a line of its own so every chat surface makes it clickable.
+    display = (f"Approve this interview session on GitHub (your phone is fine). Open this link:\n\n"
+               f"{DEVICE_URI}\n\n"
+               f"Sign in as yourself and enter the code {code}. It expires at {expires}.")
     return {"approval": {"user_code": code, "verification_uri": uri, "expires_at": expires},
             "approval_display": display}
 

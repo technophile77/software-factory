@@ -114,17 +114,45 @@ describe("device approval (FR-7, AC-6)", () => {
     expect((await c.ok("interview.open", { feature })).session).toBeTruthy();
   });
 
-  it("fails closed when GitHub is unreachable, denies, or the code expires", async () => {
-    for (const outcome of ["down", "denied", "expired"] as const) {
+  it("fails closed when GitHub denies or the code expires, and when GitHub stays unreachable until expiry", async () => {
+    for (const outcome of ["denied", "expired"] as const) {
       const { w, c, feature } = await setup();
       const open = await c.ok("interview.open", { feature });
       w.github.outcome = outcome;
       await w.clock.advance(5000);
       expect(err(await c.call("interview.next", { session: open.session }))!.code).toBe(-32007);
     }
+    {
+      const { w, c, feature } = await setup();
+      const open = await c.ok("interview.open", { feature });
+      w.github.outcome = "down";
+      await w.clock.advance(5000);
+      expect(err(await c.call("interview.next", { session: open.session }))!.code).toBe(-32006);
+      for (let t = 0; t < 900; t += 5) await w.clock.advance(5000);
+      expect(err(await c.call("interview.next", { session: open.session }))!.code).toBe(-32007);
+    }
     const { w, c, feature } = await setup();
     w.github.deviceDown = true;
     expect(err(await c.call("interview.open", { feature }))!.code).toBe(-32007);
+  });
+
+  it("retries a poll that gets no answer, so a short outage doesn't cost the approval", async () => {
+    const { w, c, feature } = await setup();
+    const open = await c.ok("interview.open", { feature });
+    w.github.outcome = "down";
+    await w.clock.advance(5000);
+    await w.clock.advance(5000);
+    w.github.outcome = "pending";
+    w.github.approver = OWNER_ID;
+    await w.clock.advance(5000);
+    let r: { result?: { approved?: boolean }; error?: unknown } = {};
+    for (let i = 0; i < 200; i++) {
+      r = (await c.call("interview.awaitApproval", { session: open.session, wait_s: 0 })) as typeof r;
+      if (!r.error || (r.error as { code: number }).code !== -32006) break;
+      await new Promise((res) => setTimeout(res, 10));
+    }
+    expect(r.result?.approved).toBe(true);
+    expect(w.github.pollCalls).toBeGreaterThanOrEqual(3);
   });
 
   it("honours slow_down by polling less often", async () => {

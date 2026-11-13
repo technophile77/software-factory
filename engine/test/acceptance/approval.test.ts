@@ -114,12 +114,30 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
   it.each([
     ["503 from GitHub", "down"],
     ["dropped connections", "reset"],
-  ] as const)("[AP-8] ADR 0014 / SR-2: GitHub unreachable during approval (%s) fails closed with approval_failed", async (_n, outage) => {
+  ] as const)("[AP-8] ADR 0014 / SR-2: GitHub unreachable during the whole approval (%s) fails closed with approval_failed once the code expires", async (_n, outage) => {
     w = await World.create();
     const { open } = await openFeature(w);
     w.gh.outage = outage;
     w.gh.approve(open.approval.user_code, w.project().ownerId);
-    expectRpcError(await await_(w, open.session), ERR.approvalFailed);
+    const r = await await_(w, open.session);
+    expect(r.result?.approved).not.toBe(true);
+    // A wait can end on its own 900 s cap just before the expiry is seen.
+    const r2 = r.error?.code === ERR.approvalFailed ? r : await await_(w, open.session);
+    expectRpcError(r2, ERR.approvalFailed);
+  });
+
+  it.each([
+    ["503 from GitHub", "down"],
+    ["dropped connections", "reset"],
+  ] as const)("[AP-8b] owner decision 2026-11-13: a short outage while polling (%s) is retried and the owner's approval still opens the session", async (_n, outage) => {
+    w = await World.create();
+    const { open } = await openFeature(w);
+    w.gh.outage = outage;
+    await w.clock.advance(12_000);
+    w.gh.outage = "none";
+    w.gh.approve(open.approval.user_code, w.project().ownerId);
+    const r = await await_(w, open.session);
+    expect(r.result?.approved).toBe(true);
   });
 
   it("[AP-9] FR-7: the device-code request carries the project's client id, no scopes and no client secret", async () => {
