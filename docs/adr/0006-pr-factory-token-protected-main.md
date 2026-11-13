@@ -1,6 +1,6 @@
 # 0006. Pull requests via a dedicated factory token, with main protected
 
-- **Status:** Accepted
+- **Status:** Superseded by 0017 (kept as the optional `machine_account` mode)
 - **Date:** 2026-11-08
 - **Decided by:** owner
 - **Decision item:** open decision 9; write-up in `docs/proposals/0009-pr-integration.md`
