@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 (split from F-011 OQ-3: "the phone
   notification needs to be tied to some way to do approvals on my phone also";
   "I want a confirmation on risky actions like a merge, not just one click")
-- **Spec version:** 8
+- **Spec version:** 9
 
 ## 1. Objective and business purpose
 The factory stalls whenever an item is waiting for the owner and the owner is
@@ -136,13 +136,13 @@ owner already uses for the interview device approval (ADR 0014).
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | External service (S9.1): GitHub only. Workflow, as `github-actions[bot]`, in the config repo: create issue, add label, create comment. Engine, with the owner's token: list issue comments, list reactions on them, create comment, update its own comments (to mark them stale), update issue body, close issue, read PR state, read the config repo's visibility and collaborators (SR-9), send `repository_dispatch` to the config repo. No other call. | Analyst (S9.1) | Proposed |
+| SR-1 | External service (S9.1): GitHub only. Workflow, as `github-actions[bot]`, in the config repo: create issue, add label, create comment. Engine, with the owner's token: list issue comments, list reactions on them, create comment, update its own comments (to mark them stale), update issue body, close issue, read PR state, read the config repo's visibility and collaborators (SR-9), send `repository_dispatch` to the config repo. No other call. | Analyst (S9.1) | Accepted (owner, 2026-11-13, decision card) |
 | SR-2 | The owner is proven by GitHub: a reaction counts only if its user id is the owner's. It is recorded with the action comment URL instead of an SSH signature, which a phone can't make (ADR 0018, amending ADR 0015 decision 3 for phone actions). | Analyst (S8, ADR 0015) | Accepted (owner, 2026-11-13, OQ-2) |
-| SR-3 | Risky actions need a second, explicit tap on a comment that names the exact action and target, bound to the item revision, with a 15-minute expiry (owner, 2026-11-13; OWASP LLM Top 10 2025, LLM06: human approval for high-impact actions). | Owner, analyst | Proposed |
-| SR-4 | Actions are read by code from reactions and fixed action names; comment text is never given to an agent as instructions (S9.3). Request changes and Ask notes go to agents as data, as other owner notes do. | Analyst (S9.3) | Proposed |
-| SR-5 | Item content goes only to the private config repo, never to a public repo or a third-party service (owner rule, 2026-11-12: sensitive info never in a public repo). This replaces F-011's draft rule that phone alerts carry only counts: the phone has to show enough to decide, and the config repo is as private as the rest of the project. | Analyst | Proposed |
+| SR-3 | Risky actions need a second, explicit tap on a comment that names the exact action and target, bound to the item revision, with a 15-minute expiry (owner, 2026-11-13; OWASP LLM Top 10 2025, LLM06: human approval for high-impact actions). | Owner, analyst | Accepted (owner, 2026-11-13, decision card) |
+| SR-4 | Actions are read by code from reactions and fixed action names; comment text is never given to an agent as instructions (S9.3). Request changes and Ask notes go to agents as data, as other owner notes do. | Analyst (S9.3) | Accepted (owner, 2026-11-13, decision card) |
+| SR-5 | Item content goes only to the private config repo, never to a public repo or a third-party service (owner rule, 2026-11-12: sensitive info never in a public repo). This replaces F-011's draft rule that phone alerts carry only counts: the phone has to show enough to decide, and the config repo is as private as the rest of the project. | Analyst | Accepted (owner, 2026-11-13, decision card) |
 | SR-6 | Residual risk, to state to the owner: anyone holding the owner's GitHub session or token can comment as the owner, so a stolen phone with GitHub signed in, or the engine's token used by something else, could approve items. The confirm tap doesn't stop that; it guards against a mis-tap, not a stolen account. GitHub's own sign-in and 2FA are the control. Agents can't: they run in containers without tokens (ADR 0015). | Analyst | Stated to the owner and accepted 2026-11-13 (OQ-2) |
-| SR-7 | No secrets or tokens in issue bodies, comments or logs (S3.1); the item's text passes the secrets scan before it is rendered. | Analyst (S3.1) | Proposed |
+| SR-7 | No secrets or tokens in issue bodies, comments or logs (S3.1); the item's text passes the secrets scan before it is rendered. | Analyst (S3.1) | Accepted (owner, 2026-11-13, decision card) |
 | SR-8 | The engine stores each action comment's id and text hash, and the issue body's hash, when posted; a tap on an edited action or confirm comment, or on an issue whose body was edited by anyone but the engine, records nothing. | Gate 1 #1 (S2.1, S6.2) | Accepted (owner, 2026-11-13, decision card) |
 | SR-9 | Turning phone notifications on also checks that the owner is the config repo's only collaborator; otherwise it refuses and says why. | Gate 1 #2 (S8.1, owner rule 2026-11-12) | Accepted (owner, 2026-11-13, decision card) |
 | SR-10 | Fields that can carry outside text are rendered in fenced code blocks, with @mentions and remote images stripped, under an engine-written line naming their author. | Gate 1 #3 (S6.1, S9.3) | Accepted (owner, 2026-11-13, decision card) |
@@ -151,21 +151,81 @@ owner already uses for the interview device approval (ADR 0014).
 | SR-13 | A phone history entry also records the reacting user id, reaction id and time, so it stands if the issue is deleted. | Gate 1 #6 (S3.3) | Accepted (owner, 2026-11-13, decision card) |
 
 ## 10. Interface requirements
-Hygiene items named here; none filed until the open questions are answered.
+Drafts for the owner's approval. H-0127 is withdrawn (folded into F-011's
+H-0120).
 
-- **H-0125 (Interfaces): Phone issue v1.0.** Title format, body template per
-  kind, label, the action comment labels per kind, the reactions (👍 choose, 🚀
-  confirm), the typed-note format for Request changes, Ask and free-text
-  answers, and reply texts.
-- **H-0126 (Hygiene): config repo workflow template** and the F-003
-  onboarding step that installs it and checks the repo is private.
-- **H-0127:** withdrawn; the owner-action `via: vscode | phone` and
-  `ref: <comment URL>` fields are folded into F-011's H-0120 (Inbox item
-  v2.0). Free for reuse.
-- **H-0128 (Interfaces): Project manifest `phone` block** (`enabled`); owner login and id stay in the config repo and engine
-  config.
-- **H-0129 (Architecture):** ADR 0018 (in this PR), amending ADR 0015
-  decision 3 for phone actions, and its row in `docs/adr/README.md`.
+### H-0125 (draft, Interfaces): Phone issue v1.0, and Inbox item v2.1
+**Phone issue v1.0** (new contract; the engine renders, the config repo
+workflow posts):
+
+- **Where:** the project's config repo, which must be private and have the
+  owner as its only collaborator (FR-11, SR-9). Label `factory-inbox`.
+- **Title:** `<Kind>[ (<Category>)]: <item title>`, at most 120 characters,
+  for example `Decision (Product): Which phone channel?`.
+- **Body:** a hidden marker line
+  `<!-- factory-item: <repo>/<item id> rev <n> -->`; then the card
+  sections of the item's kind from Inbox item v2.0, rendered by code under
+  SR-10 (outside text fenced, @mentions and remote images stripped, author
+  line above it); then a line giving the item's revision; last, an
+  @mention of the owner's login, read from the config repo.
+- **Action comments:** one per allowed action for the kind (F-011 FR-3),
+  posted by the workflow in a fixed order, each a single line:
+  `<label>`, for example `Approve`, `Reject`, `Defer`, `Option 2: ntfy`.
+  The engine keeps the comment id, label, revision and text hash (SR-8).
+  Request changes and Ask for more context get a comment that reads
+  `<label>: reply with a comment starting "<label>:" and your note`.
+- **Reactions:** 👍 (`+1`) on an action comment chooses it; 🚀 (`rocket`)
+  on a confirm comment confirms a risky action (FR-8). Any other reaction
+  is ignored.
+- **Confirm comment** (engine): `Confirm: <action> <target>. Tap 🚀 within
+  15 minutes.` The target is fixed per kind: hygiene, the item id and files;
+  maturity, the repo and from and to levels; Security decision, the option
+  and the risk it accepts; spec sign-off, the feature and spec version.
+- **Replies** (engine), fixed texts: `Recorded: <action>.`,
+  `Not recorded: <reason>.` (reasons: changed since, two actions chosen,
+  confirm expired, comment edited), `Acted on in VS Code.`,
+  `Merged on GitHub.`
+- **Close:** the engine closes the issue after recording, or when the item
+  closes elsewhere.
+
+**Inbox item v2.1** (minor): a history entry with `via: phone` also has
+`ref` (action comment URL), `reaction_id`, `actor_id` (the reacting
+GitHub user id) and `read_at` (SR-13). Such an entry needs no signature
+(ADR 0018); every other non-PR owner action keeps ADR 0015 signing. A
+`merged_on_github` action closes a `pull_request` item when the engine sees
+the PR merged by the owner's account (FR-9).
+
+### H-0126 (draft, Hygiene): config repo workflow template
+- The master repo ships `templates/config-repo/.github/workflows/factory-inbox.yml`.
+  F-003 onboarding copies it into the config repo when the owner turns
+  phone notifications on, and checks the repo is private and owner-only.
+- `on: repository_dispatch` with type `factory-inbox` only;
+  `permissions: issues: write`; actions pinned by commit SHA (SR-12).
+- It creates the issue from the engine's rendered title and body, adds the
+  label, and posts the action comments in order. It runs nothing from the
+  payload and makes no other call.
+- The engine sends the dispatch with the owner's token; the payload holds
+  only the rendered title, body, action labels and the item reference.
+
+### H-0128 (draft, Interfaces): Project manifest v1.7 `phone` block
+(v1.6 is F-011's H-0124.) New optional top-level key:
+
+```yaml
+phone:
+  enabled: false   # true sends blocking items to the config repo as phone issues
+```
+
+- Absent means `enabled: false`.
+- The owner's GitHub login and user id are not in the manifest: the login
+  for the @mention is a repository variable of the config repo
+  (`FACTORY_OWNER_LOGIN`), and the user id the engine checks is in the
+  engine's own config, outside Git.
+- `enabled` is a pinned key (F-007 SR-5): turning it on needs the owner's
+  confirmation and passes the FR-11 checks first.
+
+### H-0129 (approved with OQ-2, applied in this PR): ADR 0018
+ADR 0018 added, amending ADR 0015 decision 3 for phone actions; its row in
+`docs/adr/README.md`; ADR 0015's header notes the amendment.
 
 ## 11. Readiness gate
 - [ ] Clear objective
@@ -186,6 +246,7 @@ Hygiene items named here; none filed until the open questions are answered.
 | 6 | 2026-11-13 | Security Gate 1: 6 findings, none blocking; SR-8 to SR-13 proposed | — |
 | 7 | 2026-11-13 | SR-8 to SR-13 approved | Owner, 2026-11-13 (decision card) |
 | 8 | 2026-11-13 | A-1 and A-2 approved; A-1 checked in a spike before build, and a failed check sends the spec back to the owner | Owner, 2026-11-13 (decision card) |
+| 9 | 2026-11-13 | SR-1, SR-3, SR-4, SR-5, SR-7 approved; section 10: drafts of H-0125, H-0126, H-0128; H-0129 applied | Owner, 2026-11-13 (decision card) for the SRs |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
