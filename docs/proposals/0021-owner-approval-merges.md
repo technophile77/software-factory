@@ -4,9 +4,11 @@
   factory, work attributed to the owner, no approving PRs on GitHub, no
   admin bypass on every PR. The two-account model may stay as an option.
 - **Category:** Architecture and Security
-- **Status:** Open (F-011 OQ-2, OQ-7, OQ-8)
-- **Would supersede:** ADR 0006 (PRs via a dedicated factory token, `main`
-  protected by a required owner review)
+- **Status:** Decided 2026-11-13 (owner, thread, F-011 OQ-2): the owner's
+  click in the inbox is the only thing needed, no signing step. That is
+  option B below, with C kept as an optional mode. Recorded as
+  [ADR 0017](../adr/0017-owner-account-prs-inbox-merge.md), which supersedes
+  ADR 0006. Option A's analysis is kept for when the owner returns to it.
 
 ## Problem
 ADR 0006 assumes a factory machine account: it opens PRs, and `main`
@@ -26,10 +28,13 @@ decision.
 | B. Extension merges directly | Owner clicks Approve; the extension calls GitHub's merge API with the owner's VS Code GitHub sign-in. `main` requires only CI. | Least to build | Nothing on GitHub stops the engine's token (also the owner's) from merging unapproved work; enforcement is only "the engine doesn't do that" |
 | C. Keep ADR 0006 (machine account) | Machine account opens PRs; inbox Approve submits a real GitHub review as the owner using his VS Code GitHub sign-in; required review stays. | GitHub's own review rule; factory actions visibly separate | A second account the owner doesn't want; work attributed to the machine |
 
-Recommendation: **A as the default, C kept as `machine_account` mode** for
-anyone who wants it. B is not recommended.
+Recommendation at the time: A as the default, C as `machine_account` mode.
+**Owner's decision: B, C kept as `machine_account` mode.** The owner trusts
+his PC and prefers usability where no cited standard asks for more. OWASP
+LLM Top 10 2025 (LLM06, excessive agency) asks for human approval of
+high-impact actions, which the click is; it does not ask for signatures.
 
-## How option A is protected
+## How option A would be protected
 | Attack | Stopped by |
 |---|---|
 | An agent writes an approval record or a `history` entry | Not signed with the owner's key; the key is never in an agent container (ADR 0015) |
@@ -39,7 +44,7 @@ anyone who wants it. B is not recommended.
 | The engine merges without approval | The ruleset requires the check and has no bypass actors; the engine also re-verifies before merging |
 | The engine (or a leaked token) removes the ruleset | The everyday token has no Administration permission (F-011 OQ-7) |
 
-## Risks to accept or reduce
+## Risks of option A (for reference)
 1. **A program running as the owner, outside the factory's containers, can
    sign and merge.** It can use the owner's signing key and token just as
    he can. Today's decisions carry the same risk (ADR 0015). Reduced by a
@@ -58,7 +63,7 @@ anyone who wants it. B is not recommended.
    F-003 FR-10), and the keep-PRs-mergeable workflow labels any branch it
    can't update.
 
-## Owner setup (once per repo, prepared by onboarding)
+## Owner setup for option A (not needed under B)
 - A fine-grained token of the owner's, limited to the factory's repos:
   Contents read and write, Pull requests read and write, Issues read and
   write, Commit statuses and Checks read, Metadata read. No Workflows, no
@@ -67,7 +72,6 @@ anyone who wants it. B is not recommended.
   checks, no required review, no bypass list.
 - An SSH signing key on the owner's GitHub account (already needed by ADR 0015).
 
-## Proposed ADR (written only after the owner decides)
-"0017. PRs opened and merged with the owner's own account, gated by a
-signed inbox approval" — Status Accepted, supersedes ADR 0006; decision as
-in option A, with `machine_account` mode as the ADR 0006 alternative.
+## Outcome
+ADR 0017. Residual risk under B is in F-011 SR-7, with an optional
+lightweight safeguard put to the owner as F-011 OQ-9.
