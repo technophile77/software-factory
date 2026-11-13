@@ -37,6 +37,7 @@ import { fastImportStream } from "./fast-import";
 import { FakeGitleaks, GitWrapper } from "./fake-tools";
 import { ownerOnly, removeTree, WINDOWS_ENV } from "./platform";
 import { RpcClient, rpcOnce, type RpcResponse } from "./rpc";
+import { securityItemsIn } from "../../inbox-items";
 
 /** The host's git, by absolute path, so the fixtures never run the logging
  * wrapper or anything a test puts on PATH. FACTORY_TEST_GIT overrides it. */
@@ -659,25 +660,11 @@ export class World {
   /** Every inbox item with `category: Security`, wherever the engine put it:
    * the `.factory` worktree or the `factory/state` branch, local or remote. */
   securityItems(): Array<{ where: string; id: string; text: string }> {
-    const out = new Map<string, { where: string; id: string; text: string }>();
-    const consider = (where: string, id: string, text: string) => {
-      if (/^category:\s*Security\s*$/m.test(text)) out.set(`${where}:${id}`, { where, id, text });
-    };
-    const repos = [...this.projects.flatMap((p) => [p.clone, p.bare, p.configRepo])];
-    for (const r of repos) {
-      const dir = join(r, ".factory", "inbox", "decision");
-      if (existsSync(dir)) {
-        for (const f of readdirSync(dir)) consider(r, f, readFileSync(join(dir, f), "utf8"));
-      }
-      const names = tryGit(r, "ls-tree", "-r", "--name-only", "refs/heads/factory/state", "--", "inbox/decision");
-      for (const n of names?.split("\n").filter(Boolean) ?? []) {
-        const text = tryGit(r, "show", `refs/heads/factory/state:${n}`);
-        if (text) consider(r, n.split("/").pop()!, text);
-      }
-    }
-    // The same item seen in the worktree and on the branch counts once.
     const byId = new Map<string, { where: string; id: string; text: string }>();
-    for (const v of out.values()) byId.set(`${v.where.replace(/\.git$/, "")}:${v.id}`, v);
+    for (const r of this.projects.flatMap((p) => [p.clone, p.bare, p.configRepo])) {
+      // The clone and its bare remote hold the same item once.
+      for (const i of securityItemsIn(r)) byId.set(`${r.replace(/\.git$/, "")}:${i.id}`, { where: r, id: i.id, text: i.text });
+    }
     return [...byId.values()];
   }
 

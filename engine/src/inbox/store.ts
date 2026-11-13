@@ -51,12 +51,16 @@ export interface InboxOptions {
  * reactions and commands (FR-5 to FR-8). Everything here is code: no agent
  * reads a comment or writes an issue (FR-20).
  */
+const OPEN: ReadonlySet<string> = new Set(["open", "deferred"]);
+
 export class Inbox {
   private privacy: { ok: boolean; reason: string } | null = null;
   private readonly waiting = new Map<string, number>();
   private readonly told = new Set<string>();
   private readonly random: (n: number) => Buffer;
   private c: InboxConnection | null = null;
+  /** Open items by feature, for engine.status (F-016 FR-10); kept in step with every record read or written. */
+  private readonly open = new Map<string, { feature: string; open: boolean }>();
 
   constructor(private readonly o: InboxOptions) {
     this.random = o.random ?? crypto.randomBytes;
@@ -103,11 +107,22 @@ export class Inbox {
     if (!raw) return null;
     const r = YAML.parse(raw.toString("utf8")) as InboxRecord;
     if (r?.schema !== "inbox-record/3.0" || r.id !== id) throw new Error(`the inbox record ${id} is malformed`);
+    this.track(r);
     return r;
   }
 
   private async write(r: InboxRecord, message: string, extra: Array<{ path: string; content: string }> = []): Promise<void> {
     await this.o.state.commit([{ path: recordPath(r.id), content: YAML.stringify(r) }, ...extra], `${r.id}: ${message}`);
+    this.track(r);
+  }
+
+  private track(r: InboxRecord): void {
+    if (r.feature) this.open.set(r.id, { feature: r.feature, open: OPEN.has(r.status) });
+  }
+
+  /** The ids of a feature's items still waiting on the owner, as last read or written. */
+  waitingOn(feature: string): string[] {
+    return [...this.open].filter(([, v]) => v.open && v.feature === feature).map(([id]) => id).sort();
   }
 
   /** The next id of a prefix: one more than the highest record, or old item file, of that prefix. */
@@ -181,12 +196,37 @@ export class Inbox {
     return rev;
   }
 
-  /** Records that an effect ran (F-016 H-0180, SR-5, SR-7), so it never runs twice. */
-  async effectDone(id: string, effect: string, stage?: string): Promise<void> {
+  /**
+   * The record change that says an effect ran (F-016 H-0180, SR-5, SR-7),
+   * for the caller to commit in the same commit as the feature's stage.
+   */
+  async effectChange(id: string, effect: string, stage?: string): Promise<{ path: string; content: string }> {
     const r = await this.read(id);
-    if (!r) return;
+    if (!r) throw new Error(`no inbox record ${id}`);
     r.history.push({ at: iso(this.o.clock.now()), by: "engine", action: "effect_done", effect, ...(stage ? { stage } : {}) });
-    await this.write(r, `effect ${effect}`);
+    return { path: recordPath(id), content: YAML.stringify(r) };
+  }
+
+  /** Records that an effect ran, for effects with no feature to commit with. */
+  async effectDone(id: string, effect: string): Promise<void> {
+    const c = await this.effectChange(id, effect);
+    await this.o.state.commit([c], `${id}: effect ${effect}`);
+  }
+
+  /**
+   * F-016 FR-2, SR-5: owner actions recorded but not yet carried out, as a
+   * restarted engine finds them. An action is carried out when an
+   * `effect_done` follows it in the record.
+   */
+  async pendingEffects(): Promise<Recorded[]> {
+    const out: Recorded[] = [];
+    for (const r of await this.records()) {
+      const lastOwner = r.history.map((h) => h.by === "owner").lastIndexOf(true);
+      if (lastOwner < 0) continue;
+      if (r.history.slice(lastOwner + 1).some((h) => h.action === "effect_done")) continue;
+      out.push({ id: r.id, record: r, entry: r.history[lastOwner]! });
+    }
+    return out;
   }
 
   // ---- privacy (F-011 FR-15, SR-9) ----

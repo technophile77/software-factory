@@ -12,6 +12,7 @@ import { parseTranscript } from "../src/state/transcript";
 import { FakeDocker } from "./fakes";
 import { RpcClient, World, approvedSession, engineJson, git, makeWorld, manifestYaml, start } from "./helpers";
 import { policyDoc } from "./policy-fixture";
+import { securityItemsIn } from "./inbox-items";
 
 let engines: EngineHandle[] = [];
 let clients: RpcClient[] = [];
@@ -193,8 +194,7 @@ describe("the analyst, wired end to end with fake Docker and SDK (FR-8 to FR-11)
     const branch = e.feature(feature)!.state.branch;
     expect(git(w.config, "rev-parse", branch)).toBe(git(w.config, "rev-parse", "main"));
     expect(fs.existsSync(path.join(runOf(w, feature)!.worktree!, ".github"))).toBe(false);
-    const items = git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", "inbox/decision").split("\n");
-    expect(git(w.config, "show", `factory/state:${items[0]}`)).toContain("Analyst wrote outside its rules");
+    expect(securityItemsIn(w.config)[0]!.text).toContain("Analyst wrote outside its rules");
   });
 
   it("AC-13: with Docker down no session starts, the owner is told why, and the run resumes at the next start", async () => {

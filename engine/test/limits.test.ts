@@ -4,7 +4,7 @@ import YAML from "yaml";
 import { describe, expect, it } from "vitest";
 import {
   LIMITS_FILE, Limits, LimitsError, agentLimits, containerLimits, gate1Limits, manifestLimits, maxPageBytes, mergeLimits, parseLimits,
-  readDefaultLimits, roleContainerLimits, sessionCaps, worktreeLimits,
+  readDefaultLimits, readinessLimits, roleContainerLimits, sessionCaps, worktreeLimits,
 } from "../src/config/limits";
 import { Git } from "../src/git";
 import { Children } from "../src/proc";
@@ -27,6 +27,8 @@ describe("engine/config/limits.yaml (H-0087)", () => {
       worktree_commit: { max_files: 200, max_total_mib: 5, max_file_mib: 1 },
       security_reviewer: { turns: 100, output_tokens: 200000, dollars: 5, wall_time_minutes: 60, cpus: 1, memory_mib: 1024, pids: 128, tmp_mib: 256 },
       security_gate_1: { runs_per_feature: 3, report_kib: 256, additions_kib: 64 },
+      orchestrator: { turns: 40, output_tokens: 60000, dollars: 2, wall_time_minutes: 20, cpus: 1, memory_mib: 1024, pids: 128, tmp_mib: 256 },
+      readiness_gate: { runs_per_feature: 5, report_kib: 64 },
     });
   });
 });
@@ -114,6 +116,7 @@ describe("consumers", () => {
       "requirements-analyst": { cpus: 2, memoryBytes: 2048 * MiB, pids: 256, tmpBytes: 512 * MiB },
       "web-reader": { cpus: 1, memoryBytes: 1024 * MiB, pids: 128, tmpBytes: 256 * MiB },
       "security-reviewer": { cpus: 1, memoryBytes: 1024 * MiB, pids: 128, tmpBytes: 256 * MiB },
+      orchestrator: { cpus: 1, memoryBytes: 1024 * MiB, pids: 128, tmpBytes: 256 * MiB },
     });
     expect(containerLimits(l.proxy)).toEqual({ cpus: 0.5, memoryBytes: 256 * MiB, pids: 64, tmpBytes: 16 * MiB });
   });
@@ -140,9 +143,17 @@ describe("F-008 Gate 1 limits (H-0095)", () => {
     delete d.security_gate_1;
     const l = parseLimits(d, LIMITS_FILE, true);
     expect(gate1Limits(l, "tokens")).toBeNull();
-    expect(Object.keys(roleContainerLimits(l))).toEqual(["requirements-analyst", "web-reader"]);
+    expect(Object.keys(roleContainerLimits(l))).toEqual(["requirements-analyst", "web-reader", "orchestrator"]);
     // A project can't raise what isn't there, and lowering it is a no-op.
     expect(mergeLimits(l, { security_reviewer: { turns: 1 } })).toEqual({ limits: l, above: [] });
+  });
+
+  it("F-016 H-0184: readiness limits from the shipped values, and none without the sections", () => {
+    expect(readinessLimits(defaults(), "tokens")).toMatchObject({ runsPerFeature: 5, reportBytes: 64 * 1024 });
+    const d = YAML.parse(SHIPPED) as Record<string, unknown>;
+    delete d.orchestrator;
+    expect(readinessLimits(parseLimits(d, LIMITS_FILE, true), "tokens")).toBeNull();
+    expect(mergeLimits(defaults(), { readiness_gate: { runs_per_feature: 9 } }).above).toEqual(["readiness_gate.runs_per_feature"]);
   });
 
   it("caps, run limit and file sizes from the shipped values; a project may only lower them", () => {

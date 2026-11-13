@@ -13,6 +13,7 @@ import { parseTranscript } from "../src/state/transcript";
 import { FakeDocker } from "./fakes";
 import { RpcClient, World, approvedSession, engineJson, git, makeWorld, manifestYaml, start } from "./helpers";
 import { policyDoc } from "./policy-fixture";
+import { securityItemsIn } from "./inbox-items";
 
 const STANDARDS = fs.readFileSync(path.join(__dirname, "..", "..", "docs", "security-standards.md"), "utf8");
 const CHECKLIST = parseStandards(STANDARDS).checklist;
@@ -267,10 +268,10 @@ describe("Security Gate 1 on the engine, with fake Docker and SDK (F-008)", () =
     await interview(w, e, c, () => feature, (f) => (feature = f));
     await until("blocked", () => !!e.feature(feature)?.state.gate1.blocked);
     expect(stageOf(e, feature)).toBe("security_gate_1");
-    const items = git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", "inbox/decision").split("\n").filter(Boolean);
+    const items = securityItemsIn(w.config);
     expect(items).toHaveLength(1);
-    const item = git(w.config, "show", `factory/state:${items[0]}`);
-    const front = YAML.parse(item.split("---")[1]!);
+    const item = items[0]!.text;
+    const front = items[0]!.record;
     expect(front).toMatchObject({ category: "Security", feature, options: [{ id: "A", label: "Read only" }, { id: "B", label: "Read and write" }], recommendation: "A" });
     expect(item).not.toContain("](https://");
     const rep = JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/security_gate_1/security-reviewer-1.json`));
@@ -331,8 +332,7 @@ describe("Security Gate 1 on the engine, with fake Docker and SDK (F-008)", () =
     const { e, c } = await boot(w, runtime(d, s.sdk));
     await interview(w, e, c, () => feature, (f) => (feature = f));
     await until("the failed run", () => runsOf(w, feature, "security-reviewer")[0]?.status === "failed");
-    const items = git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", "inbox/decision").split("\n").filter(Boolean);
-    expect(git(w.config, "show", `factory/state:${items[0]}`)).toContain("Security reviewer changed files outside its report");
+    expect(securityItemsIn(w.config)[0]!.text).toContain("Security reviewer changed files outside its report");
     expect(git(w.config, "show", `${e.feature(feature)!.state.branch}:docs/features/${feature}-export.md`)).toContain("- **Spec version:** 3");
   });
 

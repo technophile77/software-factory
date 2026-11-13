@@ -8,7 +8,7 @@ export const MODELS_FILE = "engine/config/models.yaml";
 /** The roles the engine runs in F-007; each needs a model. */
 export const MODEL_ROLES = ["requirements-analyst", "web-reader"] as const;
 /** F-008: a factory version from before it has no entry, and then Gate 1 doesn't run (AC-10). */
-export const OPTIONAL_MODEL_ROLES = ["security-reviewer"] as const;
+export const OPTIONAL_MODEL_ROLES = ["security-reviewer", "orchestrator"] as const;
 export type ModelRole = (typeof MODEL_ROLES)[number];
 export type Models = Record<ModelRole, string> & Partial<Record<(typeof OPTIONAL_MODEL_ROLES)[number], string>>;
 

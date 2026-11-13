@@ -484,7 +484,7 @@ describe("AC-8 / FR-8: a finding that needs the owner's choice", () => {
     await r.w.settle();
     const items = newSecurityItems(r.w, before);
     expect(items.length).toBe(1);
-    const fm = YAML.parse(items[0]!.text.split(/^---\s*$/m)[1]!);
+    const fm = YAML.parse(items[0]!.text.slice(0, items[0]!.text.indexOf("\n<!-- factory-item:")));
     expect(fm).toMatchObject({ category: "Security", status: "open", feature, recommendation: "B" });
     expect(fm.options.map((o: any) => [o.id, o.label])).toEqual(f.options!.map((o) => [o.id, o.label]));
     expect(await stageOf(r.w, feature)).toBe(GATE1);
@@ -696,6 +696,23 @@ describe("AC-13 / SR-8, SR-12: reading the report safely", () => {
   });
 });
 
+/**
+ * F-011 SR-10: in an issue body, reviewer text sits only inside code fences
+ * (inert on GitHub), with links and images broken; outside the fences the
+ * body is plain.
+ */
+function expectFenced(md: string, mk: string, what: string) {
+  const fences = [...md.matchAll(/^(`{3,})text\n([\s\S]*?)\n\1$/gm)];
+  const outside = fences.reduce((acc, m) => acc.replace(m[0], ""), md);
+  expect(outside, `${what}: reviewer text outside a fence`).not.toContain(mk);
+  expect(outside, `${what}: an unescaped link`).not.toMatch(/(?<!\\)\]\(/);
+  expect(outside, `${what}: raw HTML`).not.toMatch(/<\s*\/?\s*(script|img|a|b|iframe)\b/i);
+  const inside = fences.map((m) => m[2]).join("\n");
+  expect(inside, `${what}: the reviewer text is there`).toContain(mk);
+  expect(inside, `${what}: a live link`).not.toContain("https://evil.example");
+  expect(inside, `${what}: a live image`).not.toMatch(/!\[/);
+}
+
 /** True when `md` holds no live Markdown or HTML built from reviewer text. */
 function expectPlain(md: string, mk: string, what: string) {
   expect(md, `${what}: an unescaped link`).not.toMatch(/(?<!\\)\]\(/);
@@ -735,13 +752,14 @@ describe("AC-14 / SR-4: reviewer text is plain text", () => {
     const items = newSecurityItems(r.w, before);
     expect(items.length).toBe(1);
     const text = items[0]!.text;
-    const parts = text.split(/^---\s*$/m);
-    const fm = YAML.parse(parts[1]!);
+    // The F-011 record is the engine's; the issue body is rendered from it.
+    const cut = text.indexOf("\n<!-- factory-item:");
+    const fm = YAML.parse(text.slice(0, cut));
     expect(fm.status).toBe("open");
     expect(fm.category).toBe("Security");
     expect(Object.keys(fm)).not.toContain("approved");
-    const body = parts.slice(2).join("---");
-    expectPlain(body, mk, "inbox item body");
+    const body = text.slice(cut);
+    expectFenced(body, mk, "inbox item body");
     expect(body.match(/^## Context\s*$/gm)?.length).toBe(1);
   });
 });

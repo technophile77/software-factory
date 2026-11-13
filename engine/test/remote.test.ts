@@ -8,6 +8,7 @@ import { Children } from "../src/proc";
 import { StateRepo } from "../src/state/state-repo";
 import { GitHttp } from "./git-http";
 import { FACTORY_TOKEN, GIT_PATH, RpcClient, World, engineJson, git, makeWorld, start, tmpdir } from "./helpers";
+import { securityItemsIn } from "./inbox-items";
 
 let engines: EngineHandle[] = [];
 let servers: GitHttp[] = [];
@@ -41,8 +42,7 @@ async function boot(w: World): Promise<EngineHandle> {
 }
 
 function securityItems(repo: string): string[] {
-  const out = git(repo, "ls-tree", "-r", "--name-only", "refs/heads/factory/state", "--", "inbox/decision");
-  return out ? out.split("\n") : [];
+  return securityItemsIn(repo).map((i) => i.id);
 }
 
 /** Commits `files` on the remote's factory/state as someone other than the engine. */

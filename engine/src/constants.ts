@@ -112,3 +112,4 @@ export const ENGINE_JSON = "engine.json";
 export const CREDENTIAL_SERVICE = "software-factory-engine";
 export const INTERVIEW_STAGE = "requirements_interview";
 export const AFTER_INTERVIEW_STAGE = "security_gate_1";
+export const BUILD_STAGE = "build_and_test_prep";
