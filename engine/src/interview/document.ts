@@ -190,10 +190,10 @@ export function hiddenLinkLines(lines: string[]): number[] {
     const first = Math.min(...covered);
     let last = Math.max(...covered);
     for (const i of covered) defLines.add(i);
-    defs.push({ line: first + 1, label: linkLabel(m[1]!), blank: blankLinkText(m[1]!) });
-    // Every use of a label with blank text, such as the shortcut `[&nbsp;]`,
-    // renders as a link with no visible text (test defect D-2).
-    if (blankLinkText(m[1]!)) hits.add(first + 1);
+    const blankLabel = blankLinkText(m[1]!);
+    defs.push({ line: first + 1, label: linkLabel(m[1]!), blank: blankLabel });
+    // A definition whose label is blank text makes every use of it a link with no visible text (D-2).
+    if (blankLabel) hits.add(first + 1);
     // The destination or the title may sit on the next line.
     let title = m[3]!;
     if (!m[2] && last + 1 < bare.length) {

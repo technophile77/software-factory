@@ -561,7 +561,7 @@ the shortcut form, where the link text is the label itself.
   footnote (`Text[^n].` plus `[^n]: a note`, which GFM shows) is refused too.
   Neither is asserted; whether footnotes are in scope is for the owner.
 - **markdown-it image alt.** markdown-it 14 drops entities and escapes from
-  an image's `alt` (`![&#42;](x.png)` renders `alt=""`), while CommonMark
+  an image's `alt` (an image whose alt is `&#42;` renders `alt=""`), while CommonMark
   and micromark keep them. The image itself still shows, and the source and
   reference rendering have text, so this is a renderer quirk, not a hidden
   link; not asserted.
@@ -570,3 +570,8 @@ the shortcut form, where the link text is the label itself.
 
 Unchanged from Addendum 3. The sweep covers inline content only; block-level
 hiding (definitions, comments) is covered by earlier addenda.
+
+
+## Note on the final commit
+
+No test-engineer run is recorded on `17d2459`, the fix for D-3 to D-5. Validation round 5 ran the suite on that commit: every Addendum 4 test passes there, LNK-11 included (`F-009-validation.md`). The orchestrator added this note and reworded one Addendum 4 example, which the docs check had read as a broken link.
