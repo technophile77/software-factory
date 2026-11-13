@@ -455,17 +455,17 @@ describe("git (SR-11)", () => {
     const orig = g.run.bind(g);
     g.run = (cwd, args, o) => (calls.push(args[0]!), orig(cwd, args, o));
     await state.commit([{ path: "interviews/F-001/a.jsonl", content: "one\n" }], "F-001: one");
-    // head, write the blob, read-tree, index, tree, commit, ref, the checkout's index.
-    expect(calls).toEqual(["rev-parse", "hash-object", "read-tree", "update-index", "write-tree", "commit-tree", "update-ref", "update-index"]);
+    // Write the blob, read-tree, index, tree, commit, ref, the checkout's index; the head comes from the reader (F-014).
+    expect(calls).toEqual(["hash-object", "read-tree", "update-index", "write-tree", "commit-tree", "update-ref", "update-index"]);
     calls.length = 0;
     await state.commit([{ path: "interviews/F-001/a.jsonl", content: "one\ntwo\n" }, { path: "interviews/F-001/b.jsonl", content: "b\n" }], "F-001: two");
-    // On top of its own last commit the temp index is reused; two blobs still take one process.
-    expect(calls).toEqual(["rev-parse", "hash-object", "update-index", "write-tree", "commit-tree", "update-ref", "update-index"]);
+    // On top of its own last commit the temp index is reused and the head is held (A-1); two blobs still take one process.
+    expect(calls).toEqual(["hash-object", "update-index", "write-tree", "commit-tree", "update-ref", "update-index"]);
     expect(git(repo, "show", "factory/state:interviews/F-001/a.jsonl")).toBe("one\ntwo");
     expect(git(repo, "show", "factory/state:interviews/F-001/b.jsonl")).toBe("b");
     expect(git(repo, "show", "factory/state~1:interviews/F-001/a.jsonl")).toBe("one");
     expect(git(path.join(repo, ".factory"), "status", "--porcelain")).toBe("");
-    // A commit made elsewhere moves the branch: the next one reads the tree again and keeps that commit's files.
+    // A commit made elsewhere moves the branch: the held head fails the swap, and the commit is made again on the moved head, reading its tree and keeping its files (F-014 AC-5).
     const other = git(repo, "commit-tree", git(repo, "rev-parse", "factory/state^{tree}"), "-p", "factory/state", "-m", "elsewhere");
     git(repo, "update-ref", "refs/heads/factory/state", other);
     calls.length = 0;

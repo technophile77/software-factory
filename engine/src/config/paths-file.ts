@@ -60,6 +60,12 @@ export function readPathsFile(masterRepo: string, os: OsApi): string[] {
   });
 }
 
+/**
+ * The master clone's root commits and origin, read once per `Git` (one per
+ * engine start) rather than once per project path checked (F-014 FR-4).
+ */
+const masterFacts = new WeakMap<Git, Map<string, Promise<{ roots: Set<string>; origin: string | null }>>>();
+
 const normUrl = (u: string) => u.trim().toLowerCase().replace(/\.git$/, "").replace(/\/+$/, "");
 
 /**
@@ -102,9 +108,14 @@ export async function checkProjectPath(p: string, masterRepo: string, git: Git):
       return null;
     }
   };
-  const [mr, pr] = [await roots(master), await roots(real)];
+  let byMaster = masterFacts.get(git);
+  if (!byMaster) masterFacts.set(git, (byMaster = new Map()));
+  let facts = byMaster.get(master);
+  if (!facts) byMaster.set(master, (facts = (async () => ({ roots: await roots(master), origin: await origin(master) }))()));
+  const { roots: mr, origin: mo } = await facts;
+  const pr = await roots(real);
   if ([...pr].some((r) => mr.has(r))) throw new ConfigError("The path is a clone of the master repo (same root commit).");
-  const [mo, po] = [await origin(master), await origin(real)];
+  const po = await origin(real);
   if (mo && po && mo === po) throw new ConfigError("The path is a clone of the master repo (same remote).");
   return real;
 }

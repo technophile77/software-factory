@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { ensureOwnerDir, writeFileAtomic } from "./fsutil";
+import { CatFileReader, NotForReader, ReaderBroken, ReaderLimit, TreeEntry, TreeError, parseTree } from "./git-reader";
 import { Children, RunResult, baseEnv, runFixed } from "./proc";
 
 export class GitError extends Error {
@@ -31,13 +32,32 @@ export function overrideArgs(hooksDir: string, attributesFile: string): string[]
   ];
 }
 
+/** The git subcommand in `args`, past leading global options, for the process counts. */
+function subcommand(args: string[]): string {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === "-c" || a === "--git-dir" || a === "--work-tree" || a === "-C") i++;
+    else if (!a.startsWith("-")) return a;
+  }
+  return "";
+}
+
 export interface GitOptions {
   gitPath: string;
   /** Engine-owned folder for the empty hooks dir, empty config and askpass helper. */
   homeDir: string;
   children: Children;
   env?: NodeJS.ProcessEnv;
+  /** How long a repo's reader stays open after its last read (F-014 OQ-1). */
+  readerIdleMs?: number;
+  /** False reads with plain git calls only, as before F-014 (tests compare the two). */
+  readers?: boolean;
 }
+
+/** The most a single read returns, as `runFixed` caps a git call's output. */
+const READ_LIMIT = 64 * 1024 * 1024;
+const SHA_RE = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
+type Entry = { mode: string; type: string; sha: string };
 
 export interface GitRunOptions {
   input?: Buffer | string;
@@ -53,6 +73,11 @@ export class Git {
   private readonly attributesFile: string;
   private readonly globalConfig: string;
   private readonly askpass: string;
+  private readonly readers = new Map<string, CatFileReader>();
+  /** Readers that broke without ever answering, by repo: after three, that repo reads with plain git calls. */
+  private readonly readerFailures = new Map<string, number>();
+  /** Git processes started, by subcommand (F-014 FR-7). */
+  readonly spawns = new Map<string, number>();
 
   constructor(private readonly opts: GitOptions) {
     if (!path.isAbsolute(opts.gitPath)) throw new GitError("git must be named by absolute path");
@@ -102,6 +127,7 @@ export class Git {
       extra.FACTORY_GIT_TOKEN = o.askpassToken;
       full = full.map((a) => (a === "core.askPass=" ? `core.askPass=${this.askpass}` : a));
     }
+    this.count(subcommand(args));
     const res = await runFixed(this.opts.gitPath, full, {
       cwd,
       env: this.env(extra),
@@ -119,10 +145,80 @@ export class Git {
     return (await this.run(cwd, args, o)).stdout.toString("utf8").trim();
   }
 
+  /** Git processes every `Git` in this engine process has started, for the budget tests (FR-7). */
+  static processes = 0;
+
+  private count(sub: string): void {
+    Git.processes++;
+    this.spawns.set(sub, (this.spawns.get(sub) ?? 0) + 1);
+  }
+
+  /** Total git processes started so far (FR-7). */
+  spawnCount(): number {
+    let n = 0;
+    for (const v of this.spawns.values()) n += v;
+    return n;
+  }
+
+  /** Closes every reader, as the engine does when it stops. */
+  closeReaders(): void {
+    for (const r of this.readers.values()) r.close();
+    this.readers.clear();
+  }
+
+  private reader(cwd: string): CatFileReader | null {
+    if (this.opts.readers === false || (this.readerFailures.get(cwd) ?? 0) >= 3) return null;
+    let r = this.readers.get(cwd);
+    if (!r) {
+      r = new CatFileReader({
+        gitPath: this.opts.gitPath,
+        args: this.args(cwd, []),
+        cwd,
+        env: this.env(),
+        children: this.opts.children,
+        idleMs: this.opts.readerIdleMs ?? 2000,
+        timeoutMs: 120_000,
+        onSpawn: () => this.count("cat-file --batch-command"),
+      });
+      this.readers.set(cwd, r);
+    }
+    return r;
+  }
+
+  /**
+   * Runs `viaReader`; if the reader breaks, makes the same read with plain
+   * git calls (`plain`), so a read never fails or lies because of the
+   * reader (F-014 FR-2).
+   */
+  private async read<T>(cwd: string, viaReader: (r: CatFileReader) => Promise<T>, plain: () => Promise<T>): Promise<T> {
+    const r = this.reader(cwd);
+    if (!r) return plain();
+    try {
+      const v = await viaReader(r);
+      this.readerFailures.delete(cwd);
+      return v;
+    } catch (e) {
+      if (!(e instanceof ReaderBroken)) throw e;
+      if (!(e instanceof NotForReader)) this.readerFailures.set(cwd, (this.readerFailures.get(cwd) ?? 0) + 1);
+      return plain();
+    }
+  }
+
   async revParse(cwd: string, ref: string): Promise<string | null> {
-    const r = await this.run(cwd, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { okCodes: [1] });
-    const sha = r.stdout.toString().trim();
-    return r.code === 0 && /^[0-9a-f]{40,64}$/.test(sha) ? sha : null;
+    return this.read(
+      cwd,
+      async (r) => {
+        const o = await r.info(`${ref}^{commit}`);
+        // Git peels to a commit or says missing; anything else is a reader out of step.
+        if (o && o.type !== "commit") throw new ReaderBroken("a peeled commit came back as another type");
+        return o ? o.sha : null;
+      },
+      async () => {
+        const r = await this.run(cwd, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { okCodes: [1] });
+        const sha = r.stdout.toString().trim();
+        return r.code === 0 && SHA_RE.test(sha) ? sha : null;
+      },
+    );
   }
 
   /** The blob at `spec` (`<commit>:<path>`), refusing anything but a regular file entry. */
@@ -136,21 +232,45 @@ export class Git {
   }
 
   async catBlob(cwd: string, sha: string): Promise<Buffer> {
-    if (!/^[0-9a-f]{40,64}$/.test(sha)) throw new GitError("bad blob id");
-    // `cat-file blob` applies no textconv, filters or attributes.
-    return (await this.run(cwd, ["cat-file", "blob", sha])).stdout;
+    if (!SHA_RE.test(sha)) throw new GitError("bad blob id");
+    return this.read(
+      cwd,
+      async (r) => {
+        const o = await this.contents(r, sha);
+        if (!o || o.type !== "blob") throw new GitError(`blob ${sha.slice(0, 12)} couldn't be read`);
+        return o.body;
+      },
+      // `cat-file blob` applies no textconv, filters or attributes.
+      async () => (await this.run(cwd, ["cat-file", "blob", sha])).stdout,
+    );
   }
 
   /**
-   * Several blobs from one `cat-file --batch`, which like `cat-file blob`
-   * applies no textconv or filters. One process instead of one per file:
-   * each spawn costs tens of milliseconds, far more on Windows.
+   * Several blobs, read through the repo's reader, or from one plain
+   * `cat-file --batch` if the reader breaks. Neither applies textconv or
+   * filters.
    */
   async catBlobs(cwd: string, shas: string[]): Promise<Map<string, Buffer>> {
-    const out = new Map<string, Buffer>();
     const want = [...new Set(shas)];
-    if (!want.length) return out;
-    if (!want.every((s) => /^[0-9a-f]{40,64}$/.test(s))) throw new GitError("bad blob id");
+    if (!want.every((s) => SHA_RE.test(s))) throw new GitError("bad blob id");
+    if (!want.length) return new Map();
+    return this.read(
+      cwd,
+      async (r) => {
+        const out = new Map<string, Buffer>();
+        for (const sha of want) {
+          const o = await this.contents(r, sha);
+          if (!o || o.type !== "blob") throw new GitError(`blob ${sha.slice(0, 12)} couldn't be read`);
+          out.set(sha, o.body);
+        }
+        return out;
+      },
+      () => this.catBlobsPlain(cwd, want),
+    );
+  }
+
+  private async catBlobsPlain(cwd: string, want: string[]): Promise<Map<string, Buffer>> {
+    const out = new Map<string, Buffer>();
     const buf = (await this.run(cwd, ["cat-file", "--batch"], { input: want.join("\n") + "\n" })).stdout;
     let at = 0;
     for (const sha of want) {
@@ -165,7 +285,55 @@ export class Git {
     return out;
   }
 
-  async lsTreeEntry(cwd: string, commit: string, file: string): Promise<{ mode: string; type: string; sha: string } | null> {
+  /** A body through the reader; an object over the read limit fails the read, as an oversized git call does. */
+  private async contents(r: CatFileReader, name: string) {
+    try {
+      return await r.contents(name, READ_LIMIT);
+    } catch (e) {
+      if (e instanceof ReaderLimit) throw new GitError("output over the limit");
+      throw e;
+    }
+  }
+
+  /** The entries of the tree that `name` resolves to (a commit or tree), parsed with the checks of SR-5. */
+  private async treeEntries(r: CatFileReader, name: string): Promise<TreeEntry[] | null> {
+    const o = await this.contents(r, name);
+    if (!o) return null;
+    if (o.type !== "tree") {
+      // A tree entry can name a non-tree in a crafted repo, as plain ls-tree would refuse; `^{tree}` can't peel to one.
+      if (SHA_RE.test(name)) throw new GitError("a tree in git couldn't be read (not a tree)");
+      throw new ReaderBroken("a peeled tree came back as another type");
+    }
+    try {
+      return parseTree(o.body, o.sha.length / 2);
+    } catch (e) {
+      if (e instanceof TreeError) throw new GitError(`a tree in git couldn't be read (${e.message})`);
+      throw e;
+    }
+  }
+
+  /** Walks from `commit`'s root tree to `file`; null when any part is missing or isn't a folder. */
+  private async walk(r: CatFileReader, commit: string, file: string): Promise<Entry | null> {
+    const parts = file.split("/");
+    if (parts.some((p) => !p)) return null;
+    let tree = `${commit}^{tree}`;
+    for (let i = 0; i < parts.length; i++) {
+      const entries = await this.treeEntries(r, tree);
+      if (!entries) throw new GitError(`${commit.slice(0, 40)} isn't a commit`);
+      const e = entries.find((x) => x.name === parts[i]);
+      if (!e) return null;
+      if (i === parts.length - 1) return { mode: e.mode, type: e.type, sha: e.sha };
+      if (e.type !== "tree") return null;
+      tree = e.sha;
+    }
+    return null;
+  }
+
+  async lsTreeEntry(cwd: string, commit: string, file: string): Promise<Entry | null> {
+    return this.read(cwd, (r) => this.walk(r, commit, file), () => this.lsTreeEntryPlain(cwd, commit, file));
+  }
+
+  private async lsTreeEntryPlain(cwd: string, commit: string, file: string): Promise<Entry | null> {
     const r = await this.run(cwd, ["ls-tree", "-z", "--full-tree", commit, "--", file]);
     const line = r.stdout.toString("utf8").split("\0").find((l) => l.length > 0);
     if (!line) return null;
@@ -174,8 +342,80 @@ export class Git {
     return { mode: m[1]!, type: m[2]!, sha: m[3]! };
   }
 
-  /** Every entry under `dir` (recursively), as `{ mode, type, sha, path }`. */
-  async lsTree(cwd: string, commit: string, dir?: string): Promise<Array<{ mode: string; type: string; sha: string; path: string }>> {
+  /** Every entry under `dir` (recursively), as `{ mode, type, sha, path }`, in `ls-tree -r` order. */
+  async lsTree(cwd: string, commit: string, dir?: string): Promise<Array<Entry & { path: string }>> {
+    return this.read(
+      cwd,
+      async (r) => {
+        const out: Array<Entry & { path: string }> = [];
+        const under = async (tree: string, prefix: string): Promise<void> => {
+          const entries = await this.treeEntries(r, tree);
+          if (!entries) throw new GitError(`${commit.slice(0, 40)} isn't a commit, or a tree in it is missing`);
+          for (const e of entries) {
+            const p = prefix + e.name;
+            if (e.type === "tree") await under(e.sha, p + "/");
+            else out.push({ mode: e.mode, type: e.type, sha: e.sha, path: p });
+          }
+        };
+        if (!dir) {
+          await under(`${commit}^{tree}`, "");
+          return out;
+        }
+        const top = await this.walk(r, commit, dir);
+        if (!top) return out;
+        if (top.type === "tree") await under(top.sha, dir + "/");
+        else out.push({ ...top, path: dir });
+        return out;
+      },
+      () => this.lsTreePlain(cwd, commit, dir),
+    );
+  }
+
+  /**
+   * The entries `ls-tree -r -t -l -- <paths>` lists: every entry at or under
+   * each path, and the folders leading to them, in tree order, with blob
+   * sizes (0 for trees and submodules). Sizes come from object headers, so
+   * no blob is read.
+   */
+  async lsTreeSized(cwd: string, commit: string, paths: string[]): Promise<Array<Entry & { path: string; size: number }>> {
+    return this.read(
+      cwd,
+      async (r) => {
+        const out: Array<Entry & { path: string; size: number }> = [];
+        const visit = async (tree: string, prefix: string, all: boolean): Promise<void> => {
+          const entries = await this.treeEntries(r, tree);
+          if (!entries) throw new GitError(`${commit.slice(0, 40)} isn't a commit, or a tree in it is missing`);
+          for (const e of entries) {
+            const p = prefix + e.name;
+            const hit = all || paths.some((x) => x === p || x.startsWith(p + "/") || p.startsWith(x + "/"));
+            if (!hit) continue;
+            const inside = all || paths.some((x) => x === p || p.startsWith(x + "/"));
+            let size = 0;
+            if (e.type === "blob") {
+              const o = await r.info(e.sha);
+              if (!o || o.type !== "blob") throw new GitError(`blob ${e.sha.slice(0, 12)} couldn't be read`);
+              size = o.size;
+            }
+            out.push({ mode: e.mode, type: e.type, sha: e.sha, path: p, size });
+            if (e.type === "tree") await visit(e.sha, p + "/", inside);
+          }
+        };
+        await visit(`${commit}^{tree}`, "", false);
+        return out;
+      },
+      async () => {
+        const res = await this.run(cwd, ["ls-tree", "-r", "-t", "-l", "-z", "--full-tree", commit, "--", ...paths]);
+        const out: Array<Entry & { path: string; size: number }> = [];
+        for (const line of res.stdout.toString("utf8").split("\0")) {
+          const m = /^(\d{6}) (\w+) ([0-9a-f]{40,64}) +(-|\d+)\t(.*)$/s.exec(line);
+          if (m) out.push({ mode: m[1]!, type: m[2]!, sha: m[3]!, path: m[5]!, size: m[4] === "-" ? 0 : Number(m[4]) });
+        }
+        return out;
+      },
+    );
+  }
+
+  private async lsTreePlain(cwd: string, commit: string, dir?: string): Promise<Array<Entry & { path: string }>> {
     const args = ["ls-tree", "-r", "-z", "--full-tree", commit];
     if (dir) args.push("--", dir);
     const r = await this.run(cwd, args);
