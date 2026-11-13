@@ -1,7 +1,9 @@
 # Decision management
 
-The owner works through three inboxes in VS Code. Agents fill them; the owner
-acts on them.
+The owner works through one inbox in VS Code (F-011). Agents fill it; the
+owner acts on it. Each item is labeled by its kind. Sections 1 to 3 describe
+the Decision, Testing and Hygiene kinds; "One inbox" below lists every kind
+and its actions.
 
 ## 1. Decision inbox
 
