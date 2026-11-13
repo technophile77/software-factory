@@ -1,13 +1,19 @@
 import type { ChildProcess } from "node:child_process";
 import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import * as readline from "node:readline";
+import type { Endpoint } from "../config/endpoints";
+import { ensureOwnerDir } from "../fsutil";
 import { DockerCli, DockerError, dockerName } from "../docker/cli";
+import type { LitellmImage } from "../docker/litellm-image";
 import { ContainerLimits, ContainerSpec, MountSpec, inspectMismatches, internalNetworkArgs, networkMismatches, networkSubnets, outsideNetworkArgs, runArgs } from "../docker/plan";
 import type { Logger } from "../log";
 import type { RolePolicy } from "../policy/role-policy";
 import type { FromProxy, ProxyStart, ToProxy } from "../proxy/main";
 import { PROXY_PORT } from "../proxy/main";
-import type { ModelCredential } from "../proxy/server";
+import type { ModelCredential, PinnedEndpoint } from "../proxy/server";
+import { ROUTER_ALIAS, ROUTER_PORT, litellmConfig, litellmEnv } from "./litellm";
 import { AGENT_USER, CONTAINER_FLAGS, WORKSPACE } from "./session";
 
 export const PROXY_ALIAS = "factory-proxy";
@@ -36,7 +42,34 @@ export interface GroupConfig {
   log: Logger;
   platform?: NodeJS.Platform;
   sleep?(ms: number): Promise<void>;
+  /** Present when the run grants any model endpoint (F-013): the LiteLLM router `open()` starts. */
+  router?: RouterConfig;
 }
+
+/** What the group needs to start the LiteLLM router container (F-013 FR-5). */
+export interface RouterConfig {
+  /** The pinned image's id and its own numeric non-root user, from `litellmImageId`. */
+  image: LitellmImage;
+  limits: ContainerLimits;
+  endpoints: Endpoint[];
+  /** The engine's resolved and pinned endpoints; the proxy connects to their addresses. */
+  pins: PinnedEndpoint[];
+  /** API key values by `api_key_ref`, read from the credential store just before the run. */
+  keys: Map<string, string>;
+  /** An engine-owned folder to hold the run's config file; made owner-only if missing. */
+  workDir: string;
+  /** How long to wait for the router to answer its health check. Defaults to 15 minutes: the spike's first start took about 8 under a read-only root. */
+  readyTimeoutMs?: number;
+}
+
+const ROUTER_CONFIG_TARGET = "/app/config.yaml";
+/** Folders LiteLLM writes under a read-only root (found in the A-1 spike). */
+const ROUTER_TMPFS = ["/app/.cache"];
+const ROUTER_READY_TIMEOUT_MS = 15 * 60_000;
+const ROUTER_POLL_MS = 5_000;
+const ROUTER_PROGRESS_MS = 60_000;
+// The health check runs inside the container, where HTTP_PROXY is set; an empty ProxyHandler keeps it off the proxy.
+const ROUTER_HEALTH_PY = `import sys,urllib.request as u;sys.exit(0 if u.build_opener(u.ProxyHandler({})).open("http://127.0.0.1:${ROUTER_PORT}/health/liveliness",timeout=5).status==200 else 1)`;
 
 export interface AgentContainer {
   name: string;
@@ -47,6 +80,14 @@ export interface AgentContainer {
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+
+/** A container's address on `network`, from `docker inspect` output. */
+function routerAddress(doc: unknown, network: string): string | null {
+  const d = Array.isArray(doc) ? doc[0] : doc;
+  const nets = isObj(d) && isObj(d.NetworkSettings) && isObj(d.NetworkSettings.Networks) ? d.NetworkSettings.Networks : {};
+  const n = nets[network];
+  return isObj(n) && typeof n.IPAddress === "string" && n.IPAddress !== "" ? n.IPAddress : null;
+}
 
 /** The run's own session volume, kept across resumes until the run ends. */
 export function runVolume(runId: string): string {
@@ -126,6 +167,10 @@ export class SessionGroup {
   readonly internal: string;
   readonly outside: string;
   readonly proxyName: string;
+  readonly routerName: string;
+  private routerCred: string | null = null;
+  private routerDir: string | null = null;
+  private routerGranted = false;
   private proxy: ProxyClient | null = null;
   private proxyChild: ChildProcess | null = null;
   private readonly agents = new Map<string, AgentContainer>();
@@ -138,6 +183,7 @@ export class SessionGroup {
     this.internal = dockerName(id, "int");
     this.outside = dockerName(id, "out");
     this.proxyName = dockerName(id, "proxy");
+    this.routerName = dockerName(id, "router");
   }
 
   private labels(): Record<string, string> {
@@ -201,15 +247,109 @@ export class SessionGroup {
     this.proxyChild = child;
     this.proxy = new ProxyClient(child, this.c.log);
     await this.verify(spec);
-    // The credential goes over stdin only after the container passed its check.
-    await this.proxy.start({
-      t: "start",
-      credential: this.c.credential,
-      dummyKey: DUMMY_KEY,
-      internalSubnet,
-      blockedSubnets: [...this.subnets, ...outsideSubnets],
-      maxPageBytes: this.c.maxPageBytes,
-    });
+    // The router starts before the proxy does because ProxyStart needs its address; it makes no
+    // outbound call of its own until the proxy listens and its grant is in.
+    const router = this.c.router ? await this.openRouter(this.c.router) : null;
+    try {
+      // The credential goes over stdin only after the container passed its check.
+      await this.proxy.start({
+        t: "start",
+        credential: this.c.credential,
+        dummyKey: DUMMY_KEY,
+        internalSubnet,
+        blockedSubnets: [...this.subnets, ...outsideSubnets],
+        maxPageBytes: this.c.maxPageBytes,
+        ...(router ? { router: { address: router.address, port: ROUTER_PORT, masterKey: router.masterKey } } : {}),
+      });
+      if (router && this.c.router) {
+        this.proxy.send({ t: "endpoints", list: this.c.router.pins });
+        await this.waitForRouter(this.c.router.readyTimeoutMs ?? ROUTER_READY_TIMEOUT_MS);
+      }
+    } catch (e) {
+      await this.closeRouter();
+      throw e;
+    }
+  }
+
+  /**
+   * Starts the LiteLLM router (F-013 FR-5, SR-16): its config in an owner-only
+   * engine folder, the pinned image by id, on the internal network only, with
+   * the proxy as its sole way out. Returns its address there and the per-run
+   * master key that only the gateway is given. The router's egress grant is
+   * sent once the proxy has started; any failure here removes the container.
+   */
+  private async openRouter(r: RouterConfig): Promise<{ address: string; masterKey: string }> {
+    const name = this.routerName;
+    const masterKey = crypto.randomBytes(32).toString("base64url");
+    const cred = crypto.randomBytes(32).toString("base64url");
+    const env = litellmEnv(r.endpoints, r.keys, masterKey, cred);
+    // No secret is in the file (keys are env refs), but the folder is owner-only so nobody else on the PC can swap it.
+    // The file is world-readable because the image runs as another uid and a bind mount keeps the host's file modes.
+    this.routerCred = cred;
+    try {
+      ensureOwnerDir(r.workDir);
+      this.routerDir = fs.mkdtempSync(path.join(r.workDir, "router-"));
+      const file = path.join(this.routerDir, "config.yaml");
+      fs.writeFileSync(file, litellmConfig(r.endpoints, r.pins), { mode: 0o644 });
+      const spec: ContainerSpec = {
+        name,
+        imageId: r.image.id,
+        user: r.image.user,
+        networks: [this.internal],
+        alias: ROUTER_ALIAS,
+        mounts: [{ type: "bind", source: file, target: ROUTER_CONFIG_TARGET, readOnly: true }],
+        limits: r.limits,
+        envNames: Object.keys(env),
+        interactive: false,
+        command: ["--config", ROUTER_CONFIG_TARGET, "--port", String(ROUTER_PORT)],
+        labels: { ...this.labels(), "factory.role": "router" },
+        extraTmpfs: ROUTER_TMPFS,
+      };
+      await this.c.docker.run(runArgs(spec), { env });
+      await this.verify(spec);
+      const doc = await this.inspect("container", name);
+      const address = routerAddress(doc, this.internal);
+      if (!address) throw new DockerError("the router has no address on the internal network");
+      return { address, masterKey };
+    } catch (e) {
+      await this.closeRouter();
+      throw e;
+    }
+  }
+
+  /** Polls the router's liveness route from inside its container until it answers or `timeoutMs` passes. */
+  private async waitForRouter(timeoutMs: number): Promise<void> {
+    const name = this.routerName;
+    this.proxy!.send({ t: "grant", cred: this.routerCred!, session: name, role: "router", allow: [], kind: "router" });
+    this.routerGranted = true;
+    for (let waited = 0; ; waited += ROUTER_POLL_MS) {
+      try {
+        await this.c.docker.run(["exec", name, "python3", "-c", ROUTER_HEALTH_PY], { timeoutMs: 15_000 });
+        this.c.log.info(`the model router is ready after ${Math.round(waited / 1000)}s`);
+        return;
+      } catch {
+        // Not up yet, or gone: the inspect below tells the two apart.
+      }
+      try {
+        await this.inspect("container", name);
+      } catch {
+        throw new DockerError("the model router stopped before it was ready");
+      }
+      if (waited >= timeoutMs) throw new DockerError(`the model router wasn't ready after ${Math.round(timeoutMs / 1000)}s`);
+      if (waited > 0 && waited % ROUTER_PROGRESS_MS === 0) this.c.log.info(`still waiting for the model router (${Math.round(waited / 1000)}s)`);
+      await this.sleep(ROUTER_POLL_MS);
+    }
+  }
+
+  /** Revokes the router's egress grant, removes its container and its config folder. Safe to call when it never started. */
+  private async closeRouter(): Promise<void> {
+    // Before the grant is sent the proxy may not even have started, and would answer a revoke with an error.
+    if (this.routerCred && this.routerGranted) this.proxy?.send({ t: "revoke", cred: this.routerCred });
+    this.routerCred = null;
+    this.routerGranted = false;
+    await this.c.docker.run(["rm", "--force", this.routerName], { okCodes: [1] }).catch(() => undefined);
+    if (this.routerDir) fs.rmSync(this.routerDir, { recursive: true, force: true });
+    this.routerDir = null;
   }
 
   /** An agent container for one session, with its own proxy credential bound to its role (SR-7). */
@@ -309,6 +449,7 @@ export class SessionGroup {
   /** Ends the run: every container, both networks, and the session volumes, whose files are sensitive. */
   async close(): Promise<void> {
     for (const a of [...this.agents.values()]) await this.stopAgent(a);
+    await this.closeRouter();
     this.proxyChild?.stdin?.end();
     const d = this.c.docker;
     await d.run(["rm", "--force", this.proxyName], { okCodes: [1] }).catch(() => undefined);

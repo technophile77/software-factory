@@ -31,6 +31,12 @@ export interface ContainerSpec {
   interactive: boolean;
   command: string[];
   labels: Record<string, string>;
+  /**
+   * Further size-capped tmpfs paths besides /tmp, for software that insists on
+   * writing there under a read-only root (the LiteLLM router's cache folder).
+   * Each is listed here, checked by `inspectMismatches`, and holds nothing across a restart.
+   */
+  extraTmpfs?: string[];
 }
 
 const IMAGE_ID_RE = /^sha256:[0-9a-f]{64}$/;
@@ -66,6 +72,11 @@ function checkSpec(s: ContainerSpec): void {
     else if (!DOCKER_NAME_RE.test(m.name)) throw new DockerError("bad volume name");
   }
   if (new Set(s.mounts.map((m) => m.target)).size !== s.mounts.length || s.mounts.some((m) => m.target === "/tmp")) throw new DockerError("mount targets must be distinct and not /tmp");
+  const targets = new Set([...s.mounts.map((m) => m.target), "/tmp"]);
+  for (const t of s.extraTmpfs ?? []) {
+    if (!TARGET_RE.test(t) || t.includes("..") || targets.has(t)) throw new DockerError("bad tmpfs path");
+    targets.add(t);
+  }
   for (const n of s.envNames) if (!ENV_RE.test(n)) throw new DockerError("bad variable name");
   if (s.workdir !== undefined && !TARGET_RE.test(s.workdir)) throw new DockerError("bad workdir");
   for (const [k, v] of Object.entries(s.labels)) if (!/^factory\.[a-z.-]{1,40}$/.test(k) || !/^[A-Za-z0-9._:-]{0,200}$/.test(v)) throw new DockerError("bad label");
@@ -89,6 +100,7 @@ export function runArgs(s: ContainerSpec): string[] {
     "--cpus", String(s.limits.cpus), "--memory", `${s.limits.memoryBytes}b`, "--memory-swap", `${s.limits.memoryBytes}b`,
     "--pids-limit", String(s.limits.pids), "--tmpfs", `/tmp:${TMP_OPTIONS(s.limits.tmpBytes)}`,
     "--log-driver", "none", "--restart", "no"];
+  for (const t of s.extraTmpfs ?? []) a.push("--tmpfs", `${t}:${TMP_OPTIONS(s.limits.tmpBytes)}`);
   s.networks.forEach((n, i) => a.push("--network", i === 0 && s.alias ? `name=${n},alias=${s.alias}` : n));
   for (const m of s.mounts) {
     const src = m.type === "bind" ? `type=bind,source=${m.source}` : `type=volume,source=${m.name}`;
@@ -165,7 +177,8 @@ export function inspectMismatches(spec: ContainerSpec, inspected: unknown, platf
   if (Array.isArray(h.VolumesFrom) && h.VolumesFrom.length > 0) bad.push("volumes-from");
   if (!isObj(h.LogConfig) || h.LogConfig.Type !== "none") bad.push("log driver");
   const tmpfs = isObj(h.Tmpfs) ? h.Tmpfs : {};
-  if (Object.keys(tmpfs).join() !== "/tmp" || tmpfs["/tmp"] !== TMP_OPTIONS(spec.limits.tmpBytes)) bad.push("tmpfs");
+  const wantTmpfs = ["/tmp", ...(spec.extraTmpfs ?? [])];
+  if (Object.keys(tmpfs).sort().join() !== [...wantTmpfs].sort().join() || wantTmpfs.some((t) => tmpfs[t] !== TMP_OPTIONS(spec.limits.tmpBytes))) bad.push("tmpfs");
   if (h.NetworkMode !== spec.networks[0]) bad.push("network mode");
   const nets = isObj(doc.NetworkSettings) && isObj(doc.NetworkSettings.Networks) ? Object.keys(doc.NetworkSettings.Networks).sort() : [];
   if (nets.join() !== [...spec.networks].sort().join()) bad.push("networks");

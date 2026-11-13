@@ -15,16 +15,16 @@ export function inspectFor(args: string[], running = true): Record<string, unkno
     const kv = Object.fromEntries(m.split(",").map((p) => p.split("=") as [string, string]));
     return { Type: kv.type, Source: kv.source, Name: kv.type === "volume" ? kv.source : undefined, Destination: kv.target, RW: !m.includes("readonly") };
   });
-  const [tmpPath, tmpOpts] = get("--tmpfs").split(/:(.*)/s) as [string, string];
+  const tmpfs = Object.fromEntries(all("--tmpfs").map((t) => t.split(/:(.*)/s).slice(0, 2) as [string, string]));
   return {
     Name: `/${get("--name")}`, Image: args.find((a) => a.startsWith("sha256:")),
     Config: { User: get("--user") }, State: { Running: running },
     HostConfig: {
       ReadonlyRootfs: args.includes("--read-only"), Privileged: false, CapDrop: [get("--cap-drop")], CapAdd: null,
       SecurityOpt: [get("--security-opt")], NanoCpus: Math.round(Number(get("--cpus")) * 1e9), Memory: Number(get("--memory").slice(0, -1)),
-      PidsLimit: Number(get("--pids-limit")), Tmpfs: { [tmpPath]: tmpOpts }, NetworkMode: nets[0], LogConfig: { Type: get("--log-driver") }, Binds: null,
+      PidsLimit: Number(get("--pids-limit")), Tmpfs: tmpfs, NetworkMode: nets[0], LogConfig: { Type: get("--log-driver") }, Binds: null,
     },
-    NetworkSettings: { Networks: Object.fromEntries(nets.map((n) => [n, {}])) },
+    NetworkSettings: { Networks: Object.fromEntries(nets.map((n) => [n, { IPAddress: "172.30.0.9" }])) },
     Mounts: mounts,
   };
 }
@@ -65,6 +65,10 @@ export class FakeDocker {
   noBuildx = false;
   /** Makes a call fail as a stopped daemon would. */
   down = false;
+  /** The `User` the pinned LiteLLM image reports. */
+  litellmUser = "65532:65532";
+  /** How many `docker exec` calls fail before the router answers its health check. */
+  execFailures = 0;
 
   async run(args: string[], o: { env?: Record<string, string>; okCodes?: number[] } = {}) {
     this.calls.push({ args, ...(o.env ? { env: o.env } : {}) });
@@ -74,6 +78,10 @@ export class FakeDocker {
     if (args[0] === "volume" && args[1] === "create") this.volumes.set(args.at(-1)!, labels());
     if (args[0] === "volume" && args[1] === "rm") this.volumes.delete(args.at(-1)!);
     if (args[0] === "rm") this.started.delete(args.at(-1)!);
+    if (args[0] === "exec" && this.execFailures > 0) {
+      this.execFailures--;
+      throw new DockerError("docker exec failed");
+    }
     if (args[0] === "buildx" && args[1] === "version" && this.noBuildx) throw new DockerError("docker: 'buildx' is not a docker command.");
     if (args[0] === "buildx" && args[1] === "build") {
       const id = `sha256:${String(this.images.size + 1).padStart(64, "e")}`;
@@ -92,6 +100,7 @@ export class FakeDocker {
       const img = this.images.get(args[2]!);
       if (img) out = JSON.stringify([img]);
       else if (args[2]!.startsWith("node:")) out = JSON.stringify([{ Id: `sha256:${"b".repeat(64)}`, RepoDigests: [`node@${args[2]!.split("@")[1]}`] }]);
+      else if (args[2]!.startsWith("ghcr.io/")) out = JSON.stringify([{ Id: `sha256:${"c".repeat(64)}`, Config: { User: this.litellmUser }, RepoDigests: [args[2]] }]);
       else code = 1;
     } else if (args[0] === "ps") out = this.leftovers.containers.join("\n");
     else if (args[0] === "network" && args[1] === "ls") out = this.leftovers.networks.join("\n");
