@@ -134,6 +134,14 @@ promotion to the next level.
 
 ## Gate 2 (implementation) checklist
 
-- Review the diff against S1 to S9.
+- Run the approved static analysis first (ADR 0024: Semgrep Community
+  Edition on project repos, CodeQL on the master repo) and give its
+  findings to the reviewer as evidence. Each finding is reported under the
+  S1 to S9 criterion it fails. A finding at the tool's highest severity
+  (Semgrep `ERROR`, CodeQL `error`) is fixed, or the owner accepts it as a
+  Security item; agents never accept it. Repo comments that silence the
+  tool (`nosemgrep`) are not honoured.
+- Review the diff against S1 to S9, spending the review on what the tools
+  can't see: authorization logic, trust boundaries and design.
 - Confirm each spec security requirement (S7.1).
 - Report findings with criterion id, severity, location, explanation, and suggested fix.

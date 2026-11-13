@@ -107,6 +107,23 @@ jobs:
   #         echo "${CARGO_AUDIT_SHA256}  cargo-audit.tgz" | sha256sum --check --strict
   #         tar xzf cargo-audit.tgz --strip-components=1 "${name}/cargo-audit"
   #     - run: ./cargo-audit audit --deny warnings
+  # Alpha and above (ADR 0024): Semgrep Community Edition finds code
+  # patterns such as injection, path traversal and unsafe calls. Its
+  # maintained rules are licensed for internal use only, so they are
+  # fetched from Semgrep's registry at run time and never copied into the
+  # repo. The image is pinned by digest; upgrading it is a configuration
+  # hygiene item. `--disable-nosem` ignores `nosemgrep` comments, so an
+  # accepted finding is a Security decision listed as `--exclude-rule`
+  # with its reason, not a comment in the code.
+  # static-analysis:             # alpha
+  #   runs-on: ubuntu-24.04
+  #   container:
+  #     image: semgrep/semgrep:1.183.0@sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0
+  #   steps:
+  #     - uses: actions/checkout@<SHA> # <tag>
+  #       with:
+  #         persist-credentials: false
+  #     - run: semgrep scan --config p/default --metrics=off --disable-nosem --severity ERROR --error
   # unit-tests:                  # alpha
   # acceptance-tests:            # alpha
   # secret-scan:                 # alpha
