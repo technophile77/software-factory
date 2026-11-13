@@ -1,14 +1,14 @@
 # Feature: Configurable model endpoints
 
 - **Id:** F-013
-- **Status:** Approved (owner, 2026-11-13; readiness gate passed); LiteLLM accepted with conditions (OQ-9); A-1 spike in progress
+- **Status:** Approved (owner, 2026-11-13; readiness gate passed); LiteLLM accepted with conditions (OQ-9); A-1 spike failed as-is ([report](F-013-spike-a1.md)), back with the owner (OQ-10)
 - **Requested by / date:** Alex, 2026-11-13 ("I want to also incorporate a
   local llm api"; "this model would be a good candidate for the security
   agent, judge, or any low end agent"; "I'd rather allow a number of
   endpoints that can be specified, and allow them to be configurable, with
   local as an option that indicates it has unlimited usage"; "endpoints
   should include standard options like the model to use and an api key")
-- **Spec version:** 17
+- **Spec version:** 18
 
 ## 1. Objective and business purpose
 The factory runs every agent on Claude today. The owner wants to add other
@@ -250,6 +250,7 @@ yet, so until it is, a role goes onto an endpoint rung only through
 | 16 | 2026-11-13 | H-0135 to H-0139 and widened A-1 approved; ADR 0019 Accepted; readiness gate passed | Owner, 2026-11-13 (decision card) |
 | 16 | 2026-11-13 | Spec v16 signed off; status Approved | Owner, 2026-11-13 (decision card, confirmed) |
 | 17 | 2026-11-13 | Stage 5: S4.1 review of LiteLLM; OQ-9 decided (a), SR-17 added with its conditions and accepted residual risk | Owner, 2026-11-13 (decision card) |
+| 18 | 2026-11-13 | A-1 spike: tool calls pass through LiteLLM in both formats; Claude Code fails on mid-conversation system messages with the server's template; OQ-10 opened | — |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -263,3 +264,4 @@ yet, so until it is, a role goes onto an endpoint rung only through
 | OQ-7 | Sending code to a public, third-party endpoint. (a) Allowed per project only after a Security decision naming the endpoint, its operator and its data-retention and training terms; private endpoints need only the manifest list. (b) The manifest list alone for every endpoint. **Recommended: (a)**: a third party receiving a project's code is a new external service under S9.1 and widens access under S8.5, which the standards make the owner's Security decision. | Security | Decided (owner, 2026-11-13, in the thread): (b); "evaluating these things is outside the scope of the project. the user should evaluate terms and security of the endpoint/model independently and within their own organization's guidelines" |
 | OQ-8 | Use an existing LLM gateway instead of building our own translator and billing? (a) LiteLLM in its own container behind the factory's gateway. (b) Build our own in the Node gateway. (c) Anthropic-format endpoints only. **Recommended: (a).** | Architecture | Decided (owner, 2026-11-13, in the thread and decision card): (a) |
 | OQ-9 | The SR-16 review of LiteLLM ([F-013-litellm-review.md](F-013-litellm-review.md)) found two release compromises in 2026 and several Critical advisories. (a) Accept with six conditions and the residual risk. (b) A smaller proxy. (c) Anthropic-format endpoints only. (d) Our own translator. **Recommended: (a).** | Security | Decided (owner, 2026-11-13, decision card): (a); conditions in SR-17 |
+| OQ-10 | A-1 spike failed: Claude Code sends a system message after the first user message, and the Qwen template on the owner's server rejects it (see [F-013-spike-a1.md](F-013-spike-a1.md)). (1) Wait for LiteLLM 1.109.x to clear quarantine (~25 Nov) and use its `supports_mid_conversation_system: false`. (2) Change the server's chat template. (3) The gateway folds later system messages into the next user message. (4) One-off spike on 1.109.1 now, ignoring quarantine. | Architecture | Open |
