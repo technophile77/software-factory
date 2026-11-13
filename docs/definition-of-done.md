@@ -15,7 +15,7 @@ request only when every box below is checked, each with the evidence named.
 | 8 | Validation judge issued PASS | Judge report |
 | 9 | Required documentation updated | Listed in the judge report |
 | 10 | Interface contracts compliant | No unapproved diff to `interface-contracts.md`; contract tests pass |
-| 11 | No unresolved blocking issues | All three inboxes have no open blocking item for this feature |
+| 11 | No unresolved blocking issues | The inbox has no open blocking item of any kind for this feature |
 | 12 | CI green on the PR head | Required CI checks for the repo's maturity level pass (ADR 0008) |
 
 The orchestrator opens the PR once items 1 to 11 are met, and marks it ready
