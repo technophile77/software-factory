@@ -1,7 +1,7 @@
 # Feature: Model and effort tuning per agent
 
 - **Id:** F-002
-- **Status:** v12 Approved (owner merged PR #8, 2026-11-10). v13 (calibration on promptfoo, ADR 0023) in review: OQ-1 decided; OQ-2, OQ-3 and A-7, A-13 await the owner. Implementation waits for the engine
+- **Status:** v12 Approved (owner merged PR #8, 2026-11-10). v13 (calibration on promptfoo, ADR 0023) in review: OQ-1 to OQ-3 decided; A-7 change and A-13 await the owner. Implementation waits for the engine
 - **Requested by / date:** Alex, 2026-11-10
 - **Spec version:** 13 (draft)
 
@@ -67,7 +67,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | FR-22 | Calibration trials and transcript replays (FR-7, FR-13) run on promptfoo, driven by engine code (ADR 0023, A-7). The engine builds one promptfoo evaluation per role and rung: each task is a test case, the trial count is promptfoo's `repeat` (5, A-2), and each objective check (A-9) is a promptfoo assertion that calls the engine's check code. The analyst's rubric grader is a promptfoo `llm-rubric` assertion whose grading provider is also the engine adapter. The engine reads promptfoo's results and applies the pass bar, floors, ladder order and hygiene items itself. |
 | FR-23 | Every model call promptfoo makes goes through one custom provider, the engine adapter, which hands the trial to the engine's session runner, so the trial runs under the role's policy and in its container (SR-1, SR-2). promptfoo's built-in model providers are not used and promptfoo holds no API key or credential. Because the engine makes every call, calibration works on a subscription plan and on F-013 endpoints the same way as real runs. |
 | FR-24 | The adapter keeps a running total of a batch's cost. When the next trial would pass the SR-9 cap, it stops the evaluation through promptfoo's `abortSignal` and the engine keeps the results so far. |
-| FR-25 | promptfoo's own result files and database live in an engine-owned folder outside Git (`PROMPTFOO_CONFIG_DIR`), with promptfoo's response cache off, so every trial really runs. The Calibration result v1.0 file remains the record; promptfoo's files are working data. What the owner can do with them depends on OQ-3. |
+| FR-25 | promptfoo's own result files and database live in an engine-owned folder outside Git (`PROMPTFOO_CONFIG_DIR`), with promptfoo's response cache off, so every trial really runs. The Calibration result v1.0 file remains the record; promptfoo's files are working data. The owner can open them in promptfoo's web viewer on demand; the engine starts it bound to 127.0.0.1 only, reading only that folder (OQ-3). |
 | FR-21 | Once the evaluator meets the reliability bar (A-12), the orchestrator may run a role on the evaluator's predicted rung for that task when it is cheaper than the role's approved rung, never above it. A task that fails on the cheaper rung is retried on the approved rung, and the miss counts against the evaluator. |
 
 ### Failure attribution
@@ -209,9 +209,9 @@ agent up to a stronger model or higher effort is always the owner's call.
 | SR-9 | Every calibration or replay batch has a cost cap: 1.5 × its shown estimate. At the cap it stops, keeps partial results, files a Testing item, and proposes nothing. | Gate 1 #4 (S5.1) | Accepted |
 | SR-10 | The `project-evaluator` role gets read access to specs and run reviews only, and write access only to its own report; no commands, no network. | Gate 1 #5 (S8.1, S8.5) | Accepted |
 
-| SR-11 | promptfoo conditions (S4.1, S4.3, S4.4, S4.6; the same ones the owner set for LiteLLM in F-013 OQ-9): exact version pin with a lockfile; a new release is adopted no sooner than 14 days after it is published unless it fixes a CVE in a path the factory uses; OSV-Scanner covers it in CI; transitive packages with known advisories are moved to fixed versions with npm `overrides` (four in 0.125.1, see the review); the engine starts it with `PROMPTFOO_DISABLE_TELEMETRY=1`, `PROMPTFOO_DISABLE_UPDATE=1`, `PROMPTFOO_DISABLE_SHARING=1` and `PROMPTFOO_DISABLE_REMOTE_GENERATION=1`; red-team, cloud and share features are never used. | Gate 1 re-review #1 (v13) | Proposed |
+| SR-11 | promptfoo conditions (S4.1, S4.3, S4.4, S4.6; the same ones the owner set for LiteLLM in F-013 OQ-9): exact version pin with a lockfile; a new release is adopted no sooner than 14 days after it is published unless it fixes a CVE in a path the factory uses; OSV-Scanner covers it in CI; transitive packages with known advisories are moved to fixed versions with npm `overrides` (four in 0.125.1, see the review); the engine starts it with `PROMPTFOO_DISABLE_TELEMETRY=1`, `PROMPTFOO_DISABLE_UPDATE=1`, `PROMPTFOO_DISABLE_SHARING=1` and `PROMPTFOO_DISABLE_REMOTE_GENERATION=1`; red-team, cloud and share features are never used. | Gate 1 re-review #1 (v13); owner accepted, 2026-11-13 (OQ-2) | Accepted |
 | SR-12 | promptfoo runs in a separate Node child process that the engine starts with an empty environment except the `PROMPTFOO_*` settings in SR-11, and talks to the engine only over a pipe; the engine runs every trial. It never gets the factory token, the Claude credential or endpoint keys (FR-23, OQ-1). | Gate 1 re-review #2 (v13); owner, 2026-11-13 (OQ-1) | Accepted |
-| SR-13 | promptfoo's working files (FR-25) hold prompts and outputs like transcripts do, so they get SR-4's treatment: outside Git, in an engine-owned folder, never in a run review or hygiene item. | Gate 1 re-review #3 (v13) | Proposed |
+| SR-13 | promptfoo's working files (FR-25) hold prompts and outputs like transcripts do, so they get SR-4's treatment: outside Git, in an engine-owned folder, never in a run review or hygiene item. | Gate 1 re-review #3 (v13) | Accepted |
 
 Gate 1: [F-002-security-gate1.md](F-002-security-gate1.md), 2026-11-10. Five findings, all resolved by SR-2 and SR-7 to SR-10. No owner decision needed.
 
@@ -219,8 +219,8 @@ Gate 1: [F-002-security-gate1.md](F-002-security-gate1.md), 2026-11-10. Five fin
 | Id | Question | Recommendation | Status |
 |---|---|---|---|
 | OQ-1 | Where does promptfoo run? (a) In a separate Node child process the engine starts with an empty environment (only the `PROMPTFOO_*` settings above), talking to the engine over a pipe; the engine runs every trial. (b) Inside the engine process. (c) In its own container with no network. | (a). promptfoo brings about 400 npm packages (0.125.1, optional ones left out). In (b), any one of them runs with the engine's environment, which holds the factory token and Claude credential; the September 2025 "Shai-Hulud" npm worm did exactly that, stealing tokens from the environment of whatever process loaded it ([CISA alert, 2025-09-23](https://www.cisa.gov/news-events/alerts/2025/09/23/widespread-supply-chain-compromise-impacting-npm-ecosystem)). (a) removes those credentials from its reach at almost no cost to you: nothing to install or start by hand. (c) adds network isolation but means a container image to build and update. Least privilege: security-standards S8. | **Decided (a)**, owner, 2026-11-13 (decision card) |
-| OQ-2 | Do you accept the S4.1 review's result (conditional: SR-11 conditions, residual risk stated in the review)? | Accept | Pending owner |
-| OQ-3 | Can you open promptfoo's local web viewer (`promptfoo view`, on 127.0.0.1 only) to look through calibration results, or should the factory only give you its own Calibration result file? | Allow the viewer, on demand, bound to 127.0.0.1, reading only the engine-owned folder. It shows every trial side by side at no build cost. Its web server package (`@hono/node-server` 2.1.5) has two Moderate advisories, fixed by the SR-11 override. | Pending owner |
+| OQ-2 | Do you accept the S4.1 review's result (conditional: SR-11 conditions, residual risk stated in the review)? | Accept | **Accepted**, owner, 2026-11-13 (decision card) |
+| OQ-3 | Can you open promptfoo's local web viewer (`promptfoo view`, on 127.0.0.1 only) to look through calibration results, or should the factory only give you its own Calibration result file? | Allow the viewer, on demand, bound to 127.0.0.1, reading only the engine-owned folder. It shows every trial side by side at no build cost. Its web server package (`@hono/node-server` 2.1.5) has two Moderate advisories, fixed by the SR-11 override. | **Decided: viewer allowed** on demand, 127.0.0.1 only, owner, 2026-11-13 (decision card) |
 
 ## 10. Interface requirements
 All changes are additive (A-8):
@@ -248,7 +248,7 @@ All changes are additive (A-8):
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [ ] Assumptions explicit and approved (A-1 to A-12 approved; v13 A-7 change and A-13 pending)
-- [ ] Blocking decisions resolved (v13: OQ-2, OQ-3 pending; Gate 1 re-review done)
+- [ ] Blocking decisions resolved (v13: OQ-1 to OQ-3 decided; Gate 1 re-review done)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
