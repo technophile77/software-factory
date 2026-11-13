@@ -1,0 +1,12 @@
+{
+  "githubIssues.queries": [
+    { "label": "Factory: blocking", "query": "is:open label:factory-inbox label:blocking assignee:${user}" },
+    { "label": "Factory: critical", "query": "is:open label:factory-inbox label:priority:critical assignee:${user}" },
+    { "label": "Factory: high", "query": "is:open label:factory-inbox label:priority:high assignee:${user}" },
+    { "label": "Factory: medium", "query": "is:open label:factory-inbox label:priority:medium assignee:${user}" },
+    { "label": "Factory: low", "query": "is:open label:factory-inbox label:priority:low assignee:${user}" }
+  ],
+  "githubPullRequests.queries": [
+    { "label": "Factory PRs to merge", "query": "is:open is:pr user:${user} base:main -is:draft" }
+  ]
+}
