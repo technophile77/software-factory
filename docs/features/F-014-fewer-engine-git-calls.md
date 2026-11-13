@@ -4,7 +4,7 @@
 - **Status:** In review (interview open)
 - **Requested by / date:** Alex, 2026-11-13 (chose "Fewer engine git calls"
   from the CI speed thread's options)
-- **Spec version:** 1
+- **Spec version:** 2
 
 ## 1. Objective and business purpose
 The engine starts a new `git` process for almost every read and write it
@@ -38,7 +38,7 @@ Where the time goes today (profile of the full acceptance suite on
 ## 3. Functional requirements
 | Id | Requirement |
 |---|---|
-| FR-1 | **One reader per repo.** Reads of refs, trees and blobs go through one `git cat-file --batch` process per repo, kept open while the engine is busy in that repo and closed after it has been idle for a short time (OQ-1). Modes come from the tree objects the engine parses itself, so a symbolic link or submodule is still refused where it is today. |
+| FR-1 | **One reader per repo.** Reads of refs, trees and blobs go through one `git cat-file --batch` process per repo, kept open while the engine is busy in that repo and closed after 2 seconds with no read (OQ-1, owner 2026-11-13). Modes come from the tree objects the engine parses itself, so a symbolic link or submodule is still refused where it is today. |
 | FR-2 | **Reader failure falls back.** If the reader dies, times out or returns output the engine can't parse, the engine kills it, makes that one read with a separate git process as today, and starts a new reader on the next read. A read never returns a wrong answer because the reader got out of step. |
 | FR-3 | **factory/state head held in memory.** The engine keeps the factory/state commit it last wrote or read, and updates it on every commit, fetch and fast-forward it makes (A-1). A commit whose compare-and-swap fails reloads the head and fails as today. |
 | FR-4 | **Master repo facts read once.** The master repo's root commits and origin URL, used by the project path check (SR-13), are read once per engine start instead of once per project path check. |
@@ -111,7 +111,7 @@ None. `Git` gains methods internal to the engine; no contract in
 ## 11. Open questions
 | Id | Category | Question | Status |
 |---|---|---|---|
-| OQ-1 | Architecture | Keep one `cat-file --batch` reader per repo, closed when idle (FR-1)? | Open |
+| OQ-1 | Architecture | Keep one `cat-file --batch` reader per repo, closed when idle (FR-1)? | Answered 2026-11-13: yes, closed after 2 s idle |
 | OQ-2 | Product | Rework state commits in this feature (FR-6), or leave them for later? | Open |
 
 ## 12. Readiness gate
@@ -120,9 +120,10 @@ None. `Git` gains methods internal to the engine; no contract in
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [ ] Assumptions explicit (A-1 pending)
-- [ ] Blocking decisions resolved (OQ-1, OQ-2 open)
+- [ ] Blocking decisions resolved (OQ-2 open)
 
 ## 13. Change log
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-13 | Draft from the git profile of the acceptance suite | — |
+| 2 | 2026-11-13 | OQ-1: one reader per repo, closed after 2 s idle | Alex (card) |
