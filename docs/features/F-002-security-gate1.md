@@ -27,3 +27,14 @@ policy entry and the spec section 2 amendment go through hygiene items.
 
 **Not applicable:** S2 (no new auth surface), S4 (no new libraries at this
 stage; any chosen at implementation get the S4.1 review).
+
+## Re-review for spec v13 (promptfoo, ADR 0023), 2026-11-13
+
+| # | Criterion | Severity if missed | Finding | Resolution |
+|---|---|---|---|---|
+| 1 | S4.1, S4.3, S4.4 | Medium | A new external component with about 400 packages, four with advisories, and default calls home (telemetry, update check, sharing, remote generation). | SR-11 conditions; review in [F-002-promptfoo-review.md](F-002-promptfoo-review.md); owner accepts or declines (OQ-2) |
+| 2 | S8.1, S3 | High | If promptfoo ran inside the engine process, every package in its tree could read the factory token and Claude credential from the engine's environment. | SR-12; where it runs is an owner decision (OQ-1), recommendation (a) a credential-free child process |
+| 3 | S3, SR-4 | Low | promptfoo stores prompts and outputs in its own database, by default in the user's home folder. | SR-13 and FR-25: engine-owned folder, outside Git |
+
+**Unchanged:** SR-1 and SR-2 hold because every trial still runs through the
+engine's session runner (FR-23). SR-9's cap is enforced by the adapter (FR-24).
