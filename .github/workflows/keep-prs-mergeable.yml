@@ -1,0 +1,35 @@
+name: keep-prs-mergeable
+# H-0115: merge main into open PRs after each push to main, and flag the ones
+# that conflict, so no agent has to do it by hand.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+# Two pushes to main in quick succession must not update the same PR at once.
+concurrency:
+  group: keep-prs-mergeable
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  update-prs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write        # update-branch, when UPDATE_TOKEN is not set
+      pull-requests: write   # update-branch
+      issues: write          # the merge-conflict label and comment
+    steps:
+      # Checks out main only, for the script. PR code is never checked out:
+      # GitHub merges server-side.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: python3 scripts/update_open_prs.py
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Optional, set by the owner as a repo secret, never committed: the
+          # factory machine account's token (ADR 0006). Without it the PR's
+          # checks don't run on the updated head.
+          UPDATE_TOKEN: ${{ secrets.FACTORY_UPDATE_TOKEN }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
