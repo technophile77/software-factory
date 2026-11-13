@@ -1,11 +1,21 @@
 # Feature: Phone notifications and approvals for inbox items
 
 - **Id:** F-012
-- **Status:** Approved (owner, 2026-11-13; readiness gate passed)
+- **Status:** Superseded by F-011 v20 (ADR 0022), pending the owner's approval of F-011 v20. Until then v10 stays the approved text, and nothing is built from either.
 - **Requested by / date:** Alex, 2026-11-13 (split from F-011 OQ-3: "the phone
   notification needs to be tied to some way to do approvals on my phone also";
   "I want a confirmation on risky actions like a merge, not just one click")
-- **Spec version:** 10
+- **Spec version:** 11 (draft)
+
+> **Superseded.** ADR 0022 makes GitHub issues the only inbox store, so the
+> phone no longer needs its own channel: every item is an issue, acted on the
+> same way on the phone and the PC. F-011 v20 carries this spec's approved
+> requirements: FR-2 to FR-8, FR-10, FR-11, FR-13, FR-14 as F-011 FR-1 to
+> FR-8, FR-15, FR-20; SR-1 to SR-13 as F-011 SR-1 to SR-12; A-1, A-2 as F-011
+> A-2, A-3. Withdrawn: FR-1's "blocking items only" (F-011 OQ-13), FR-9's
+> phone-only wording (F-011 FR-9), H-0125 (folded into Inbox item v3.0,
+> H-0165), H-0126 (revised as H-0162), H-0128 (no `phone` block needed).
+> H-0129 (ADR 0018) stays applied. The text below is v10, kept for the record.
 
 ## 1. Objective and business purpose
 The factory stalls whenever an item is waiting for the owner and the owner is
@@ -254,6 +264,7 @@ skips `factory-inbox` issues (FR-13) before either feature's build.
 | 9 | 2026-11-13 | SR-1, SR-3, SR-4, SR-5, SR-7 approved; section 10: drafts of H-0125, H-0126, H-0128; H-0129 applied | Owner, 2026-11-13 (decision card) for the SRs |
 | 10 | 2026-11-13 | H-0125, H-0126, H-0128 approved; readiness gate passed | Owner, 2026-11-13 (decision card) |
 | 10 | 2026-11-13 | Spec v10 signed off; status Approved | Owner, 2026-11-13 (decision card) |
+| 11 | 2026-11-13 | Superseded by F-011 v20 for ADR 0022 (proposal 0026); requirements carried or withdrawn as listed at the top | — (draft, with F-011 v20) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
