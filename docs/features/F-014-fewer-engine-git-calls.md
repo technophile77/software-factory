@@ -4,7 +4,7 @@
 - **Status:** Approved; readiness gate passed 2026-11-13; in development
 - **Requested by / date:** Alex, 2026-11-13 (chose "Fewer engine git calls"
   from the CI speed thread's options)
-- **Spec version:** 8
+- **Spec version:** 9
 
 ## 1. Objective and business purpose
 The engine starts a new `git` process for almost every read and write it
@@ -66,7 +66,10 @@ Where the time goes today (profile of the full acceptance suite on
   owner's own git binary.
 - Works on Windows, Linux and macOS.
 - Behavior, errors and messages are unchanged; only process counts and
-  time change.
+  time change. Known issues for Alpha (owner, v9), both failing closed:
+  a repo deleted and cloned again at the same path reads as missing until
+  its reader idles out (up to 2 s, Gate 2 L3); some errors in crafted or
+  corrupt repos are worded differently from before F-014 (validation m6).
 - Coordinated with the CI speed thread (H-0151–H-0155), which changes test
   code in parallel: F-014 changes engine source and only the test files it
   needs.
@@ -136,3 +139,4 @@ None. `Git` gains methods internal to the engine; no contract in
 | 6 | 2026-11-13 | AC-1 target 35% → 30% after the build measured 31.4% (51,904 → 35,628); FR-3 and AC-5: a swap that fails on a held head commits once more on the moved head, and `sync()` reads the head fresh | Alex (card, AC-1); FR-3 wording keeps pre-F-014 behavior |
 | 7 | 2026-11-13 | SR-5 extended: trees out of git's sort order are refused (Gate 2 L2) | Alex (card) |
 | 8 | 2026-11-13 | §5: fast reads need git 2.36+ (`cat-file --batch-command`); older git falls back to plain calls after three failed starts per repo (Gate 2 owner item 2) | Alex (card) |
+| 9 | 2026-11-13 | §5: Gate 2 L3 and validation m6 recorded as known issues for Alpha | Alex (card) |

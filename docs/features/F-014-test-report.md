@@ -1,6 +1,6 @@
 # F-014 Test report
 
-- **Feature:** F-014 Fewer engine git calls, spec v8
+- **Feature:** F-014 Fewer engine git calls, spec v9
 - **Date:** 2026-11-13 (updated after validation round 1)
 - **Final commit tested:** `b1bdc9b` (engine code as at `3a09929`)
 - **Environment:** Linux, Node 22, git 2.43.0. Windows: the repo's CI matrix (windows-latest, git 2.56.0.windows.4, six shards).
@@ -91,4 +91,4 @@ Tests: `units.test.ts` "a recorded parent pid that one of our children took over
 
 ## Known issues
 
-Gate 2 L3 (a repo re-cloned at the same path reads as missing until its reader idles out, up to 2 s) and validation m6 (some errors in crafted or corrupt repos are worded differently from `main`) both fail closed. Whether they are logged for Alpha or fixed first is with the owner.
+Gate 2 L3 (a repo re-cloned at the same path reads as missing until its reader idles out, up to 2 s) and validation m6 (some errors in crafted or corrupt repos are worded differently from `main`) both fail closed. The owner chose to record both as known issues for Alpha (spec v9, §5).
