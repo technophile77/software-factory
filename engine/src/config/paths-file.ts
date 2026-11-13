@@ -111,7 +111,12 @@ export async function checkProjectPath(p: string, masterRepo: string, git: Git):
   let byMaster = masterFacts.get(git);
   if (!byMaster) masterFacts.set(git, (byMaster = new Map()));
   let facts = byMaster.get(master);
-  if (!facts) byMaster.set(master, (facts = (async () => ({ roots: await roots(master), origin: await origin(master) }))()));
+  if (!facts) {
+    facts = (async () => ({ roots: await roots(master), origin: await origin(master) }))();
+    byMaster.set(master, facts);
+    // The master clone always has a root commit, so none means the read failed: try again next check (Gate 2 L5).
+    void facts.then((f) => f.roots.size === 0 && byMaster!.get(master) === facts && byMaster!.delete(master));
+  }
   const { roots: mr, origin: mo } = await facts;
   const pr = await roots(real);
   if ([...pr].some((r) => mr.has(r))) throw new ConfigError("The path is a clone of the master repo (same root commit).");

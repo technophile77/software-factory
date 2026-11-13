@@ -269,9 +269,13 @@ export class Git {
       cwd,
       async (r) => {
         const out = new Map<string, Buffer>();
+        let total = 0;
         for (const sha of want) {
           const o = await this.contents(r, sha);
           if (!o || o.type !== "blob") throw new GitError(`blob ${sha.slice(0, 12)} couldn't be read`);
+          // The whole batch keeps the one-call cap a plain `cat-file --batch` had (Gate 2 M1).
+          total += o.body.length;
+          if (total > READ_LIMIT) throw new GitError("output over the limit");
           out.set(sha, o.body);
         }
         return out;

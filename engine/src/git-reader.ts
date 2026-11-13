@@ -135,6 +135,8 @@ export class CatFileReader {
     const pid = child.pid;
     if (pid) this.o.children.add(pid);
     child.stdout.on("data", (d: Buffer) => {
+      // Output of a reader already given up on must never reach the next one (Gate 2 M2).
+      if (this.child !== child) return;
       this.buf = this.buf.length ? Buffer.concat([this.buf, d]) : d;
       this.wake?.();
     });
@@ -175,8 +177,14 @@ export class CatFileReader {
   private breakOff(why: string): ReaderBroken {
     const c = this.child;
     this.child = null;
-    // A reader out of step or stuck may not read its input, so it gets a short grace only.
-    if (c) void endProcess(c, 200);
+    this.buf = Buffer.alloc(0);
+    if (c) {
+      // Killed before the fallback runs (SR-7). Its input is closed first, so on
+      // Windows a real git behind a killed launcher still sees end of input.
+      c.stdout.removeAllListeners("data");
+      c.stdin.destroy();
+      c.kill("SIGKILL");
+    }
     this.dead = new ReaderBroken(why);
     this.wake?.();
     return this.dead;

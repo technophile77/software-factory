@@ -141,6 +141,44 @@ describe("F-014 reader failures (FR-2, AC-3, SR-6, SR-7)", () => {
   });
 });
 
+describe("F-014 reader setup (SR-2, SR-4)", () => {
+  it.skipIf(process.platform === "win32")("starts the reader with the same overrides and environment as every engine git call", async () => {
+    const { repo } = fixture();
+    const bin = path.join(tmpdir(), "bin");
+    fs.mkdirSync(bin);
+    const log = path.join(bin, "argv.log");
+    const fake = path.join(bin, "git");
+    fs.writeFileSync(fake, `#!/bin/sh\ncase " $* " in *" --batch-command "*) printf '%s\\n' "$@" > "${log}"; env > "${log}.env" ;; esac\nexec "${GIT_PATH}" "$@"\n`, { mode: 0o755 });
+    const g = make({ gitPath: fake });
+    await g.revParse(repo, "HEAD");
+    await g.closeReaders();
+    const argv = fs.readFileSync(log, "utf8").trim().split("\n");
+    expect(argv.slice(0, -2)).toEqual(g.args(repo, []));
+    expect(argv.slice(-2)).toEqual(["cat-file", "--batch-command"]);
+    expect(argv).toContain("core.fsmonitor=false");
+    const env = fs.readFileSync(`${log}.env`, "utf8");
+    expect(env).toMatch(/^GIT_CONFIG_NOSYSTEM=1$/m);
+    expect(env).not.toMatch(/^FACTORY_GIT_TOKEN=/m);
+  });
+
+  it("keeps one reader per repo, so one repo's answers never serve another", async () => {
+    const a = fixture();
+    const b = fixture();
+    fs.writeFileSync(path.join(b.repo, "only-b.txt"), "b\n");
+    git(b.repo, "add", "only-b.txt");
+    git(b.repo, "commit", "-qm", "b");
+    b.head = git(b.repo, "rev-parse", "HEAD");
+    expect(b.head).not.toBe(a.head);
+    const g = make();
+    expect(await g.revParse(a.repo, "HEAD")).toBe(a.head);
+    expect(await g.revParse(b.repo, "HEAD")).toBe(b.head);
+    expect(await g.lsTreeEntry(b.repo, b.head, "only-b.txt")).not.toBeNull();
+    expect(await g.lsTreeEntry(a.repo, a.head, "only-b.txt")).toBeNull();
+    expect(g.spawns.get("cat-file --batch-command")).toBe(2);
+    await g.closeReaders();
+  });
+});
+
 describe("F-014 idle close (OQ-1, AC-7)", () => {
   it("closes the reader after its idle time and starts a new one on the next read", async () => {
     const { repo, head } = fixture();
