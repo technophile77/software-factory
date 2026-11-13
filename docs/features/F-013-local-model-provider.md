@@ -1,11 +1,11 @@
 # Feature: Local model provider
 
 - **Id:** F-013
-- **Status:** Draft (OQ-1 to OQ-5 decided; Security Gate 1 done; SRs, assumptions and interface drafts with the owner)
+- **Status:** In review (readiness gate passed 2026-11-13; awaiting owner sign-off)
 - **Requested by / date:** Alex, 2026-11-13 ("I want to also incorporate a
   local llm api"; "this model would be a good candidate for the security
   agent, judge, or any low end agent")
-- **Spec version:** 6
+- **Spec version:** 8
 
 ## 1. Objective and business purpose
 The owner runs an LLM server on their own LAN. Running some agent work on it
@@ -75,7 +75,7 @@ owner-specific and never goes into the public master repo.
 ## 4. Acceptance criteria
 | Id | Given / When / Then | Covers |
 |---|---|---|
-| AC-1 | Given the master repo, when it is searched, then no local host name, IP address, port or key appears in it (a CI check). | FR-1 |
+| AC-1 | Given a change to the master repo, when CI runs, then it fails if `factory-providers.local.yaml` is tracked, or if any tracked file outside a short allow list of documentation examples holds a `.local` host name, a private IPv4 or IPv6 address (RFC 1918, RFC 4193), or a URL with a port on such a host. | FR-1 |
 | AC-2 | Given `factory-providers.local.yaml` writable by another user, when the engine starts, then local rungs are unavailable and the status says why. | FR-2 |
 | AC-3 | Given a base URL whose name resolves to a public address, when the engine starts, then local rungs are unavailable. | FR-4 |
 | AC-4 | Given a local-rung session, when the agent sends a model request, then it reaches the pinned address and not `api.anthropic.com`, and the Claude credential is not sent to it. | FR-3, FR-5 |
@@ -124,50 +124,57 @@ owner-specific and never goes into the public master repo.
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | `llama-server`'s Anthropic Messages endpoint works with Claude Code, including streaming and tool use. To be checked in a spike before build; a failure sends the spec back. | OQ-2 | Pending |
-| A-2 | The local model's results count as F-002 calibration evidence the same way a Claude model's do: same tasks, same pass bar (F-002 A-2). | OQ-1 | Pending |
+| A-1 | `llama-server`'s Anthropic Messages endpoint works with Claude Code, including streaming and tool use. To be checked in a spike before build; a failure sends the spec back. | OQ-2 | Approved (owner, 2026-11-13, decision card) |
+| A-2 | The local model's results count as F-002 calibration evidence the same way a Claude model's do: same tasks, same pass bar (F-002 A-2). | OQ-1 | Approved (owner, 2026-11-13, decision card) |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | External service (S9.1): the owner's local LLM server only, read-and-generate (`GET /v1/models`, `POST /v1/messages`, `POST /v1/messages/count_tokens`). No other path. | Analyst (S9.1, S2.2) | Proposed |
-| SR-2 | The address and key never appear in Git, logs, agent environment or reports (S3.1, S3.3); logs name the provider, not the host. | Analyst (S3.1) | Proposed |
-| SR-3 | Only private addresses, checked and pinned per session (FR-4), so a misconfigured or hijacked name can't send project content to the internet (S9.4; CWE-918 server-side request forgery). | Analyst | Proposed |
-| SR-4 | Agents still cannot reach private addresses (SR-8 of F-007 is unchanged); only the gateway reaches the local server, and only for a session the engine granted a local rung (S8.1). | Analyst (S8.1) | Proposed |
+| SR-1 | External service (S9.1): the owner's local LLM server only, read-and-generate (`GET /v1/models`, `POST /v1/messages`, `POST /v1/messages/count_tokens`). No other path. | Analyst (S9.1, S2.2) | Accepted (owner, 2026-11-13, decision card) |
+| SR-2 | The address and key never appear in Git, logs, agent environment or reports (S3.1, S3.3); logs name the provider, not the host. | Analyst (S3.1) | Accepted (owner, 2026-11-13, decision card) |
+| SR-3 | Only private addresses, checked and pinned per session (FR-4), so a misconfigured or hijacked name can't send project content to the internet (S9.4; CWE-918 server-side request forgery). | Analyst | Accepted (owner, 2026-11-13, decision card) |
+| SR-4 | Agents still cannot reach private addresses (SR-8 of F-007 is unchanged); only the gateway reaches the local server, and only for a session the engine granted a local rung (S8.1). | Analyst (S8.1) | Accepted (owner, 2026-11-13, decision card) |
 | SR-5 | Transport and authentication of the local server (OQ-3 decided (c)): no API key and plain HTTP are accepted; the private-address check and per-session pin (SR-3) are the only controls. An API key stays optional (FR-2) so the owner can add one later without a spec change. Accepted risk, stated to the owner: as found, the server takes requests from anyone on the LAN with no key, and traffic is plain HTTP, so prompts holding repo content cross the LAN unencrypted (CWE-319) and an `.local` name can be answered by any device on the LAN (mDNS is unauthenticated). | Analyst (S8.2; OWASP ASVS 5.0 V12, secure communication; NIST SP 800-53 SC-8) | Risk accepted (owner, 2026-11-13, decision card) |
-| SR-6 | Responses from the local model are untrusted input like any model output (S4.5, S6.1). The model's removed refusal training makes prompt injection likelier (OWASP Top 10 for LLM Applications 2025, LLM01), so it isn't used for a role that reads external content (the web reader) unless calibration includes injection tasks and the owner approves. | Analyst | Proposed |
-| SR-7 | The model weights come from an outside fine-tune (S4.1): which file the server runs is recorded with each calibration result (name and size from `/v1/models`), so results tie to the weights tested (OWASP LLM03, supply chain). | Analyst (S4.1) | Proposed |
-| SR-8 | Local rungs are off for a project until its manifest opts in (`settings.providers.local: true`, default false); onboarding asks, and the run review shows when local rungs ran. | Gate 1 #1 (S3.2, S9.4) | Proposed |
-| SR-9 | A local rung is allowed only for a role whose role policy is read-only on the worktree (writing only its `.factory/` report) with no network beyond the gateway; any other role needs its own Security decision first. | Gate 1 #2 (S6.2, S8.1, S4.5) | Proposed |
-| SR-10 | Advisory output reaches the Claude gate reviewer only as engine-validated structured data: findings (criterion id, severity, location, description capped at 500 characters) and a verdict word; anything else is dropped. The Claude prompt marks it as unverified hints, and the gate result comes only from the Claude reviewer's own report. | Gate 1 #3 (S6.1, S9.3) | Proposed |
-| SR-11 | The engine records the served model's name, parameter count, byte size and quant type at each check; any change counts as a new model, resets its calibration results and advisory match rate, and tells the owner. Residual: a swap keeping all four the same is not detectable without a digest. | Gate 1 #4 (S4.1, S4.3) | Proposed |
+| SR-6 | Responses from the local model are untrusted input like any model output (S4.5, S6.1). The model's removed refusal training makes prompt injection likelier (OWASP Top 10 for LLM Applications 2025, LLM01), so it isn't used for a role that reads external content (the web reader) unless calibration includes injection tasks and the owner approves. | Analyst | Accepted (owner, 2026-11-13, decision card) |
+| SR-7 | The model weights come from an outside fine-tune (S4.1): which file the server runs is recorded with each calibration result (name and size from `/v1/models`), so results tie to the weights tested (OWASP LLM03, supply chain). | Analyst (S4.1) | Accepted (owner, 2026-11-13, decision card) |
+| SR-8 | Local rungs are off for a project until its manifest opts in (`settings.providers.local: true`, default false); onboarding asks, and the run review shows when local rungs ran. | Gate 1 #1 (S3.2, S9.4) | Accepted (owner, 2026-11-13, decision card) |
+| SR-9 | A local rung is allowed only for a role whose role policy is read-only on the worktree (writing only its `.factory/` report) with no network beyond the gateway; any other role needs its own Security decision first. | Gate 1 #2 (S6.2, S8.1, S4.5) | Accepted (owner, 2026-11-13, decision card) |
+| SR-10 | Advisory output reaches the Claude gate reviewer only as engine-validated structured data: findings (criterion id, severity, location, description capped at 500 characters) and a verdict word; anything else is dropped. The Claude prompt marks it as unverified hints, and the gate result comes only from the Claude reviewer's own report. | Gate 1 #3 (S6.1, S9.3) | Accepted (owner, 2026-11-13, decision card) |
+| SR-11 | The engine records the served model's name, parameter count, byte size and quant type at each check; any change counts as a new model, resets its calibration results and advisory match rate, and tells the owner. Residual: a swap keeping all four the same is not detectable without a digest. | Gate 1 #4 (S4.1, S4.3) | Accepted (owner, 2026-11-13, decision card) |
 
 ## 10. Interface requirements
-Drafts, for the owner's approval once the open questions are decided:
+Approved by the owner 2026-11-13 (decision card). H-0135 to H-0137 are applied at build; H-0138 is applied in this PR as ADR 0019.
 
-- **H-0135 (Interfaces):** new contract *Local providers file v1.0*
+- **H-0135 (approved, Interfaces):** new contract *Local providers file v1.0*
   (`factory-providers.local.yaml`): `providers.local.base_url`,
   `providers.local.model`, `providers.local.api_key_ref` (optional, a
   credential store name), `providers.local.max_sessions` (default 1),
   `providers.local.allow_loopback` (default false). Also Project manifest
   minor bump: `settings.providers.local` (bool, default false; SR-8).
-- **H-0136 (Interfaces):** Agent report minor bump: `model` may carry a
+- **H-0136 (approved, Interfaces):** Agent report minor bump: `model` may carry a
   provider prefix (`local/<id>`); Tuning metrics and Calibration result
   group rungs by it. Additive.
-- **H-0137 (Hygiene):** `.gitignore` adds `/factory-providers.local.yaml`;
+- **H-0137 (approved, Hygiene):** `.gitignore` adds `/factory-providers.local.yaml`;
   CI check for AC-1.
-- **H-0138 (Architecture, OQ-2 (a)):** ADR 0019, a second model
-  upstream through the credential gateway.
+- **H-0138 (approved, applied in this PR, Architecture, OQ-2 (a)):**
+  [ADR 0019](../adr/0019-local-model-upstream-through-gateway.md), a second
+  model upstream through the credential gateway.
 - **H-0139:** reserved (OQ-1 chose (a), so F-002 A-3 is not amended; a later
   move of a gate role to the local rung would need its own Security decision).
 
 ## 11. Readiness gate
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+Checked 2026-11-13 against spec v8.
+
+- [x] Clear objective
+- [x] Expected behavior defined
+- [x] Acceptance criteria testable (AC-1 to AC-11)
+- [x] Constraints documented (server measured 2026-11-13; speed figures come from FR-12's own measurements)
+- [x] Assumptions explicit (A-1, A-2 approved; A-1 checked in a spike before build, and a failed check sends the spec back to the owner)
+- [x] Blocking decisions resolved (OQ-1 to OQ-5 decided; SR-5 risk accepted; SR-1 to SR-4, SR-6 to SR-11 approved; H-0135 to H-0138 approved, H-0138 applied)
+
+Follow-up outside this spec: F-002 is not built yet, so until it is, a role
+goes onto a local rung only through `engine/config/models.yaml` and a
+hygiene item (§ 2 item 4).
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -178,6 +185,8 @@ Drafts, for the owner's approval once the open questions are decided:
 | 4 | 2026-11-13 | OQ-2, OQ-4, OQ-5 decided (a): gateway upstream (ADR 0019), calibrate the gate and low-end roles first, fall back to the Claude rung after a 10-minute wait | Owner, 2026-11-13 (decision card) |
 | 5 | 2026-11-13 | Security Gate 1 (`F-013-security-gate1.md`): 4 findings, none blocking; SR-8 to SR-11 proposed | — |
 | 6 | 2026-11-13 | Owner: request timeouts scale with context size, measured. FR-7 split slot wait from request deadline; FR-12 and AC-11 added | Owner, 2026-11-13 (thread) |
+| 7 | 2026-11-13 | SR-1 to SR-4 and SR-6 to SR-11 approved; A-1 and A-2 approved (A-1 checked in a spike before build) | Owner, 2026-11-13 (decision card) |
+| 8 | 2026-11-13 | H-0135 to H-0138 approved; ADR 0019 applied; readiness gate passed | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -189,5 +198,8 @@ Drafts, for the owner's approval once the open questions are decided:
 | OQ-5 | When the local server is busy or down. (a) After a wait (default 10 minutes), the session falls back to the role's Claude rung and the run review notes it. (b) Wait, then stop the run with a Testing inbox item. **Recommended: (a)**: the server is shared, so waits will happen and the feature should keep moving; fallback costs Claude tokens. | Product | Decided (owner, 2026-11-13, decision card): (a) |
 
 Probe note (2026-11-13): no project data was sent; the probe used a
-generic `is_prime` prompt and a made-up weather tool. Measured speed and
-tool-call results are added here when the server has a free slot.
+generic `is_prime` prompt and a made-up weather tool. `GET /v1/models`
+answered in 0.2 s. A 30-token chat request got no answer within 15 minutes
+because the server's slots were busy with other long prompts, which is the
+case FR-7 and FR-12 handle. Speed and tool-call support are measured by the
+A-1 spike and by FR-12 once built.
