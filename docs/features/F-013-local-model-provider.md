@@ -1,11 +1,11 @@
 # Feature: Local model provider
 
 - **Id:** F-013
-- **Status:** Draft (open questions OQ-1 to OQ-5 with the owner)
+- **Status:** Draft (OQ-1 to OQ-5 decided; Security Gate 1 done; SRs, assumptions and interface drafts with the owner)
 - **Requested by / date:** Alex, 2026-11-13 ("I want to also incorporate a
   local llm api"; "this model would be a good candidate for the security
   agent, judge, or any low end agent")
-- **Spec version:** 1
+- **Spec version:** 5
 
 ## 1. Objective and business purpose
 The owner runs an LLM server on their own LAN. Running some agent work on it
@@ -50,7 +50,7 @@ owner-specific and never goes into the public master repo.
    work (on 2026-11-13 two of its four slots were busy with 57k and 94k
    token prompts and a 30-token test waited over 3 minutes). The engine
    sends at most a set number of sessions to it at once, and handles a
-   timeout or refusal as OQ-5 decides.
+   timeout or refusal by running the session on the role's Claude rung after a 10-minute wait, noted in the run review (OQ-5).
 6. **Reports.** Each agent report records the provider with the model, so
    run reviews, metrics and costs tell local work apart. A local rung's
    cost is $0 in `tokens` mode and 0% of plan in `subscription` mode; its
@@ -65,10 +65,11 @@ owner-specific and never goes into the public master repo.
 | FR-4 | At start, and again before each local session, the engine resolves the host on the PC (so `.local` mDNS names work), requires every address to be in a private range (RFC 1918, RFC 4193 or link-local), and pins the address it checked for the session. Loopback is allowed only if the owner sets it explicitly. A public address is refused. |
 | FR-5 | The gateway forwards a local-rung session's `/v1/messages` and `/v1/messages/count_tokens` requests, with the same body checks it applies today, to the pinned address only. The grant names the upstream; an agent cannot choose it. |
 | FR-6 | The engine checks at start that the server lists the configured model (`GET /v1/models`) and that it answers an Anthropic Messages request with a tool call. A failing check marks the local rungs unavailable, with the reason. |
-| FR-7 | No more than the configured number of local sessions run at once; others wait their turn, then follow OQ-5. |
+| FR-7 | No more than the configured number of local sessions run at once. A session that waits more than 10 minutes for a slot, or whose server is unreachable or times out, runs on the role's Claude rung instead; the run review records each fallback with role and reason (OQ-5). |
 | FR-8 | The agent report's `model` field carries the provider prefix (`local/...`); metrics, run reviews and the calibration result group by it. |
 | FR-9 | A role on a local rung that fails its run is attributed and stepped up exactly as F-002 says; nothing here bypasses F-002's approvals. |
-| FR-10 | Gate roles (security reviewer, validation judge) use the local model only as OQ-1 decides. |
+| FR-10 | Gate roles (security reviewer, validation judge) stay on their Claude rung (F-002 A-3 unchanged). When the local model is enabled for a gate role, it runs first as an advisory pass on the same inputs; its findings or verdict go to the Claude reviewer as data, which still decides. The engine records, per run, how many of the Claude reviewer's findings the local pass also found and at what severity, plus its verdict match, in the run review (OQ-1). |
+| FR-11 | The advisory pass never blocks or delays a gate beyond the OQ-5 wait: if it is unavailable, the Claude reviewer runs without it. |
 
 ## 4. Acceptance criteria
 | Id | Given / When / Then | Covers |
@@ -81,7 +82,8 @@ owner-specific and never goes into the public master repo.
 | AC-6 | Given a server that doesn't list the configured model, when the engine starts, then local rungs are unavailable with that reason. | FR-6 |
 | AC-7 | Given a cap of 1 and two local-rung sessions starting, then the second waits until the first ends. | FR-7 |
 | AC-8 | Given a local-rung run, when its report is written, then `model` starts with `local/` and its cost is 0. | FR-8 |
-| AC-9 | Given the server times out, then the session follows the OQ-5 decision and the event is logged with the role and reason. | FR-7, OQ-5 |
+| AC-9 | Given the server times out, then the session runs on the role's Claude rung and the run review records the fallback with the role and reason. | FR-7, OQ-5 |
+| AC-10 | Given a gate role with the local advisory pass enabled, when the gate runs, then the Claude reviewer receives the local findings as data and its own report decides the gate; the run review records the match rate. Given the local server is down, the gate still completes on Claude alone. | FR-10, FR-11 |
 
 ## 5. Constraints
 - Measured 2026-11-13 from the owner's PC: one model, `Qwen3.8-27B-Uncensored`
@@ -130,9 +132,13 @@ owner-specific and never goes into the public master repo.
 | SR-2 | The address and key never appear in Git, logs, agent environment or reports (S3.1, S3.3); logs name the provider, not the host. | Analyst (S3.1) | Proposed |
 | SR-3 | Only private addresses, checked and pinned per session (FR-4), so a misconfigured or hijacked name can't send project content to the internet (S9.4; CWE-918 server-side request forgery). | Analyst | Proposed |
 | SR-4 | Agents still cannot reach private addresses (SR-8 of F-007 is unchanged); only the gateway reaches the local server, and only for a session the engine granted a local rung (S8.1). | Analyst (S8.1) | Proposed |
-| SR-5 | Transport and authentication of the local server, per OQ-3. Risk to state: as found, the server takes requests from anyone on the LAN with no key, and traffic is plain HTTP, so prompts holding repo content cross the LAN unencrypted (CWE-319) and an `.local` name can be answered by any device on the LAN (mDNS is unauthenticated). | Analyst (S8.2; OWASP ASVS 5.0 V12, secure communication; NIST SP 800-53 SC-8) | Open (OQ-3) |
+| SR-5 | Transport and authentication of the local server (OQ-3 decided (c)): no API key and plain HTTP are accepted; the private-address check and per-session pin (SR-3) are the only controls. An API key stays optional (FR-2) so the owner can add one later without a spec change. Accepted risk, stated to the owner: as found, the server takes requests from anyone on the LAN with no key, and traffic is plain HTTP, so prompts holding repo content cross the LAN unencrypted (CWE-319) and an `.local` name can be answered by any device on the LAN (mDNS is unauthenticated). | Analyst (S8.2; OWASP ASVS 5.0 V12, secure communication; NIST SP 800-53 SC-8) | Risk accepted (owner, 2026-11-13, decision card) |
 | SR-6 | Responses from the local model are untrusted input like any model output (S4.5, S6.1). The model's removed refusal training makes prompt injection likelier (OWASP Top 10 for LLM Applications 2025, LLM01), so it isn't used for a role that reads external content (the web reader) unless calibration includes injection tasks and the owner approves. | Analyst | Proposed |
 | SR-7 | The model weights come from an outside fine-tune (S4.1): which file the server runs is recorded with each calibration result (name and size from `/v1/models`), so results tie to the weights tested (OWASP LLM03, supply chain). | Analyst (S4.1) | Proposed |
+| SR-8 | Local rungs are off for a project until its manifest opts in (`settings.providers.local: true`, default false); onboarding asks, and the run review shows when local rungs ran. | Gate 1 #1 (S3.2, S9.4) | Proposed |
+| SR-9 | A local rung is allowed only for a role whose role policy is read-only on the worktree (writing only its `.factory/` report) with no network beyond the gateway; any other role needs its own Security decision first. | Gate 1 #2 (S6.2, S8.1, S4.5) | Proposed |
+| SR-10 | Advisory output reaches the Claude gate reviewer only as engine-validated structured data: findings (criterion id, severity, location, description capped at 500 characters) and a verdict word; anything else is dropped. The Claude prompt marks it as unverified hints, and the gate result comes only from the Claude reviewer's own report. | Gate 1 #3 (S6.1, S9.3) | Proposed |
+| SR-11 | The engine records the served model's name, parameter count, byte size and quant type at each check; any change counts as a new model, resets its calibration results and advisory match rate, and tells the owner. Residual: a swap keeping all four the same is not detectable without a digest. | Gate 1 #4 (S4.1, S4.3) | Proposed |
 
 ## 10. Interface requirements
 Drafts, for the owner's approval once the open questions are decided:
@@ -141,16 +147,17 @@ Drafts, for the owner's approval once the open questions are decided:
   (`factory-providers.local.yaml`): `providers.local.base_url`,
   `providers.local.model`, `providers.local.api_key_ref` (optional, a
   credential store name), `providers.local.max_sessions` (default 1),
-  `providers.local.allow_loopback` (default false).
+  `providers.local.allow_loopback` (default false). Also Project manifest
+  minor bump: `settings.providers.local` (bool, default false; SR-8).
 - **H-0136 (Interfaces):** Agent report minor bump: `model` may carry a
   provider prefix (`local/<id>`); Tuning metrics and Calibration result
   group rungs by it. Additive.
 - **H-0137 (Hygiene):** `.gitignore` adds `/factory-providers.local.yaml`;
   CI check for AC-1.
-- **H-0138 (Architecture, if OQ-2 is (a)):** ADR 0019, a second model
+- **H-0138 (Architecture, OQ-2 (a)):** ADR 0019, a second model
   upstream through the credential gateway.
-- **H-0139:** reserved for the OQ-1 outcome (amending F-002 A-3 if the owner
-  picks that).
+- **H-0139:** reserved (OQ-1 chose (a), so F-002 A-3 is not amended; a later
+  move of a gate role to the local rung would need its own Security decision).
 
 ## 11. Readiness gate
 - [ ] Clear objective
@@ -164,15 +171,19 @@ Drafts, for the owner's approval once the open questions are decided:
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-13 | Draft with OQ-1 to OQ-5, from the owner's request and a probe of the server | — |
+| 2 | 2026-11-13 | OQ-1 decided (a): advisory first pass for gate roles, A-3 unchanged; FR-10 rewritten, FR-11 added | Owner, 2026-11-13 (decision card) |
+| 3 | 2026-11-13 | OQ-3 decided (c): no key, plain HTTP, private-address pin only; SR-5 risk accepted | Owner, 2026-11-13 (decision card) |
+| 4 | 2026-11-13 | OQ-2, OQ-4, OQ-5 decided (a): gateway upstream (ADR 0019), calibrate the gate and low-end roles first, fall back to the Claude rung after a 10-minute wait | Owner, 2026-11-13 (decision card) |
+| 5 | 2026-11-13 | Security Gate 1 (`F-013-security-gate1.md`): 4 findings, none blocking; SR-8 to SR-11 proposed | — |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
 |---|---|---|---|
-| OQ-1 | The owner named the security reviewer and judge as candidates, but F-002 A-3 (approved 2026-11-10) says those two never run below Sonnet/medium. (a) Keep A-3; the local model may run a gate role only as an extra, advisory first pass whose findings go to the Claude reviewer, which still decides. (b) Amend A-3: a gate role may move to the local rung once it passes F-002 calibration with A-2's strict bar (no missed Critical or High in any trial) and the owner approves. (c) Keep the local model to non-gate roles. **Recommended: (a) now, and (b) later only if the advisory runs show it matches the Claude reviewer.** | Security | Open |
-| OQ-2 | How agents reach the local model. (a) The credential gateway gets a second upstream, chosen per session by the engine; agents and their containers don't change (ADR 0019). (b) Give local-rung containers network access to the LAN server. **Recommended: (a)**; (b) breaks SR-8 for every local agent. | Architecture | Open |
-| OQ-3 | Securing the link to the server. (a) Require an API key (`llama-server --api-key`), stored in the OS credential store, plus the private-address pin; accept plain HTTP on the home LAN. (b) As (a), and also require TLS. (c) Use it as is: no key, plain HTTP. **Recommended: (a)**: one flag on the server and one credential entry; TLS needs a certificate to manage for little gain on a home LAN. | Security | Open |
-| OQ-4 | Which roles to calibrate on the local model first. (a) The owner's picks: security reviewer and judge (per OQ-1), plus the low-end roles (web reader, project evaluator, context hygiene). (b) All roles, let calibration sort it out. **Recommended: (a)**; calibrating every role spends a lot of slow local time on roles it is unlikely to pass. | Product | Open |
-| OQ-5 | When the local server is busy or down. (a) After a wait (default 10 minutes), the session falls back to the role's Claude rung and the run review notes it. (b) Wait, then stop the run with a Testing inbox item. **Recommended: (a)**: the server is shared, so waits will happen and the feature should keep moving; fallback costs Claude tokens. | Product | Open |
+| OQ-1 | The owner named the security reviewer and judge as candidates, but F-002 A-3 (approved 2026-11-10) says those two never run below Sonnet/medium. (a) Keep A-3; the local model may run a gate role only as an extra, advisory first pass whose findings go to the Claude reviewer, which still decides. (b) Amend A-3: a gate role may move to the local rung once it passes F-002 calibration with A-2's strict bar (no missed Critical or High in any trial) and the owner approves. (c) Keep the local model to non-gate roles. **Recommended: (a) now, and (b) later only if the advisory runs show it matches the Claude reviewer.** | Security | Decided (owner, 2026-11-13, decision card): (a) |
+| OQ-2 | How agents reach the local model. (a) The credential gateway gets a second upstream, chosen per session by the engine; agents and their containers don't change (ADR 0019). (b) Give local-rung containers network access to the LAN server. **Recommended: (a)**; (b) breaks SR-8 for every local agent. | Architecture | Decided (owner, 2026-11-13, decision card): (a) |
+| OQ-3 | Securing the link to the server. (a) Require an API key (`llama-server --api-key`), stored in the OS credential store, plus the private-address pin; accept plain HTTP on the home LAN. (b) As (a), and also require TLS. (c) Use it as is: no key, plain HTTP. **Recommended: (a)**: one flag on the server and one credential entry; TLS needs a certificate to manage for little gain on a home LAN. | Security | Decided (owner, 2026-11-13, decision card): (c), risk accepted (SR-5) |
+| OQ-4 | Which roles to calibrate on the local model first. (a) The owner's picks: security reviewer and judge (per OQ-1), plus the low-end roles (web reader, project evaluator, context hygiene). (b) All roles, let calibration sort it out. **Recommended: (a)**; calibrating every role spends a lot of slow local time on roles it is unlikely to pass. | Product | Decided (owner, 2026-11-13, decision card): (a) |
+| OQ-5 | When the local server is busy or down. (a) After a wait (default 10 minutes), the session falls back to the role's Claude rung and the run review notes it. (b) Wait, then stop the run with a Testing inbox item. **Recommended: (a)**: the server is shared, so waits will happen and the feature should keep moving; fallback costs Claude tokens. | Product | Decided (owner, 2026-11-13, decision card): (a) |
 
 Probe note (2026-11-13): no project data was sent; the probe used a
 generic `is_prime` prompt and a made-up weather tool. Measured speed and
