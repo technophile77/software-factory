@@ -40,7 +40,7 @@ How each box is built is decided in ADRs:
 | VS Code extension | ADR 0003: engine is a separate local process; extension is the UI (tree views + detail webview) |
 | Agent isolation and permissions | ADR 0004: Git worktree per agent; per-role write/command/network policy. ADR 0015: container per agent session, one path-matching rule, SSH-signed owner actions |
 | Branching | ADR 0005: `feature/F-nnn-name` + `feature/F-nnn/<agent>`, squash merge |
-| PR integration | ADR 0006: dedicated fine-grained token; `main` protected, owner review required |
+| PR integration | ADR 0017: owner's own fine-grained token; inbox click merges; `main` requires PR and CI, no review, no bypass (ADR 0006 machine account optional) |
 | Concurrency | ADR 0007: unlimited, with rebase-and-retest after each merge |
 | CI | ADR 0008: GitHub Actions, required merge gate, jobs scaled by maturity |
 | Factory state | ADR 0009: `factory/state` branch, checked out at `.factory/` |

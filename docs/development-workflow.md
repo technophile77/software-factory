@@ -15,7 +15,9 @@ machine-readable version lives in `workflows/feature-development/`.
 | 8. Validation | Validation judge | PASS |
 | 9. Pull request | Orchestrator | Items 1 to 11 of `definition-of-done.md` met; PR open; CI green before it is marked ready |
 
-The owner merges. Nobody else does.
+The owner approves the merge in the inbox (F-011, ADR 0017); the extension
+merges on that confirmed click. Nobody else merges, except the engine for a
+hygiene PR identical to an approved hygiene change (F-011 FR-11).
 
 ## Readiness gate (stage 4)
 

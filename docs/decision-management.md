@@ -55,6 +55,25 @@ is applied before approval, however small. Each item has:
 On approval the change is committed on its own, with the item's id in the
 commit message, so it can be traced and reverted.
 
+## One inbox (F-011)
+
+All item kinds appear in one queue in VS Code, each labeled by its kind;
+decisions also show their category. The kinds stay separate item types and
+stores (F-011 A-1).
+
+| Kind | Owner actions | Confirmation dialog |
+|---|---|---|
+| Decision | Approve, Reject, Request changes, Ask for more research, Defer | On Approve of a Security decision |
+| Hygiene | Approve, Reject, Request changes, Defer | On Approve |
+| Testing | The recommended next step or another listed step, Ask for more research, Defer | No |
+| Spec sign-off | Approve, Request changes, Defer | On Approve |
+| Pull request | Approve and merge, Request changes, Defer | On Approve and merge |
+| Maturity | Approve, Reject, Defer | On Approve |
+| Notice | Dismiss | No |
+
+The item format for the new kinds is Inbox item v2.0 (F-011 H-0120), which
+takes effect when F-011 is built.
+
 ## Item lifecycle
 
 ```
