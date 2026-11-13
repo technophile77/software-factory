@@ -35,9 +35,10 @@ async function world(): Promise<W> {
   const notes: string[] = [];
   let seed = 0;
   const inbox = new Inbox({
-    state, api: gh, repo: "o/cfg", ownerId: OWNER, clock, log: new MemoryLogger(), notify: (t) => notes.push(t),
+    state, clock, log: new MemoryLogger(), notify: (t) => notes.push(t),
     random: (n) => Buffer.from(Array.from({ length: n }, () => seed++)),
   });
+  inbox.connect({ api: gh, repo: "o/cfg", ownerId: OWNER });
   return { inbox, gh, clock, state, repo, notes };
 }
 

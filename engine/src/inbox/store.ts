@@ -25,13 +25,17 @@ export interface Recorded {
   entry: History;
 }
 
-export interface InboxOptions {
-  state: StateRepo;
+/** What polling needs; filing needs none of it, so items are recorded even while GitHub can't be reached. */
+export interface InboxConnection {
   api: IssuesApi;
   /** `owner/name` of the config repo, from its origin. */
   repo: string;
   /** The pinned owner's GitHub user id: the only account whose actions count (F-011 SR-2). */
   ownerId: number;
+}
+
+export interface InboxOptions {
+  state: StateRepo;
   clock: Clock;
   log: Logger;
   /** OS notification on the PC (F-011 FR-13, FR-15, section 6). */
@@ -52,9 +56,31 @@ export class Inbox {
   private readonly waiting = new Map<string, number>();
   private readonly told = new Set<string>();
   private readonly random: (n: number) => Buffer;
+  private c: InboxConnection | null = null;
 
   constructor(private readonly o: InboxOptions) {
     this.random = o.random ?? crypto.randomBytes;
+  }
+
+  connect(c: InboxConnection): void {
+    this.c = c;
+  }
+
+  get connected(): boolean {
+    return this.c !== null;
+  }
+
+  private get api(): IssuesApi {
+    if (!this.c) throw new Error("the inbox isn't connected to GitHub");
+    return this.c.api;
+  }
+
+  private get repo(): string {
+    return this.c!.repo;
+  }
+
+  private get ownerId(): number {
+    return this.c!.ownerId;
   }
 
   // ---- records ----
@@ -167,8 +193,8 @@ export class Inbox {
 
   async checkPrivacy(): Promise<{ ok: boolean; reason: string }> {
     try {
-      const p = await this.o.api.repoPrivacy(this.o.repo);
-      const others = p.collaboratorIds.filter((x) => x !== this.o.ownerId);
+      const p = await this.api.repoPrivacy(this.repo);
+      const others = p.collaboratorIds.filter((x) => x !== this.ownerId);
       this.privacy = !p.private
         ? { ok: false, reason: "the config repo is public" }
         : others.length
@@ -194,6 +220,7 @@ export class Inbox {
    * record's ids keep anything from being recorded twice (section 6).
    */
   async poll(): Promise<Recorded[]> {
+    if (!this.c) return [];
     const privacy = await this.checkPrivacy();
     if (!privacy.ok) return [];
     const recorded: Recorded[] = [];
@@ -206,7 +233,7 @@ export class Inbox {
         continue;
       }
       if (r.issue === undefined) {
-        listed ??= await this.o.api.openIssues(this.o.repo);
+        listed ??= await this.api.openIssues(this.repo);
         const found = listed.find((i) => i.author === WORKFLOW_LOGIN && ITEM_MARKER_RE.exec(normalBody(i.body))?.[1] === r.id);
         if (!found) {
           this.missing(r);
@@ -238,12 +265,12 @@ export class Inbox {
       .map((a) => actionComment(r.id, rev.rev, r, a));
     if (rev.rev > 1 && r.issue !== undefined) {
       // FR-8: the body moves to the new revision and the old action comments say so before new ones are posted.
-      await this.o.api.updateIssue(this.o.repo, r.issue, { body });
+      await this.api.updateIssue(this.repo, r.issue, { body });
       for (const old of r.revisions.slice(0, -1).flatMap((x) => x.action_comments)) {
-        await this.o.api.editComment(this.o.repo, old.id, engineText.stale(rev.rev)).catch(() => undefined);
+        await this.api.editComment(this.repo, old.id, engineText.stale(rev.rev)).catch(() => undefined);
       }
     }
-    await this.o.api.dispatch(this.o.repo, {
+    await this.api.dispatch(this.repo, {
       item: r.id, rev: rev.rev, ...(rev.rev > 1 && r.issue !== undefined ? { issue: r.issue } : { title: renderTitle(r.id, r), body, labels: renderLabels(r) }),
       comments,
     });
@@ -287,7 +314,7 @@ export class Inbox {
   }
 
   private async reply(r: InboxRecord, text: string): Promise<void> {
-    const id = await this.o.api.comment(this.o.repo, r.issue!, text);
+    const id = await this.api.comment(this.repo, r.issue!, text);
     r.engine_comments.push(id);
   }
 
@@ -301,7 +328,7 @@ export class Inbox {
 
   /** Reads one bound item's actions and records at most one (F-011 FR-5 to FR-8). */
   private async read1(r: InboxRecord): Promise<Recorded[]> {
-    const issue = await this.o.api.issue(this.o.repo, r.issue!);
+    const issue = await this.api.issue(this.repo, r.issue!);
     if (!issue) {
       // Section 6: a deleted issue leaves the item open in the record; the owner is told once.
       if (!this.told.has(`deleted:${r.id}`)) {
@@ -312,7 +339,7 @@ export class Inbox {
       return [];
     }
     const rev = currentRevision(r);
-    const comments = await this.o.api.comments(this.o.repo, r.issue!);
+    const comments = await this.api.comments(this.repo, r.issue!);
     const wasBound = rev.action_comments.length > 0;
     if (!this.bind(r, rev, comments, issue.body)) {
       this.missing(r);
@@ -321,7 +348,7 @@ export class Inbox {
     if (!wasBound) await this.write(r, `revision ${rev.rev} action comments found`);
     if (issue.state === "closed") {
       if (!r.history.some((h) => h.action === "reopened")) {
-        await this.o.api.updateIssue(this.o.repo, r.issue!, { state: "open" });
+        await this.api.updateIssue(this.repo, r.issue!, { state: "open" });
         await this.reply(r, engineText.reopened());
         r.history.push({ at: iso(this.o.clock.now()), by: "engine", action: "reopened" });
         await this.write(r, "reopened");
@@ -341,8 +368,8 @@ export class Inbox {
     for (const old of r.revisions) {
       for (const ac of old.action_comments) {
         const c = comments.find((x) => x.id === ac.id);
-        for (const re of await this.o.api.reactions(this.o.repo, ac.id)) {
-          if (re.content !== "+1" || re.userId !== this.o.ownerId) continue;
+        for (const re of await this.api.reactions(this.repo, ac.id)) {
+          if (re.content !== "+1" || re.userId !== this.ownerId) continue;
           const key = { comment_id: ac.id, reaction_id: re.id };
           if (this.usedAlready(r, key)) continue;
           if (old.rev !== rev.rev || bodyChanged) {
@@ -364,15 +391,15 @@ export class Inbox {
     // 🚀 on the engine's latest confirm comment.
     const pending = this.pendingConfirm(r);
     if (pending?.comment_id !== undefined) {
-      for (const re of await this.o.api.reactions(this.o.repo, pending.comment_id)) {
-        if (re.content !== "rocket" || re.userId !== this.o.ownerId || this.usedAlready(r, { comment_id: pending.comment_id, reaction_id: re.id })) continue;
+      for (const re of await this.api.reactions(this.repo, pending.comment_id)) {
+        if (re.content !== "rocket" || re.userId !== this.ownerId || this.usedAlready(r, { comment_id: pending.comment_id, reaction_id: re.id })) continue;
         const c = comments.find((x) => x.id === pending.comment_id);
         if (c) confirms.push({ source: "reaction", comment: c, reaction_id: re.id, at: Date.parse(re.createdAt) || now });
       }
     }
     // Commands: the owner's own comments, never the engine's or the workflow's (SR-17).
     for (const c of comments) {
-      if (c.authorId !== this.o.ownerId || engine.has(c.id) || actionIds.has(c.id) || !looksLikeCommand(c.body)) continue;
+      if (c.authorId !== this.ownerId || engine.has(c.id) || actionIds.has(c.id) || !looksLikeCommand(c.body)) continue;
       const key = { comment_id: c.id };
       if (this.usedAlready(r, key) || this.refusedAlready(r, key)) continue;
       if (c.updatedAt !== c.createdAt) {
@@ -443,7 +470,7 @@ export class Inbox {
   private async askConfirm(r: InboxRecord, chosen: Chosen): Promise<void> {
     const code = confirmCode(this.random);
     const text = engineText.confirm(actionWords(r, chosen.action), confirmTarget(r, chosen.action), code);
-    const id = await this.o.api.comment(this.o.repo, r.issue!, text);
+    const id = await this.api.comment(this.repo, r.issue!, text);
     r.engine_comments.push(id);
     const entry: History & { chosen: Chosen } = {
       at: iso(this.o.clock.now()), by: "engine", action: "confirm_requested", rev: currentRevision(r).rev, pending: chosen.action, code, comment_id: id, chosen,
@@ -469,7 +496,7 @@ export class Inbox {
     const entry: History = {
       at: iso(this.o.clock.now()), by: "owner", action: m.action,
       ...(verb === "choose" ? { option: arg! } : {}), ...(verb === "step" ? { step: Number(arg) } : {}),
-      rev: currentRevision(r).rev, source: chosen.source, actor_id: this.o.ownerId, comment_id: chosen.comment_id,
+      rev: currentRevision(r).rev, source: chosen.source, actor_id: this.ownerId, comment_id: chosen.comment_id,
       ...(chosen.reaction_id !== undefined ? { reaction_id: chosen.reaction_id } : {}),
       ref: chosen.url,
       ...(chosen.note !== undefined ? { note: chosen.note } : {}),
@@ -483,9 +510,9 @@ export class Inbox {
     await this.write(r, `${m.action}${verb === "choose" ? ` ${arg}` : ""} by the owner`);
     await this.reply(r, engineText.recorded(actionWords(r, chosen.action)));
     if (verb === "defer" || verb === "restore") {
-      await this.o.api.updateIssue(this.o.repo, r.issue!, { labels: renderLabels(r) });
+      await this.api.updateIssue(this.repo, r.issue!, { labels: renderLabels(r) });
     } else if (!KEEPS_OPEN.has(chosen.action)) {
-      await this.o.api.updateIssue(this.o.repo, r.issue!, { state: "closed" });
+      await this.api.updateIssue(this.repo, r.issue!, { state: "closed" });
       r.history.push({ at: iso(this.o.clock.now()), by: "engine", action: "closed" });
     }
     await this.write(r, "replied");

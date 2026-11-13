@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until I
   can start onboarding some of my existing projects?"; chose to build engine
   increment 3 next, decision card)
-- **Spec version:** 9
+- **Spec version:** 10
 
 This is the rest of the engine's increment 3 ("Requirements to ready", F-007
 section 13). F-008 built Security Gate 1 and said that reading inbox answers
@@ -136,7 +136,7 @@ signs the spec off, and the feature is handed to development
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | The trial project's config repo gets the F-011 workflow and `FACTORY_OWNER_LOGIN` by hand for AC-11, until the F-003 amendment installs them. | — | Pending |
+| A-1 | The trial project's config repo gets the F-011 workflow and `FACTORY_OWNER_LOGIN` by hand for AC-11, until the F-003 amendment installs them. | Owner, 2026-11-13 (decision card) | Approved |
 
 ## 9. Security considerations
 SR-1 to SR-5 drafted by the analyst; SR-6 to SR-10 from Security Gate 1 (`F-016-security-gate1.md`, 0 Critical, 0 High, 2 Medium, 3 Low).
@@ -186,12 +186,14 @@ H-0180, H-0182, H-0183 approved (owner, 2026-11-13, decision card); H-0184 appro
   network (Role policy v2.6 as is, no contract change).
 
 ## 11. Readiness gate
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+Checked 2026-11-13 against spec v10.
+
+- [x] Clear objective
+- [x] Expected behavior defined
+- [x] Acceptance criteria testable (AC-1 to AC-14; AC-11 is the end-to-end trial)
+- [x] Constraints documented
+- [x] Assumptions explicit (A-1 approved)
+- [x] Blocking decisions resolved (OQ-1 to OQ-3 decided; SR-1 to SR-11 approved; H-0180, H-0182 to H-0184 approved)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -205,6 +207,7 @@ H-0180, H-0182, H-0183 approved (owner, 2026-11-13, decision card); H-0184 appro
 | 7 | 2026-11-13 | SR-6 to SR-10 approved | Owner, 2026-11-13 (project chat) |
 | 8 | 2026-11-13 | H-0180, H-0182, H-0183 approved | Owner, 2026-11-13 (decision card) |
 | 9 | 2026-11-13 | SR-1 to SR-5 and SR-11 approved | Owner, 2026-11-13 (decision card) |
+| 10 | 2026-11-13 | A-1 approved; readiness gate passed | Owner, 2026-11-13 (decision card); orchestrator (gate) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
