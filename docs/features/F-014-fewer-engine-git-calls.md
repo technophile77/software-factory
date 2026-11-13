@@ -4,7 +4,7 @@
 - **Status:** In review (interview open)
 - **Requested by / date:** Alex, 2026-11-13 (chose "Fewer engine git calls"
   from the CI speed thread's options)
-- **Spec version:** 3
+- **Spec version:** 4
 
 ## 1. Objective and business purpose
 The engine starts a new `git` process for almost every read and write it
@@ -94,7 +94,7 @@ Where the time goes today (profile of the full acceptance suite on
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | Only the engine writes `refs/heads/factory/state` while it runs, so it may hold the head in memory. If anything else moves it, the next engine commit fails its compare-and-swap (as today) and the head is reloaded. | Interview, A-1 | Pending |
+| A-1 | Only the engine writes `refs/heads/factory/state` while it runs, so it may hold the head in memory. If anything else moves it, the next engine commit fails its compare-and-swap (as today) and the head is reloaded. | Interview, A-1 | Approved (owner, card, 2026-11-13) |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
@@ -123,7 +123,7 @@ None. `Git` gains methods internal to the engine; no contract in
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit (A-1 pending)
+- [x] Assumptions explicit
 - [x] Blocking decisions resolved
 
 ## 13. Change log
@@ -132,3 +132,4 @@ None. `Git` gains methods internal to the engine; no contract in
 | 1 | 2026-11-13 | Draft from the git profile of the acceptance suite | — |
 | 2 | 2026-11-13 | OQ-1: one reader per repo, closed after 2 s idle | Alex (card) |
 | 3 | 2026-11-13 | OQ-2: state commits left for a later feature (FR-6) | Alex (card) |
+| 4 | 2026-11-13 | A-1 approved; Gate 1 proposes SR-5 to SR-8 | Alex (card, A-1) |
