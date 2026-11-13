@@ -35,7 +35,9 @@ an interview from a document) approved by the owner 2026-11-12 (PR #29
 merged; decision card, as drafted).
 Model endpoints file v1.0 (H-0135), Project manifest v1.5 (`settings.endpoints`,
 H-0135) and Agent report v1.4 (H-0136) for F-013 approved by the owner
-2026-11-13 (decision card).
+2026-11-13 (decision card). Inbox item v3.0 (F-011 H-0165, ADR 0022: items
+are GitHub issues) approved by the owner 2026-11-13 (decision card); it
+replaces v1.1 and the never-applied v2.0, v2.1 and Phone issue v1.0.
 
 ## Contract entry format
 
@@ -50,89 +52,118 @@ H-0135) and Agent report v1.4 (H-0136) for F-013 approved by the owner
 
 ---
 
-## Inbox item — v1.1
+## Inbox item — v3.0
 
 - Status: Approved
-- Owner decision: follows ADR 0002; v1.1 by the owner, 2026-11-10 (H-0062, F-006, decision card)
-- Used by: engine, all agents that file items, VS Code extension
-- Compatibility: adding an optional field is non-breaking; renaming,
-  removing, or changing the meaning of a field is breaking (major version).
+- Owner decision: ADR 0022; v3.0 by the owner, 2026-11-13 (F-011 H-0165, decision card). Replaces v1.1, and v2.0 (F-011 H-0120), v2.1 and Phone issue v1.0 (F-012 H-0125), which were approved but never applied.
+- Used by: engine (files, reads, records), the config repo workflow (opens issues, posts action comments), Microsoft's GitHub Pull Requests extension and GitHub Mobile (view only)
+- Compatibility: breaking (major) from v1.1: items are issues in the project's private config repo, not files; `pull_request` is not a kind (F-011 OQ-12); owner actions are proven by GitHub (ADR 0018, ADR 0022), not signed commits. Adding a kind, action, label or optional record field is minor; changing a template's fixed text, the marker lines or the command grammar is major.
 
-**Location:** `.factory/inbox/<inbox>/<id>.md`, where `<inbox>` is
-`decision`, `testing`, or `hygiene`.
+**Ids.** `^[DTHSMN]-\d{4,}$`: `D` decision, `T` testing, `H` hygiene, `S` spec
+sign-off, `M` maturity, `N` notice. Numbered per project: the next id is one
+more than the highest record of that prefix on the config repo's
+`factory/state`.
 
-**Ids:** `D-0001`, `T-0001`, `H-0001`, numbered per inbox per repo.
+**Issue** (config repo):
+- Title: `<id> <Kind>[ (<Category>)]: <title>`, at most 120 characters;
+  Security items use SR-19's fixed title.
+- Labels: `factory-inbox`; `kind:<decision|testing|hygiene|spec|maturity|notice>`;
+  `category:<product|architecture|interfaces|assumptions|security>` (decision
+  only); `priority:<critical|high|medium|low>` (the effective priority);
+  `blocking` when blocking.
+- Assignee: the owner (`FACTORY_OWNER_LOGIN`), for every item (OQ-13).
+- Body: first line `<!-- factory-item: <id> rev <n> -->`; then the kind's
+  sections as fixed headings; then `Revision <n>.`. Sections: decision:
+  Context, Options (numbered, with pros and cons), Project impact,
+  Recommendation, Cost of delay, and Advisor when advice exists (v1.1);
+  testing: Expected, Actual, Logs, Root cause, Recovery attempts, Recommended
+  next step; hygiene: File, Reason, Diff, Benefits, Risks, Recommendation;
+  spec: Summary, Readiness, Open items; maturity: Evidence, Gaps,
+  Recommendation; notice: Details. Outside text per SR-10.
 
-**Format:** Markdown with YAML frontmatter. The frontmatter is what the
-engine and extension read; the body is the human-readable context.
+**Action comments** (workflow, in a fixed order): first line
+`<!-- factory-action: <id> rev <n> <action> -->`, second line the label, for
+example `Option A: Redis`, `Approve`, `Defer`, `Ask the advisor first`. For
+`changes` and `research`: `<label>: reply with /changes <note>` (or
+`/research <note>`).
+
+**Owner actions.** 👍 (`+1`) on an action comment, or a comment whose first
+line is a command (SR-18): `/choose <option>`, `/approve`, `/reject`,
+`/defer`, `/restore`, `/dismiss`, `/advisor`, `/step <n>`, `/changes <note>`,
+`/research <note>`, `/confirm <code>`. 🚀 (`rocket`) on a confirm comment
+confirms. Other reactions are ignored. On a managed PR, only `/changes <note>`
+is read (FR-9).
+
+**Engine comments** (fixed texts; never start with `/`, SR-17):
+`Confirm: <action> <target>. React 🚀 or reply /confirm <code> within 15 minutes.`;
+`Recorded: <action>.`; `Not recorded: <reason>.` (reasons: changed since,
+two actions chosen, confirm expired, comment edited, not a command, not the
+owner); `Stale: revision <n> replaces this.` (edit of an old action
+comment); on PRs, `Factory evidence for <feature>:` followed by the FR-9
+fields.
+
+**Record** (config repo `factory/state`, `inbox/<id>.yaml`, one commit per
+change, message starting with the id):
 
 ```yaml
----
-schema: inbox-item/1.0
+schema: inbox-record/3.0
 id: D-0007
-inbox: decision                 # decision | testing | hygiene
+kind: decision            # decision | testing | hygiene | spec | maturity | notice
 title: Choose session store for login
-category: Architecture          # decision inbox only: Product | Architecture | Interfaces | Assumptions | Security
-priority: high                  # critical | high | medium | low  (as filed)
-effective_priority: high        # what the queue sorts by; lowered on defer
-blocking: true                  # keeps its value through deferral
-status: open                    # open | approved | rejected | changes_requested | research_requested | deferred
-feature: F-012                  # optional
-created_by: orchestrator        # agent role
+category: Architecture    # decision only
+priority: high            # as filed
+effective_priority: high
+blocking: true
+status: open              # open | approved | chosen | rejected | changes_requested | research_requested | deferred | dismissed | closed
+repo: owner/app           # the repo the item concerns, or "project"
+feature: F-012            # optional
+created_by: orchestrator
 created_at: 2026-11-08T21:00:00Z
-options:                        # decision inbox only
-  - id: A
-    label: Redis
-  - id: B
-    label: Postgres table
+issue: 42                 # number in the config repo
+options: [{id: A, label: Redis}, {id: B, label: Postgres table}]   # decision only
 recommendation: A
-links:                          # files, logs, diffs, transcripts
-  - kind: file
-    ref: docs/features/F-012-login.md
-history:                        # appended on every status change, never edited
+links: [{kind: file, ref: docs/features/F-012-login.md}]
+advisor_reason: ...       # optional, as v1.1
+advice: [...]             # optional, as v1.1
+revisions:                # one per revision posted
+  - rev: 1
+    body_sha256: <hex>
+    action_comments: [{id: 1001, action: choose:A, sha256: <hex>}]
+engine_comments: [1005, 1006]      # never read as commands (SR-17)
+history:                           # appended, never edited
   - at: 2026-11-08T21:00:00Z
-    by: orchestrator
+    by: engine
     action: filed
----
+  - at: 2026-11-08T21:30:00Z
+    by: owner
+    action: chosen                 # chosen | approved | rejected | changes_requested | research_requested | deferred | restored | dismissed | advisor_requested | step_chosen
+    option: A
+    rev: 1
+    source: reaction               # reaction | command
+    actor_id: 1000001              # example; the real id is in the engine config
+    comment_id: 1001
+    reaction_id: 77
+    ref: https://github.com/<owner>/<config-repo>/issues/42#issuecomment-1001
+    confirmed_by: {source: reaction, comment_id: 1007, reaction_id: 78}   # risky actions only
 ```
 
-Body sections by inbox (headings are fixed so the extension can render them):
+Engine history actions: `filed`, `revised`, `confirm_requested`,
+`auto_merged` (FR-10, with PR and merge commit), `closed`, `migrated` (FR-16,
+with the old file path and commit).
 
-| Inbox | Required body sections |
-|---|---|
-| decision | Context, Options (with pros and cons per option), Project impact, Recommendation, Cost of delay |
-| testing | Expected, Actual, Logs, Root cause, Recovery attempts, Recommended next step |
-| hygiene | File, Reason, Current content, Proposed content, Diff, Benefits, Risks, Recommendation |
+**PR records** (config repo `factory/state`, `prs/<owner>/<repo>/<n>.yaml`):
+`evidence_comment_id`, `feature`, `head` at evidence time, and history
+entries `evidence_posted`, `changes_requested` (with the comment id and
+actor id), `merged_on_github` (merge commit, merged by), `closed_on_github`.
+- F-012's approved H-0128 (manifest `phone` block) is withdrawn: the inbox
+  is always on issues, so there is nothing to turn on. v19's H-0124
+  (manifest `github` block) and H-0123 (`main` ruleset) stand unchanged.
 
-**Owner actions** append to `history` with `by: owner` and one of
-`approved`, `rejected`, `changes_requested`, `research_requested`,
-`deferred`, `restored`, plus an optional `note`. Each action is one commit
-whose message starts with the item id. From ADR 0015 (H-0047, owner, 2026-11-10) the
-commit must be signed with one of the owner's SSH signing keys as listed on
-GitHub; the engine ignores an owner action whose commit is not, and files a
-Security alert for it.
+**Command grammar** (F-011 SR-18): only the comment's first line, case-sensitive, matching
+`^/(choose [A-Z0-9]{1,3}|approve|reject|defer|restore|dismiss|advisor|step [0-9]{1,2}|confirm [A-Z0-9]{4}|changes .+|research .+)$`.
+The engine never reads its own comments as commands (F-011 SR-17).
 
-**Advisor (v1.1, F-006).** Optional, decision inbox only:
-
-```yaml
-advisor_reason: Cross-cuts the budget and sandbox decisions   # set only by the orchestrator, when filing
-advice:                                                       # written only by the engine
-  - call: A-0003
-    path: .factory/advice/A-0003.md
-    sha256: <hex>
-    status: done            # running | done | failed
-```
-
-With `advisor_reason` present, the extension offers the owner action
-`advisor_requested` ("Ask the advisor first"). That action starts one
-advisor call; the item stays `open`. The engine writes the advice to
-`.factory/advice/<call>.md`, a path no role may write, and appends an
-`advice` entry; the extension shows the file as plain text under an
-**Advisor** heading it renders itself, and warns when the hash doesn't
-match. The engine ignores, and files a Security item for, an
-`advisor_reason` written by any role other than the orchestrator, or an
-`advisor_requested` entry in a commit an agent session made (F-006 SR-3).
-Call ids are `A-0001`, numbered per repo.
+**Advisor (from v1.1, F-006).** `advisor_reason` is set only by the orchestrator when filing; `advice` entries are written only by the engine, with the advice file at `.factory/advice/<call>.md` on `factory/state` and its sha256; the issue shows it under an **Advisor** heading, rendered as untrusted text (F-011 SR-10).
 
 ---
 

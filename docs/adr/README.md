@@ -11,13 +11,13 @@ in order, using `template.md`.
 |---|---|---|
 | [0001](0001-orchestration-engine-agent-sdk.md) | Coded workflow engine with Agent SDK sessions per agent | Accepted |
 | [0002](0002-inbox-storage-files-in-repo.md) | Inbox items stored as one file per item in the repo | Superseded by 0022 for inbox items |
-| [0003](0003-engine-separate-process-vscode-ui.md) | Engine as a separate local process; VS Code extension is the UI | Accepted |
+| [0003](0003-engine-separate-process-vscode-ui.md) | Engine as a separate local process; VS Code extension is the UI | Accepted; amended by 0022 |
 | [0004](0004-agent-isolation-worktrees-permissions.md) | Agent isolation: worktree per agent plus per-role permissions | Accepted; amended by 0015 |
 | [0005](0005-branching-feature-agent-branches-squash.md) | Feature branches with agent sub-branches, squash-merged | Accepted |
 | [0006](0006-pr-factory-token-protected-main.md) | PRs via a dedicated factory token, main protected | Superseded by 0017 |
 | [0007](0007-unlimited-feature-concurrency.md) | Unlimited feature concurrency | Accepted |
 | [0008](0008-ci-required-gate-by-maturity.md) | CI is a required merge gate, scaled by maturity | Accepted |
-| [0009](0009-factory-state-branch.md) | Inbox items live on a dedicated factory/state branch | Accepted |
+| [0009](0009-factory-state-branch.md) | Inbox items live on a dedicated factory/state branch | Accepted; amended by 0022 |
 | [0010](0010-project-config-repo.md) | One config repo per project, layered on the master factory | Accepted |
 | [0011](0011-inbox-extension-libraries.md) | Libraries for the VS Code inbox extension | Superseded by 0022 for inbox items |
 | [0012](0012-project-control-resumable-runs-budgets.md) | Project control, resumable runs, and token budgets | Accepted |
