@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 (split from F-011 OQ-3: "the phone
   notification needs to be tied to some way to do approvals on my phone also";
   "I want a confirmation on risky actions like a merge, not just one click")
-- **Spec version:** 7
+- **Spec version:** 8
 
 ## 1. Objective and business purpose
 The factory stalls whenever an item is waiting for the owner and the owner is
@@ -130,8 +130,8 @@ owner already uses for the interview device approval (ADR 0014).
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | GitHub Mobile sends a push for an issue opened by `github-actions[bot]` that @mentions the owner in a repo they watch. To be checked in a spike before build. | OQ-1 | Pending |
-| A-2 | GitHub's merge confirm step in GitHub Mobile counts as the confirmation for a merge (FR-8, FR-9). | OQ-1 | Pending |
+| A-1 | GitHub Mobile sends a push for an issue opened by `github-actions[bot]` that @mentions the owner in a repo they watch. To be checked in a spike before build. | OQ-1 | Approved (owner, 2026-11-13, decision card) |
+| A-2 | GitHub's merge confirm step in GitHub Mobile counts as the confirmation for a merge (FR-8, FR-9). | OQ-1 | Approved (owner, 2026-11-13, decision card) |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
@@ -185,6 +185,7 @@ Hygiene items named here; none filed until the open questions are answered.
 | 5 | 2026-11-13 | OQ-4 decided: no quiet hours in this feature (FR-12, AC-9 removed) | Owner, 2026-11-13 (decision card) |
 | 6 | 2026-11-13 | Security Gate 1: 6 findings, none blocking; SR-8 to SR-13 proposed | — |
 | 7 | 2026-11-13 | SR-8 to SR-13 approved | Owner, 2026-11-13 (decision card) |
+| 8 | 2026-11-13 | A-1 and A-2 approved; A-1 checked in a spike before build, and a failed check sends the spec back to the owner | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
