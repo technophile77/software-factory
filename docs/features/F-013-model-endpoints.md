@@ -8,7 +8,7 @@
   endpoints that can be specified, and allow them to be configurable, with
   local as an option that indicates it has unlimited usage"; "endpoints
   should include standard options like the model to use and an api key")
-- **Spec version:** 20
+- **Spec version:** 21
 
 ## 1. Objective and business purpose
 The factory runs every agent on Claude today. The owner wants to add other
@@ -260,6 +260,7 @@ OQ-11).
 | 18 | 2026-11-13 | A-1 spike: tool calls pass through LiteLLM in both formats; Claude Code fails on mid-conversation system messages with the server's template; OQ-10 opened | — |
 | 19 | 2026-11-13 | OQ-10 decided (a): the gateway folds mid-conversation system messages (FR-16, AC-18) | Owner, 2026-11-13 (decision card) |
 | 20 | 2026-11-13 | Security Gate 2 ([F-013-security-gate2.md](F-013-security-gate2.md)) and owner decisions: OQ-11 (a) role assignment in the project manifest; OQ-12 (a) LiteLLM 1.108.x LTS once 14 days old; OQ-13 (a) bundled cosign; OQ-14 (b) keys as environment variables, risk accepted (SR-18); SR-1 adds `/v1/chat/completions` for `api: openai` | Owner, 2026-11-13 (decision cards; recording approved in the thread) |
+| 21 | 2026-11-13 | OQ-12 changed: LiteLLM 1.106.4 pinned as an owner exception to the LTS-only rule; the real conformance test passed against the owner's server in both formats, streamed and unstreamed | Owner, 2026-11-13 (decision card; confirmation of the corrected facts pending) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -275,6 +276,6 @@ OQ-11).
 | OQ-9 | The SR-16 review of LiteLLM ([F-013-litellm-review.md](F-013-litellm-review.md)) found two release compromises in 2026 and several Critical advisories. (a) Accept with six conditions and the residual risk. (b) A smaller proxy. (c) Anthropic-format endpoints only. (d) Our own translator. **Recommended: (a).** | Security | Decided (owner, 2026-11-13, decision card): (a); conditions in SR-17 |
 | OQ-10 | Claude Code sends a `system` message after the first user message (it holds the environment section of its own prompt), and strict chat templates such as the owner's Qwen one reject it. Tested 2026-11-13 ([F-013-spike-a1.md](F-013-spike-a1.md)): LiteLLM's setting doesn't cover it; folding it into the top-level system prompt and inlining it as a `[system]` user message both pass and keep the prompt cache. (a) Fold. (b) Inline. (c) Change the server's template. **Recommended: (a).** | Architecture | Decided (owner, 2026-11-13, decision card): (a); FR-16 |
 | OQ-11 | Where a role is assigned to an endpoint (with its Claude fallback, and a gate role's advisory endpoint). (a) Project manifest `settings.agents.<role>`, private, per project, Project manifest v1.6. (b) Master `engine/config/models.yaml`. (c) The PC-local endpoints file. **Recommended: (a).** | Interfaces | Decided (owner, 2026-11-13, decision card): (a); FR-1, § 2 item 5 |
-| OQ-12 | Which LiteLLM release the factory runs (Gate 2 H1: the code pinned 1.109.1, approved only for the no-secrets spike). (a) The newest 1.108.x LTS release at least 14 days old, once one exists (from 18 Nov); endpoints unavailable until then. (b) 1.106.4 now. (c) Keep 1.109.1 with keys. **Recommended: (a).** | Security | Decided (owner, 2026-11-13, decision card): (a) |
+| OQ-12 | Which LiteLLM release the factory runs (Gate 2 H1: the code pinned 1.109.1, approved only for the no-secrets spike). (a) The newest 1.108.x LTS release at least 14 days old, once one exists (from 18 Nov); endpoints unavailable until then. (b) 1.106.4 now. (c) Keep 1.109.1 with keys. **Recommended: (a).** | Security | Decided (owner, 2026-11-13, decision card): (a); changed the same day by the owner (decision card) to pin 1.106.4 now as an exception to the LTS-only rule: published 2026-10-25, after the Oct 21 attack and the pipeline clean-up, signed with the rotated key, over 14 days old, not LTS. Accepted risk: a non-LTS line gets fewer backported fixes |
 | OQ-13 | Verifying LiteLLM's image signature (SR-17). (a) Bundle cosign, pinned by hash, and verify against LiteLLM's key at a pinned commit before first use. (b) Verify by hand per pin, recorded in the hygiene item. **Recommended: (a).** | Security | Decided (owner, 2026-11-13, decision card): (a) |
 | OQ-14 | How endpoint keys reach the LiteLLM container. (a) A file on a memory-only mount. (b) Environment variables, readable with `docker inspect` on the PC. **Recommended: (a).** | Security | Decided (owner, 2026-11-13, decision card): (b), risk accepted (SR-18) |
