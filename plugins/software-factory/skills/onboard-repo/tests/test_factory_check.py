@@ -224,7 +224,7 @@ class CiAndTests(Base):
     def test_ac6_alpha_jobs_missing(self):
         wf = GOOD_WORKFLOW.replace("      - run: npm test\n", "      - run: ./smoke.sh\n")
         a = self.assess({"package.json": "{}", ".github/workflows/ci.yml": wf}, level="alpha")
-        for job in ("unit-tests", "acceptance-tests", "secret-scan"):
+        for job in ("unit-tests", "acceptance-tests", "secret-scan", "static-analysis"):
             g = gap_by(a, f"ci-job:{job}")
             self.assertEqual(g["blocks_level"], "alpha")
             self.assertIn("ADR 0008", g["rule"])
@@ -450,10 +450,19 @@ class ReviewRegressions(Base):
         lines = sorted(g["evidence"][0]["line"] for g in a["gaps"] if g["id"].startswith("workflow:unpinned-uses:"))
         self.assertEqual(lines, [7, 11])
 
+    def test_adr0024_static_analysis_job_found_by_tool(self):
+        for run in ("semgrep scan --config p/default --error", "opengrep scan", None):
+            with self.subTest(run=run):
+                wf = GOOD_WORKFLOW + (f"      - run: {run}\n" if run else
+                                      "      - uses: github/codeql-action/analyze@0123456789abcdef0123456789abcdef01234567\n")
+                a = self.assess({"package.json": "{}", ".github/workflows/ci.yml": wf}, level="alpha")
+                self.assertNotIn("ci-job:static-analysis", ids(a))
+
     def test_m1_commented_jobs_do_not_count(self):
         template = read(os.path.join(SKILL, "templates", "ci-workflow.yml"))
         a = self.assess({"package.json": "{}", ".github/workflows/factory-ci.yml": template})
-        for job in ("secret-scan", "acceptance-tests", "contract-tests", "integration-tests", "performance-tests"):
+        for job in ("secret-scan", "static-analysis", "acceptance-tests", "contract-tests", "integration-tests",
+                    "performance-tests"):
             self.assertIn(f"ci-job:{job}", ids(a))
         go = self.assess({"go.mod": "module x\n", "go.sum": "", ".github/workflows/factory-ci.yml": template})
         self.assertIn("stack-audit:go", ids(go))  # the commented Beta job doesn't count
