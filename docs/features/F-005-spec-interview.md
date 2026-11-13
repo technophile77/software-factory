@@ -175,7 +175,7 @@ open and the owner's to answer:
 | SR-17 | Web pages are fetched and read by an isolated web reader: no project files, no tools besides fetching the one address it was given, and no network beyond it. Before the reader sees a page, the engine strips HTML comments, script and style, hidden and invisible elements, zero-width and bidi characters, and metadata. The reader returns a plain-text summary with its source address; the analyst and the skill treat it as data (SR-2). | Owner decision card, 2026-11-10 (S6.1, S8.1) | Accepted |
 | SR-7 | Windows: the MCP mode accepts only local `\\.\pipe\` paths, opens with `SECURITY_SQOS_PRESENT \| SECURITY_IDENTIFICATION`, and checks the server's SID is the owner's. The engine creates the pipe with `FILE_FLAG_FIRST_PIPE_INSTANCE`, an unguessable name, and an owner-only ACL. | Gate 1 #2 (S1.4, S8.4, S2.3) | Accepted |
 | SR-8 | The engine creates the Unix socket with mode 0600 in an owner-only directory and accepts only peers with the owner's uid (SID on Windows). This is part of Engine control channel v1.1. | Gate 1 #3 (S2.1–S2.3) | Accepted |
-| SR-9 | No owner text, engine text or id ever goes through a shell or onto a command line. Claude passes them as typed MCP tool arguments over stdio; the MCP mode's command line holds only the fixed arguments in the plugin's `.mcp.json`. Feature and item ids must match `^[A-Za-z0-9_-]{1,64}$` or the tool refuses. | Gate 1 #4 (S1.3, S1.2); reworded for ADR 0025 (v10) | Accepted (v10 wording for owner approval) |
+| SR-9 | No owner text, engine text or id ever goes through a shell or onto a command line. Claude passes them as typed MCP tool arguments over stdio; the MCP mode's command line holds only the fixed arguments in the plugin's `.mcp.json`. Feature and item ids must match `^[A-Za-z0-9_-]{1,64}$` or the tool refuses. | Gate 1 #4 (S1.3, S1.2); reworded for ADR 0025 (v10) | Accepted (v10 wording approved by the owner, 2026-11-13, decision card) |
 | SR-10 | The skill's instructions allow only the plugin's interview tools and Claude Code's question picker. A reply is sent only from the owner's own input in that turn. Each item carries a revision, and the engine rejects a reply to a revision the owner wasn't shown. Displayed text has bidi and zero-width characters removed as well as control characters. | Gate 1 #5 (S6.1, S6.2) | Accepted |
 | SR-11 | Only the engine writes `.factory/interviews/**`; the transcript is append-only. The readiness gate checks every assumption marked approved in the spec against an `approve_assumption` entry in the transcript and fails on any mismatch. | Gate 1 #9 (S2.1, S6.2, S8.1) | Accepted |
 | SR-12 | Each reply carries a client-generated reply id and the item revision; the engine records a reply id once and ignores repeats. The session lock is bound to the connection; replies from any other connection are rejected. | Gate 1 #10 (S1.1, S5.1) | Accepted |
@@ -183,9 +183,9 @@ open and the owner's to answer:
 | SR-14 | Role policy denies every role reads of `.factory/engine.json`; the engine refuses channel connections from agent processes it started. | Gate 1 #13 (S6.2, S8.1) | Accepted |
 | SR-15 | `more_info` research counts against the project budget (ADR 0012) and stops at a per-question cap, telling the owner. The MCP mode limits responses to 1 MiB and times out after 60 s per call, plus the `wait_s` it asks `interview.next` to wait for research (channel v1.1, H-0025), and every tool returns within 150 s. | Gate 1 #12 (S5.1, S1.1) | Accepted |
 | SR-16 | The MCP mode shows JSON-RPC errors by code and message only, never the `data` field except a well-formed `busy` `data.started_at` (H-0026), and never echoes the owner's reply text in an error. | Gate 1 #14 (S5.2, S3.1) | Accepted |
-| SR-18 | The session token never leaves the MCP mode process: no tool result, `display` or error carries it, and each process accepts `next`, `reply` and `close` only for features it opened itself. Another Claude Code session, or a tool call in this one made before `interview_open`, can't reply in the owner's approved session. | Analyst, v10 (S1.1, S6.2) | Proposed |
-| SR-19 | `@modelcontextprotocol/sdk` is pinned exactly in the engine's lockfile after an S4.1 review (H-0174). Only the stdio server transport is imported; the MCP mode opens no network port. | ADR 0025 (S4.1) | Proposed |
-| SR-20 | Only `interview_status`, `interview_list` and `interview_state` carry the MCP `readOnlyHint` annotation. No tool carries `idempotentHint`, so Claude Code never repeats a `start` or `reply` on its own after a lost connection (code.claude.com/docs/en/mcp, "Mark tools that are safe to call twice"); FR-13 governs retries. | Analyst, v10 (S5.1) | Proposed |
+| SR-18 | The session token never leaves the MCP mode process: no tool result, `display` or error carries it, and each process accepts `next`, `reply` and `close` only for features it opened itself. Another Claude Code session, or a tool call in this one made before `interview_open`, can't reply in the owner's approved session. | Analyst, v10 (S1.1, S6.2) | Approved (owner, 2026-11-13, decision card) |
+| SR-19 | `@modelcontextprotocol/sdk` is pinned exactly in the engine's lockfile after an S4.1 review (H-0174). Only the stdio server transport is imported; the MCP mode opens no network port. | ADR 0025 (S4.1) | Approved (owner, 2026-11-13, decision card) |
+| SR-20 | Only `interview_status`, `interview_list` and `interview_state` carry the MCP `readOnlyHint` annotation. No tool carries `idempotentHint`, so Claude Code never repeats a `start` or `reply` on its own after a lost connection (code.claude.com/docs/en/mcp, "Mark tools that are safe to call twice"); FR-13 governs retries. | Analyst, v10 (S5.1) | Approved (owner, 2026-11-13, decision card) |
 
 ## 10. Interface requirements
 Approved by the owner as drafted, 2026-11-10 (decision card):
@@ -234,7 +234,7 @@ build. It is versioned (FR-18) and described in the skill, not added to
 
 v10:
 - [x] OQ-5 answered (plugin setting)
-- [ ] SR-9 v10 wording and SR-18 to SR-20 approved by the owner
+- [x] SR-9 v10 wording and SR-18 to SR-20 approved by the owner
 - [ ] Owner approves v10 as a whole
 
 ## 12. Change log
@@ -251,3 +251,4 @@ v10:
 | 9 | 2026-11-10 | Wording only: SR-16 names the `busy` exception H-0026 approved | — (wording) |
 | 10 | 2026-11-13 | Draft for ADR 0025: interview tools from the engine's `mcp` mode instead of the Python client (FR-1, FR-2, FR-14 to FR-19, AC-1, AC-2, AC-11, AC-13 to AC-17, constraints, edge cases, dependencies, SR-9 reworded, SR-18 to SR-20, OQ-5, H-0174 to H-0177) | — (draft) |
 | 10.1 | 2026-11-13 | OQ-5: the plugin finds the engine through a required `engine_path` plugin setting (FR-14, AC-15) | Owner, 2026-11-13 (decision card) |
+| 10.2 | 2026-11-13 | SR-9 v10 wording and SR-18 to SR-20 approved as written | Owner, 2026-11-13 (decision card) |
