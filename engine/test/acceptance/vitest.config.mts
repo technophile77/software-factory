@@ -12,5 +12,7 @@ export default defineConfig({
     // Each test builds its own world in a temp dir. Files run in separate
     // processes; tests within a file run one after another.
     pool: "forks",
+    // CI splits each file's tests across runners (FACTORY_TEST_SHARD, H-0130).
+    setupFiles: ["../shard.ts"],
   },
 });
