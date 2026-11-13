@@ -108,14 +108,23 @@ export async function checkProjectPath(p: string, masterRepo: string, git: Git):
       return null;
     }
   };
+  // Without the read failing, "no origin" and "no root" can't be told apart from a failure here, so only
+  // a fully read master is kept (Gate 2 L5).
+  const masterOrigin = async (dir: string) => {
+    const r = await git.run(dir, ["remote", "get-url", "origin"], { okCodes: [2] }).catch(() => undefined);
+    return r === undefined ? undefined : r.code === 0 ? normUrl(r.stdout.toString("utf8")) : null;
+  };
   let byMaster = masterFacts.get(git);
   if (!byMaster) masterFacts.set(git, (byMaster = new Map()));
   let facts = byMaster.get(master);
   if (!facts) {
-    facts = (async () => ({ roots: await roots(master), origin: await origin(master) }))();
+    facts = (async () => {
+      const [r, o] = [await roots(master), await masterOrigin(master)];
+      // The master clone always has a root commit, so none, or an origin read that failed, means try again next check.
+      if (r.size === 0 || o === undefined) byMaster!.delete(master);
+      return { roots: r, origin: o ?? null };
+    })();
     byMaster.set(master, facts);
-    // The master clone always has a root commit, so none means the read failed: try again next check (Gate 2 L5).
-    void facts.then((f) => f.roots.size === 0 && byMaster!.get(master) === facts && byMaster!.delete(master));
   }
   const { roots: mr, origin: mo } = await facts;
   const pr = await roots(real);

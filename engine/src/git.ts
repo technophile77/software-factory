@@ -14,7 +14,8 @@ export class GitError extends Error {
  * hooksPath), fsmonitor, and remote helpers. Filters and textconv only run
  * from porcelain that converts content, which the engine avoids: it writes
  * with `hash-object --no-filters`, `update-index --cacheinfo`, `commit-tree`
- * and `update-ref`, and reads with `cat-file blob` and `ls-tree`.
+ * and `update-ref`, and reads with `cat-file` (`blob`, `--batch` and the
+ * F-014 reader's `--batch-command`) and `ls-tree`.
  */
 export function overrideArgs(hooksDir: string, attributesFile: string): string[] {
   return [
@@ -52,6 +53,10 @@ export interface GitOptions {
   readerIdleMs?: number;
   /** False reads with plain git calls only, as before F-014 (tests compare the two). */
   readers?: boolean;
+  /** How long one reader read may take (tests shorten it). */
+  readerTimeoutMs?: number;
+  /** The most one read or one `catBlobs` call returns (tests lower it). */
+  readLimit?: number;
 }
 
 /** The most a single read returns, as `runFixed` caps a git call's output. */
@@ -74,7 +79,10 @@ export class Git {
   private readonly globalConfig: string;
   private readonly askpass: string;
   private readonly readers = new Map<string, CatFileReader>();
-  /** Readers that broke without ever answering, by repo: after three, that repo reads with plain git calls. */
+  private get readLimit(): number {
+    return this.opts.readLimit ?? READ_LIMIT;
+  }
+  /** Reads in a row that broke the reader, by repo; a good read resets it. After three, that repo reads with plain git calls. */
   private readonly readerFailures = new Map<string, number>();
   /** Git processes started, by subcommand (F-014 FR-7). */
   readonly spawns = new Map<string, number>();
@@ -187,7 +195,7 @@ export class Git {
         env: this.env(),
         children: this.opts.children,
         idleMs: this.opts.readerIdleMs ?? 2000,
-        timeoutMs: 120_000,
+        timeoutMs: this.opts.readerTimeoutMs ?? 120_000,
         onSpawn: () => this.count("cat-file --batch-command"),
       });
       this.readers.set(cwd, r);
@@ -275,7 +283,7 @@ export class Git {
           if (!o || o.type !== "blob") throw new GitError(`blob ${sha.slice(0, 12)} couldn't be read`);
           // The whole batch keeps the one-call cap a plain `cat-file --batch` had (Gate 2 M1).
           total += o.body.length;
-          if (total > READ_LIMIT) throw new GitError("output over the limit");
+          if (total > this.readLimit) throw new GitError("output over the limit");
           out.set(sha, o.body);
         }
         return out;
@@ -303,7 +311,7 @@ export class Git {
   /** A body through the reader; an object over the read limit fails the read, as an oversized git call does. */
   private async contents(r: CatFileReader, name: string) {
     try {
-      return await r.contents(name, READ_LIMIT);
+      return await r.contents(name, this.readLimit);
     } catch (e) {
       if (e instanceof ReaderLimit) throw new GitError("output over the limit");
       throw e;

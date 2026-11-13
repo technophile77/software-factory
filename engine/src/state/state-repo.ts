@@ -298,18 +298,20 @@ export class StateRepo {
    * set anywhere but its own `-c` list. Config it can't read refuses too. The
    * error names the key without its subsection, which can hold a URL.
    *
-   * Resolves to the first `remote.origin.url` in the listing, which is what
+   * Resolves to the only `remote.origin.url` in the listing, which is what
    * `git remote get-url origin` prints once `url.*` rules are refused, or
-   * null if the config has none (F-014 FR-5).
+   * null when there is none or more than one, so git is asked (F-014 FR-5).
+   * Several values, or an empty one (which resets the list from git 2.46),
+   * are where git versions differ (Gate 2 L4).
    */
   async refuseRedirectingConfig(): Promise<string | null> {
     const out = (await this.git.run(this.repoRoot, ["config", "--list", "-z", "--show-scope", "--no-includes"])).stdout.toString("utf8");
     const fields = out.split("\0");
     if (fields.pop() !== "" || fields.length % 2 !== 0) throw new GitError("the repo's git config couldn't be read, so factory/state is not pushed or fetched");
-    let origin: string | null = null;
+    const origins: string[] = [];
     for (let i = 0; i < fields.length; i += 2) {
       const key = fields[i + 1]!.split("\n", 1)[0]!;
-      if (origin === null && key === "remote.origin.url") origin = fields[i + 1]!.slice(key.length + 1).trim();
+      if (key === "remote.origin.url") origins.push(fields[i + 1]!.slice(key.length + 1).trim());
       if (fields[i] === "command") continue;
       const first = key.indexOf(".");
       const last = key.lastIndexOf(".");
@@ -320,7 +322,7 @@ export class StateRepo {
         throw new GitError(`the repo's git config sets ${shown}, which could redirect a push or fetch, so factory/state is not pushed or fetched`);
       }
     }
-    return origin;
+    return origins.length === 1 && origins[0] ? origins[0] : null;
   }
 
   /** Pushes factory/state to the GitHub base the engine was given, with the factory token through askpass (SR-1, SR-11). */

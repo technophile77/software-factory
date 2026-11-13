@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { Git, GitError } from "../src/git";
 import { CatFileReader, ReaderBroken, ReaderLimit, TreeError, parseTree } from "../src/git-reader";
+import { checkProjectPath } from "../src/config/paths-file";
 import { Children } from "../src/proc";
 import { GIT_PATH, git, initRepo, tmpdir } from "./helpers";
 
@@ -32,8 +33,20 @@ function fixture(): { repo: string; head: string } {
   return { repo, head: git(repo, "rev-parse", "HEAD") };
 }
 
-const make = (o: { readers?: boolean; gitPath?: string; idleMs?: number } = {}) =>
-  new Git({ gitPath: o.gitPath ?? GIT_PATH, homeDir: path.join(tmpdir(), "h"), children: new Children(), readers: o.readers, readerIdleMs: o.idleMs });
+const make = (o: { readers?: boolean; gitPath?: string; idleMs?: number; timeoutMs?: number; readLimit?: number } = {}) =>
+  new Git({
+    gitPath: o.gitPath ?? GIT_PATH, homeDir: path.join(tmpdir(), "h"), children: new Children(),
+    readers: o.readers, readerIdleMs: o.idleMs, readerTimeoutMs: o.timeoutMs, readLimit: o.readLimit,
+  });
+
+/** A git whose batch reader runs `reader` (a shell snippet); every other call is the real git. */
+function fakeGit(reader: string): string {
+  const bin = path.join(tmpdir(), "bin");
+  fs.mkdirSync(bin);
+  const fake = path.join(bin, "git");
+  fs.writeFileSync(fake, `#!/bin/sh\ncase " $* " in *" --batch-command "*) ${reader} ;; *) exec "${GIT_PATH}" "$@" ;; esac\n`, { mode: 0o755 });
+  return fake;
+}
 
 describe("F-014 reader parity (FR-1)", () => {
   it("gives the same refs, listings and blobs as plain git calls", async () => {
@@ -122,6 +135,46 @@ describe("F-014 reader failures (FR-2, AC-3, SR-6, SR-7)", () => {
     await r.close();
   });
 
+  it.skipIf(process.platform === "win32")("a reader that dies mid-reply, or answers with a malformed header, gives the plain answer (AC-3)", async () => {
+    const { repo, head } = fixture();
+    for (const reader of [
+      // Header, then 3 of 100 promised bytes, then exit.
+      `read l; echo "${"a".repeat(40)} blob 100"; printf abc; exit 0`,
+      `read l; echo "not a header"; sleep 5`,
+    ]) {
+      const g = make({ gitPath: fakeGit(reader) });
+      expect((await g.readBlob(repo, head, "dir/b.txt"))!.toString()).toBe("b\n");
+      expect(await g.revParse(repo, "refs/heads/main")).toBe(head);
+      await g.closeReaders();
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("output a timed-out reader writes later never reaches the next reader (Gate 2 M2)", async () => {
+    const { repo, head } = fixture();
+    const other = git(repo, "rev-parse", "HEAD~1");
+    const mark = path.join(tmpdir(), "first");
+    // The first reader answers too late, with the wrong commit; later readers are the real git.
+    const g = make({
+      gitPath: fakeGit(`if [ ! -e "${mark}" ]; then : > "${mark}"; read l; sleep 0.6; echo "${other} commit 5"; printf 'xxxxx\\n'; sleep 2; else exec "${GIT_PATH}" "$@"; fi`),
+      timeoutMs: 200,
+    });
+    expect(await g.revParse(repo, "refs/heads/main")).toBe(head);
+    await new Promise((r) => setTimeout(r, 800));
+    expect(await g.revParse(repo, "refs/heads/main")).toBe(head);
+    expect(await g.revParse(repo, "HEAD")).toBe(head);
+    await g.closeReaders();
+  });
+
+  it("a catBlobs call over the read limit in total fails as one plain call did (Gate 2 M1)", async () => {
+    const { repo, head } = fixture();
+    // Each blob is 2 bytes; three of them are over a 5-byte limit together.
+    const g = make({ readLimit: 5 });
+    const shas = ["a.txt", "dir/b.txt", "dir/sub/c.txt"].map((f) => git(repo, "rev-parse", `${head}:${f}`));
+    expect((await g.catBlobs(repo, shas.slice(0, 2))).size).toBe(2);
+    await expect(g.catBlobs(repo, shas)).rejects.toThrow(/over the limit/);
+    await g.closeReaders();
+  });
+
   it("a body over the limit is refused before it is read, and the reader stays in step", async () => {
     const { repo, head } = fixture();
     const r = new CatFileReader({ gitPath: GIT_PATH, args: ["-C", repo], cwd: repo, env: process.env, children: new Children(), idleMs: 1000, timeoutMs: 10_000 });
@@ -175,6 +228,21 @@ describe("F-014 reader setup (SR-2, SR-4)", () => {
     expect(await g.lsTreeEntry(b.repo, b.head, "only-b.txt")).not.toBeNull();
     expect(await g.lsTreeEntry(a.repo, a.head, "only-b.txt")).toBeNull();
     expect(g.spawns.get("cat-file --batch-command")).toBe(2);
+    await g.closeReaders();
+  });
+});
+
+describe("F-014 master repo facts (FR-4, Gate 2 L5)", () => {
+  it("a master read that failed isn't kept: a later check still finds a clone", async () => {
+    const { repo } = fixture();
+    const master = path.join(tmpdir(), "master");
+    fs.mkdirSync(master);
+    const g = make();
+    // The master folder isn't a repo yet, so its roots can't be read.
+    expect(await checkProjectPath(repo, master, g)).toBeTruthy();
+    fs.rmSync(master, { recursive: true });
+    execFileSync("git", ["clone", "-q", repo, master]);
+    await expect(checkProjectPath(repo, master, g)).rejects.toThrow(/clone of the master repo/);
     await g.closeReaders();
   });
 });
