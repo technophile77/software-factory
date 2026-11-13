@@ -327,7 +327,8 @@ Interview rules (v1.1):
   `GET /user` id equals the recorded owner id, then discards the token. Until
   then `interview.next` and `interview.reply` on the session get error
   `approval_pending`. A denied, expired or wrong-account approval, or GitHub
-  being unreachable, ends the session with `approval_failed`. A takeover
+  staying unreachable until the code expires, ends the session with
+  `approval_failed`; a poll that gets no answer is retried. A takeover
   opens a new session and needs a new approval. An approved session also
   ends 2 hours after approval.
 - Within a session each deferred item is returned once, before new items;

@@ -39,7 +39,10 @@ device sign-in before the engine accepts any reply in it.
    id. It then discards the token; the token never leaves the engine. Until
    then the session is pending and every interview call on it is refused.
 4. **Fail closed:** a denied, expired or wrong-account approval, or GitHub
-   being unreachable, means no session. There is no fallback.
+   staying unreachable until the code expires, means no session. There is no
+   fallback. A poll that gets no answer (network error, timeout, 5xx) is
+   retried at the next interval, with its cause logged, because the code is
+   still valid (owner decision, 2026-11-13).
 5. **Lifetime:** an approved session ends on `interview.close`, after 30
    minutes without a call, or 2 hours after approval, whichever comes first.
    A takeover is a new session and needs a new approval.
