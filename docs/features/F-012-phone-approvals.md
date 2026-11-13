@@ -1,7 +1,7 @@
 # Feature: Phone notifications and approvals for inbox items
 
 - **Id:** F-012
-- **Status:** Draft
+- **Status:** Approved (owner, 2026-11-13; readiness gate passed)
 - **Requested by / date:** Alex, 2026-11-13 (split from F-011 OQ-3: "the phone
   notification needs to be tied to some way to do approvals on my phone also";
   "I want a confirmation on risky actions like a merge, not just one click")
@@ -253,6 +253,7 @@ skips `factory-inbox` issues (FR-13) before either feature's build.
 | 8 | 2026-11-13 | A-1 and A-2 approved; A-1 checked in a spike before build, and a failed check sends the spec back to the owner | Owner, 2026-11-13 (decision card) |
 | 9 | 2026-11-13 | SR-1, SR-3, SR-4, SR-5, SR-7 approved; section 10: drafts of H-0125, H-0126, H-0128; H-0129 applied | Owner, 2026-11-13 (decision card) for the SRs |
 | 10 | 2026-11-13 | H-0125, H-0126, H-0128 approved; readiness gate passed | Owner, 2026-11-13 (decision card) |
+| 10 | 2026-11-13 | Spec v10 signed off; status Approved | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
