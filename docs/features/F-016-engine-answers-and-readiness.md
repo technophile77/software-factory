@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until I
   can start onboarding some of my existing projects?"; chose to build engine
   increment 3 next, decision card)
-- **Spec version:** 7
+- **Spec version:** 8
 
 This is the rest of the engine's increment 3 ("Requirements to ready", F-007
 section 13). F-008 built Security Gate 1 and said that reading inbox answers
@@ -156,7 +156,7 @@ SR-1 to SR-5 drafted by the analyst; SR-6 to SR-10 from Security Gate 1 (`F-016-
 | SR-10 | The analyst records each accepted risk in section 9 with status `Accepted risk`, citing `Gate 1 #<n>; <item id>`; the readiness gate fails if a recorded accepted risk has no such row. | Gate 1 #5 (S7.1, S3.2) | Approved (owner, 2026-11-13) |
 
 ## 10. Interface requirements
-Drafts, for the owner's approval:
+H-0180, H-0182, H-0183 approved (owner, 2026-11-13, decision card); H-0184 approved separately. All are applied in the build PR, each as its own commit with its id.
 - **H-0180 (Interfaces):** Inbox item v3.1 (minor): record history actions
   `effect_done` (engine, with the effect name and the stage it set) and
   Gate 1 state `accepted_risk`.
@@ -203,6 +203,7 @@ Drafts, for the owner's approval:
 | 5 | 2026-11-13 | OQ-3 decided (a): a confirmed inbox choice from the previously pinned owner id re-pins owner keys, CLI path kept (replaces F-007 SR-5's confirm-only path); H-0182 effect table drafted | Owner, 2026-11-13 (decision card) |
 | 6 | 2026-11-13 | H-0184 approved: orchestrator on `claude-sonnet-5-5`, limits as drafted | Owner, 2026-11-13 (decision card) |
 | 7 | 2026-11-13 | SR-6 to SR-10 approved | Owner, 2026-11-13 (project chat) |
+| 8 | 2026-11-13 | H-0180, H-0182, H-0183 approved | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
