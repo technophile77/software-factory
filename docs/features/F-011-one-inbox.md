@@ -4,7 +4,7 @@
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account)
-- **Spec version:** 10
+- **Spec version:** 11
 
 ## 1. Objective and business purpose
 Everything the factory needs the owner to approve reaches the owner in one
@@ -129,7 +129,7 @@ sessions, or by the owner) can be listed too (OQ-6).
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | The baseline spec's "separate" testing and hygiene inboxes (sections 5, 6) means separate item kinds and stores, not separate screens; one queue showing all kinds, each labeled, meets it. | OQ-1 | Pending |
+| A-1 | The baseline spec's "separate" testing and hygiene inboxes (sections 5, 6) means separate item kinds and stores, not separate screens; one queue showing all kinds, each labeled, meets it. | OQ-1; owner, 2026-11-13 (decision card) | Approved |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
@@ -185,6 +185,7 @@ Hygiene items named here; none filed until the open questions are answered.
 | 8 | 2026-11-13 | OQ-4 decided (a): a confirmed hygiene change's PR merges automatically when its diff matches exactly | Owner, 2026-11-13 (decision card) |
 | 9 | 2026-11-13 | OQ-6 decided (b): every open PR into `main` of a managed repo gets a Pull request item (FR-6) | Owner, 2026-11-13 (decision card) |
 | 10 | 2026-11-13 | OQ-7 decided (a): separate admin token for advisories only; everyday token has no Administration | Owner, 2026-11-13 (decision card) |
+| 11 | 2026-11-13 | A-1 approved | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
