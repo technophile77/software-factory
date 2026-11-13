@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until I
   can start onboarding some of my existing projects?"; chose to build engine
   increment 3 next, decision card)
-- **Spec version:** 6
+- **Spec version:** 7
 
 This is the rest of the engine's increment 3 ("Requirements to ready", F-007
 section 13). F-008 built Security Gate 1 and said that reading inbox answers
@@ -148,12 +148,12 @@ SR-1 to SR-5 drafted by the analyst; SR-6 to SR-10 from Security Gate 1 (`F-016-
 | SR-3 | Spec sign-off binds to the spec commit: Approve counts only if the feature branch head equals the commit named in the item at that revision (FR-9). | Analyst (S2.1) | Proposed |
 | SR-4 | Effects per Security item type are fixed in code; an item's text or options can't choose its effect. An unknown type gets "record only". | Analyst (S6.2) | Proposed |
 | SR-5 | Effects are idempotent and keyed on the record entry, so a re-read or restart never carries out an action twice. | Analyst | Proposed |
-| SR-6 | A Gate 1 choice is resolved only by an Approved section 9 row whose source cites `Gate 1 #<n>; <item id>` and whose text contains the chosen option's label word for word (normalized whitespace); otherwise the check names the finding. | Gate 1 #1 (S2.1, S6.2) | Proposed |
-| SR-7 | The stage change and the `effect_done` entry are one commit on the feature's chain, after the inbox record; a failed effect leaves the stage unchanged and is retried next poll; after 3 failed tries a Notice is filed and the feature stays where it is. | Gate 1 #2 (S2.1, S5.1) | Proposed |
-| SR-8 | A resume restart counts against the feature's run caps (F-007 `MAX_RESUMES`, F-008 SR-11); at a cap, option A files a Notice and restarts nothing. | Gate 1 #3 (S6.1, S6.2) | Proposed |
-| SR-9 | The factory token's added permission is Issues read and write on the config repo only, to file and read inbox items (F-011 SR-1); managed code repos get no Issues permission in this increment. The engine checks it at start and reports a missing permission instead of filing. | Gate 1 #4 (S8.5, S8.2) | Proposed |
+| SR-6 | A Gate 1 choice is resolved only by an Approved section 9 row whose source cites `Gate 1 #<n>; <item id>` and whose text contains the chosen option's label word for word (normalized whitespace); otherwise the check names the finding. | Gate 1 #1 (S2.1, S6.2) | Approved (owner, 2026-11-13) |
+| SR-7 | The stage change and the `effect_done` entry are one commit on the feature's chain, after the inbox record; a failed effect leaves the stage unchanged and is retried next poll; after 3 failed tries a Notice is filed and the feature stays where it is. | Gate 1 #2 (S2.1, S5.1) | Approved (owner, 2026-11-13) |
+| SR-8 | A resume restart counts against the feature's run caps (F-007 `MAX_RESUMES`, F-008 SR-11); at a cap, option A files a Notice and restarts nothing. | Gate 1 #3 (S6.1, S6.2) | Approved (owner, 2026-11-13) |
+| SR-9 | The factory token's added permission is Issues read and write on the config repo only, to file and read inbox items (F-011 SR-1); managed code repos get no Issues permission in this increment. The engine checks it at start and reports a missing permission instead of filing. | Gate 1 #4 (S8.5, S8.2) | Approved (owner, 2026-11-13) |
 | SR-11 | The orchestrator readiness session runs under the same container, proxy and policy rules as the security reviewer (F-008 FR-2): worktree read-only, tools Read, Grep, Glob and Write, only write its named report, no network but the model API; spec and transcript reach it as data (S6.1). A pass from it never skips a failed code check. | Analyst; OQ-1 | Proposed |
-| SR-10 | The analyst records each accepted risk in section 9 with status `Accepted risk`, citing `Gate 1 #<n>; <item id>`; the readiness gate fails if a recorded accepted risk has no such row. | Gate 1 #5 (S7.1, S3.2) | Proposed |
+| SR-10 | The analyst records each accepted risk in section 9 with status `Accepted risk`, citing `Gate 1 #<n>; <item id>`; the readiness gate fails if a recorded accepted risk has no such row. | Gate 1 #5 (S7.1, S3.2) | Approved (owner, 2026-11-13) |
 
 ## 10. Interface requirements
 Drafts, for the owner's approval:
@@ -202,6 +202,7 @@ Drafts, for the owner's approval:
 | 4 | 2026-11-13 | OQ-2 decided (a): the analyst writes the owner's Gate 1 choice into section 9; F-011 A-2 confirmed by the Mobile push spike (owner got the push) | Owner, 2026-11-13 (decision cards) |
 | 5 | 2026-11-13 | OQ-3 decided (a): a confirmed inbox choice from the previously pinned owner id re-pins owner keys, CLI path kept (replaces F-007 SR-5's confirm-only path); H-0182 effect table drafted | Owner, 2026-11-13 (decision card) |
 | 6 | 2026-11-13 | H-0184 approved: orchestrator on `claude-sonnet-5-5`, limits as drafted | Owner, 2026-11-13 (decision card) |
+| 7 | 2026-11-13 | SR-6 to SR-10 approved | Owner, 2026-11-13 (project chat) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
