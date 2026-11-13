@@ -32,7 +32,8 @@ export const TOOLS: Record<Operation, { description: string; input: Record<strin
     description: "Sends the owner's new feature request, as written, optionally with a document the owner named (this tool reads it; never read it yourself).",
     input: {
       request: z.string().describe("The owner's request text, exactly as written."),
-      document: z.object({
+      // Loose too: an extra key inside `document` must be refused, not silently dropped.
+      document: z.looseObject({
         path: z.string().describe("The file path exactly as the owner typed it."),
         provenance: z.enum(["owner", "reference"]).describe("From the owner's pick only."),
       }).optional(),

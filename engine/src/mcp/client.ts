@@ -298,7 +298,7 @@ export class Channel {
 function parseRefusal(data: unknown): DocumentRefusal | undefined {
   if (typeof data !== "object" || data === null || Array.isArray(data)) return undefined;
   const d = data as Msg;
-  if (typeof d.reason !== "string" || !(d.reason in DOC_REASONS)) return undefined;
+  if (typeof d.reason !== "string" || !Object.hasOwn(DOC_REASONS, d.reason)) return undefined;
   const out: DocumentRefusal = { reason: d.reason };
   if (Array.isArray(d.lines) && d.lines.every((n) => typeof n === "number" && Number.isInteger(n) && n > 0)) out.lines = (d.lines as number[]).slice(0, 50);
   if (typeof d.rule === "string" && RULE_RE.test(d.rule)) out.rule = d.rule;

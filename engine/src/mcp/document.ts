@@ -63,6 +63,9 @@ export function readDocument(rawPath: unknown, provenance: unknown, projectDir: 
   } catch {
     throw refuse("The document can't be found or opened.");
   }
+  // Node reports Windows symlinks and junctions as links. Other reparse points,
+  // such as OneDrive placeholders, are read: the real-path and dev/ino checks
+  // still catch a redirect or a swap, and the owner's own files should open.
   if (before.isSymbolicLink()) throw refuse("The document is a link; name the file itself.");
   if (!before.isFile()) throw refuse("The document must be a regular file, not a folder, pipe or device.");
   const c = fs.constants;

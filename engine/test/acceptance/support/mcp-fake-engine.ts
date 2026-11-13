@@ -149,7 +149,7 @@ export class FakeEngine {
     const e = new FakeEngine();
     if (state) {
       // A restart keeps what the transcript on factory/state holds, and no sessions.
-      e.features = clone(new Map([...state.features].map(([k, v]) => [k, clone(v)])));
+      e.features = new Map([...state.features].map(([k, v]) => [k, clone(v)]));
       e.replies = new Map([...state.replies].map(([k, v]) => [k, clone(v)]));
       e.transcript = clone(state.transcript);
       e.nextFeature = state.nextFeature;
@@ -258,7 +258,7 @@ export class FakeEngine {
       return ["result", await (fn as (p: Json) => Json).call(this, Array.isArray(params) ? {} : params)];
     } catch (e) {
       if (e instanceof RpcError) return ["error", e.code, e.message, e.data];
-      throw e;
+      return ["error", -32603, `Fake engine bug: ${(e as Error).message}`];
     }
   }
 

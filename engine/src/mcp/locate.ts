@@ -102,7 +102,7 @@ export async function findEngineFile(cwd: string, timeoutMs: number): Promise<st
   try {
     st = fs.lstatSync(file);
   } catch {
-    throw new Refused("engine_not_running", "The engine isn't running: factory/state has no engine.json.");
+    throw new Refused("engine_not_running", "Engine not reachable: the engine isn't running (factory/state has no engine.json).");
   }
   if (st.isSymbolicLink()) throw new Refused("not_state_worktree", `${fail}; engine.json is a symbolic link.`);
   if (!st.isFile() || st.size > MAX_ENGINE_JSON) throw new Refused("bad_engine_file", "engine.json is not a small regular file.");
