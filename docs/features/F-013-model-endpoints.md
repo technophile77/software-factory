@@ -1,14 +1,14 @@
 # Feature: Configurable model endpoints
 
 - **Id:** F-013
-- **Status:** Draft (v13; OQ-1 to OQ-8 decided, Security Gate 1 delta done, changed items need re-approval)
+- **Status:** Draft (v14; OQ-1 to OQ-8 decided, Security Gate 1 delta done, changed items need re-approval)
 - **Requested by / date:** Alex, 2026-11-13 ("I want to also incorporate a
   local llm api"; "this model would be a good candidate for the security
   agent, judge, or any low end agent"; "I'd rather allow a number of
   endpoints that can be specified, and allow them to be configurable, with
   local as an option that indicates it has unlimited usage"; "endpoints
   should include standard options like the model to use and an api key")
-- **Spec version:** 13
+- **Spec version:** 14
 
 ## 1. Objective and business purpose
 The factory runs every agent on Claude today. The owner wants to add other
@@ -90,7 +90,7 @@ master repo.
 | FR-10 | Gate roles (security reviewer, validation judge) stay on their Claude rung (F-002 A-3 unchanged). An endpoint enabled for a gate role runs first as an advisory pass on the same inputs; its findings or verdict go to the Claude reviewer as data, which still decides. The run review records, per run, how many of the Claude reviewer's findings the advisory pass also found and at what severity, plus its verdict match (OQ-1). |
 | FR-11 | The advisory pass never blocks or delays a gate beyond the 10-minute slot wait: if it is unavailable, the Claude reviewer runs without it. |
 | FR-12 | Request deadlines scale with size (owner, 2026-11-13). Each request's deadline is a fixed margin plus its prompt tokens divided by the endpoint's measured prompt-processing rate plus its `max_tokens` divided by its measured generation rate. Rates come from the server's per-request timings where it reports them (`llama-server` does), otherwise from measured wall time, kept per endpoint and model as a rolling median and seeded by a timing check at start. The run review reports rates by prompt-size band (under 8k, 8k to 32k, 32k to 128k, over 128k tokens). |
-| FR-14 | Format translation, keys, retries, and the enforcement of `per_token` budgets and `subscription` rate limits use LiteLLM's own features where it has them (OQ-8). The engine generates LiteLLM's configuration from the endpoints file at start; LiteLLM's admin UI, database and telemetry are off, and its master key is random per run and known only to the gateway. The factory writes no format translator of its own. |
+| FR-14 | Format translation, keys and retries come from LiteLLM (OQ-8). Billing (FR-13) stays a factory requirement: LiteLLM enforces the limits it can express (spend caps per endpoint, request and token rate limits), and the engine does the rest itself: charging `per_token` cost to the project budget, counting `subscription` plan windows LiteLLM can't express (such as 5 hours), the reserve and fallback, and recording cost in agent reports, F-002 metrics and run reviews. The engine generates LiteLLM's configuration from the endpoints file at start; LiteLLM's admin UI, database and telemetry are off, and its master key is random per run and known only to the gateway. The factory writes no format translator of its own. |
 | FR-15 | LiteLLM is pinned to one image digest in the master repo and upgraded only by a hygiene item. Before each upgrade, and in CI, a conformance suite replays fixed tool-call conversations (generic prompts only) through LiteLLM to a recorded stub endpoint in each format and checks that Claude Code receives the same `tool_use` names, arguments and stop reasons as from a native Anthropic endpoint, streamed and unstreamed. |
 | FR-13 | Usage by billing mode. `local`: cost $0 (0% of plan in the project's `subscription` budget mode), not counted against the project budget (ADR 0012). `per_token`: tokens times `prices`, in dollars, counted against the project budget in both budget modes. `subscription`: the engine counts each limit's use per window across all projects on the PC; a task's cost is the largest share of any limit it used (as F-002 A-1 measures Claude plans); it is not charged in dollars. When any limit would pass `100 - reserve_pct` percent in its window, new sessions for that endpoint run on the role's Claude rung instead (FR-7), so the owner keeps the reserve for their own use. |
 
@@ -239,6 +239,7 @@ Re-checked 2026-11-13 against spec v9.
 | 11 | 2026-11-13 | OQ-6 decided (b): OpenAI chat-completions endpoints through a translator in the gateway; FR-14, FR-15 (fixture, stochastic round-trip and fuzz tests), AC-15 to AC-17, SR-16 added | Owner, 2026-11-13 (thread) |
 | 12 | 2026-11-13 | OQ-7 decided (b): the project's endpoint list is the only control; evaluating an endpoint's terms and security is the user's, outside the factory. SR-8 reworded | Owner, 2026-11-13 (thread) |
 | 13 | 2026-11-13 | OQ-8 decided (a): LiteLLM replaces the home-made translator and billing; § 1, § 2 item 4, FR-3, FR-5, FR-14, FR-15, AC-16, AC-17, A-1, SR-16 rewritten; H-0139 added | Owner, 2026-11-13 (thread, decision card) |
+| 14 | 2026-11-13 | FR-14 clarified (owner asked): billing modes and accounting stay; LiteLLM only enforces the limits it can express, the engine does the rest | Owner, 2026-11-13 (thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
