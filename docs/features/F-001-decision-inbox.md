@@ -1,9 +1,19 @@
 # Feature: Decision inbox in VS Code
 
 - **Id:** F-001
-- **Status:** Approved (owner, 2026-11-09)
+- **Status:** Superseded by F-011 v29 (ADR 0022; owner, 2026-11-13). Built and validated at v2; the extension is removed by H-0164 once F-011's engine side ships and the owner's projects are migrated.
 - **Requested by / date:** Alex, 2026-11-08
-- **Spec version:** 2
+- **Spec version:** 3
+
+> **Superseded.** ADR 0022 moves inbox items to GitHub issues in the
+> project's config repo, shown by Microsoft's GitHub Pull Requests extension
+> instead of this extension's Decisions view. Carried into F-011 v20: FR-2
+> and FR-12 (one queue across repos, by priority; F-011 FR-1, FR-12), FR-5
+> to FR-8 (actions, notes, defer and restore, one record commit per action;
+> F-011 FR-2, FR-7, FR-8), SR-1 (untrusted text rendered inert; F-011 SR-10),
+> SR-4's id pattern (in Inbox item v3.0). Withdrawn: FR-1, FR-3, FR-4, FR-9 to
+> FR-11, SR-2, SR-3, SR-5 and the AC-7 integration test, all about our own
+> view, and A-2 (items as files). The text below is v2, kept for the record.
 
 ## 1. Objective and business purpose
 Give the owner one place in VS Code to see and act on every pending decision,
@@ -98,3 +108,4 @@ Uses Inbox item v1.0 unchanged.
 | 1 | 2026-11-08 | Draft | — |
 | 2 | 2026-11-08 | Assumptions resolved; Gate 1 security requirements added | Owner, 2026-11-09 |
 | 2.1 | 2026-11-09 | Evidence rule for AC-7 recorded (inspection now, integration test before Alpha); no requirement changed | Owner, 2026-11-09 |
+| 3 | 2026-11-13 | Superseded by F-011 v20 for ADR 0022 (proposal 0026); requirements carried or withdrawn as listed at the top | Owner, 2026-11-13 (F-011 v29 sign-off, decision card) |
