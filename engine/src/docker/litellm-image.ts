@@ -9,9 +9,15 @@ export interface LitellmPin {
   digest: string;
   /** ISO 8601 time the release was published; the 14-day quarantine counts from it. */
   publishedAt: string;
+  /**
+   * Why a release off the LTS line is allowed: a record of the owner's decision
+   * (id and date). Absent for an LTS release. Only a non-empty text lifts the
+   * line rule; the 14-day quarantine still applies.
+   */
+  exception?: string;
 }
 
-/** The only release line the factory runs (OQ-12 (a), SR-17). */
+/** The only release line the factory runs unless a pin carries an owner exception (OQ-12 (a), SR-17). */
 export const LITELLM_LTS_LINE = "1.108";
 /** Days a release must have been public before the factory may run it (SR-17). */
 export const LITELLM_QUARANTINE_DAYS = 14;
@@ -19,15 +25,17 @@ export const LITELLM_QUARANTINE_DAYS = 14;
 /**
  * The LiteLLM release the factory runs, or null while none is approved.
  *
- * SR-17 rule (owner decision OQ-12 (a)): the factory runs only the newest
- * 1.108.x LTS release that is at least 14 days old. 1.108.0 was published on
- * 4 Nov 2026, so none qualified yet and the engine marks every endpoint rung
- * unavailable. A hygiene item sets the pin, on one line in the form
- * `{ version: "1.108.N", digest: "sha256:...", publishedAt: "2026-.." }`,
- * after the conformance run; `litellmPinProblem` and CI both refuse a pin
- * that breaks the rule, and the CI image scan reads the digest from this line.
+ * SR-17 rule (owner decision OQ-12 (a)): the factory runs only a 1.108.x LTS
+ * release that is at least 14 days old. The owner then changed OQ-12 on
+ * 13 Nov 2026 and approved 1.106.4 now, as a recorded exception to the LTS
+ * line (no 1.108.x release was 14 days old yet); the quarantine still holds.
+ * A hygiene item changes the pin, on one line in the form
+ * `{ version: "1.108.N", digest: "sha256:...", publishedAt: "2026-.." }` (plus
+ * `exception: "..."` for a release off the LTS line); `litellmPinProblem` and
+ * CI both refuse a pin that breaks the rule, and the CI image scan reads the
+ * digest from this line, so it must stay on one line.
  */
-export const LITELLM_PIN: LitellmPin | null = null;
+export const LITELLM_PIN: LitellmPin | null = { version: "1.106.4", digest: "sha256:ee5cb38e33c8be6d6774f7db922396b6b04d1cd962e77521b6c892b8f1c70fd8", publishedAt: "2026-10-25T09:39:15Z", exception: "OQ-12: owner pinned non-LTS 1.106.4, 2026-11-13" };
 
 /** The pinned image by digest. @throws DockerError when `pin` is null. */
 export function litellmImageRef(pin: LitellmPin | null): string {
@@ -49,16 +57,19 @@ const DAY_MS = 86_400_000;
 
 /**
  * Why a pin breaks the SR-17 rule, or null when it is acceptable: the version
- * must be on the 1.108.x LTS line, the digest well formed, and `publishedAt`
- * at least 14 days before `nowMs` (a future or unreadable date fails).
+ * must be on the 1.108.x LTS line unless the pin carries a non-empty
+ * `exception`, the digest well formed, and `publishedAt` at least 14 days
+ * before `nowMs` (a future or unreadable date fails, exception or not).
  *
  * @param nowMs the current time in epoch milliseconds, injected so the rule is testable.
  * @example
  * litellmPinProblem({ version: "1.108.2", digest: `sha256:${"a".repeat(64)}`, publishedAt: "2026-11-01T00:00:00Z" }, Date.parse("2026-11-20T00:00:00Z")); // null
- * litellmPinProblem({ version: "1.109.1", digest: `sha256:${"a".repeat(64)}`, publishedAt: "2026-10-01T00:00:00Z" }, Date.parse("2026-11-20T00:00:00Z")); // "version 1.109.1 isn't on the 1.108.x LTS line"
+ * litellmPinProblem({ version: "1.109.1", digest: `sha256:${"a".repeat(64)}`, publishedAt: "2026-10-01T00:00:00Z" }, Date.parse("2026-11-20T00:00:00Z")); // "version 1.109.1 isn't on the 1.108.x LTS line and has no owner exception"
+ * litellmPinProblem({ version: "1.106.4", digest: `sha256:${"a".repeat(64)}`, publishedAt: "2026-10-25T09:39:15Z", exception: "OQ-12" }, Date.parse("2026-11-20T00:00:00Z")); // null
  */
 export function litellmPinProblem(pin: LitellmPin, nowMs: number): string | null {
-  if (!LTS_VERSION_RE.test(pin.version)) return `version ${pin.version} isn't on the ${LITELLM_LTS_LINE}.x LTS line`;
+  const excepted = typeof pin.exception === "string" && pin.exception.trim() !== "";
+  if (!excepted && !LTS_VERSION_RE.test(pin.version)) return `version ${pin.version} isn't on the ${LITELLM_LTS_LINE}.x LTS line and has no owner exception`;
   if (!ID_RE.test(pin.digest)) return "the digest isn't a sha256 image digest";
   const published = Date.parse(pin.publishedAt);
   if (!Number.isFinite(published)) return "the publication date isn't readable";
