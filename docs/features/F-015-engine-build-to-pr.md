@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
-- **Spec version:** 6
+- **Spec version:** 7
 
 This is engine increment 4, "Build to PR" (F-007 section 13). It is a draft
 written before the owner interview, from the baseline spec, the ADRs and the
@@ -81,6 +81,7 @@ Draft. Each will be refined by section 12.
 | FR-14 | The PR parts of F-011 are built here, since nothing opens PRs before this increment (agreed with increment 3, F-016): the FR-9 definition-of-done comment, `/changes <note>` on managed PRs, recording `merged_on_github` / `closed_on_github`, and FR-10's hygiene auto-merge with its SR-11 diff check. Inbox issues, inbox records and PR records stay on the config repo's `factory/state` (F-011, Inbox item v3.0). |
 | FR-15 | The build starts from the stage `build_and_test_prep`, which increment 3 records when the owner approves the spec sign-off. |
 | FR-16 | Each feature targets exactly one code repo of its project, named in its spec (OQ-3). A request needing several repos becomes linked features, one per repo; a feature that depends on another doesn't start stage 5 until that feature's PR has merged. |
+| FR-17 | Commits the engine makes in code repos are authored and committed as the owner, with the owner's GitHub noreply address (`<id>+<login>@users.noreply.github.com`, built from the manifest's pinned `owner.github_id` and the login GitHub returns for it). No trailer or message text names an AI tool. Commits are not signed (residual risk stated to the owner: anyone can write commits with that name and address; GitHub shows them unverified). Engine commits in the config repo keep the engine identity. |
 
 ## 4. Acceptance criteria
 To be written once section 12 is answered; each FR gets at least one.
@@ -160,7 +161,7 @@ Asked one at a time on decision cards. None is assumed.
 | OQ-4 | Who runs stages 6 and 9: engine code only, engine code plus an orchestrator agent session just to classify failures, or an orchestrator agent session for the whole stage. | Architecture | Decided: engine code, plus a read-only orchestrator agent session only to classify failures (FR-7) (owner, decision card, 2026-11-13) |
 | OQ-5 | Who runs the tests: the engine runs a test command the manifest declares and reads its JUnit XML, or the test engineer agent runs them and reports. | Architecture | Decided: the engine runs each repo's declared test command and reads its JUnit XML; the test engineer writes tests and the criteria map (FR-6) (owner, decision card, 2026-11-13) |
 | OQ-6 | Where each project's build toolchain comes from for the agent containers: a Dockerfile in the config repo built on the factory image, the code repo's dev container definition, or a fixed set of factory toolchain images. | Architecture, Security | On hold: the owner is revisiting containers versus Claude Code's isolated worktrees (2026-11-13); this question depends on that outcome |
-| OQ-7 | Who commits appear to come from in code repos: the engine's own identity (today) or the owner's name with his GitHub noreply address. | Product | Open |
+| OQ-7 | Who commits appear to come from in code repos: the engine's own identity (today) or the owner's name with his GitHub noreply address. | Product | Decided: the owner's name and GitHub noreply address, unsigned, risk stated on the card (FR-17) (owner, decision card, 2026-11-13) |
 
 ## 13. Change log
 | Version | Date | Change | Approved by |
@@ -171,3 +172,4 @@ Asked one at a time on decision cards. None is assumed.
 | 4 | 2026-11-13 | OQ-3: one code repo per feature; multi-repo requests become linked features (FR-16) | Owner, 2026-11-13 (decision card) |
 | 5 | 2026-11-13 | OQ-4: stages 6 and 9 are engine code; a read-only orchestrator agent session runs only to classify test failures (FR-7) | Owner, 2026-11-13 (decision card) |
 | 6 | 2026-11-13 | OQ-5: the engine runs each repo's declared test command and reads JUnit XML results; the test engineer writes tests and the criteria map (FR-6, H-0193) | Owner, 2026-11-13 (decision card) |
+| 7 | 2026-11-13 | OQ-7: code repo commits authored as the owner with the GitHub noreply address, unsigned (FR-17). OQ-6 on hold while the owner revisits containers versus worktrees | Owner, 2026-11-13 (decision card) |
