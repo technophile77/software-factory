@@ -32,7 +32,7 @@ See [`plugins/software-factory/skills/onboard-repo/SKILL.md`](plugins/software-f
 
 ## Answer the analyst's spec questions
 
-The same plugin (version 0.3.0 or later) holds the requirements analyst's
+The same plugin (version 0.5.0 or later) holds the requirements analyst's
 interview in a Claude Code chat. Run it inside an onboarded repo or config
 repo whose factory engine is running:
 
@@ -46,6 +46,11 @@ reject the analyst's assumptions. On any question you can also ask the
 advisor, a separate agent on a stronger model, and you approve or decline
 the analyst's own proposals to ask it (F-006); its advice is shown beside
 the question, labelled as the advisor's. The skill relays questions, advice
-and replies word for word and never answers for you. It needs the engine
-(not built yet); without it the skill says so and stops. See
+and replies word for word and never answers for you. It needs a running
+factory engine; without it the skill says so and stops.
+
+The skill's tools come from the engine's `mcp` mode. When you enable the
+plugin, Claude Code asks for the `engine_path` setting: the `engine.js`
+file of your engine build (in its `dist` folder). Change it later in
+`/plugin` or `/config`. See
 [`plugins/software-factory/skills/spec-interview/SKILL.md`](plugins/software-factory/skills/spec-interview/SKILL.md).

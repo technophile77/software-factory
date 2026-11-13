@@ -10,6 +10,7 @@
 - **Date:** 2026-11-13
 - **Result:** **Pass, with the conditions below.** Approval is an
   Architecture decision for the owner (S4.1).
+- **Owner decision:** approved with all three conditions, 2026-11-13.
 
 How this was checked:
 - the npm registry record for 1.32.2;
