@@ -11,7 +11,6 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -32,6 +31,7 @@ import {
 } from "../harness";
 import { drive, FakeClock, realDelay } from "./clock";
 import { FakeGitHub } from "./fake-github";
+import { fastImportStream } from "./fast-import";
 import { FakeGitleaks, GitWrapper } from "./fake-tools";
 import { ownerOnly, removeTree, WINDOWS_ENV } from "./platform";
 import { RpcClient, rpcOnce, type RpcResponse } from "./rpc";
@@ -73,8 +73,14 @@ const TEMPLATE = join(REPO_ROOT, "plugins/software-factory/skills/onboard-repo/t
 /** The fixtures' own git. It never runs repo hooks or fsmonitor, so markers
  * in the git-safety tests can only come from the engine. */
 export function git(cwd: string, ...args: string[]): string {
+  return gitWithInput(cwd, undefined, ...args);
+}
+
+/** {@link git} with `input` on stdin, for `git fast-import`. */
+export function gitWithInput(cwd: string, input: Buffer | undefined, ...args: string[]): string {
   return execFileSync(REAL_GIT, ["-c", `core.hooksPath=${devNull}`, "-c", "core.fsmonitor=false", ...args], {
     cwd,
+    input,
     encoding: "utf8",
     maxBuffer: 256 * 1024 * 1024,
     env: {
@@ -380,35 +386,25 @@ export class World {
     this.gh.addRepo(repoOwner, repo, p.repoOwnerId, !s.publicRepo);
 
     // The repo on the fake GitHub, with main (holding the manifest) and
-    // factory/state, and the owner's clone of it, which the projects file lists.
+    // factory/state, and the owner's clone of it, which the projects file
+    // lists. One fast-import run builds the bare repo (H-0132).
     mkdirSync(dirname(p.bare), { recursive: true });
     git(this.root, "init", "-q", "--bare", "-b", "main", p.bare);
-    const seed = join(this.root, "seed-" + rand(4));
-    mkdirSync(seed);
-    git(seed, "init", "-q", "-b", "main");
-    writeFileSync(join(seed, "README.md"), `# ${repo}\n`);
-    writeFileSync(join(seed, ".gitignore"), ".factory/\n");
-    mkdirSync(join(seed, "docs", "features"), { recursive: true });
-    for (const f of s.existingFeatures ?? []) {
-      writeFileSync(join(seed, "docs", "features", `${f}-existing.md`), `# Feature: existing\n\n- **Id:** ${f}\n`);
-    }
-    writeFileSync(join(seed, "docs", "features", ".keep"), "");
-    writeFileSync(join(seed, "factory-project.yaml"), this.manifestText(p, s));
-    git(seed, "add", "-A");
-    git(seed, "commit", "-q", "-m", "initial");
-    for (const f of s.existingFeatures ?? []) git(seed, "branch", `feature/${f}-existing`);
-    git(seed, "checkout", "-q", "--orphan", "factory/state");
-    git(seed, "rm", "-rq", "--cached", ".");
-    for (const e of readdirSync(seed)) if (e !== ".git") rmSync(join(seed, e), { recursive: true, force: true });
-    writeFileSync(join(seed, "README.md"), "factory state\n");
-    git(seed, "add", "README.md");
-    git(seed, "commit", "-q", "-m", "factory/state root");
-    git(seed, "push", "-q", p.bare, "--all");
-    rmSync(seed, { recursive: true, force: true });
-    git(this.root, "clone", "-q", p.bare, p.clone);
+    const main: Record<string, string> = {
+      "README.md": `# ${repo}\n`,
+      ".gitignore": ".factory/\n",
+      "docs/features/.keep": "",
+      "factory-project.yaml": this.manifestText(p, s),
+    };
+    for (const f of s.existingFeatures ?? []) main[`docs/features/${f}-existing.md`] = `# Feature: existing\n\n- **Id:** ${f}\n`;
+    const time = Math.floor(Date.now() / 1000);
+    const stream = fastImportStream([
+      { ref: "refs/heads/main", message: "initial", files: main, time, alsoAt: (s.existingFeatures ?? []).map((f) => `refs/heads/feature/${f}-existing`) },
+      { ref: "refs/heads/factory/state", message: "factory/state root", files: { "README.md": "factory state\n" }, time },
+    ]);
+    gitWithInput(p.bare, stream, "fast-import", "--quiet");
+    git(this.root, "clone", "-q", "-c", "user.name=Owner", "-c", "user.email=owner@example.invalid", p.bare, p.clone);
     git(p.clone, "remote", "set-url", "origin", this.gh.gitUrl(repoOwner, repo));
-    git(p.clone, "config", "user.name", "Owner");
-    git(p.clone, "config", "user.email", "owner@example.invalid");
 
     this.projects.push(p);
     return p;
