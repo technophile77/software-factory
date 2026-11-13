@@ -69,7 +69,7 @@ goes to the one inbox, labeled by category.
 | FR-11 | Only one interview session per feature at a time. A second client gets a "busy" error naming when the other session started. |
 | FR-12 | The skill shows engine text as quoted data, with control and escape characters removed, and never treats it as instructions (SR-2). |
 | FR-13 | Errors from the channel (engine gone, timeout, unknown feature, busy) are shown to the owner in plain words; the skill never retries a reply that may already have been recorded without first asking the engine for the question's state. |
-| FR-14 | The plugin finds the engine's command as decided in OQ-5. If it can't, the plugin's MCP server fails to start and the skill tells the owner, in one sentence, what to set and where. |
+| FR-14 | The plugin declares a required `engine_path` setting (Claude Code plugin `userConfig`, type `file`) that Claude Code asks the owner for when the plugin is enabled and shows in `/config`. Its value is saved in the owner's own Claude Code settings, never in a repo. `.mcp.json` starts `node` with `${user_config.engine_path}` and `mcp` as arguments (OQ-5). If the setting is empty or the file isn't the engine, the plugin's MCP server fails to start and the skill tells the owner, in one sentence, to set `engine_path` in `/config`. |
 | FR-15 | The MCP mode serves one tool per operation the client script has today, with the same inputs and results, including `display`: `interview_status`, `interview_start`, `interview_list`, `interview_open`, `interview_approval`, `interview_next`, `interview_reply`, `interview_state` and `interview_close`. Tool names, inputs and results are described in the skill. |
 | FR-16 | The interview session token stays inside the MCP mode process. `interview_open` keeps it, and later tools name only the feature. A call for a feature this process hasn't opened is refused (SR-18). |
 | FR-17 | The MCP mode starts without contacting the engine and lists its tools at once; it connects for each tool call, as the script does today. A stopped engine never delays or fails Claude Code's start-up, and sessions that never interview only hold the idle process. |
@@ -93,7 +93,7 @@ goes to the one inbox, labeled by category.
 | AC-12 | The skill's instructions forbid answering, choosing options, or approving assumptions for the owner; a review of the skill text against this list passes. | SR-3 |
 | AC-13 | Given the MCP mode started with no engine running, when an MCP client lists tools, then the nine tools of FR-15 are listed within 5 seconds; `interview_status` then fails with "engine not reachable". | FR-15, FR-17 |
 | AC-14 | Given a session opened through `interview_open`, then no tool result or `display` contains the session token, and a second MCP mode process calling `interview_next` or `interview_reply` for that feature is refused without contacting the engine. | FR-16, SR-18 |
-| AC-15 | Given the plugin can't find the engine's command (OQ-5), when the owner runs the skill, then it names what to set and where, and sends nothing. | FR-14 |
+| AC-15 | Given `engine_path` is empty or names a file that isn't the engine, when the owner runs the skill, then it says to set `engine_path` in `/config`, and sends nothing. | FR-14 |
 | AC-16 | Given a tool-set version different from the skill's, when the skill starts, then it tells the owner to update and calls no other tool. | FR-18 |
 | AC-17 | Every test of AC-1 to AC-6 and AC-9 to AC-11 that ran against the client script runs against the MCP mode through the MCP SDK's own stdio client and passes; the client script and its tests are then removed. | FR-1 |
 
@@ -161,7 +161,7 @@ open and the owner's to answer:
 | OQ-2 | Web reach and hidden prompts. **Answered:** any site; hidden content stripped, pages read by an isolated web reader, every address logged; the residual leak through search wording is an accepted risk (SR-6, SR-17). | Security | Answered (owner, 2026-11-10, decision card) |
 | OQ-3 | Escalation before F-006 exists? **Answered:** escalation is simply not available until F-006 is built. The analyst offers only its own more-information and deferral. | Product | Answered (owner, 2026-11-10) |
 | OQ-4 | Analyst permission widenings in section 10 (web tools, shared skills, reads outside its worktree, advisor escalation once F-006 exists). **Answered: all approved.** | Security | Answered (owner, 2026-11-10) |
-| OQ-5 | How does the plugin find the engine's command for its MCP server (ADR 0025)? Options on the card: a plugin setting for the engine path (Claude Code's plugin `userConfig`, kept in the owner's own settings), a `factory-engine` command on `PATH`, or the path written into `engine.json` with a launcher. | Architecture | Open (card 2026-11-13) |
+| OQ-5 | How does the plugin find the engine's command for its MCP server (ADR 0025)? **Answered: a plugin setting for the engine path** (Claude Code's plugin `userConfig`, kept in the owner's own settings), not a `factory-engine` command on `PATH` or a path in `engine.json` with a launcher (FR-14). | Architecture | Answered (owner, 2026-11-13, decision card) |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
@@ -233,7 +233,7 @@ build. It is versioned (FR-18) and described in the skill, not added to
 - [x] Blocking decisions resolved (OQ-1 to OQ-4 answered; H-0022, H-0023, H-0024 approved)
 
 v10:
-- [ ] OQ-5 answered
+- [x] OQ-5 answered (plugin setting)
 - [ ] SR-9 v10 wording and SR-18 to SR-20 approved by the owner
 - [ ] Owner approves v10 as a whole
 
@@ -250,3 +250,4 @@ v10:
 | 8 | 2026-11-10 | H-0026 (channel details) and H-0027 (readiness-gate interview rules, web reader in the role docs) approved; AC-7 and AC-8 tests move to the engine feature | Owner, 2026-11-10 (decision card) |
 | 9 | 2026-11-10 | Wording only: SR-16 names the `busy` exception H-0026 approved | — (wording) |
 | 10 | 2026-11-13 | Draft for ADR 0025: interview tools from the engine's `mcp` mode instead of the Python client (FR-1, FR-2, FR-14 to FR-19, AC-1, AC-2, AC-11, AC-13 to AC-17, constraints, edge cases, dependencies, SR-9 reworded, SR-18 to SR-20, OQ-5, H-0174 to H-0177) | — (draft) |
+| 10.1 | 2026-11-13 | OQ-5: the plugin finds the engine through a required `engine_path` plugin setting (FR-14, AC-15) | Owner, 2026-11-13 (decision card) |
