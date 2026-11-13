@@ -126,7 +126,7 @@ export async function listenPipe(o: {
         const pid = o.os.pipeClientPid(h);
         const clientSid = o.os.processUserSid(pid);
         if (clientSid !== sid) throw new ChannelRefused("the client isn't the owner");
-        if (o.children.startedByEngine(pid)) throw new ChannelRefused(`client ${pid} is a process the engine started`);
+        if (o.children.startedByEngine(pid)) throw new ChannelRefused(`client ${pid} is a process the engine started (it, then its parents: ${o.children.lastChain.join(", ")})`);
       } catch (e) {
         o.log.warn(`Refused a channel connection: ${e instanceof ChannelRefused ? e.message : "the client check failed"}.`);
         o.os.closePipe(h);

@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { type EndpointLookup, EndpointAddressError, type PinnedEndpoint, resolveEndpoint } from "../config/endpoint-address";
 import type { RungRef } from "../config/endpoint-roles";
 import type { Endpoint } from "../config/endpoints";
-import type { LitellmImage } from "../docker/litellm-image";
+import { type LitellmImage, NoLitellmPinError } from "../docker/litellm-image";
 import type { ContainerLimits } from "../docker/plan";
 import { type Clock } from "../clock";
 import { ensureOwnerDir, writeFileAtomic } from "../fsutil";
@@ -202,12 +202,13 @@ export class EndpointService {
     return s;
   }
 
-  /** Null when the router image is usable, else the plain reason every endpoint rung is unavailable. */
+  /** Null when the router image is usable, else the plain reason every endpoint rung is unavailable ("no approved LiteLLM release pinned yet (SR-17)" while none is pinned). */
   private async checkImage(image: () => Promise<LitellmImage>): Promise<string | null> {
     try {
       await image();
       return null;
     } catch (err) {
+      if (err instanceof NoLitellmPinError) return err.message;
       return `the model router can't be used (${(err as Error).message.slice(0, 200)})`;
     }
   }
@@ -268,6 +269,7 @@ export class EndpointService {
       image = await this.o.image();
     } catch (err) {
       lease.release();
+      if (err instanceof NoLitellmPinError) return fallback(err.message);
       return fallback(`the model router can't be used (${(err as Error).message.slice(0, 200)})`);
     }
     return this.granted(e, req, image, pin, keys, lease, Math.round((this.o.clock.now() - began) / 1000));

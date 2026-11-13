@@ -52,9 +52,9 @@ interface SnapshotEntry {
 const isRegular = (e: SnapshotEntry) => e.type === "blob" && (e.mode === "100644" || e.mode === "100755");
 
 /**
- * The listing of a few paths at one commit, from a single `ls-tree`, so the
- * files the engine reads at every start cost one process for the listing and
- * one for the contents rather than several per file. Paths reached through a
+ * The listing of a few paths at one commit, taken once through the repo's
+ * reader (F-014), so the files the engine reads at every start cost no
+ * process per file. Paths reached through a
  * symbolic link aren't listed, so they read as missing, as with `lsTreeEntry`.
  */
 export class TreeSnapshot {
@@ -68,12 +68,8 @@ export class TreeSnapshot {
   private readonly cache = new Map<string, Buffer>();
 
   static async read(git: Git, repo: string, commit: string, paths: string[]): Promise<TreeSnapshot> {
-    const r = await git.run(repo, ["ls-tree", "-r", "-t", "-l", "-z", "--full-tree", commit, "--", ...paths]);
     const entries = new Map<string, SnapshotEntry>();
-    for (const line of r.stdout.toString("utf8").split("\0")) {
-      const m = /^(\d{6}) (\w+) ([0-9a-f]{40,64}) +(-|\d+)\t(.*)$/s.exec(line);
-      if (m) entries.set(m[5]!, { mode: m[1]!, type: m[2]!, sha: m[3]!, size: m[4] === "-" ? 0 : Number(m[4]) });
-    }
+    for (const e of await git.lsTreeSized(repo, commit, paths)) entries.set(e.path, { mode: e.mode, type: e.type, sha: e.sha, size: e.size });
     return new TreeSnapshot(git, repo, commit, entries);
   }
 

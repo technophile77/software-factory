@@ -170,16 +170,27 @@ jobs:
           python3 -I scripts/osv_fixable.py "$RUNNER_TEMP/image-scan.json"
       # F-013 SR-16 / FR-15: the LiteLLM image holds the endpoint keys, so it is
       # scanned like the agent image. It is pulled by the digest the engine
-      # pins, read from the source so the two can't drift apart.
+      # pins, read from the one-line LITELLM_PIN in the source so the two can't
+      # drift apart. While the pin is null (SR-17: no 1.108.x release is 14 days
+      # old yet) there is nothing to scan and both steps are skipped.
       - name: Pull the pinned LiteLLM image
+        id: litellm
         run: |
           repo=$(sed -n 's/^export const LITELLM_IMAGE = "\(ghcr\.io\/[a-z0-9._\/-]*\)";$/\1/p' engine/src/docker/litellm-image.ts)
-          digest=$(sed -n 's/^export const LITELLM_IMAGE_DIGEST = "\(sha256:[0-9a-f]\{64\}\)";$/\1/p' engine/src/docker/litellm-image.ts)
-          test -n "$repo" && test -n "$digest"
+          test -n "$repo"
+          if grep -q '^export const LITELLM_PIN: LitellmPin | null = null;$' engine/src/docker/litellm-image.ts; then
+            echo "no LiteLLM pin set; scan skipped (SR-17, OQ-12)"
+            echo "pinned=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          digest=$(sed -n 's/^export const LITELLM_PIN: LitellmPin | null = {.* digest: "\(sha256:[0-9a-f]\{64\}\)".*};$/\1/p' engine/src/docker/litellm-image.ts)
+          test -n "$digest"
           docker pull "$repo@$digest"
           docker tag "$repo@$digest" factory-router:ci
+          echo "pinned=true" >> "$GITHUB_OUTPUT"
       # Same rule as the agent image: only a CVE with a fix fails the job.
       - name: Scan the LiteLLM image
+        if: steps.litellm.outputs.pinned == 'true'
         run: |
           rc=0
           "$RUNNER_TEMP/osv-scanner" scan image --config engine/osv-scanner.toml \

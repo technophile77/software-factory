@@ -8,6 +8,7 @@ import { RunBook } from "../src/state/runs";
 import { SERVED_CHANNEL_VERSION } from "../src/constants";
 import { confirmProject } from "../src/config/confirm";
 import { PinStore } from "../src/config/pins";
+import { readManifest } from "../src/config/manifest";
 import { Git } from "../src/git";
 import { Children } from "../src/proc";
 import { realOsApi } from "../src/os/ffi";
@@ -18,6 +19,10 @@ import YAML from "yaml";
 import {
   GIT_ENV, GIT_PATH, MASTER_FILES, OWNER_ID, ORG_ID, OTHER_ID, driveClock, RpcClient, World, engineJson, git, initRepo, makeWorld, manifestYaml, start,
 } from "./helpers";
+
+// F-014 AC-2. On main before F-014 the first start took 22.
+const BUDGET_FIRST_START = 13;
+const BUDGET_SECOND_START = 9;
 
 let engines: EngineHandle[] = [];
 let clients: RpcClient[] = [];
@@ -143,6 +148,31 @@ describe("engine start (FR-1 to FR-4)", () => {
     const e = await boot(w);
     expect(e.projects[0]!.state).toBe("stopped");
     expect(securityItems(w)).toHaveLength(1);
+  });
+});
+
+describe("git process budgets (F-014 FR-7, AC-2)", () => {
+  // Measured when F-014 was built; a change that needs more processes on these paths has to raise them on purpose.
+  it("an engine start of one project, a second start, and a manifest read stay within their budgets", async () => {
+    const w = makeWorld();
+    let before = Git.processes;
+    const first = await boot(w);
+    const firstStart = Git.processes - before;
+    await first.stop();
+    engines = [];
+    before = Git.processes;
+    await boot(w);
+    const secondStart = Git.processes - before;
+    const g = new Git({ gitPath: GIT_PATH, homeDir: path.join(w.root, "budget-home"), children: new Children() });
+    before = Git.processes;
+    await readManifest(g, w.config);
+    await readManifest(g, w.config);
+    const manifestReads = Git.processes - before;
+    await g.closeReaders();
+    expect(firstStart).toBeLessThanOrEqual(BUDGET_FIRST_START);
+    expect(secondStart).toBeLessThanOrEqual(BUDGET_SECOND_START);
+    // Both reads share one reader: one process, not two per read.
+    expect(manifestReads).toBe(1);
   });
 });
 

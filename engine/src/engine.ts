@@ -14,7 +14,8 @@ import { WORKSPACE, type SessionOutcome } from "./agent/session";
 import { commitWorktree } from "./agent/worktree-commit";
 import { DockerError } from "./docker/cli";
 import { baseImageId, ensureAgentImage, skillsPluginDir } from "./docker/image";
-import { type LitellmImage, type LitellmSignatureCheck, litellmImageId } from "./docker/litellm-image";
+import { makeCosignVerifier, parseCosignPins } from "./docker/cosign";
+import { type LitellmImage, type LitellmPin, litellmImageId } from "./docker/litellm-image";
 import { DocumentRefused, SourceDocument, documentMeta, lineOfByte, sha256 as sha256Of, sourcePath } from "./interview/document";
 import { frameDocument, frameRequest } from "./interview/frame";
 import { Conn, notification, serve } from "./channel/framing";
@@ -44,7 +45,7 @@ import { FeatureInterview } from "./interview/feature";
 import { InterviewTools, ResearchConfig, createInterviewTools } from "./interview/tools";
 import { FileLogger, Logger } from "./log";
 import { OsApi, realOsApi } from "./os/ffi";
-import { Children, osParent } from "./proc";
+import { Children, osParent, osStartOrder } from "./proc";
 import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryTokenName } from "./secrets";
 import { SecurityAlert, fileDecisionItem, fileSecurityItem } from "./state/inbox";
 import { READINESS_STAGE, analystGate1Turn, correctionTurn, gate1Resolution, records, reviewerTurn } from "./gate1/flow";
@@ -102,8 +103,11 @@ export interface EngineOptions {
    * swept at start. Without it no agent starts (and resumeAnalyst is called).
    */
   agents?: AgentRuntime;
-  /** F-013: replacements for the network and the LiteLLM image check (tests only; the defaults are the real ones). */
-  endpoints?: { lookup?: EndpointLookup; probe?: EndpointProbe; litellmSignature?: LitellmSignatureCheck; slotWaitMs?: number };
+  /**
+   * F-013: replacements for the network and the LiteLLM image check (tests only; the defaults are the real ones).
+   * `litellm.verify` replaces the cosign check, `pin` the pinned release, `cosignPath` where the bundled cosign is looked for.
+   */
+  endpoints?: { lookup?: EndpointLookup; probe?: EndpointProbe; litellm?: { verify?: (imageRef: string) => Promise<void>; pin?: LitellmPin | null; cosignPath?: string }; slotWaitMs?: number };
 }
 
 export type ProjectState = "running" | "stopped" | "disabled";
@@ -197,7 +201,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const log = o.logger ?? new FileLogger(path.join(home, "logs"), clock);
   const osApi = o.os ?? realOsApi();
   const env = o.env ?? process.env;
-  const children = new Children(o.parentOf ?? osParent(osApi));
+  const children = o.parentOf ? new Children(o.parentOf) : new Children(osParent(osApi), osStartOrder(osApi));
   const gitPath = o.gitPath ?? findOnPath("git");
   if (!gitPath) throw new StartError("git isn't on PATH.");
   const git = new Git({ gitPath, homeDir: path.join(home, "git"), children, env });
@@ -260,7 +264,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     ...(o.endpoints?.slotWaitMs !== undefined ? { slotWaitMs: o.endpoints.slotWaitMs } : {}),
     ...(o.agents ? {
       image: () => {
-        litellm ??= litellmImageId(o.agents!.docker, { signature: { env, ...o.endpoints?.litellmSignature } });
+        const cosignPath = path.join(home, "bin", process.platform === "win32" ? "cosign.exe" : "cosign");
+        // Read at each attempt, so installing cosign (a hygiene step) takes effect without a code change.
+        const verify = o.endpoints?.litellm?.verify ?? makeCosignVerifier({
+          path: o.endpoints?.litellm?.cosignPath ?? cosignPath,
+          pins: parseCosignPins(fs.readFileSync(path.join(o.agents!.dockerDir, "cosign-sha256.json"), "utf8")),
+          keyFile: path.join(o.agents!.dockerDir, "litellm-cosign.pub"),
+        });
+        litellm ??= litellmImageId(o.agents!.docker, { verify, now: () => clock.now(), ...(o.endpoints?.litellm?.pin !== undefined ? { pin: o.endpoints.litellm.pin } : {}) });
         litellm.catch(() => (litellm = null));
         return litellm;
       },
@@ -1459,11 +1470,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         p.sessions?.closeAll();
         await p.listener?.close().catch(() => undefined);
       }
+      await git.closeReaders();
       done();
     },
     async sync() {
       for (const p of projects) {
         if (p.state !== "running" || dead) continue;
+        p.state_repo?.forgetHead();
         await checkRemote(p);
         await checkLocal(p);
       }
@@ -1497,6 +1510,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           await p.listener?.close().catch(() => undefined);
           if (p.state_repo) fs.rmSync(path.join(p.state_repo.factoryDir, ENGINE_JSON), { force: true });
         }
+        await git.closeReaders();
         log.info(`engine stopped at ${iso(clock.now())}`);
         done();
       })();
