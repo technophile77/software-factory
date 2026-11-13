@@ -4,7 +4,7 @@
   rebuilds existing tools", item 6)
 - **Category:** Architecture (how the plugin reaches the engine, F-005
   FR-1: "uses only the language's standard library")
-- **Status:** Open
+- **Status:** Decided: option A (ADR 0025), by the owner on 2026-11-13 (decision card)
 - **Scope:** the `spec-interview` skill's client. Engine control channel
   v1.1, its framing and its peer checks are not changed.
 
@@ -61,7 +61,7 @@ onboarding tools.
 1. A new ADR records it; F-005 FR-1 and its constraint line change from
    "a standard-library client script" to "the engine's MCP mode"; spec
    v-next through the interview.
-2. Hygiene items (from H-0161): the pinned SDK and its S4.1 review, the
+2. Hygiene items (H-0174 to H-0177): the pinned SDK and its S4.1 review, the
    MCP mode, the plugin's `.mcp.json`, the skill rewrite, and the F-005
    acceptance tests moved to the new tools.
 
@@ -74,3 +74,7 @@ you'd rather not add the SDK for that, C is a reasonable choice.
 ## Cost of delay
 
 Low. The current client works.
+
+## Outcome (2026-11-13)
+
+The owner chose option A. Recorded as ADR 0025. Hygiene items H-0174 to H-0177 cover the pinned MCP SDK with its S4.1 review, the engine's `mcp` subcommand, the plugin's `.mcp.json` and skill rewrite, and moving the F-005 acceptance tests. Spec changes go through the requirements interview before anything is built.

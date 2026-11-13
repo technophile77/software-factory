@@ -7,7 +7,7 @@
   0009). It also changes Security (what proves an owner action, ADR 0015
   decision 3) and approved requirements in F-001, F-011 and F-012, so those
   are Product decisions too.
-- **Status:** Open
+- **Status:** Decided: option A (ADR 0022), by the owner on 2026-11-13 (decision card)
 - **Scope:** the inbox: how items are stored, shown and acted on. The spec
   interview (F-005) is not changed; it stays a live session in Claude Code.
 
@@ -108,7 +108,7 @@ Files on `factory/state`, the extension, and the F-012 phone mirror.
    (new versions, Security Gate 1 again), and the Inbox item contract gets
    a new major version. None of the three is built past F-001's view, so
    nothing that works today breaks before the new specs are approved.
-3. Hygiene items (from H-0161) for the engine, the config repo workflow,
+3. Hygiene items (H-0161 to H-0165) for the engine, the config repo workflow,
    the query setting, and retiring the extension's inbox view.
 
 ## Recommendation
@@ -121,3 +121,7 @@ is typing a short comment instead of clicking a button.
 
 Medium. F-011 and F-012 are approved and waiting to be built; building
 them first would then be thrown away.
+
+## Outcome (2026-11-13)
+
+The owner chose option A. Recorded as ADR 0022. Hygiene items H-0161 to H-0165 cover the engine's issue store and owner-action reading, the config repo workflow, the `githubIssues.queries` setting, retiring the extension's inbox view, and the Inbox item contract's new major version. Spec changes go through the requirements interview before anything is built.
