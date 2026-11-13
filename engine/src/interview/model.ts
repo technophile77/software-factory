@@ -1,8 +1,12 @@
 import type { Entry } from "../state/transcript";
+import type { DocumentMeta } from "./document";
 
-export type ItemKind = "question" | "assumption";
+export type ItemKind = "question" | "assumption" | "source_confirmation";
+/** Interview tools v1.1: what a question on a document-started feature is about. */
+export type QuestionType = "gap" | "conflict" | "ambiguity";
+export const QUESTION_TYPES: readonly string[] = ["gap", "conflict", "ambiguity"];
 export type ItemStatus = "open" | "deferred" | "researching" | "answered" | "approved" | "rejected" | "superseded";
-export type ReplyKind = "answer" | "more_info" | "defer" | "approve_assumption" | "reject_assumption";
+export type ReplyKind = "answer" | "more_info" | "defer" | "approve_assumption" | "reject_assumption" | "confirm_sources" | "reopen_sources";
 
 export interface Finding {
   text: string;
@@ -15,6 +19,16 @@ export interface ItemContent {
   suggested?: string;
   options?: string[];
   findings?: Finding[];
+  type?: QuestionType;
+}
+
+/** One row of a `source_confirmation` item, built by the engine from the spec's Sources table (SR-7). */
+export interface SourceRef {
+  spec_ref: string;
+  section: string;
+  quote: string;
+  /** The spec's own line for spec_ref, copied by the engine (Gate 2 M3). */
+  spec_line: string;
 }
 
 export interface Item extends ItemContent {
@@ -25,6 +39,10 @@ export interface Item extends ItemContent {
   created_at: string;
   recorded_at?: string;
   research_calls: number;
+  /** source_confirmation only: the rows shown, and what they were built from (engine-only). */
+  sources?: SourceRef[];
+  spec_version?: number;
+  table_sha256?: string;
 }
 
 /** The channel's Item (v1.1), with nothing the engine keeps for itself. */
@@ -33,6 +51,7 @@ export interface WireItem extends ItemContent {
   revision: number;
   kind: ItemKind;
   status: ItemStatus;
+  sources?: SourceRef[];
 }
 
 export interface ReplyRecord {
@@ -47,6 +66,8 @@ export interface ReplyRecord {
 
 export const QUESTION_REPLIES: readonly string[] = ["answer", "more_info", "defer"];
 export const ASSUMPTION_REPLIES: readonly string[] = ["approve_assumption", "reject_assumption"];
+/** Channel v1.4: the owner confirms the source list, or names spec refs to ask about as questions. */
+export const SOURCE_REPLIES: readonly string[] = ["confirm_sources", "reopen_sources"];
 /** Channel v1.3 advisor kinds: refused with kind_not_allowed until the advisor increment (FR-4). */
 export const ADVISOR_REPLIES: readonly string[] = ["ask_advisor", "approve_advisor", "decline_advisor"];
 export const REPLY_STATUS: Record<ReplyKind, ItemStatus> = {
@@ -55,6 +76,8 @@ export const REPLY_STATUS: Record<ReplyKind, ItemStatus> = {
   defer: "deferred",
   approve_assumption: "approved",
   reject_assumption: "rejected",
+  confirm_sources: "approved",
+  reopen_sources: "rejected",
 };
 /** Statuses that still take an owner reply. */
 export const REPLYABLE: readonly ItemStatus[] = ["open", "deferred", "researching"];
@@ -64,6 +87,8 @@ export function wire(item: Item): WireItem {
   if (item.suggested !== undefined) out.suggested = item.suggested;
   if (item.options !== undefined) out.options = [...item.options];
   if (item.findings !== undefined) out.findings = item.findings.map((f) => ({ ...f }));
+  if (item.type !== undefined) out.type = item.type;
+  if (item.sources !== undefined) out.sources = item.sources.map((r) => ({ ...r }));
   return out;
 }
 
@@ -72,6 +97,7 @@ export function content(src: Record<string, unknown>): ItemContent {
   if (src.suggested !== undefined) c.suggested = src.suggested as string;
   if (src.options !== undefined) c.options = [...(src.options as string[])];
   if (src.findings !== undefined) c.findings = (src.findings as Finding[]).map((f) => ({ text: f.text, source: f.source }));
+  if (src.type !== undefined) c.type = src.type as QuestionType;
   return c;
 }
 
@@ -80,6 +106,8 @@ export class InterviewState {
   title = "";
   branch = "";
   request = "";
+  /** Set when the feature started from a document (channel v1.4); the text is on the feature branch. */
+  document: DocumentMeta | null = null;
   stage = "requirements_interview";
   readonly items = new Map<string, Item>();
   readonly order: string[] = [];
@@ -95,6 +123,7 @@ export class InterviewState {
         this.title = e.title as string;
         this.branch = e.branch as string;
         this.request = e.request as string;
+        if (e.document) this.document = { ...(e.document as DocumentMeta) };
         break;
       case "item_created": {
         const src = e.item as Record<string, unknown>;
@@ -102,6 +131,13 @@ export class InterviewState {
           ...content(src), id: src.id as string, kind: src.kind as ItemKind, revision: 0, status: "open",
           created_at: e.at, research_calls: 0,
         };
+        if (item.kind === "source_confirmation") {
+          item.sources = (src.sources as SourceRef[]).map((r) => ({ spec_ref: r.spec_ref, section: r.section, quote: r.quote, spec_line: r.spec_line ?? "" }));
+          item.spec_version = src.spec_version as number;
+          item.table_sha256 = src.table_sha256 as string;
+          // A newer confirmation replaces any earlier one still waiting.
+          for (const other of this.list("source_confirmation")) if (REPLYABLE.includes(other.status)) other.status = "superseded";
+        }
         this.items.set(item.id, item);
         this.order.push(item.id);
         break;
@@ -113,6 +149,7 @@ export class InterviewState {
         delete item.suggested;
         delete item.options;
         delete item.findings;
+        delete item.type;
         Object.assign(item, next, { revision: e.revision as number, status: "open" as ItemStatus });
         break;
       }
@@ -168,6 +205,6 @@ export class InterviewState {
 
   nextId(kind: ItemKind): string {
     const n = this.list(kind).length + 1;
-    return `${kind === "question" ? "Q" : "A"}-${String(n).padStart(3, "0")}`;
+    return `${{ question: "Q", assumption: "A", source_confirmation: "S" }[kind]}-${String(n).padStart(3, "0")}`;
   }
 }

@@ -52,7 +52,7 @@ def make_repo():
 
 def write_engine_json(folder, address, **override):
     with open(os.path.join(folder, "engine.json"), "w") as f:
-        json.dump({"version": "1.1", "path": address, "pid": os.getpid(), **override}, f)
+        json.dump({"version": "1.1", "capabilities": ["document"], "path": address, "pid": os.getpid(), **override}, f)
 
 
 def make_project(address, layout="worktree"):

@@ -545,7 +545,7 @@ export class World {
     return join(p.clone, ".factory", "engine.json");
   }
 
-  engineJson(p: Project = this.project()): { version: string; path: string; pid: number } {
+  engineJson(p: Project = this.project()): { version: string; capabilities?: string[]; path: string; pid: number } {
     return JSON.parse(readFileSync(this.engineJsonPath(p), "utf8"));
   }
 

@@ -20,6 +20,9 @@ export const CHANGE_CONTROLLED_DENIES = [
   ".git", ".git/**", ".gitmodules", ".vscode/**", ".devcontainer/**",
 ];
 
+/** Role policy v2.6 (H-0107): the source documents the engine stores for F-009 are never an agent's to change. */
+export const SOURCE_DOCUMENT_DENIES = ["docs/features/*-source.md", "docs/features/*-source.txt"];
+
 export const CORE_ROLES = ["orchestrator", "requirements-analyst", "software-developer", "test-engineer", "security-reviewer", "validation-judge"];
 export const ROLE_RE = /^[a-z][a-z0-9-]{0,63}$/;
 const HOST_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
@@ -84,7 +87,7 @@ function parseRole(role: string, v: unknown, where: string): RolePolicy {
   };
 }
 
-/** The checks every effective role must pass (Role policy v2.5). */
+/** The checks every effective role must pass (Role policy v2.6). */
 function checkRole(p: RolePolicy, where: string): void {
   if (p.tools.length === 0) throw new PolicyError(`${where}: a role must list at least one tool`);
   if (p.tools.some((t) => FILE_TOOLS.has(t)) && p.read.allow.length === 0) throw new PolicyError(`${where}: a role with file tools must list a read glob`);
@@ -93,7 +96,7 @@ function checkRole(p: RolePolicy, where: string): void {
   const writesOutsideFactory = p.write.allow.some((g) => !g.startsWith(".factory/"));
   if (writesOutsideFactory) {
     const wd = new Set(p.write.deny.map((g) => g.toLowerCase()));
-    for (const d of CHANGE_CONTROLLED_DENIES) if (!wd.has(d.toLowerCase())) throw new PolicyError(`${where}: write.deny must hold ${d}`);
+    for (const d of [...CHANGE_CONTROLLED_DENIES, ...SOURCE_DOCUMENT_DENIES]) if (!wd.has(d.toLowerCase())) throw new PolicyError(`${where}: write.deny must hold ${d}`);
   }
   if (p.network.includes("*")) {
     if (p.network.length !== 1) throw new PolicyError(`${where}: "*" must be the only network entry`);

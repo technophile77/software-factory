@@ -547,14 +547,14 @@ describe("running a session under SR-18 caps", () => {
 });
 
 describe("factory MCP tools (Interview tools v1.0, H-0083)", () => {
-  it("exposes exactly the five interview tools, and labels research as untrusted", async () => {
+  it("exposes exactly the six interview tools (v1.1), and labels research as untrusted", async () => {
     const calls: string[] = [];
-    const t = Object.fromEntries(["interview_ask", "interview_propose_assumption", "interview_revise", "research_web", "interview_spec_ready"].map((n) => [n, async () => {
+    const t = Object.fromEntries(["interview_ask", "interview_propose_assumption", "interview_revise", "research_web", "interview_spec_ready", "interview_confirm_sources"].map((n) => [n, async () => {
       calls.push(n);
       return n === "research_web" ? { ok: true, result: { summary: "s", sources: ["https://example.org/"] } } : { ok: false, error: { code: "invalid", message: "m" } };
     }])) as unknown as InterviewTools;
     const tools = analystTools(t);
-    expect(tools.map((x) => x.name)).toEqual(["interview_ask", "interview_propose_assumption", "interview_revise", "research_web", "interview_spec_ready"]);
+    expect(tools.map((x) => x.name)).toEqual(["interview_ask", "interview_propose_assumption", "interview_revise", "research_web", "interview_spec_ready", "interview_confirm_sources"]);
     for (const x of tools) expect(x.inputSchema).toMatchObject({ type: "object", additionalProperties: false });
     const r = await tools[3]!.handler({ query: "q" });
     expect(r.content[0]!.text).toBe(UNTRUSTED_LABEL);
@@ -615,7 +615,7 @@ describe("an analyst session end to end, with fakes (FR-8 to FR-11)", () => {
     const o = sdk.seen[0]!;
     expect(o.systemPrompt).toBe("analyst instructions");
     expect(o.model).toBe("model-a");
-    expect(o.allowedTools).toHaveLength(5);
+    expect(o.allowedTools).toHaveLength(6);
     expect(d.calls.map((c) => c.args.join(" "))).toContain("network rm factory-r-0a1b2c-int");
   });
 });
