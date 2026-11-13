@@ -1,9 +1,9 @@
 # Feature: Triage GitHub issues into the factory
 
 - **Id:** F-010
-- **Status:** Approved (readiness gate passed 2026-11-12)
+- **Status:** Approved (readiness gate passed 2026-11-12); v31 amendment for F-012 awaiting owner approval
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 30
+- **Spec version:** 31
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -127,7 +127,8 @@ The owner's existing rules still hold:
 | Id | Requirement |
 |---|---|
 | FR-1 | Triage is off by default. It is turned on per repo in the project manifest (H-0110), which also holds the check interval and the caps in FR-11. Nothing owner-specific goes in the master repo. |
-| FR-2 | The engine lists new issues with the factory token, using conditional requests so an unchanged list costs no rate limit. Pull requests and issues opened by the factory's own account are skipped. Issues already open when triage is turned on are triaged too (OQ-6): new issues go first, and the backlog fills what is left of the daily cap, oldest first. |
+| FR-2 | The engine lists new issues with the factory token, using conditional requests so an unchanged list costs no rate limit. Pull requests, issues opened by the factory's own account, and phone issues (FR-19) are skipped. Issues already open when triage is turned on are triaged too (OQ-6): new issues go first, and the backlog fills what is left of the daily cap, oldest first. |
+| FR-19 | Phone issues from F-012 are never triaged (F-012 FR-13, AC-10). An issue is a phone issue when it is in the project's config repo, was opened by `github-actions[bot]`, and carries the `factory-inbox` label. The engine skips it before taking a snapshot, so nothing about it is stored, routed, replied to or labelled. The label alone never causes a skip (SR-26): an issue with `factory-inbox` that fails either other test is triaged as usual, and the engine files a Security item, because someone added the label to an issue the factory didn't open. |
 | FR-3 | The engine stores a snapshot of each new issue as in section 2 step 2, after the secrets scan. A snapshot that fails the scan is stored with the finding redacted, and a Security item is filed. |
 | FR-4 | A new `issue-triager` role (H-0112) runs in its own container with read access to the snapshot and the repo at `main`, no network, no write, and one tool, `submit_triage`. |
 | FR-5 | `submit_triage` accepts only the triage record contract (H-0111). The engine rejects a record that doesn't validate and retries once, then files a Testing item. |
@@ -151,6 +152,7 @@ The owner's existing rules still hold:
 | AC-1 | Given a repo with triage off, when an issue is opened, then the engine makes no request for it and stores nothing. | FR-1 |
 | AC-2 | Given triage on, when an issue is opened, then within one check interval a snapshot and its hash exist under `.factory/issues/<repo>/<number>/`. | FR-2, FR-3 |
 | AC-3 | Given a pull request or an issue by the factory account, then no snapshot is made. | FR-2 |
+| AC-27 | Given a phone issue (config repo, opened by `github-actions[bot]`, label `factory-inbox`), then no snapshot, record, reply or label is made. Given an issue with `factory-inbox` opened by anyone else, or in any other repo, then it is triaged as usual and a Security item exists. | FR-19 |
 | AC-22 | Given 30 open issues when triage is turned on and 5 new ones that day, with a cap of 20, then the 5 new ones and the 15 oldest open ones are triaged that day and the rest the next day, oldest first. | FR-2, FR-11 |
 | AC-4 | Given an issue body holding a test secret, then the stored snapshot has it redacted and a Security item exists. | FR-3 |
 | AC-5 | Given a triager session, then its container has no network and no writable mount, and its only tool is `submit_triage`. | FR-4 |
@@ -508,6 +510,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 28 | 2026-11-12 | H-0113 approved as drafted | Owner, 2026-11-12 (decision card) |
 | 29 | 2026-11-12 | H-0114 approved as drafted | Owner, 2026-11-12 (decision card) |
 | 30 | 2026-11-12 | Readiness gate passed; status Approved | Owner approvals as recorded above |
+| 31 | 2026-11-13 | FR-19, AC-27: skip F-012 phone issues (config repo, `github-actions[bot]`, label `factory-inbox`); the label alone never skips (SR-26) | — (awaiting owner) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
