@@ -33,6 +33,9 @@ owner 2026-11-11 (decision card). Engine control channel v1.4 (H-0105),
 Interview tools v1.1 (H-0106) and Role policy v2.6 (H-0107) for F-009 (start
 an interview from a document) approved by the owner 2026-11-12 (PR #29
 merged; decision card, as drafted).
+Model endpoints file v1.0 (H-0135), Project manifest v1.5 (`settings.endpoints`,
+H-0135) and Agent report v1.4 (H-0136) for F-013 approved by the owner
+2026-11-13 (decision card).
 
 ## Contract entry format
 
@@ -133,10 +136,11 @@ Call ids are `A-0001`, numbered per repo.
 
 ---
 
-## Agent report — v1.3
+## Agent report — v1.4
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0041);
-  v1.3 Gate 1 fields approved (H-0096, owner, decision card, 2026-11-12)
+  v1.3 Gate 1 fields approved (H-0096, owner, decision card, 2026-11-12);
+  v1.4 endpoint rungs approved (H-0136, owner, decision card, 2026-11-13)
 - Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8);
   v1.2 adds the context-hygiene body and `proposed_items`, requested by the
   owner 2026-11-10 (PR #17)
@@ -171,6 +175,17 @@ referenced by path or URL.
 `usage` (`input_tokens`, `output_tokens`, `cost_usd`, `duration_s`), and
 `transcript_ref` (where the run's transcript is kept, outside Git). The
 engine fills them; agents do not.
+
+**Endpoint rungs (v1.4, F-013).** `model` is either a Claude model id or
+`<endpoint>/<model>` for a run on a configured model endpoint, for example
+`lan/qwen3.8-27b`. The endpoint is named, never its address. For an
+endpoint run, `usage.cost_usd` follows the endpoint's billing mode (F-013
+FR-13: 0 for `local` and `subscription`), and optional `usage.plan_share`
+(0 to 1) records a `subscription` run's share of its plan limits. Optional
+`fallback` (`{ endpoint, reason, waited_s, prompt_tokens }`) records a run
+that was meant for an endpoint but ran on the role's Claude rung (F-013
+FR-7). Tuning metrics and Calibration result group rungs by the full
+`model` string. Additive.
 
 **Role-specific `body`:**
 
@@ -666,16 +681,18 @@ section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.4
+## Project manifest — v1.6
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014);
-  v1.3 approved (H-0080); v1.4 approved (H-0087)
+  v1.3 approved (H-0080); v1.4 approved (H-0087); v1.5 approved (H-0135);
+  v1.6 approved (F-013 OQ-11, owner, decision card, 2026-11-13)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
   adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
   `complexity` and `settings.agents` (F-002 A-6, A-8); v1.3 adds `enabled`,
   `owner` and `allowed_repo_owners` (ADR 0012, F-007 OQ-2; owner, decision
   card, 2026-11-11); v1.4 adds `limits` (F-007 SR-18, H-0087; owner,
-  decision card, 2026-11-11)
+  decision card, 2026-11-11); v1.5 adds `settings.endpoints` (F-013 SR-8,
+  H-0135; owner, decision card, 2026-11-13)
 - Used by: engine (resolves effective config), owner (edits it), VS Code extension (later)
 - Compatibility: adding an optional key is non-breaking; renaming or removing one is breaking.
 
@@ -691,7 +708,31 @@ the preset used only for initial calibration) and
 ladder; the engine refuses a rung that doesn't exist in the pinned factory
 version or is below the role's floor). Both change only through hygiene
 items (F-002). The manifest is the only record of repo and project maturity
-levels. `schema` stays `factory-project/1.0`: v1.1 to v1.4 only add optional keys.
+levels. `schema` stays `factory-project/1.0`: v1.1 to v1.6 only add optional keys.
+
+From v1.5, optional `settings.endpoints`: a list of model endpoint names
+(Model endpoints file v1.0) this project's code may be sent to; default
+empty, so a project uses no endpoint until it lists one (F-013 SR-8). Names
+match `^[a-z0-9-]{1,32}$` and are unique. A name the PC's endpoints file
+doesn't define makes that endpoint's rungs unavailable for the project, not
+an error.
+
+From v1.6, `settings.agents.<role>` may also hold the role's endpoint
+assignment (F-013 OQ-11): `model` (`<endpoint>/<model>`) with `fallback` (a
+Claude model id, required with an endpoint `model`), or, for the security
+reviewer and validation judge only, `advisory` (`<endpoint>/<model>`, an
+advisory first pass while the role itself stays on Claude). The endpoint
+must be in `settings.endpoints`, and an endpoint `model` is refused for a
+role whose policy isn't read-only (F-013 SR-9). It changes only through a
+hygiene item. Example:
+
+```yaml
+settings:
+  endpoints: [lan]
+  agents:
+    web-reader: { model: lan/qwen3.8-27b, fallback: claude-haiku-5-5 }
+    security-reviewer: { advisory: lan/qwen3.8-27b }
+```
 
 From v1.4, optional `limits`: the same keys as the master factory's
 `engine/config/limits.yaml` (H-0087). For each key the engine uses the lower
@@ -727,6 +768,60 @@ validation-judge) may never be excluded; overriding one requires a linked,
 approved Security decision and may only add rules. The two support roles,
 `project-evaluator` and `context-hygiene`, are not protected: a project may
 exclude either with a reason (owner, 2026-11-10).
+
+---
+
+## Model endpoints file — v1.0
+
+- Status: Approved (H-0135, owner, decision card, 2026-11-13)
+- Owner decision: F-013 (configurable model endpoints), ADR 0019
+- Used by: engine (reads it, generates the LiteLLM configuration, pins
+  addresses), owner (edits it)
+- Compatibility: adding an optional key is non-breaking; renaming or
+  removing one, or tightening a rule, is breaking.
+
+**Location:** `factory-endpoints.local.yaml` in the owner's clone of the
+master factory repo, next to `factory-projects.local.yaml`. Git-ignored and
+never committed (CI fails if it is tracked). The engine refuses it unless
+only the owner can write it, as for the paths file (H-0081). A missing file
+means no endpoints.
+
+```yaml
+endpoints:
+  lan:                               # name: ^[a-z0-9-]{1,32}$, not "anthropic"
+    base_url: http://<host>:8080     # absolute http(s) URL, no userinfo, query or fragment
+    model: qwen3.8-27b               # the model id the endpoint serves
+    api: anthropic                   # anthropic | openai
+    api_key_ref: lan                 # optional; key read from the OS credential store as endpoint-key/<ref>
+    max_sessions: 1                  # 1..16, default 1
+    billing: local                   # local | per_token | subscription
+    deadline: { margin_s: 60 }       # optional, 10..3600, default 60
+    allow_loopback: false            # default false
+  hosted:
+    base_url: https://<provider host>
+    model: <model id>
+    api: openai
+    api_key_ref: hosted
+    billing: per_token
+    prices: { input_per_mtok: 0.5, output_per_mtok: 1.5 }   # per_token only
+  plan:
+    base_url: https://<provider host>
+    model: <model id>
+    api: anthropic
+    api_key_ref: plan
+    billing: subscription
+    plan:                            # subscription only
+      limits:
+        - { kind: requests, count: 200, window: 5h }   # requests | input_tokens | output_tokens; 5h | day | week | month
+      reserve_pct: 10                # 0..90, default 10
+```
+
+Unknown keys are refused. The engine resolves each `base_url` host on the
+PC and classes the endpoint private or public by its addresses (F-013
+FR-4): a public endpoint needs `https` and `api_key_ref` (SR-12), `local`
+billing needs a private endpoint (SR-15), and a name resolving to both
+classes is refused. Keys and addresses never appear in logs, reports or an
+agent's environment (SR-2).
 
 ---
 
