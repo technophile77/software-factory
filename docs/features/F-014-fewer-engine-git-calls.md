@@ -4,7 +4,7 @@
 - **Status:** Approved; readiness gate passed 2026-11-13; in development
 - **Requested by / date:** Alex, 2026-11-13 (chose "Fewer engine git calls"
   from the CI speed thread's options)
-- **Spec version:** 5
+- **Spec version:** 6
 
 ## 1. Objective and business purpose
 The engine starts a new `git` process for almost every read and write it
@@ -49,7 +49,7 @@ Where the time goes today (profile of the full acceptance suite on
 ## 4. Acceptance criteria
 | Id | Given / When / Then | Covers |
 |---|---|---|
-| AC-1 | Given the full acceptance suite, when it runs on the F-014 branch, then it starts at least 35% fewer git processes in total than on `main` at 2e77d39 (51,904), and every test that passes on `main` passes. | FR-1–FR-5 |
+| AC-1 | Given the full acceptance suite, when it runs on the F-014 branch, then it starts at least 30% fewer git processes in total than on `main` at 2e77d39 (51,904), and every test that passes on `main` passes. | FR-1–FR-5 |
 | AC-2 | Given one project with a valid manifest, when the engine starts, then the count from FR-7 is at or under the budget written in the test (set from the measured value after the build, and reviewed at Gate 2 and validation). | FR-7 |
 | AC-3 | Given a reader process that is killed mid-read, or that writes a malformed header, when the engine reads a ref or file, then the read returns the same answer as a plain `git` call and the next read starts a new reader. | FR-2 |
 | AC-4 | Given a path in a config repo's `main` that is a symbolic link, a submodule or a tree, when the engine reads it as a file, then it refuses it with the same error as on `main` at 2e77d39. | FR-1, SR-1 |
@@ -134,3 +134,4 @@ None. `Git` gains methods internal to the engine; no contract in
 | 3 | 2026-11-13 | OQ-2: state commits left for a later feature (FR-6) | Alex (card) |
 | 4 | 2026-11-13 | A-1 approved; Gate 1 proposes SR-5 to SR-8 | Alex (card, A-1) |
 | 5 | 2026-11-13 | SR-5 to SR-8 approved; readiness gate passed (six checks) | Alex (card) |
+| 6 | 2026-11-13 | AC-1 target 35% → 30% after the build measured 31.4% (51,904 → 35,628); FR-3 and AC-5: a swap that fails on a held head commits once more on the moved head, and `sync()` reads the head fresh | Alex (card, AC-1); FR-3 wording keeps pre-F-014 behavior |
