@@ -6,7 +6,7 @@
   approval and merge in the inbox, no machine account; phone approvals,
   F-012; "can't [a VS Code issues extension] be used in place of the
   inbox?", proposal 0026)
-- **Spec version:** 27 (draft)
+- **Spec version:** 28 (draft)
 - **Replaces:** F-001's inbox view and all of F-012 (both superseded by this
   version, see their change logs). Their approved requirements that still
   apply are carried here, each marked with where it came from.
@@ -90,7 +90,7 @@ or a one-word command.
 | FR-13 | Notifications: GitHub notifies the owner of each new item through the assignment and @mention (GitHub Mobile push, web, email, per the owner's GitHub settings). The engine also shows an OS notification on the PC for a new blocking item (v19 FR-12). Every item notifies, blocking or not (OQ-13, owner, 2026-11-13); the owner filters in GitHub's notification settings. |
 | FR-14 | The engine has no merge call except FR-10; a CI test fails if engine code calls GitHub's merge API (REST `PUT .../pulls/{n}/merge`, GraphQL `mergePullRequest`) anywhere else, naming file and line (v19 FR-14, OQ-9). A second CI test fails if engine code calls the create-reaction API (REST or GraphQL `addReaction`): the engine only reads reactions (F-012 SR-11). |
 | FR-15 | The inbox works only when the config repo is private and the owner is its only collaborator; the engine checks both at start and before filing, and otherwise files nothing, stops the affected work, and shows the reason on the PC (OS notification and engine log). (F-012 FR-11, SR-9.) |
-| FR-16 | Migration: on first start with this version, the engine files an issue for every open item file under `.factory/inbox/` on each managed repo's and the config repo's `factory/state`, writes its record, and removes the file in the same commit. Item files of other schemas are listed in one Notice. After migration the engine reads no item files. |
+| FR-16 | Migration is a one-time script, not engine code (owner, 2026-11-13): `engine/scripts/migrate-inbox-once.ts`, run once per existing project from the owner's PC. It uses the engine's normal filing path to file an issue for every open item file under `.factory/inbox/` on each managed repo's and the config repo's `factory/state`, writes its record, and removes the file in the same commit; it prints any item files it can't read. The script is deleted from the repo once the owner's projects are migrated (with H-0164); new projects start on issues and never need it. The engine itself never reads item files. |
 | FR-17 | Our VS Code extension's inbox view is retired and the extension package removed (H-0164); nothing in the factory writes `.factory/inbox/` again. |
 | FR-18 | Two GitHub modes per project (manifest, v19 H-0124): `owner_token` (default) and `machine_account` (ADR 0006). In `machine_account` mode the owner approves the PR with a GitHub review in GitHub's PR view and the required-review rule stays. |
 | FR-19 | Onboarding (F-003) prepares owner-token mode: the `main` ruleset (pull request and required checks, no required review, no bypass actors; v19 H-0123), the config repo workflow, and the privacy check, applied only after the owner confirms. (v19 FR-13, F-012 H-0126.) |
@@ -111,7 +111,7 @@ or a one-word command.
 | AC-10 | Given engine code that calls a merge endpoint outside the FR-10 module, or any create-reaction endpoint, then the CI test fails and names the file and line. | FR-14 |
 | AC-11 | Given the shipped query block in VS Code user settings, then the Issues view lists the owner's open inbox issues by priority, and the block contains no login, repo or user id. | FR-12 |
 | AC-12 | Given a public config repo, or a second collaborator, then the engine files no issue and reports the reason. | FR-15 |
-| AC-13 | Given open item files on `factory/state` before upgrade, then after first start each is an issue with a record and the file is gone, in one commit per item. | FR-16 |
+| AC-13 | Given open item files on `factory/state`, when the migration script runs, then each is an issue with a record and the file is gone, in one commit per item; given the engine starts with item files still present, then it reads none of them. | FR-16 |
 | AC-14 | Given a new blocking item, then an OS notification appears on the PC within one poll while the engine runs. | FR-13 |
 
 ## 5. Constraints
@@ -207,11 +207,12 @@ the record, SR-2).
 Drafts, not yet approved. Each is applied only after the owner approves it.
 
 - **H-0161 (Hygiene):** the engine's issue store and action reader, built in
-  the F-011 build (FR-1 to FR-11, FR-15, FR-16): `engine/src/state/inbox.ts`
+  the F-011 build (FR-1 to FR-11, FR-15): `engine/src/state/inbox.ts`
   `fileSecurityItem` and `fileDecisionItem` file issues through H-0162
   instead of writing `.factory/inbox/`; new modules render templates, poll
-  issues, parse actions (SR-18), write records (H-0165), and migrate files
-  (SR-20). Each lands as its own commit with the id.
+  issues, parse actions (SR-18) and write records (H-0165). Each lands as its
+  own commit with the id. The one-time migration script (FR-16, SR-20) is
+  separate throwaway code, not part of the engine.
 - **H-0162 (Hygiene):** `templates/config-repo/.github/workflows/factory-inbox.yml`,
   revising F-012's approved H-0126: `on: repository_dispatch` type
   `factory-inbox` only; `permissions: issues: write` only; actions pinned by
@@ -242,7 +243,7 @@ Drafts, not yet approved. Each is applied only after the owner approves it.
   organization (user settings only, never committed), and names the
   extension `GitHub.vscode-pull-request-github` (SR-21).
 - **H-0164 (Hygiene):** retire our extension: remove `extension/`, `.github/workflows/extension.yml`, and the
-  extension from `codeql.yml`'s scope, after H-0161 has migrated the items (FR-16, FR-17). Doc edits:
+  extension from `codeql.yml`'s scope, and the one-time migration script, after the owner's projects are migrated (FR-16, FR-17). Doc edits:
   ADR 0003 header gains "Amended by ADR 0022: the VS Code UI for the inbox
   is Microsoft's GitHub Pull Requests extension; the engine stays a separate
   process."; ADR 0002 and ADR 0011 headers gain "Superseded by ADR 0022 for
@@ -393,6 +394,7 @@ token (from v19).
 | 25 | 2026-11-13 | OQ-13 decided (a): every item is assigned to the owner and notifies | Owner, 2026-11-13 (decision card) |
 | 26 | 2026-11-13 | SR-17 to SR-21 approved; SR-1, SR-2, SR-4 approved as widened to every action | Owner, 2026-11-13 (decision card) |
 | 27 | 2026-11-13 | A-3 approved for the extension, web and Mobile | Owner, 2026-11-13 (decision card) |
+| 28 | 2026-11-13 | Migration is a one-time script deleted after use, not engine code (FR-16, AC-13, H-0161, H-0164) | Owner, 2026-11-13 (thread) |
 
 ## 13. Open questions
 OQ-1 to OQ-10 are decided or withdrawn as recorded in v19 (git history);
