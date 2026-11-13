@@ -32,8 +32,10 @@ admin bypass. He also wants to approve PRs in the inbox, not on GitHub.
 ## Decision
 1. In `owner_token` mode (the default) the engine opens PRs with a
    fine-grained token of the owner's. No machine account is needed.
-2. The owner approves a PR with **Approve and merge** in the inbox. The
-   click is the whole approval; there is no signing step. The extension
+2. The owner approves a PR with **Approve and merge** in the inbox and
+   confirms it in a dialog that names the PR, its head commit and its
+   checks (owner, 2026-11-13). That is the whole approval; there is no
+   signing step. The extension
    merges through GitHub's API with the owner's VS Code GitHub sign-in,
    passing the head commit the card showed, so a later push is never merged
    on that click.
