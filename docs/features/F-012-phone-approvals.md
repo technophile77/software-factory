@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 (split from F-011 OQ-3: "the phone
   notification needs to be tied to some way to do approvals on my phone also";
   "I want a confirmation on risky actions like a merge, not just one click")
-- **Spec version:** 4
+- **Spec version:** 6
 
 ## 1. Objective and business purpose
 The factory stalls whenever an item is waiting for the owner and the owner is
@@ -71,7 +71,6 @@ owner already uses for the interview device approval (ADR 0014).
 | FR-9 | Pull request items are not merged by a reaction. The issue links the PR and says to merge in GitHub Mobile. When the engine sees the PR merged by the owner's account, it closes the item (`merged_on_github`) and the issue. Request changes and Defer work as for other kinds. |
 | FR-10 | Decision items get one action comment per option, plus Defer. Request changes, Ask for more context (goes back to the agent that filed it) and a free-text answer, where the item allows one, are taken from a comment by the owner whose first line is the action's name, then the note. These are the only typed actions. Agents never answer for the owner; a deferred item stays open with no default (owner rule, 2026-11-10). |
 | FR-11 | Phone notifications are off until the owner turns them on per project. Turning them on checks that the config repo is private and that the workflow is installed; it refuses with the reason if either is not. Owner-specific values (login, user id) live in the config repo and the owner's engine config, never in the master repo. |
-| FR-12 | Quiet hours: optional, set by the owner in the config repo. During them, issues still open but the body skips the @mention, so GitHub only sends a watch notification (subject to the owner's GitHub settings). |
 | FR-13 | Phone issues carry the label `factory-inbox` and are excluded from F-010 issue triage. |
 | FR-14 | All of this is code: the engine and the workflow. No agent reads phone comments or writes phone issues (owner rule, 2026-11-13: tools, not tokens). |
 
@@ -86,7 +85,6 @@ owner already uses for the interview device approval (ADR 0014).
 | AC-6 | Given a PR item, then no reaction merges it; given the owner merges it in GitHub, then the item closes as `merged_on_github` and the issue closes. | FR-9 |
 | AC-7 | Given the item acted on in VS Code while its issue is open, then the issue closes with "acted on in VS Code" and a later tap records nothing. | FR-6 |
 | AC-8 | Given a public config repo or a missing workflow, when the owner turns phone notifications on, then it refuses with the reason. | FR-11 |
-| AC-9 | Given quiet hours and a new item inside them, then the issue opens without an @mention. | FR-12 |
 | AC-10 | Given a phone issue, then F-010 triage doesn't snapshot it. | FR-13 |
 | AC-11 | Given 👍 on Defer for a Decision, then the item stays open with no answer recorded. | FR-10 |
 
@@ -145,6 +143,12 @@ owner already uses for the interview device approval (ADR 0014).
 | SR-5 | Item content goes only to the private config repo, never to a public repo or a third-party service (owner rule, 2026-11-12: sensitive info never in a public repo). This replaces F-011's draft rule that phone alerts carry only counts: the phone has to show enough to decide, and the config repo is as private as the rest of the project. | Analyst | Proposed |
 | SR-6 | Residual risk, to state to the owner: anyone holding the owner's GitHub session or token can comment as the owner, so a stolen phone with GitHub signed in, or the engine's token used by something else, could approve items. The confirm tap doesn't stop that; it guards against a mis-tap, not a stolen account. GitHub's own sign-in and 2FA are the control. Agents can't: they run in containers without tokens (ADR 0015). | Analyst | Stated to the owner and accepted 2026-11-13 (OQ-2) |
 | SR-7 | No secrets or tokens in issue bodies, comments or logs (S3.1); the item's text passes the secrets scan before it is rendered. | Analyst (S3.1) | Proposed |
+| SR-8 | The engine stores each action comment's id and text hash, and the issue body's hash, when posted; a tap on an edited action or confirm comment, or on an issue whose body was edited by anyone but the engine, records nothing. | Gate 1 #1 (S2.1, S6.2) | Proposed |
+| SR-9 | Turning phone notifications on also checks that the owner is the config repo's only collaborator; otherwise it refuses and says why. | Gate 1 #2 (S8.1, owner rule 2026-11-12) | Proposed |
+| SR-10 | Fields that can carry outside text are rendered in fenced code blocks, with @mentions and remote images stripped, under an engine-written line naming their author. | Gate 1 #3 (S6.1, S9.3) | Proposed |
+| SR-11 | A CI test fails if engine code calls GitHub's create-reaction endpoint (REST or GraphQL `addReaction`); the engine only reads reactions. | Gate 1 #4 (S2.1, LLM06) | Proposed |
+| SR-12 | The config repo workflow has `permissions: issues: write` only, actions pinned by SHA, and runs only on `repository_dispatch` from the engine, executing nothing from the payload. | Gate 1 #5 (S4, S8.2) | Proposed |
+| SR-13 | A phone history entry also records the reacting user id, reaction id and time, so it stands if the issue is deleted. | Gate 1 #6 (S3.3) | Proposed |
 
 ## 10. Interface requirements
 Hygiene items named here; none filed until the open questions are answered.
@@ -158,8 +162,7 @@ Hygiene items named here; none filed until the open questions are answered.
 - **H-0127:** withdrawn; the owner-action `via: vscode | phone` and
   `ref: <comment URL>` fields are folded into F-011's H-0120 (Inbox item
   v2.0). Free for reuse.
-- **H-0128 (Interfaces): Project manifest `phone` block** (`enabled`,
-  `quiet_hours`); owner login and id stay in the config repo and engine
+- **H-0128 (Interfaces): Project manifest `phone` block** (`enabled`); owner login and id stay in the config repo and engine
   config.
 - **H-0129 (Architecture):** ADR 0018 (in this PR), amending ADR 0015
   decision 3 for phone actions, and its row in `docs/adr/README.md`.
@@ -179,6 +182,8 @@ Hygiene items named here; none filed until the open questions are answered.
 | 2 | 2026-11-13 | Owner: phone actions are taps, not typing. OQ-1 decided (a): GitHub issue, 👍 on an action comment, 🚀 to confirm risky actions; risky list follows F-011 FR-15; H-0127 folded into F-011 H-0120 | Owner, 2026-11-13 (thread, decision card) |
 | 3 | 2026-11-13 | OQ-3 decided with F-011 FR-15: the confirm list adds Security decisions and Spec sign-off | Owner, 2026-11-13 (decision card, F-011 thread) |
 | 4 | 2026-11-13 | OQ-2 decided: a tap from the owner's GitHub account proves a phone action (ADR 0018); SR-6 risk accepted | Owner, 2026-11-13 (decision card) |
+| 5 | 2026-11-13 | OQ-4 decided: no quiet hours in this feature (FR-12, AC-9 removed) | Owner, 2026-11-13 (decision card) |
+| 6 | 2026-11-13 | Security Gate 1: 6 findings, none blocking; SR-8 to SR-13 proposed | — |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -186,4 +191,4 @@ Hygiene items named here; none filed until the open questions are answered.
 | OQ-1 | How does the phone get notified and act? The owner asked for taps, not typing. (a) GitHub issue per item in the private config repo, push from GitHub Mobile, tap 👍 on an action comment and 🚀 to confirm risky ones, merge PRs in GitHub Mobile. (b) ntfy notification buttons; item text and a secret pass through ntfy. (c) A phone web page from the engine over Tailscale. | Architecture | Decided (owner, 2026-11-13, decision card): (a) |
 | OQ-2 | ADR 0015 says an owner action counts only if signed with the owner's SSH key, which a phone can't do. Accept a tap from the owner's GitHub account as proof for phone actions, accepting SR-6? | Security | Decided (owner, 2026-11-13, decision card): yes; ADR 0018 |
 | OQ-3 | Which actions count as risky and need the confirm step? | Product | Decided (owner, 2026-11-13, F-011 FR-15 card): Approve and merge; Approve on Hygiene, Maturity, Security decision and Spec sign-off items |
-| OQ-4 | Quiet hours (FR-12): needed now, or later? Recommended: now, it's small. | Product | Open |
+| OQ-4 | Quiet hours: in this feature or later? | Product | Decided (owner, 2026-11-13, decision card): later; the phone's do-not-disturb covers it for now |
