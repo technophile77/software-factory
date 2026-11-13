@@ -6,7 +6,7 @@
   approval and merge in the inbox, no machine account; phone approvals,
   F-012; "can't [a VS Code issues extension] be used in place of the
   inbox?", proposal 0026)
-- **Spec version:** 23 (draft)
+- **Spec version:** 24 (draft)
 - **Replaces:** F-001's inbox view and all of F-012 (both superseded by this
   version, see their change logs). Their approved requirements that still
   apply are carried here, each marked with where it came from.
@@ -216,9 +216,117 @@ Drafts, not yet approved. Each is applied only after the owner approves it.
   0003 that the VS Code UI is GitHub's extension, and update
   `development-workflow.md` stage 9 and `decision-management.md` item
   kinds for issues.
-- **H-0165 (Interfaces):** Inbox item v3.0, replacing v1.1 and the approved
-  but unapplied v2.0 (v19 H-0120) and v2.1 and Phone issue v1.0 (F-012
-  H-0125). Drafted after the open questions are decided.
+- **H-0165 (Interfaces):** Inbox item v3.0, below. It replaces v1.1 and the
+  approved but unapplied v2.0 (v19 H-0120), v2.1 and Phone issue v1.0 (F-012
+  H-0125). On approval it replaces the Inbox item entry in
+  `docs/interface-contracts.md`.
+
+### H-0165 draft (Interfaces): Inbox item v3.0
+- Used by: engine (files, reads, records), config repo workflow (opens,
+  posts action comments), Microsoft's GitHub Pull Requests extension and
+  GitHub Mobile (view only).
+- Compatibility: breaking (major) from v1.1: items are issues, not files;
+  `pull_request` is not a kind; owner actions are proven by GitHub, not
+  signed commits. Adding a kind, action, label or optional record field is
+  minor; changing a template's fixed text, the marker lines or the command
+  grammar is major.
+
+**Ids.** `^[DTHSMN]-\d{4,}$`: `D` decision, `T` testing, `H` hygiene, `S` spec
+sign-off, `M` maturity, `N` notice. Numbered per project: the next id is one
+more than the highest record of that prefix on the config repo's
+`factory/state`.
+
+**Issue** (config repo):
+- Title: `<id> <Kind>[ (<Category>)]: <title>`, at most 120 characters;
+  Security items use SR-19's fixed title.
+- Labels: `factory-inbox`; `kind:<decision|testing|hygiene|spec|maturity|notice>`;
+  `category:<product|architecture|interfaces|assumptions|security>` (decision
+  only); `priority:<critical|high|medium|low>` (the effective priority);
+  `blocking` when blocking.
+- Assignee: the owner (`FACTORY_OWNER_LOGIN`), per OQ-13.
+- Body: first line `<!-- factory-item: <id> rev <n> -->`; then the kind's
+  sections as fixed headings; then `Revision <n>.`. Sections: decision:
+  Context, Options (numbered, with pros and cons), Project impact,
+  Recommendation, Cost of delay, and Advisor when advice exists (v1.1);
+  testing: Expected, Actual, Logs, Root cause, Recovery attempts, Recommended
+  next step; hygiene: File, Reason, Diff, Benefits, Risks, Recommendation;
+  spec: Summary, Readiness, Open items; maturity: Evidence, Gaps,
+  Recommendation; notice: Details. Outside text per SR-10.
+
+**Action comments** (workflow, in a fixed order): first line
+`<!-- factory-action: <id> rev <n> <action> -->`, second line the label, for
+example `Option A: Redis`, `Approve`, `Defer`, `Ask the advisor first`. For
+`changes` and `research`: `<label>: reply with /changes <note>` (or
+`/research <note>`).
+
+**Owner actions.** 👍 (`+1`) on an action comment, or a comment whose first
+line is a command (SR-18): `/choose <option>`, `/approve`, `/reject`,
+`/defer`, `/restore`, `/dismiss`, `/advisor`, `/step <n>`, `/changes <note>`,
+`/research <note>`, `/confirm <code>`. 🚀 (`rocket`) on a confirm comment
+confirms. Other reactions are ignored. On a managed PR, only `/changes <note>`
+is read (FR-9).
+
+**Engine comments** (fixed texts; never start with `/`, SR-17):
+`Confirm: <action> <target>. React 🚀 or reply /confirm <code> within 15 minutes.`;
+`Recorded: <action>.`; `Not recorded: <reason>.` (reasons: changed since,
+two actions chosen, confirm expired, comment edited, not a command, not the
+owner); `Stale: revision <n> replaces this.` (edit of an old action
+comment); on PRs, `Factory evidence for <feature>:` followed by the FR-9
+fields.
+
+**Record** (config repo `factory/state`, `inbox/<id>.yaml`, one commit per
+change, message starting with the id):
+
+```yaml
+schema: inbox-record/3.0
+id: D-0007
+kind: decision            # decision | testing | hygiene | spec | maturity | notice
+title: Choose session store for login
+category: Architecture    # decision only
+priority: high            # as filed
+effective_priority: high
+blocking: true
+status: open              # open | approved | chosen | rejected | changes_requested | research_requested | deferred | dismissed | closed
+repo: owner/app           # the repo the item concerns, or "project"
+feature: F-012            # optional
+created_by: orchestrator
+created_at: 2026-11-08T21:00:00Z
+issue: 42                 # number in the config repo
+options: [{id: A, label: Redis}, {id: B, label: Postgres table}]   # decision only
+recommendation: A
+links: [{kind: file, ref: docs/features/F-012-login.md}]
+advisor_reason: ...       # optional, as v1.1
+advice: [...]             # optional, as v1.1
+revisions:                # one per revision posted
+  - rev: 1
+    body_sha256: <hex>
+    action_comments: [{id: 1001, action: choose:A, sha256: <hex>}]
+engine_comments: [1005, 1006]      # never read as commands (SR-17)
+history:                           # appended, never edited
+  - at: 2026-11-08T21:00:00Z
+    by: engine
+    action: filed
+  - at: 2026-11-08T21:30:00Z
+    by: owner
+    action: chosen                 # chosen | approved | rejected | changes_requested | research_requested | deferred | restored | dismissed | advisor_requested | step_chosen
+    option: A
+    rev: 1
+    source: reaction               # reaction | command
+    actor_id: 1000001              # example; the real id is in the engine config
+    comment_id: 1001
+    reaction_id: 77
+    ref: https://github.com/<owner>/<config-repo>/issues/42#issuecomment-1001
+    confirmed_by: {source: reaction, comment_id: 1007, reaction_id: 78}   # risky actions only
+```
+
+Engine history actions: `filed`, `revised`, `confirm_requested`,
+`auto_merged` (FR-10, with PR and merge commit), `closed`, `migrated` (FR-16,
+with the old file path and commit).
+
+**PR records** (config repo `factory/state`, `prs/<owner>/<repo>/<n>.yaml`):
+`evidence_comment_id`, `feature`, `head` at evidence time, and history
+entries `evidence_posted`, `changes_requested` (with the comment id and
+actor id), `merged_on_github` (merge commit, merged by), `closed_on_github`.
 - F-012's approved H-0128 (manifest `phone` block) is withdrawn: the inbox
   is always on issues, so there is nothing to turn on. v19's H-0124
   (manifest `github` block) and H-0123 (`main` ruleset) stand unchanged.
@@ -243,6 +351,7 @@ token (from v19).
 | 21 | 2026-11-13 | OQ-11 decided (a): hygiene auto-merge kept, proven by the confirmed GitHub approval (SR-16 replaces v19 SR-9) | Owner, 2026-11-13 (decision card) |
 | 22 | 2026-11-13 | OQ-12 decided (b): PRs are not inbox issues; the owner uses GitHub's PR list; the engine posts definition-of-done evidence on the PR and reads `/changes` there (FR-9); Pull request kind removed | Owner, 2026-11-13 (decision card) |
 | 23 | 2026-11-13 | Security Gate 1, second review (`F-011-security-gate1-r2.md`): 0 Critical, 0 High, 2 Medium, 3 Low; SR-17 to SR-21 proposed | — |
+| 24 | 2026-11-13 | Section 10: draft of Inbox item v3.0 (H-0165) | — |
 
 ## 13. Open questions
 OQ-1 to OQ-10 are decided or withdrawn as recorded in v19 (git history);
