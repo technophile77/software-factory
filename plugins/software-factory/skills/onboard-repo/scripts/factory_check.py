@@ -1216,6 +1216,9 @@ LIMIT_KEYS = {
     "fetch_page": {"max_download_mib": "num", "max_chars": "int"},
     "research_result": {"summary_chars": "int", "max_sources": "int"},
     "worktree_commit": {"max_files": "int", "max_total_mib": "num", "max_file_mib": "num"},
+    # F-008 Security Gate 1 (H-0095): optional in the master, so a manifest may lower them too.
+    "security_reviewer": _SESSION_LIMITS,
+    "security_gate_1": {"runs_per_feature": "int", "report_kib": "int", "additions_kib": "int"},
 }
 
 
