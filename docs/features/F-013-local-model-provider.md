@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("I want to also incorporate a
   local llm api"; "this model would be a good candidate for the security
   agent, judge, or any low end agent")
-- **Spec version:** 5
+- **Spec version:** 6
 
 ## 1. Objective and business purpose
 The owner runs an LLM server on their own LAN. Running some agent work on it
@@ -48,7 +48,7 @@ owner-specific and never goes into the public master repo.
    OQ-1.
 5. **When the server is busy or down.** The server is shared with other
    work (on 2026-11-13 two of its four slots were busy with 57k and 94k
-   token prompts and a 30-token test waited over 3 minutes). The engine
+   token prompts and a 30-token test was still queued after 13 minutes). The engine
    sends at most a set number of sessions to it at once, and handles a
    timeout or refusal by running the session on the role's Claude rung after a 10-minute wait, noted in the run review (OQ-5).
 6. **Reports.** Each agent report records the provider with the model, so
@@ -65,7 +65,8 @@ owner-specific and never goes into the public master repo.
 | FR-4 | At start, and again before each local session, the engine resolves the host on the PC (so `.local` mDNS names work), requires every address to be in a private range (RFC 1918, RFC 4193 or link-local), and pins the address it checked for the session. Loopback is allowed only if the owner sets it explicitly. A public address is refused. |
 | FR-5 | The gateway forwards a local-rung session's `/v1/messages` and `/v1/messages/count_tokens` requests, with the same body checks it applies today, to the pinned address only. The grant names the upstream; an agent cannot choose it. |
 | FR-6 | The engine checks at start that the server lists the configured model (`GET /v1/models`) and that it answers an Anthropic Messages request with a tool call. A failing check marks the local rungs unavailable, with the reason. |
-| FR-7 | No more than the configured number of local sessions run at once. A session that waits more than 10 minutes for a slot, or whose server is unreachable or times out, runs on the role's Claude rung instead; the run review records each fallback with role and reason (OQ-5). |
+| FR-7 | No more than the configured number of local sessions run at once. A session that waits more than 10 minutes for a slot (OQ-5), or whose server is unreachable, or whose request passes its FR-12 deadline, runs on the role's Claude rung instead; the run review records each fallback with role, reason, prompt size and time waited. |
+| FR-12 | Request deadlines scale with size (owner, 2026-11-13: 10 minutes may be short for this model; measure by context size). Each local request's deadline is a fixed margin plus its prompt tokens divided by the measured prompt-processing rate plus its `max_tokens` divided by the measured generation rate. Rates come from the server's own per-request timings (`llama-server` reports prompt and generation tokens per second), kept per model as a rolling median of recent requests and seeded by a timing check at start. Deadlines and rates are in `factory-providers.local.yaml` as optional overrides; the run review reports measured rates by prompt-size band (under 8k, 8k to 32k, 32k to 128k, over 128k tokens) so the defaults can be tuned from evidence. |
 | FR-8 | The agent report's `model` field carries the provider prefix (`local/...`); metrics, run reviews and the calibration result group by it. |
 | FR-9 | A role on a local rung that fails its run is attributed and stepped up exactly as F-002 says; nothing here bypasses F-002's approvals. |
 | FR-10 | Gate roles (security reviewer, validation judge) stay on their Claude rung (F-002 A-3 unchanged). When the local model is enabled for a gate role, it runs first as an advisory pass on the same inputs; its findings or verdict go to the Claude reviewer as data, which still decides. The engine records, per run, how many of the Claude reviewer's findings the local pass also found and at what severity, plus its verdict match, in the run review (OQ-1). |
@@ -83,6 +84,7 @@ owner-specific and never goes into the public master repo.
 | AC-7 | Given a cap of 1 and two local-rung sessions starting, then the second waits until the first ends. | FR-7 |
 | AC-8 | Given a local-rung run, when its report is written, then `model` starts with `local/` and its cost is 0. | FR-8 |
 | AC-9 | Given the server times out, then the session runs on the role's Claude rung and the run review records the fallback with the role and reason. | FR-7, OQ-5 |
+| AC-11 | Given measured rates of 200 prompt and 10 generation tokens per second and a 60-second margin, when a request has a 100,000-token prompt and `max_tokens` 4,000, then its deadline is 60 + 500 + 400 = 960 seconds; a request still running after that falls back per FR-7. | FR-12 |
 | AC-10 | Given a gate role with the local advisory pass enabled, when the gate runs, then the Claude reviewer receives the local findings as data and its own report decides the gate; the run review records the match rate. Given the local server is down, the gate still completes on Claude alone. | FR-10, FR-11 |
 
 ## 5. Constraints
@@ -175,6 +177,7 @@ Drafts, for the owner's approval once the open questions are decided:
 | 3 | 2026-11-13 | OQ-3 decided (c): no key, plain HTTP, private-address pin only; SR-5 risk accepted | Owner, 2026-11-13 (decision card) |
 | 4 | 2026-11-13 | OQ-2, OQ-4, OQ-5 decided (a): gateway upstream (ADR 0019), calibrate the gate and low-end roles first, fall back to the Claude rung after a 10-minute wait | Owner, 2026-11-13 (decision card) |
 | 5 | 2026-11-13 | Security Gate 1 (`F-013-security-gate1.md`): 4 findings, none blocking; SR-8 to SR-11 proposed | — |
+| 6 | 2026-11-13 | Owner: request timeouts scale with context size, measured. FR-7 split slot wait from request deadline; FR-12 and AC-11 added | Owner, 2026-11-13 (thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
