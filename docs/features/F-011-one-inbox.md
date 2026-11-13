@@ -6,7 +6,7 @@
   approval and merge in the inbox, no machine account; phone approvals,
   F-012; "can't [a VS Code issues extension] be used in place of the
   inbox?", proposal 0026)
-- **Spec version:** 26 (draft)
+- **Spec version:** 27 (draft)
 - **Replaces:** F-001's inbox view and all of F-012 (both superseded by this
   version, see their change logs). Their approved requirements that still
   apply are carried here, each marked with where it came from.
@@ -167,7 +167,7 @@ or a one-word command.
 |---|---|---|---|
 | A-1 | The baseline spec's "separate" testing and hygiene inboxes means separate item kinds, not separate screens. | OQ-1; owner, 2026-11-13 (decision card) | Approved |
 | A-2 | GitHub Mobile sends a push for an issue opened by `github-actions[bot]` that assigns and @mentions the owner. Checked in a spike before build; a failure sends the spec back to the owner. | F-012 A-1 | Approved (owner, 2026-11-13); carried |
-| A-3 | GitHub's merge confirmation (extension merge form, web, Mobile) counts as the confirmation step for a merge. | F-012 A-2 | Approved for Mobile (owner, 2026-11-13); extension and web to confirm |
+| A-3 | GitHub's merge confirmation (extension merge form, web, Mobile) counts as the confirmation step for a merge. | F-012 A-2 | Approved (owner, 2026-11-13, decision card); stated caveat: the extension's compact merge view may merge from a dropdown without a second button |
 
 ## 9. Security considerations
 Carried items keep their approval; items whose scope widens from phone
@@ -374,8 +374,8 @@ actor id), `merged_on_github` (merge commit, merged by), `closed_on_github`.
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit (A-3 extension and web part pending)
-- [ ] Blocking decisions resolved (OQ-11 to OQ-13 decided; SRs accepted; pending: A-3, H-0161 to H-0165)
+- [x] Assumptions explicit (A-1 to A-3 approved; A-2 checked in a spike before build)
+- [ ] Blocking decisions resolved (OQ-11 to OQ-13 decided; SRs and A-3 accepted; pending: H-0161 to H-0165)
 
 Follow-ups outside this spec: F-003 stops writing `.factory/inbox/` and
 installs the workflow and query block; F-010's advisory path uses the admin
@@ -392,6 +392,7 @@ token (from v19).
 | 24 | 2026-11-13 | Section 10: draft of Inbox item v3.0 (H-0165) | — |
 | 25 | 2026-11-13 | OQ-13 decided (a): every item is assigned to the owner and notifies | Owner, 2026-11-13 (decision card) |
 | 26 | 2026-11-13 | SR-17 to SR-21 approved; SR-1, SR-2, SR-4 approved as widened to every action | Owner, 2026-11-13 (decision card) |
+| 27 | 2026-11-13 | A-3 approved for the extension, web and Mobile | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 OQ-1 to OQ-10 are decided or withdrawn as recorded in v19 (git history);
