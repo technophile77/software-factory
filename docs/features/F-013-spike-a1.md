@@ -72,3 +72,37 @@ message removed, sent straight to the owner's server: HTTP 200 in 133 s
 call for the requested file. That is option 3 above, the gateway folding
 later system messages, and it doesn't depend on LiteLLM or the server's
 template.
+
+## Fold vs inline (owner asked, 2026-11-13)
+
+Setup: Claude Code in the factory's agent image with an empty home folder
+(a captured request confirmed no personal files, email or user name in it),
+through a test shim straight to the owner's `llama-server` with its stock
+template. Task: write `hello.txt`, read it back, write `bye.txt` in upper
+case. Earlier runs from the PC itself had picked up the owner's global
+`CLAUDE.md` and email and sent them to the LAN server; this setup stops that.
+
+**Which layer adds the message:** the request captured straight from Claude
+Code, with no proxy in between, has `messages` = user, system. Claude Code
+itself creates it; it holds the environment section of its prompt.
+
+| | Fold into top-level `system` | Inline: user message `[system]` in place |
+|---|---|---|
+| Task result | Pass (`hi`, `HI`) | Pass (`hi`, `HI`) |
+| Tool calls | Write, Read, Write, reply; all well formed | Same |
+| Prompt tokens evaluated, turns 2 to 4 | 43, 18, 43 | 43, 19, 42 |
+| Read from the server's prompt cache, turns 2 to 4 | 11,576 to 11,745 | 11,537 to 11,727 |
+| Turn 1 | 4 evaluated, 11,172 from cache | 11,185 evaluated, 0 from cache |
+| Wall time | 30 s | 101 s |
+
+Both keep the cache from turn to turn, because the moved message lands in the
+same place every turn. Turn 1 differs only because the fold run followed an
+earlier fold run whose prefix was still cached; the inline run's prefix was
+new. Order wasn't randomized, so this doesn't show that inline is slower in
+general. It does show that a stable prefix lets one session reuse another's
+cache, which the fold gives across all sessions of a role.
+
+In an earlier run where the test container's work folder wasn't writable,
+the model diagnosed the problem correctly, then tried `sudo` and Claude
+Code's sandbox-bypass flag; Claude Code refused both. That supports keeping
+endpoint models on read-only roles (SR-9).
