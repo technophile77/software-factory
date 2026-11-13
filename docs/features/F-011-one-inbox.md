@@ -6,7 +6,7 @@
   approval and merge in the inbox, no machine account; phone approvals,
   F-012; "can't [a VS Code issues extension] be used in place of the
   inbox?", proposal 0026)
-- **Spec version:** 25 (draft)
+- **Spec version:** 26 (draft)
 - **Replaces:** F-001's inbox view and all of F-012 (both superseded by this
   version, see their change logs). Their approved requirements that still
   apply are carried here, each marked with where it came from.
@@ -175,10 +175,10 @@ actions to every action, or that are new, are re-checked at Gate 1.
 
 | Id | Requirement | Source | Status |
 |---|---|---|---|
-| SR-1 | External service (S9.1): GitHub only. Workflow, as `github-actions[bot]`: create issue, add labels, assign, create comment. Engine, with the owner's everyday token: list issues, comments and reactions in the config repo; create comment; update its own and the workflow's comments (to mark them stale); update issue body and labels; close and reopen issue; read PR state, merges and comments in managed repos; create comment on managed PRs (FR-9, FR-10); read the config repo's visibility and collaborators; send `repository_dispatch`; merge only under FR-10. No other call. | F-012 SR-1, widened | Proposed |
-| SR-2 | The owner is proven by GitHub: an action counts only if the reacting or commenting user id is the owner's, read from the API; it is recorded with the comment URL, actor id and reaction or comment id, so the record stands if the issue is deleted (ADR 0018, ADR 0022). | F-012 SR-2, SR-13 | Proposed (widened to all actions) |
+| SR-1 | External service (S9.1): GitHub only. Workflow, as `github-actions[bot]`: create issue, add labels, assign, create comment. Engine, with the owner's everyday token: list issues, comments and reactions in the config repo; create comment; update its own and the workflow's comments (to mark them stale); update issue body and labels; close and reopen issue; read PR state, merges and comments in managed repos; create comment on managed PRs (FR-9, FR-10); read the config repo's visibility and collaborators; send `repository_dispatch`; merge only under FR-10. No other call. | F-012 SR-1, widened | Accepted (owner, 2026-11-13, decision card) |
+| SR-2 | The owner is proven by GitHub: an action counts only if the reacting or commenting user id is the owner's, read from the API; it is recorded with the comment URL, actor id and reaction or comment id, so the record stands if the issue is deleted (ADR 0018, ADR 0022). | F-012 SR-2, SR-13 | Accepted (owner, 2026-11-13, decision card), widened to all actions |
 | SR-3 | Risky actions need a second explicit step naming the exact action and target, bound to the revision, expiring after 15 minutes (OWASP LLM Top 10 2025, LLM06: human approval of high-impact actions). | v19 FR-15, F-012 SR-3 | Accepted (owner, 2026-11-13) |
-| SR-4 | Actions are read by code from reactions and fixed command names; comment text is never given to an agent as instructions (S9.3). Notes, including `/changes` on PRs, go to agents as data. | F-012 SR-4 | Proposed (widened) |
+| SR-4 | Actions are read by code from reactions and fixed command names; comment text is never given to an agent as instructions (S9.3). Notes, including `/changes` on PRs, go to agents as data. | F-012 SR-4 | Accepted (owner, 2026-11-13, decision card), widened to all actions |
 | SR-5 | Item content goes only to the private config repo, never to a public repo or a third-party service (owner rule, 2026-11-12). | F-012 SR-5 | Accepted (owner, 2026-11-13) |
 | SR-6 | Residual risk, stated: anyone holding the owner's GitHub session or token can act as the owner on every item, from any device. The confirm step guards against a mis-tap, not a stolen account; GitHub's sign-in and 2FA are the control. Agents can't: they run without tokens (ADR 0015). | F-012 SR-6, ADR 0022 | Accepted (owner, 2026-11-13, ADR 0022 card) |
 | SR-7 | No secrets or tokens in issue bodies, comments, records or logs; item text passes the secrets scan before it is rendered (S3.1). | F-012 SR-7, v19 SR-6 | Accepted (owner, 2026-11-13) |
@@ -191,11 +191,11 @@ actions to every action, or that are new, are re-checked at Gate 1.
 | SR-14 | The `main` ruleset has no bypass actors in owner-token mode, so required CI applies to every merge, including the owner's in GitHub's UI and the engine's under FR-10. | v19 SR-4 | Accepted (owner, 2026-11-13) |
 | SR-15 | The engine merges only under FR-10; FR-14 enforces it in CI. Residual risk, stated: anything holding the owner's token can merge a green PR without the owner, and GitHub can't tell (v19 SR-7). | v19 SR-5, SR-7 | Accepted (owner, 2026-11-13) |
 | SR-16 | The engine merges under FR-10 only on an Approve of that Hygiene item recorded under SR-2 and confirmed under SR-3 (🚀 or `/confirm <code>`), at the revision whose diff is compared. Replaces v19 SR-9 (signed approval). Residual risk, stated: anything holding the owner's GitHub session or token could approve and confirm a hygiene change, and it then reaches `main`; that holder could already merge any green PR directly (SR-15). | v19 SR-9; OQ-11 | Accepted (owner, 2026-11-13, decision card) |
-| SR-17 | The engine keeps the id of every comment it posts and never reads those as commands; every engine comment template starts with a fixed word that is not a command, checked by a unit test that renders each template with fields starting `/`. | Gate 1 r2 #1 (S2.1, S6.2) | Proposed |
-| SR-18 | A command is only the comment's first line and must match its fixed pattern (Gate 1 r2 #2), case-sensitive; the option or step must exist at the current revision; anything else records nothing and gets "Not recorded: not a command". A command comment edited after posting is refused (as SR-8). | Gate 1 r2 #2 (S1.1, S6.2) | Proposed |
-| SR-19 | Security-category items and security notices get the title `<id> Decision (Security): needs your decision`; details only in the body. | Gate 1 r2 #3 (S3.1, S8.1; owner rule 2026-11-12) | Proposed |
-| SR-20 | Migration (FR-16) carries only open items, re-renders each through its template and the secrets scan, and copies an owner action into the record only if its commit is signed per ADR 0015, otherwise drops it and notes that. | Gate 1 r2 #4 (S2.1, S3.3) | Proposed |
-| SR-21 | The factory installs nothing in the owner's VS Code; onboarding offers the query block, names the extension by its id `GitHub.vscode-pull-request-github`, and states once that the extension runs with the owner's GitHub sign-in. | Gate 1 r2 #5 (S4) | Proposed |
+| SR-17 | The engine keeps the id of every comment it posts and never reads those as commands; every engine comment template starts with a fixed word that is not a command, checked by a unit test that renders each template with fields starting `/`. | Gate 1 r2 #1 (S2.1, S6.2) | Accepted (owner, 2026-11-13, decision card) |
+| SR-18 | A command is only the comment's first line and must match its fixed pattern (Gate 1 r2 #2), case-sensitive; the option or step must exist at the current revision; anything else records nothing and gets "Not recorded: not a command". A command comment edited after posting is refused (as SR-8). | Gate 1 r2 #2 (S1.1, S6.2) | Accepted (owner, 2026-11-13, decision card) |
+| SR-19 | Security-category items and security notices get the title `<id> Decision (Security): needs your decision`; details only in the body. | Gate 1 r2 #3 (S3.1, S8.1; owner rule 2026-11-12) | Accepted (owner, 2026-11-13, decision card) |
+| SR-20 | Migration (FR-16) carries only open items, re-renders each through its template and the secrets scan, and copies an owner action into the record only if its commit is signed per ADR 0015, otherwise drops it and notes that. | Gate 1 r2 #4 (S2.1, S3.3) | Accepted (owner, 2026-11-13, decision card) |
+| SR-21 | The factory installs nothing in the owner's VS Code; onboarding offers the query block, names the extension by its id `GitHub.vscode-pull-request-github`, and states once that the extension runs with the owner's GitHub sign-in. | Gate 1 r2 #5 (S4) | Accepted (owner, 2026-11-13, decision card) |
 
 Withdrawn from v19, because our extension no longer merges: SR-1 (head
 pinned in the merge call; GitHub's required checks on the current head now
@@ -375,7 +375,7 @@ actor id), `merged_on_github` (merge commit, merged by), `closed_on_github`.
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [ ] Assumptions explicit (A-3 extension and web part pending)
-- [ ] Blocking decisions resolved (OQ-11 to OQ-13 decided; pending: SR-1, SR-2, SR-4, SR-17 to SR-21, A-3, H-0161 to H-0165)
+- [ ] Blocking decisions resolved (OQ-11 to OQ-13 decided; SRs accepted; pending: A-3, H-0161 to H-0165)
 
 Follow-ups outside this spec: F-003 stops writing `.factory/inbox/` and
 installs the workflow and query block; F-010's advisory path uses the admin
@@ -391,6 +391,7 @@ token (from v19).
 | 23 | 2026-11-13 | Security Gate 1, second review (`F-011-security-gate1-r2.md`): 0 Critical, 0 High, 2 Medium, 3 Low; SR-17 to SR-21 proposed | — |
 | 24 | 2026-11-13 | Section 10: draft of Inbox item v3.0 (H-0165) | — |
 | 25 | 2026-11-13 | OQ-13 decided (a): every item is assigned to the owner and notifies | Owner, 2026-11-13 (decision card) |
+| 26 | 2026-11-13 | SR-17 to SR-21 approved; SR-1, SR-2, SR-4 approved as widened to every action | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 OQ-1 to OQ-10 are decided or withdrawn as recorded in v19 (git history);
