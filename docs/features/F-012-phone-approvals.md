@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 (split from F-011 OQ-3: "the phone
   notification needs to be tied to some way to do approvals on my phone also";
   "I want a confirmation on risky actions like a merge, not just one click")
-- **Spec version:** 11 
+- **Spec version:** 11
 
 > **Superseded.** ADR 0022 makes GitHub issues the only inbox store, so the
 > phone no longer needs its own channel: every item is an issue, acted on the

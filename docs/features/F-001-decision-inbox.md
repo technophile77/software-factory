@@ -3,7 +3,7 @@
 - **Id:** F-001
 - **Status:** Superseded by F-011 v29 (ADR 0022; owner, 2026-11-13). Built and validated at v2; the extension is removed by H-0164 once F-011's engine side ships and the owner's projects are migrated.
 - **Requested by / date:** Alex, 2026-11-08
-- **Spec version:** 3 
+- **Spec version:** 3
 
 > **Superseded.** ADR 0022 moves inbox items to GitHub issues in the
 > project's config repo, shown by Microsoft's GitHub Pull Requests extension
