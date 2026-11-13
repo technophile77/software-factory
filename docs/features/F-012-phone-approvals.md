@@ -61,7 +61,7 @@ owner already uses for the interview device approval (ADR 0014).
 | FR-2 | The issue is opened by a workflow in the config repo running as `github-actions[bot]`, so GitHub notifies the owner; GitHub doesn't notify people about their own activity, and the engine acts as the owner (ADR 0017). The issue body @mentions the owner's login, taken from the config repo, never the master repo. |
 | FR-3 | The issue body is rendered by code from the item, using one fixed template per kind (H-0125): kind, category, title, priority, the question or change, options with numbers and the recommendation, evidence and links, the item revision, and the allowed commands. Owner-facing text only; no agent writes free text into it. |
 | FR-4 | The engine reads new comments on open phone issues every poll. It acts only on a comment whose author's GitHub user id equals the owner's (engine config), whose first line is a command allowed for the item's kind, and whose item revision equals the revision in the issue. Anything else gets a fixed "not recorded: <reason>" reply and changes nothing. |
-| FR-5 | A valid command becomes one owner-action commit on `factory/state`, with the same fields as a VS Code action plus `via: phone` and the comment URL (H-0127). The engine then acts on it exactly as F-011 FR-5 says. |
+| FR-5 | A valid command becomes one owner-action commit on `factory/state`, with the same fields as a VS Code action plus `via: phone` and `ref: <comment URL>` (F-011 H-0120). The engine then acts on it exactly as F-011 FR-5 says. |
 | FR-6 | After recording, the engine replies with what it recorded, and closes the issue. If the item is acted on elsewhere first, the engine closes the issue with "acted on in VS Code". |
 | FR-7 | If the item changes (new revision) while its issue is open, the engine edits the issue body to the new revision and replies "changed, read again"; commands naming the old revision are refused (FR-4). |
 | FR-8 | Risky actions need a confirmation step (owner, 2026-11-13). Risky means the actions F-011 FR-15 asks to confirm in VS Code (today: merging a PR, approving a hygiene change, approving a maturity change); the phone uses the same list. For these, the first command records nothing; the reply restates action and target and asks for `/confirm <code>` with a one-time 6-character code. Only that code, from the owner, within 15 minutes, on the same item revision, records the action. |
@@ -153,9 +153,9 @@ Hygiene items named here; none filed until the open questions are answered.
   texts.
 - **H-0126 (Hygiene): config repo workflow template** and the F-003
   onboarding step that installs it and checks the repo is private.
-- **H-0127 (Interfaces): owner action `via` and `ref` fields** on the inbox
-  item history (`via: vscode | phone`, `ref: <comment URL>`). To fold into
-  F-011's H-0120 (Inbox item v2.0) if that lands first.
+- **H-0127:** withdrawn; the owner-action `via: vscode | phone` and
+  `ref: <comment URL>` fields are folded into F-011's H-0120 (Inbox item
+  v2.0). Free for reuse.
 - **H-0128 (Interfaces): Project manifest `phone` block** (`enabled`,
   `quiet_hours`); owner login and id stay in the config repo and engine
   config.
