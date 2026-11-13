@@ -8,6 +8,20 @@ export class GitHubError extends Error {
   override name = "GitHubError";
 }
 
+/** The request never got an answer: a network error, a timeout or a redirect. */
+export class GitHubUnreachable extends GitHubError {
+  override name = "GitHubUnreachable";
+  constructor(readonly detail: string) {
+    super("GitHub is unreachable");
+  }
+}
+
+function networkDetail(e: unknown): string {
+  const err = e as { name?: unknown; message?: unknown; cause?: { code?: unknown; message?: unknown } };
+  const parts = [err?.name, err?.cause?.code, err?.cause?.message ?? err?.message].filter((x) => typeof x === "string" && x);
+  return (parts.join(": ") || "unknown error").replace(/[\r\n]+/g, " ").slice(0, 200);
+}
+
 export interface DeviceCode {
   deviceCode: string;
   userCode: string;
@@ -107,8 +121,8 @@ export class HttpGitHub implements GitHubClient {
     let res: Response;
     try {
       res = await fetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(TIMEOUT_MS) });
-    } catch {
-      throw new GitHubError("GitHub is unreachable");
+    } catch (e) {
+      throw new GitHubUnreachable(networkDetail(e));
     }
     const reader = res.body?.getReader();
     const chunks: Uint8Array[] = [];
@@ -154,6 +168,7 @@ export class HttpGitHub implements GitHubClient {
       headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ client_id: clientId, device_code: deviceCode, grant_type: DEVICE_GRANT_TYPE }).toString(),
     });
+    if (r.status >= 500) throw new GitHubUnreachable(`HTTP ${r.status}`);
     if (r.status !== 200) throw new GitHubError("GitHub refused the token request");
     return parsePoll(r.body);
   }
@@ -194,8 +209,9 @@ export interface PendingApproval {
 /**
  * ADR 0014's device approval: request a code, poll at GitHub's interval
  * (slowing down when told), and accept only when the token's account id
- * equals `ownerId`. The token is used for that one call and dropped. Any
- * other outcome, including GitHub being unreachable, fails closed.
+ * equals `ownerId`. The token is used for that one call and dropped. A poll
+ * that gets no answer is retried at the next interval, because the code stays
+ * valid until it expires; every other outcome, and expiry itself, fails closed.
  */
 export async function startDeviceApproval(o: {
   github: GitHubClient;
@@ -219,7 +235,9 @@ export async function startDeviceApproval(o: {
       try {
         poll = await o.github.pollToken(o.clientId, code.deviceCode);
       } catch (e) {
-        return { approved: false, reason: e instanceof GitHubError ? e.message : "GitHub is unreachable" };
+        if (e instanceof GitHubError && !(e instanceof GitHubUnreachable)) return { approved: false, reason: e.message };
+        o.log.warn(`Approval ${o.approvalId}: GitHub didn't answer the approval check (${e instanceof GitHubUnreachable ? e.detail : networkDetail(e)}); trying again until the code expires.`);
+        continue;
       }
       if (poll.kind === "pending") continue;
       if (poll.kind === "slow_down") {

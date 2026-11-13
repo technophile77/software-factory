@@ -123,7 +123,7 @@ Drafted from the requirements above; each is refined in the interview.
 ## 6. Edge cases
 - Two clients open the same feature; a takeover during a pending approval.
 - The owner approves on the phone after the device code expired.
-- GitHub unreachable during approval (fail closed, no fallback).
+- GitHub unreachable during approval (polls retried until the code expires, then fail closed, no fallback; owner decision 2026-11-13).
 - The analyst asks the same question twice, or asks while research runs.
 - The container dies mid-turn; the engine restarts while a session is open.
 - A feature started while its project is paused or disabled.
