@@ -278,6 +278,8 @@ describe("session group (SR-6, SR-7, SR-9, SR-14)", () => {
     const create = d.calls.filter((c) => c.args[0] === "network" && c.args[1] === "create").map((c) => c.args);
     expect(create[0]).toContain("--internal");
     expect(create[1]).not.toContain("--internal");
+    // Without a router there is no router network (F-013 M1).
+    expect(create).toHaveLength(2);
     const proxy = d.spawned[0]!;
     expect(proxy.args).toContain("name=factory-r-0a1b2c-int,alias=factory-proxy");
     expect(proxy.args).toContain("factory-r-0a1b2c-out");

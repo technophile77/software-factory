@@ -652,6 +652,7 @@ CI_JOBS = [
     ("unit-tests", "alpha", [r"npm (run )?test", r"\bpytest\b", r"unittest", r"go test", r"cargo test", r"\bvitest\b", r"\bjest\b", r"node --test"], "onboarding-pr"),
     ("acceptance-tests", "alpha", [r"acceptance", r"\be2e\b", r"playwright", r"cypress"], "feature-request"),
     ("secret-scan", "alpha", SECRET_SCAN_PATTERNS, "onboarding-pr"),
+    ("static-analysis", "alpha", [r"\bsemgrep\b", r"\bopengrep\b", r"codeql-action"], "onboarding-pr"),  # ADR 0024
     ("contract-tests", "beta", [r"\bcontract\b", r"\bpact\b"], "feature-request"),
     ("integration-tests", "beta", [r"integration"], "feature-request"),
     ("dependency-audit", "beta", AUDIT_PATTERNS, "onboarding-pr"),
