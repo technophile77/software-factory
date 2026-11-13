@@ -108,8 +108,7 @@ export async function checkProjectPath(p: string, masterRepo: string, git: Git):
       return null;
     }
   };
-  // Without the read failing, "no origin" and "no root" can't be told apart from a failure here, so only
-  // a fully read master is kept (Gate 2 L5).
+  // undefined: the read failed; null: the master has no origin. A failed read isn't cached (Gate 2 L5).
   const masterOrigin = async (dir: string) => {
     const r = await git.run(dir, ["remote", "get-url", "origin"], { okCodes: [2] }).catch(() => undefined);
     return r === undefined ? undefined : r.code === 0 ? normUrl(r.stdout.toString("utf8")) : null;

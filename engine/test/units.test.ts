@@ -118,6 +118,20 @@ describe("secrets (SR-20, OQ-7)", () => {
     started[700] = 50;
     expect(kids.startedByEngine(900)).toBe(true);
     expect(new Children((p) => parents[p] ?? null, () => null).startedByEngine(900)).toBe(true);
+    // The reused pid can belong to a grandchild, such as the git behind a Git for Windows launcher (600, ours).
+    const tree: Record<number, number> = { 900: 701, 701: 600, 600: process.pid };
+    const born: Record<number, number> = { 900: 100, 701: 500, 600: 400 };
+    const grand = new Children((p) => tree[p] ?? null, (p) => born[p] ?? null);
+    grand.add(600);
+    expect(grand.startedByEngine(900)).toBe(false);
+    expect(grand.lastChain).toEqual([900, 701]);
+    // A real grandchild of ours, younger than each parent, is refused.
+    born[900] = 900;
+    expect(grand.startedByEngine(900)).toBe(true);
+    // A pid still listed after its process ended is no parent either.
+    const stale = new Children((p) => (p === 900 ? 700 : null));
+    stale.add(700);
+    expect(stale.startedByEngine(900)).toBe(false);
     // Only Windows looks at start times, and a failed lookup gives no answer instead of an error.
     expect(osStartedAt({ platform: "linux", windows: () => ({}) })).toBeUndefined();
     const failing = osStartedAt({ platform: "win32", windows: () => ({ startedAt: () => { throw new Error("x"); } }) })!;

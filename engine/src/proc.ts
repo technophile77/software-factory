@@ -10,13 +10,16 @@ import * as path from "node:path";
  */
 export class Children {
   private readonly live = new Set<number>();
+  /** The pids the last refusing walk went through, for the refusal log. */
+  lastChain: number[] = [];
 
   /**
    * `startedAt` gives a process's start time on one clock, or null if unknown.
    * Windows reuses pids at once and records a parent's pid without ever
    * clearing it, so a client whose recorded parent has exited can name a pid
-   * that now belongs to one of our children; a parent started after its child
-   * is that reused pid, not the parent.
+   * that now belongs to one of our children or theirs (the git behind a Git
+   * for Windows launcher). A parent started after its child is that reused
+   * pid, not the parent, so the walk checks the order at every step.
    */
   constructor(
     private readonly parentOf: (pid: number) => number | null = linuxParent,
@@ -32,19 +35,25 @@ export class Children {
 
   /** True if `pid` is one of ours or a descendant of this engine. */
   startedByEngine(pid: number, enginePid = process.pid): boolean {
+    this.lastChain = [pid];
     if (this.live.has(pid)) return true;
     let cur = pid;
     for (let i = 0; i < 64 && cur > 1; i++) {
       const parent = this.parentOf(cur);
+      if (parent !== null) this.lastChain.push(parent);
       if (parent === null) return false;
-      if (parent === enginePid || this.live.has(parent)) return !this.reused(parent, cur);
+      // The chain ends where the recorded parent pid now names a younger process: the real parent has gone.
+      if (this.startedAfter(parent, cur)) return false;
+      if (parent === enginePid) return true;
+      // A pid still listed after its process ended is no parent.
+      if (this.live.has(parent)) return this.parentOf(parent) !== null;
       cur = parent;
     }
     return false;
   }
 
   /** True only when both start times are known and `parent` started after `child`. */
-  private reused(parent: number, child: number): boolean {
+  private startedAfter(parent: number, child: number): boolean {
     if (!this.startedAt) return false;
     const p = this.startedAt(parent);
     const c = this.startedAt(child);
@@ -131,7 +140,13 @@ export function runFixed(binary: string, args: string[], opts: RunOptions, child
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    if (child.pid) children.add(child.pid);
+    if (child.pid) {
+      const pid = child.pid;
+      children.add(pid);
+      // On exit, not close: a Git for Windows launcher can exit while the git it started still holds the pipes,
+      // and Windows may hand the pid to another process meanwhile.
+      child.once("exit", () => children.remove(pid));
+    }
     const out: Buffer[] = [];
     let outLen = 0;
     let err = "";

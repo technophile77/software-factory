@@ -153,6 +153,10 @@ export class CatFileReader {
     };
     child.on("error", gone);
     child.on("close", gone);
+    // The pid is dropped on exit too: a launcher's git can hold the pipes open after the launcher has gone.
+    child.once("exit", () => {
+      if (pid) this.o.children.remove(pid);
+    });
   }
 
   /** Keeps the engine's event loop alive only while a read is waiting. */

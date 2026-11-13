@@ -1,6 +1,6 @@
 # F-014 Test report
 
-- **Feature:** F-014 Fewer engine git calls, spec v7
+- **Feature:** F-014 Fewer engine git calls, spec v8
 - **Date:** 2026-11-13 (updated after validation round 1)
 - **Final commit tested:** `a2952bd`
 - **Environment:** Linux, Node 22, git 2.43.0. Windows: the repo's CI matrix (windows-latest, git 2.56.0.windows.4, six shards).
@@ -40,11 +40,18 @@ Wall time on Linux barely moves because a process start there costs a few millis
 
 ## Windows channel failures
 
-Two Windows CI runs failed one f009 acceptance test each with "connection closed" from the engine's channel (`761239f` shard 5, [SPL-1]; `70af2af` shard 4, [LNK-8]); other shards and `main` were green.
+Three Windows CI runs failed one acceptance test each with "connection closed" from the engine's channel (`761239f` shard 5, [SPL-1]; `70af2af` shard 4, [LNK-8]; `ccbe901` shard 4, [G1-21]). The `ccbe901` engine log names the cause: "Refused a channel connection: client 5468 is a process the engine started".
 
-Cause: the channel refuses a client that the engine started, by walking the client's parent pids and checking each against the engine and its live children. Windows records a parent's pid and never clears it, and reuses pids at once. When an ancestor of the client (the test process here; Explorer's exited parent on a desktop) had exited, its pid could be held by one of the engine's git readers, so the walk found "our child" and refused the client. Before F-014 git processes lived for milliseconds, so the overlap was rare; readers live for seconds, so it showed up.
+Cause: the channel refuses a client that the engine started, by walking the client's parent pids and checking each against the engine and its live children. Windows records a parent's pid and never clears it, and reuses pids at once. When an ancestor of the client (the test process here; Explorer's exited parent on a desktop) had exited, its pid could be held by an engine child or grandchild (the git behind a Git for Windows launcher), so the walk ended at "our child" and refused the client. Before F-014 git processes lived for milliseconds, so the overlap was rare; readers live for seconds.
 
-Fix (`a2952bd`, `proc.ts`, `os/ffi.ts`): when the walk matches the engine or one of its children, it compares start times (`GetProcessTimes`); a "parent" started after its child is a reused pid, not the parent, and the client isn't refused for it. A failed lookup keeps the refusal. Test: `units.test.ts` "a recorded parent pid that one of our children took over after the parent exited isn't ancestry", plus a Windows-only check of the real lookup. Acceptance tests now print the engine's channel log lines when a connection closes without an answer, so any refusal names its reason.
+Fix (`proc.ts`, `os/ffi.ts`, `git-reader.ts`):
+- At every step of the walk the engine compares start times (`GetProcessTimes`). A recorded parent started after its child is a reused pid, so the chain ends there and the client isn't refused for it. An unknown start time keeps the old answer.
+- A child's pid is dropped from the list when it exits, not when its pipes close, and a listed pid with no running process is not a parent.
+- The refusal log names the pids the walk went through.
+
+The first attempt (`a2952bd`) checked the order only at the matching ancestor, which missed the grandchild case; `ccbe901`'s CI failure showed it.
+
+Tests: `units.test.ts` "a recorded parent pid that one of our children took over after the parent exited isn't ancestry" (a reused pid held by a child, by a grandchild, and a pid listed after its process ended), plus a Windows-only check of the real start-time lookup. Acceptance tests print the engine's channel log lines when a connection closes without an answer.
 
 ## Acceptance criteria
 
@@ -67,7 +74,7 @@ Fix (`a2952bd`, `proc.ts`, `os/ffi.ts`): when the walk matches the engine or one
 | SR-2 | `git-reader.test.ts` "starts the reader with the same overrides and environment", "names the reader isn't given go to plain git" |
 | SR-3 | `remote.test.ts` L7 test |
 | SR-4 | `git-reader.test.ts` "keeps one reader per repo" |
-| SR-6 | `git-reader.test.ts` "a body over the limit is refused before it is read", out-of-step test, "a catBlobs call over the read limit in total fails" (Gate 2 M1), "output a timed-out reader writes later never reaches the next reader" (Gate 2 M2; fails with the guard removed) |
+| SR-6 | `git-reader.test.ts` "a body over the limit is refused before it is read", out-of-step test, "a catBlobs call over the read limit in total fails" (Gate 2 M1), "output a timed-out reader writes later never reaches the next reader" (Gate 2 M2; fails when both protections, the output guard and the listener removal, are taken out) |
 | SR-7 | `git-reader.test.ts` "a reader that hangs times out, is killed" |
 | SR-8 | `units.test.ts` commit test after an outside move |
 

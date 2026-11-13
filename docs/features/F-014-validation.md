@@ -1,5 +1,112 @@
 # F-014 Validation report
 
+## Round 2
+
+- **Feature:** F-014 Fewer engine git calls, spec v8
+- **Judge:** validation-judge
+- **Date:** 2026-11-13
+- **Round:** 2 (round 1: FAIL on `761239f`, kept below as history)
+- **Commit:** `ccbe901` (`claude/project-thread-wx3ju7`). Since round 1: `70af2af` (round 1 fixes), `3d21556` (M2 test, L4 tests, Gate 2 re-review), `a2952bd` (Windows channel ancestry), `ccbe901` (test report). The engine code is the same at `a2952bd` and `ccbe901`. Uncommitted edits to `engine/src/proc.ts`, `engine/src/git-reader.ts` and `engine/test/units.test.ts` appeared in the shared working tree while I was judging. They aren't part of this round.
+- **Maturity level:** Rapid prototype. Any number of Major findings is allowed if each is logged. A Not met line or a Blocking finding still fails.
+- **Verdict:** **FAIL**
+  - **Not met: 2 lines** (AC-1 and Windows, both for one cause). **Needs owner: 1 line** (§5 "behavior and messages unchanged", for m4 and m6; the owner's card is pending).
+  - Blocking: 1 (B2). Major: 1 (M5). Minor: 6 (m4, m6, m9, m10, m11, m12).
+  - Every round 1 item is fixed except M4, the Windows channel failure. On `ccbe901` CI is red again: Windows shard 4 failed with the same kind of channel refusal (B2). The fix in `a2952bd` is right as far as it goes, but it checks start times only at the ancestor that matched, and on Windows the pid that gets reused can belong to one of the engine's *grandchildren*. I reproduced that case in a unit probe.
+
+### My own run (round 2)
+
+On `ccbe901`, Linux container, Node 22, git 2.43.0. Logs and probes are in the judge's scratch folder only.
+
+| Step | Result |
+|---|---|
+| `npm run -s typecheck` | Clean, exit 0 |
+| `npx vitest run test/git-reader.test.ts test/units.test.ts test/remote.test.ts test/engine.test.ts` | 4 files passed. 119 tests: 118 passed, 1 skipped (the same symbolic-link test as round 1), 0 failed |
+| `FACTORY_GIT_COUNTS=<file> npx vitest run --config test/acceptance/vitest.config.mts` | 18 files passed, 1 skipped. 562 tests: 553 passed, 9 skipped, 0 failed (338 s). The harness wrote 553 lines that sum to **35,629** engine git processes; the test report has 35,641 on `a2952bd`. Against `main`'s 51,904 that is −31.4%. My round 1 wrapper count (the saving to within 21 processes) still supports the `main` figure |
+| Mutation check of the Gate 2 M2 test (scratch copies, 3 runs each) | With only the `this.child !== child` guard removed: **passes** 3 of 3. With the guard and the `removeAllListeners("data")` call both removed: **fails** 3 of 3. So the test does guard against losing both protections, as Gate 2's re-review asked. The test report's "fails with the guard removed" is wrong (m9) |
+| Probe of `Children.startedByEngine` (scratch unit test) | A client 900 whose exited parent's pid 700 now belongs to an engine *grandchild* (started 500), whose parent 650 is a live engine child (started 400); client started 100. `startedByEngine(900)` returns **true**, so the client is refused. That is the Git for Windows launcher case (`cmd\git.exe` is the live child and the real `git.exe` is its child), and the case of a `git push` remote helper (B2) |
+| CI on `a2952bd` (43425922979) | All 13 jobs green |
+| CI on `ccbe901` (43428323093) | **`test (windows-latest, 4/6)` failed.** `gate1.test.ts` [G1-21] failed, and the engine log it prints holds `Refused a channel connection: client 5468 is a process the engine started.`, written between two `git.push` actions. The other finished jobs were green; shard 3 was still running when I wrote this |
+| CI logs, `761239f` (43419482964) | Windows shard 5 logged one refusal more than the green run's 5 (11:53:37, client 8604) in the f009 file that failed. Shard 6 refused client 5712 six times in a row; the green run's shard 6 has no refusals. So spurious "engine started" refusals on Windows are shown in the logs |
+
+### Round 1 items
+
+| Item | Now | Evidence |
+|---|---|---|
+| B1 (FR-7 harness report) | **Resolved** | `test/git-count.ts`, wired in `test/acceptance/vitest.config.mts:16`. One JSON line per test with `FACTORY_GIT_COUNTS` set; 553 lines in my run. It counts `Git.processes`, so the engine's processes only, which is the AC-1 basis |
+| M1 (AC-3 tests) | **Resolved** | `git-reader.test.ts` "a reader that dies mid-reply, or answers with a malformed header, gives the plain answer (AC-3)". The first stand-in sends a header and 3 of 100 bytes, then exits, so a request is pending when the reader dies |
+| M2 (regression tests for Gate 2 fixes) | **Resolved** | M1: "a catBlobs call over the read limit in total…" (`readLimit` option). M2: "output a timed-out reader writes later…" (my mutation check above). L5: "a master read that failed isn't kept…". Also L4: "is used only when it is one non-empty value…" |
+| M3 (tool choice table) | **Resolved** | `F-014-test-report.md` § Tool choice |
+| M4 (CI / Windows) | **Not resolved; now B2** | Report row corrected; a cause was found and partly fixed; CI red again on `ccbe901` |
+| m1, m2 (comments) | Resolved | `git.ts:17-18`, `:85` |
+| m3 (Gate 2 L4) | Resolved | `state-repo.ts:301-325`: the listing's URL is used only when it is the one non-empty value, otherwise `git remote get-url` is asked. Tested |
+| m5 (Gate 2 L5) | Resolved | `paths-file.ts:113-127`: nothing is kept unless the root commits were read and the origin read succeeded (exit 2, no such remote, counts as a read). Tested. Comment issue m11 |
+| m7 (test report runs) | Resolved | Full run on `a2952bd` (909 passed, 14 skipped); counts name commits |
+| m8 (Gate 2 re-review) | Resolved for the fixes up to `70af2af` | `F-014-security-gate2.md` § Re-review. `a2952bd` came later and isn't reviewed (M5) |
+| m4 (Gate 2 L3), m6 (messages) | **Needs owner** | Owner card pending: log as known issues for Alpha, or fix. Not decided here |
+
+### Evidence checklist (round 2)
+
+Lines not listed are as in round 1, Met, and re-checked on `ccbe901` by the runs above.
+
+| Line | Status | Evidence |
+|---|---|---|
+| FR-7 | Met | `git.ts` counters; budgets in `engine.test.ts:154-177` and `units.test.ts` (state commit); harness report `test/git-count.ts` |
+| AC-1 | **Not met (Windows)** | The count is met: 51,904 → 35,629 in my harness run (−31.4%). But AC-1 also says every test that passes on `main` passes. On Windows CI that failed on `761239f` (f009 [SPL-1]) and on `ccbe901` (gate1 [G1-21]), both through a channel refusal that F-014's long-lived readers make likely (B2). `main` was green on `8b20e78` and `2e77d39` |
+| AC-3 | Met | See M1 above. My round 1 probes agree |
+| Windows, Linux, macOS (§5) | **Not met (Windows)** | Linux: my runs and CI. macOS: CI green. Windows: B2 |
+| Behavior, errors and messages unchanged (§5) | **Needs owner** | m4 (Gate 2 L3: a repo re-cloned at the same path reads as missing until its reader idles out) and m6 (some errors in crafted or corrupt repos are worded differently). Both fail closed. The owner's card on logging them for Alpha or fixing them is pending. If they are logged as known issues, this line is Met. If the owner wants them fixed, it is Not met until they are |
+| SR-1 to SR-8 | Met | As round 1; SR-6 and SR-7 now have the regression tests. The channel peer check (F-007, not an F-014 SR) changed in `a2952bd`: M5 |
+| Interface contracts | Met | No diff to `docs/interface-contracts.md` |
+| Architecture / ADRs | Met | No conflict |
+| Change-controlled files | Met | Only `engine/` and `docs/features/F-014-*` changed |
+| Code quality, readability, maintainability | Met, with findings | The new options (`readerTimeoutMs`, `readLimit`) let tests drive the limits without slow fixtures. `osStartedAt` fails closed. Findings: B2, m11, m12 |
+| Comments | Met, with finding | m11 |
+| Test tools | Met | Tool choice table present; Vitest 5.1.0, approved (F-007 OQ-9) |
+| Documentation | Met, with findings | m9, m10 |
+| Security | Met, with finding | Gate 1 and Gate 2 present, Gate 2 re-reviewed up to `70af2af`, no Critical. `a2952bd` not reviewed (M5) |
+
+### Findings (round 2)
+
+#### Blocking
+
+| # | Location | Finding |
+|---|---|---|
+| B2 | `engine/src/proc.ts:34-52` (`startedByEngine`, `reused`); CI run 43428323093, `test (windows-latest, 4/6)` | **The Windows channel refusal (round 1 M4) still happens, and the fix doesn't cover how it happens.** `a2952bd` compares start times only when the walk reaches the engine or a live child (`:40`). On Windows the pid that a client's exited ancestor leaves behind can be taken by a *grandchild* of the engine: the real `git.exe` behind the Git for Windows launcher that is the reader's direct child (the case `git-reader.ts:82-85` describes), or a `git push` helper. The walk then steps from the reused pid to that process's real parent, a live child that did start earlier, and refuses. My probe reproduces it. The CI failure on `ccbe901` matches: "client 5468 is a process the engine started", logged between two `git.push` actions. For the owner this is the VS Code extension intermittently refused while the engine is busy. That fails closed, but it is visible, on the owner's platform, against §2 "nothing visible changes" and §5. **Fix (developer):** check start order at every step of the walk. When a recorded parent started after its child, the chain is broken there: stop and return false, as when the parent is gone. Unknown times keep the current behavior. Add a unit test with the grandchild case (the probe above). Also log the matched ancestor in the refusal, so a future one can be diagnosed from CI. Then CI green on Windows; run the Windows jobs more than once, since one green run doesn't show an intermittent failure is gone |
+
+#### Major (allowed at Rapid prototype; logged)
+
+| # | Location | Finding |
+|---|---|---|
+| M5 | `engine/src/proc.ts:14-69`, `engine/src/os/ffi.ts:55-56`, `:90`, `:243`, `:425-436`, `engine/src/engine.ts:184` | **A change to an F-007 security control has had no security review.** The channel's "a process the engine started" refusal (F-007 AC-4) now admits a client when the matched ancestor started after it, and a new FFI function, `GetProcessTimes`, joins the fixed list. F-007's dev report records the residual risk as "it can't wrongly admit one past a live engine". My reading: the change admits only where the client's real ancestor has already exited, and the walk already admits that case when the pid isn't reused (the parent lookup returns null). So it doesn't widen what an engine-started process can reach. It fails closed when a time is unknown, and rounding the 64-bit FILETIME to a JavaScript number is monotonic, so it can't reverse the order. Gate 2's re-review stops at `70af2af`. **Yes, the Gate 2 reviewer should look at `a2952bd` and the B2 fix before merge.** At Rapid prototype that isn't required by the bar, but it is the channel's main local access check |
+
+#### Minor (logged; never block)
+
+| # | Location | Finding |
+|---|---|---|
+| m4 | `engine/src/git.ts` (`reader`) | Carried: Gate 2 L3. Owner decision pending (the §5 line above) |
+| m6 | `engine/src/git.ts` (reader-path messages) | Carried: messages in crafted or corrupt repos. Owner decision pending |
+| m9 | `docs/features/F-014-test-report.md` § Security requirements (SR-6 row) | "fails with the guard removed" isn't so: it passes with only the guard removed and fails when the guard and the listener removal are both gone (mutation check above). Say "fails with both protections removed" |
+| m10 | `docs/features/F-014-test-report.md:3` | Says spec v7; the spec is v8 |
+| m11 | `engine/src/config/paths-file.ts:111-112` | The comment "Without the read failing, 'no origin' and 'no root' can't be told apart from a failure here" is hard to follow, and `:124` says it again more clearly. Keep one. `masterOrigin` also repeats `origin` with a different error contract; a one-line note on why the master's read differs would do |
+| m12 | `engine/src/channel/windows.ts:129`, `unix.ts:68` | The refusal message names only the client pid, so the CI logs couldn't show which ancestor matched. Part of B2's fix |
+
+### Counts (round 2)
+
+- Blocking: 1 (B2).
+- Major: 1 (M5).
+- Minor: 6 (m4, m6, m9, m10, m11, m12).
+- Lines: 2 Not met (AC-1 and Windows, for B2). 1 Needs owner (§5 behavior and messages: m4, m6).
+
+### To pass round 3
+
+1. **Developer (B2, m12):** check start order at every step of the ancestry walk, add the grandchild unit test, and name the matched ancestor in the refusal log.
+2. **Security reviewer (M5):** review `a2952bd` and the B2 fix.
+3. **Orchestrator:** CI green on Windows on the final commit, with the Windows jobs run more than once.
+4. **Owner:** the pending card on m4 and m6.
+5. **Test engineer (m9, m10):** two wording fixes in the test report.
+
+## Round 1 (history)
+
 - **Feature:** F-014 Fewer engine git calls, spec v8
 - **Judge:** validation-judge
 - **Date:** 2026-11-13
@@ -12,7 +119,7 @@
   - Blocking: 1 (B1). Major: 4 (M1 to M4). Minor: 8 (m1 to m8).
   - The code itself is in good shape: every test passes in my run, including the full acceptance suite, and my probes confirm the Gate 2 M1 and M2 fixes, the v8 fallback on old git, and the reader-death cases. What fails is one unbuilt part of FR-7 (the harness never reports counts, so AC-1 can't be reproduced from the repo) and missing test evidence.
 
-## My own run (evidence source)
+### My own run (evidence source)
 
 On `761239f` (engine code as at `fcf8bec`), Linux container, Node 22, git 2.43.0, running as root. `engine/node_modules` was already present. Logs and probes are in the judge's scratch folder only; nothing in the repo was changed except this report.
 
@@ -25,9 +132,9 @@ On `761239f` (engine code as at `fcf8bec`), Linux container, Node 22, git 2.43.0
 | Probes (a scratch copy of the branch; a throwaway test file run with the repo's Vitest; stand-in `git` scripts) | All as expected: (1) Gate 2 M2: a reader that answers for the wrong object, then writes a planted `1111… commit` header 20 ms later and stays alive; five reads after it (one by id, four `revParse(…, "HEAD")` 30 ms apart) all return the real head. (2) AC-3: a reader that reads one request and exits (dies mid-read) and a reader that writes a garbage header; reads return the plain-git answer and each next read starts a new reader. (3) Spec v8: a `git` whose `cat-file --batch-command` prints usage and exits 129; five `revParse` and a `readBlob` all answer right, and exactly 3 readers are started for the repo. (4) Gate 2 M1: three 30 MiB blobs; `catBlobs` fails with "output over the limit" through the reader and through plain git, and two of them (60 MiB) read fine |
 | CI | GitHub shows no completed `engine` run on any F-014 code commit. The runs on `9c7cd50`, `fc418f6`, `c004929`, `ef3bc0c`, `14263a4` and `c235fb9` are **cancelled** (superseded); `fcf8bec` is cancelled too. **The run on `761239f` (43419482964) failed**: 12 of 13 test jobs passed (Linux ×2, macOS ×3, Windows ×5), and `test (windows-latest, 5/6)` failed one test, `f009-document.test.ts` [SPL-1] "a quote of 5 words in under 25 characters … is accepted", with `{"code":0,"message":"connection closed"}`. The log shows no reader or git error around it; cause not determined. `docs-checks` is green on `761239f` |
 
-## Evidence checklist
+### Evidence checklist
 
-### Functional requirements
+#### Functional requirements
 
 | Id | Status | Evidence |
 |---|---|---|
@@ -39,7 +146,7 @@ On `761239f` (engine code as at `fcf8bec`), Linux container, Node 22, git 2.43.0
 | FR-6 | Met | State commits keep `hash-object`, `read-tree`, `update-index`, `write-tree`, `commit-tree`, `update-ref` (`state-repo.ts:198-237`); `units.test.ts:443` asserts the exact list |
 | FR-7 | **Not met** | Built: `Git.spawns`, `spawnCount()`, `Git.processes` (`git.ts:79`, `:145-161`), counted per subcommand, with the reader counted on start (`:191`); budgets for one engine start (13), a second start (9) and two manifest reads (1) in `engine.test.ts:154-177`; one state commit in `units.test.ts:443` (exact process list). **Not built: "The acceptance harness reports the total per test."** Nothing in `test/acceptance/` reads the counts (the only F-014 change there is `world.ts:680-682`, closing readers). The test report says its AC-1 numbers came from "a temporary hook … (not committed)". See B1 |
 
-### Acceptance criteria
+#### Acceptance criteria
 
 | Id | Status | Evidence |
 |---|---|---|
@@ -52,7 +159,7 @@ On `761239f` (engine code as at `fcf8bec`), Linux container, Node 22, git 2.43.0
 | AC-7 | Met | `git-reader.test.ts:183` "closes the reader after its idle time…": pid leaves `Children` and the process is gone |
 | AC-8 | Met | Test report: 357.5 s on `main`, 347.0 s on F-014 (Linux, same machine). My runs (same machine, counting wrapper): 392 s on `main`, 372 s on the branch (−5%); without the wrapper, 375 s on the branch |
 
-### Security requirements
+#### Security requirements
 
 | Id | Status | Evidence |
 |---|---|---|
@@ -65,7 +172,7 @@ On `761239f` (engine code as at `fcf8bec`), Linux container, Node 22, git 2.43.0
 | SR-7 | Met | `Children.add`/`remove` (`git-reader.ts:136`, `:147`); per-read timeout (`:106`); `breakOff` kills before the read rejects (`:181-189`). `git-reader.test.ts:113`, `:183`. The test doesn't assert the pid is gone after a timeout (Gate 2 L6 asked for it); the code sends `SIGKILL` synchronously before rejecting |
 | SR-8 | Met | `update-ref` with the old value kept (`state-repo.ts:231`); `headCache = null` on failure (`:233`), before `worktree add` (`:103`) and in `fastForward` (`:360`). `units.test.ts:443` |
 
-### Constraints and edge cases (spec §5, §6)
+#### Constraints and edge cases (spec §5, §6)
 
 | Item | Status | Evidence |
 |---|---|---|
@@ -79,7 +186,7 @@ On `761239f` (engine code as at `fcf8bec`), Linux container, Node 22, git 2.43.0
 | Edge case: paths never sent to the reader | Met | `NAME_RE` (`git-reader.ts:40`), trees walked in the engine (`git.ts:331-346`) |
 | Edge case: huge blob, header first | Met | `git-reader.ts:69-72`; `git-reader.test.ts:125`; batch cap `git.ts:276-278` (my probe) |
 
-### Other lines
+#### Other lines
 
 | Area | Status | Evidence |
 |---|---|---|
@@ -93,15 +200,15 @@ On `761239f` (engine code as at `fcf8bec`), Linux container, Node 22, git 2.43.0
 | Documentation | Met, with findings | Spec v8, both gate reports, test report. Findings: m7, m8 |
 | Security | Met | Gate 1 and Gate 2 present; Gate 2 PASS with no Critical or High finding. The developer's fixes after Gate 2 were not re-reviewed by the gate (m8); my probes confirm M1 and M2 |
 
-## Findings
+### Findings
 
-### Blocking
+#### Blocking
 
 | # | Location | Finding |
 |---|---|---|
 | B1 | `engine/test/acceptance/support/world.ts`; `engine/src/git.ts:145-161`; `F-014-test-report.md` § Process counts | **FR-7's acceptance-harness report is not built.** FR-7 requires that "the acceptance harness reports the total per test". The `Git` counters exist, but nothing in the acceptance harness reads or reports them, and the test report says its counts (51,904 → 35,628, the basis of AC-1 and of the owner's v6 change to the AC-1 target) came from a temporary hook that was not committed. So the AC-1 figure can't be reproduced from the repo, and future features have no per-test count to watch. Fix (developer): have the harness report each test's git process total (engine and fixtures, or say which), for example by counting through the `GitWrapper` / `FACTORY_TEST_GIT` path the harness already has, and have the test engineer re-measure AC-1 with it on the final commit. |
 
-### Major (allowed at Rapid prototype; logged)
+#### Major (allowed at Rapid prototype; logged)
 
 | # | Location | Finding |
 |---|---|---|
@@ -110,7 +217,7 @@ On `761239f` (engine code as at `fcf8bec`), Linux container, Node 22, git 2.43.0
 | M3 | `docs/features/F-014-test-report.md` | **No tool choice table.** Required in every run report (`testing-strategy.md` § Run report) and by this checklist. The required types at Rapid prototype are unit and acceptance; the tool is Vitest 5.1.0 with the F-007 harness. Fix (test engineer): add the table. |
 | M4 | `F-014-test-report.md` § Runs ("CI … `14263a4` … green"); GitHub Actions run 43419482964 | **CI is red on the final commit, and the test report's CI row isn't borne out.** GitHub lists the `engine` run on `14263a4` as cancelled, as are those on `9c7cd50`, `fc418f6`, `c004929`, `ef3bc0c`, `c235fb9` and `fcf8bec`, so no F-014 code commit had a completed run before `761239f`. On `761239f`, one Windows shard (5/6) failed `f009-document.test.ts` [SPL-1] with "connection closed" from the engine's channel; the other 12 test jobs passed. I couldn't tell from the log whether it is F-014 (a Windows reader problem would look like this) or a flake; `main`'s runs on `8b20e78` and `2e77d39` are green. Windows is where the owner runs the engine, and the M2 fix changed how a reader ends (`git-reader.ts:184-186`: input destroyed and `SIGKILL` at once, instead of `bd3e4b5`'s 200 ms grace). Fix (orchestrator): classify the failure per `testing-strategy.md` (rerun if flaky, developer if product code), get CI green on the final commit, and correct the test report's row. |
 
-### Minor (logged; never block)
+#### Minor (logged; never block)
 
 | # | Location | Finding |
 |---|---|---|
@@ -127,14 +234,14 @@ Known issues carried, not graded:
 - Gate 2 Info: trees git reads but SR-5 refuses (a zero-padded mode, a non-UTF-8 name) make the whole tree unreadable through the reader, including for `populateWorktree`. SR-5 working as approved.
 - Gate 2 owner item 3 (record M1, M2, L2 to L6 as known issues counting against Alpha) has no recorded answer. Not mine to decide; listed for the orchestrator.
 
-## Counts
+### Counts
 
 - Blocking: 1 (B1).
 - Major: 4 (M1, M2, M3, M4).
 - Minor: 8 (m1 to m8).
 - Lines: 3 Not met (FR-7, AC-3, Test tools). Needs owner: none.
 
-## To pass round 2
+### To pass round 2
 
 1. **Developer (B1):** the acceptance harness reports git processes per test (FR-7).
 2. **Test engineer (B1, M1, M2, M3, m7):** re-measure AC-1 with the harness report on the final commit; add the AC-3 mid-read and malformed-header tests and the regression tests for Gate 2 M1, M2 and L5; add the tool choice table; record the full run on the final commit.
