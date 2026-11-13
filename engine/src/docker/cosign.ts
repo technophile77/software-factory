@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { DockerError } from "./cli";
 
 /**
@@ -79,34 +81,75 @@ function sha256Of(bytes: Buffer): string {
 }
 
 /**
+ * Reads a regular file through a single descriptor. Checking the path and then
+ * reading it by path leaves a window in which the path can be swapped (a
+ * file-system race), so the type check and the read both use the open fd; on
+ * POSIX O_NOFOLLOW also makes the open itself refuse a symlink (Windows has no
+ * such flag, where it is 0).
+ *
+ * @throws Error when the file can't be opened or isn't a regular file.
+ */
+function readRegularFile(file: string): Buffer {
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+  try {
+    if (!fs.fstatSync(fd).isFile()) throw new Error("not a file");
+    return fs.readFileSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** A hash-verified private copy of the cosign binary, and the call that removes it. */
+export interface VerifiedCosign {
+  /** The copy to execute, in a directory only the engine's user can enter; differs from the configured path. */
+  path: string;
+  /** Deletes the copy and its directory; safe to call more than once. */
+  cleanup(): void;
+}
+
+/**
  * Checks that the file at the configured path is the pinned cosign build for
- * this OS and CPU, by SHA-256, and returns the path. The engine never
- * downloads cosign: the owner installs it (hygiene step) at that path.
+ * this OS and CPU, by SHA-256, and returns an owner-only copy of the verified
+ * bytes. Running the copy rather than the configured path shrinks the gap
+ * between the check and the exec: nobody else can write to the copy. The
+ * engine never downloads cosign: the owner installs it (hygiene step) at the
+ * configured path. The caller must call `cleanup()` once cosign has run.
  *
  * @example
- * ensureCosign({ path: "C:/engine/bin/cosign.exe", pins, keyFile: "litellm-cosign.pub" }); // "C:/engine/bin/cosign.exe"
- * @throws DockerError "cosign checksum not pinned" when no hash is pinned for this platform, or when the file is missing, isn't a regular file, or doesn't match the hash.
+ * const c = ensureCosign({ path: "C:/engine/bin/cosign.exe", pins, keyFile: "litellm-cosign.pub" });
+ * try { await run(c.path, args); } finally { c.cleanup(); }
+ * @throws DockerError "cosign checksum not pinned" when no hash is pinned for this platform, or when the file is missing, isn't a regular file (a symlink is refused on POSIX), or doesn't match the hash.
  */
-export function ensureCosign(o: CosignOptions): string {
+export function ensureCosign(o: CosignOptions): VerifiedCosign {
   const key = cosignPlatformKey(o.platform ?? process.platform, o.arch ?? process.arch);
   const want = key ? o.pins.sha256[key] : undefined;
   if (!key || want === undefined || !HEX64.test(want)) throw new DockerError(`cosign checksum not pinned for ${key ?? `${o.platform ?? process.platform}/${o.arch ?? process.arch}`}`);
   let bytes: Buffer;
   try {
-    if (!fs.lstatSync(o.path).isFile()) throw new Error("not a file");
-    bytes = fs.readFileSync(o.path);
+    bytes = readRegularFile(o.path);
   } catch {
     throw new DockerError(`cosign ${o.pins.version} isn't installed as a regular file at the configured path`);
   }
   if (sha256Of(bytes) !== want) throw new DockerError(`the cosign binary doesn't match the pinned ${o.pins.version} ${key} SHA-256`);
-  return o.path;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sf-cosign-"));
+  const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
+  try {
+    fs.chmodSync(dir, 0o700);
+    // Keep the original file name: Windows decides executability from the extension.
+    const copy = path.join(dir, path.basename(o.path));
+    fs.writeFileSync(copy, bytes, { flag: "wx", mode: 0o700 });
+    return { path: copy, cleanup };
+  } catch (e) {
+    cleanup();
+    throw e;
+  }
 }
 
 /** The pinned LiteLLM public key's text, or a DockerError when the file is missing or isn't the pinned key. */
 function checkedKeyFile(keyFile: string): string {
   let text: string;
   try {
-    text = fs.readFileSync(keyFile, "utf8");
+    text = readRegularFile(keyFile).toString("utf8");
   } catch {
     throw new DockerError("the pinned LiteLLM cosign public key file is missing");
   }
@@ -142,8 +185,13 @@ export const execCosign: CosignRunner = (binary, args) =>
 export function makeCosignVerifier(o: CosignOptions): (imageRef: string) => Promise<void> {
   return async (imageRef) => {
     const binary = ensureCosign(o);
-    const key = checkedKeyFile(o.keyFile);
-    const r = await (o.run ?? execCosign)(binary, ["verify", "--key", key, imageRef]);
+    let r: CosignResult;
+    try {
+      const key = checkedKeyFile(o.keyFile);
+      r = await (o.run ?? execCosign)(binary.path, ["verify", "--key", key, imageRef]);
+    } finally {
+      binary.cleanup();
+    }
     if (r.code !== 0) throw new DockerError(`cosign refused the signature of ${imageRef} (exit ${r.code}): ${r.stderr.trim().slice(0, 200)}`);
   };
 }
