@@ -1,7 +1,7 @@
 # Feature: Model and effort tuning per agent
 
 - **Id:** F-002
-- **Status:** v12 Approved (owner merged PR #8, 2026-11-10). v13 (calibration on promptfoo, ADR 0023) in review: OQ-1 to OQ-3 and A-7, A-13 await the owner. Implementation waits for the engine
+- **Status:** v12 Approved (owner merged PR #8, 2026-11-10). v13 (calibration on promptfoo, ADR 0023) in review: OQ-1 decided; OQ-2, OQ-3 and A-7, A-13 await the owner. Implementation waits for the engine
 - **Requested by / date:** Alex, 2026-11-10
 - **Spec version:** 13 (draft)
 
@@ -103,7 +103,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | AC-21 | Given calibration for a role at one rung with 2 tasks, then promptfoo runs 10 trials (2 tasks × repeat 5), every trial's model call reaches the engine adapter, and no call goes to a promptfoo built-in provider or to the network from promptfoo itself. | FR-22, FR-23 |
 | AC-22 | Given a batch whose estimate is $1 and trials that cost more than expected, when the running total would pass $1.50, then the evaluation is aborted, partial results are kept, and a Testing item is filed. | FR-24, SR-9 |
 | AC-23 | Given a Claude agent run, then the cost in its report is the Agent SDK's `total_cost_usd`; given a run on an F-013 endpoint, then it is LiteLLM's figure; given a model with neither, then it is tokens × FR-1's configured price. | FR-3, A-13 |
-| AC-24 | Given promptfoo started by the engine, then its telemetry, update check, sharing and remote generation are off, its config folder is the engine-owned one, and it was started as OQ-1 decides. | SR-11, SR-12 |
+| AC-24 | Given promptfoo started by the engine, then its telemetry, update check, sharing and remote generation are off, its config folder is the engine-owned one, and it runs in a child process whose environment holds no other variables (no factory token, Claude credential or endpoint keys). | SR-11, SR-12 |
 | AC-13 | Given an open suggestion for a role, when the trigger is met again, then no second item is filed. | FR-14 |
 | AC-14 | Given an approved suggestion, then the manifest change is one commit whose message starts with the item id. | FR-15 |
 | AC-15 | Given a role already on the top rung that meets the step-up trigger, then the item says so and recommends investigating the role's instructions instead. | FR-12 |
@@ -111,7 +111,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 
 ## 5. Constraints
 - Engine code (ADR 0001, TypeScript + Agent SDK) drives promptfoo as a pinned
-  Node library (ADR 0023); where promptfoo runs is OQ-1. promptfoo runs only
+  Node library (ADR 0023), in a credential-free child process (OQ-1, SR-12). promptfoo runs only
   for calibration and replays, never in a normal feature run.
 - promptfoo 0.125.x needs Node 22.22 or newer (its `engines` field).
 - The ladder and prices are config, so a new model or price change is a
@@ -210,7 +210,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | SR-10 | The `project-evaluator` role gets read access to specs and run reviews only, and write access only to its own report; no commands, no network. | Gate 1 #5 (S8.1, S8.5) | Accepted |
 
 | SR-11 | promptfoo conditions (S4.1, S4.3, S4.4, S4.6; the same ones the owner set for LiteLLM in F-013 OQ-9): exact version pin with a lockfile; a new release is adopted no sooner than 14 days after it is published unless it fixes a CVE in a path the factory uses; OSV-Scanner covers it in CI; transitive packages with known advisories are moved to fixed versions with npm `overrides` (four in 0.125.1, see the review); the engine starts it with `PROMPTFOO_DISABLE_TELEMETRY=1`, `PROMPTFOO_DISABLE_UPDATE=1`, `PROMPTFOO_DISABLE_SHARING=1` and `PROMPTFOO_DISABLE_REMOTE_GENERATION=1`; red-team, cloud and share features are never used. | Gate 1 re-review #1 (v13) | Proposed |
-| SR-12 | Where promptfoo runs and what it can reach is decided in OQ-1. Whatever the answer, it never gets the factory token, the Claude credential or endpoint keys (FR-23). | Gate 1 re-review #2 (v13) | Proposed, waits on OQ-1 |
+| SR-12 | promptfoo runs in a separate Node child process that the engine starts with an empty environment except the `PROMPTFOO_*` settings in SR-11, and talks to the engine only over a pipe; the engine runs every trial. It never gets the factory token, the Claude credential or endpoint keys (FR-23, OQ-1). | Gate 1 re-review #2 (v13); owner, 2026-11-13 (OQ-1) | Accepted |
 | SR-13 | promptfoo's working files (FR-25) hold prompts and outputs like transcripts do, so they get SR-4's treatment: outside Git, in an engine-owned folder, never in a run review or hygiene item. | Gate 1 re-review #3 (v13) | Proposed |
 
 Gate 1: [F-002-security-gate1.md](F-002-security-gate1.md), 2026-11-10. Five findings, all resolved by SR-2 and SR-7 to SR-10. No owner decision needed.
@@ -218,7 +218,7 @@ Gate 1: [F-002-security-gate1.md](F-002-security-gate1.md), 2026-11-10. Five fin
 ### Open questions for the owner (v13)
 | Id | Question | Recommendation | Status |
 |---|---|---|---|
-| OQ-1 | Where does promptfoo run? (a) In a separate Node child process the engine starts with an empty environment (only the `PROMPTFOO_*` settings above), talking to the engine over a pipe; the engine runs every trial. (b) Inside the engine process. (c) In its own container with no network. | (a). promptfoo brings about 400 npm packages (0.125.1, optional ones left out). In (b), any one of them runs with the engine's environment, which holds the factory token and Claude credential; the September 2025 "Shai-Hulud" npm worm did exactly that, stealing tokens from the environment of whatever process loaded it ([CISA alert, 2025-09-23](https://www.cisa.gov/news-events/alerts/2025/09/23/widespread-supply-chain-compromise-impacting-npm-ecosystem)). (a) removes those credentials from its reach at almost no cost to you: nothing to install or start by hand. (c) adds network isolation but means a container image to build and update. Least privilege: security-standards S8. | Pending owner |
+| OQ-1 | Where does promptfoo run? (a) In a separate Node child process the engine starts with an empty environment (only the `PROMPTFOO_*` settings above), talking to the engine over a pipe; the engine runs every trial. (b) Inside the engine process. (c) In its own container with no network. | (a). promptfoo brings about 400 npm packages (0.125.1, optional ones left out). In (b), any one of them runs with the engine's environment, which holds the factory token and Claude credential; the September 2025 "Shai-Hulud" npm worm did exactly that, stealing tokens from the environment of whatever process loaded it ([CISA alert, 2025-09-23](https://www.cisa.gov/news-events/alerts/2025/09/23/widespread-supply-chain-compromise-impacting-npm-ecosystem)). (a) removes those credentials from its reach at almost no cost to you: nothing to install or start by hand. (c) adds network isolation but means a container image to build and update. Least privilege: security-standards S8. | **Decided (a)**, owner, 2026-11-13 (decision card) |
 | OQ-2 | Do you accept the S4.1 review's result (conditional: SR-11 conditions, residual risk stated in the review)? | Accept | Pending owner |
 | OQ-3 | Can you open promptfoo's local web viewer (`promptfoo view`, on 127.0.0.1 only) to look through calibration results, or should the factory only give you its own Calibration result file? | Allow the viewer, on demand, bound to 127.0.0.1, reading only the engine-owned folder. It shows every trial side by side at no build cost. Its web server package (`@hono/node-server` 2.1.5) has two Moderate advisories, fixed by the SR-11 override. | Pending owner |
 
@@ -248,7 +248,7 @@ All changes are additive (A-8):
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [ ] Assumptions explicit and approved (A-1 to A-12 approved; v13 A-7 change and A-13 pending)
-- [ ] Blocking decisions resolved (v13: OQ-1 to OQ-3 pending; Gate 1 re-review done)
+- [ ] Blocking decisions resolved (v13: OQ-2, OQ-3 pending; Gate 1 re-review done)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |

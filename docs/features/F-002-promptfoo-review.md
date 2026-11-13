@@ -76,16 +76,15 @@ possible if esbuild's binary is fetched the way the engine already does.
    config folder engine-owned; response cache off.
 4. Red-team, cloud and share features never used; only `evaluate()` with the
    engine's custom provider.
-5. Run as OQ-1 decides, never with the factory token, Claude credential or
+5. Run in a credential-free child process (OQ-1 (a), owner 2026-11-13), never with the factory token, Claude credential or
    endpoint keys in reach (SR-12).
 
 ## Residual risk for the owner
 A malicious promptfoo release, or one of its ~400 packages, that gets past
-the pin and quarantine runs code on your PC whenever calibration runs. With
-OQ-1 (a) it has no factory credentials to steal and sees only calibration
+the pin and quarantine runs code on your PC whenever calibration runs. In
+the child process you chose (OQ-1 (a)) it has no factory credentials to steal and sees only calibration
 prompts and outputs, but it can still read and write whatever your user
-account can and can reach the network. With OQ-1 (b) it would also have the
-engine's credentials. npm supply-chain attacks that steal credentials from
+account can and can reach the network. npm supply-chain attacks that steal credentials from
 the environment have happened at scale, for example the September 2025
 "Shai-Hulud" worm
 ([CISA alert, 2025-09-23](https://www.cisa.gov/news-events/alerts/2025/09/23/widespread-supply-chain-compromise-impacting-npm-ecosystem)).
