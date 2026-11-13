@@ -16,6 +16,44 @@ const MAX_API_BODY = 32 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
 const CRED_RE = /^[A-Za-z0-9_-]{32,128}$/;
 
+/**
+ * The measured speeds an endpoint session's requests are held to (F-013
+ * FR-12). Each forwarded request gets its own deadline from them; see
+ * {@link requestDeadlineMs}.
+ */
+export interface GrantDeadline {
+  /** Prompt-processing speed, tokens per second (> 0). */
+  promptTps: number;
+  /** Generation speed, tokens per second (> 0). */
+  genTps: number;
+  /** Fixed allowance for connection and queueing, seconds (>= 0). */
+  marginS: number;
+}
+
+/** The `max_tokens` assumed for a request whose body has none. */
+export const DEFAULT_MAX_TOKENS = 8192;
+
+/**
+ * One request's deadline in ms: `marginS + promptTokens / promptTps + maxTokens / genTps`
+ * seconds. The gateway has no tokenizer for the endpoint's model, so the prompt
+ * is estimated as the body's length in bytes / 4; the body's `max_tokens` is
+ * the generation allowance, `DEFAULT_MAX_TOKENS` when it has none.
+ *
+ * @example
+ * // AC-11: 200 and 10 tokens/s, 60 s margin, a 400,000-byte body and max_tokens 4000: 60 + 500 + 400 s
+ * requestDeadlineMs({ promptTps: 200, genTps: 10, marginS: 60 }, Buffer.from(JSON.stringify({ max_tokens: 4000, p: "x".repeat(399_970) }))); // about 960000
+ */
+export function requestDeadlineMs(d: GrantDeadline, body: Buffer): number {
+  let max = DEFAULT_MAX_TOKENS;
+  try {
+    const m = (JSON.parse(body.toString("utf8")) as { max_tokens?: unknown }).max_tokens;
+    if (typeof m === "number" && Number.isFinite(m) && m > 0) max = m;
+  } catch {
+    // An unreadable body is refused by the router; the default allowance applies meanwhile.
+  }
+  return (d.marginS + body.length / 4 / d.promptTps + max / d.genTps) * 1000;
+}
+
 export interface Grant {
   session: string;
   role: string;
@@ -23,6 +61,41 @@ export interface Grant {
   allow: string[];
   /** Only the web reader, and only with WebSearch in its tools (owner decision 2026-11-12). */
   webSearch?: boolean;
+  /**
+   * The name of a configured endpoint (F-013). Absent means Anthropic. The
+   * grant, not the agent, picks it: the gateway rewrites `model` to this name.
+   */
+  upstream?: string;
+  /** With `upstream`: the speeds each request is held to. Absent while no speed is known; requests then have only the idle timeout. */
+  deadline?: GrantDeadline;
+  /**
+   * `router` marks the LiteLLM container's own grant (its HTTP(S)_PROXY
+   * credential): it may reach the pinned endpoints and nothing else, and has
+   * no gateway. Absent or `agent` is an agent session's grant.
+   */
+  kind?: "agent" | "router";
+}
+
+/**
+ * A model endpoint as the engine resolved and pinned it before the session
+ * (F-013 FR-4). `address` is the one the engine checked; the proxy connects
+ * to it and never looks the name up again.
+ */
+export interface PinnedEndpoint {
+  name: string;
+  class: "private" | "public";
+  scheme: "http" | "https";
+  host: string;
+  address: string;
+  port: number;
+  basePath: string;
+}
+
+/** The LiteLLM container on the internal network, and the per-run key that opens it. */
+export interface RouterTarget {
+  address: string;
+  port: number;
+  masterKey: string;
 }
 
 export interface ModelCredential {
@@ -52,6 +125,8 @@ export interface ProxyDeps {
   connect(address: string, port: number): net.Socket;
   /** An HTTPS request to `address`, with TLS checked against `host`. */
   request(address: string, host: string, opts: { method: string; path: string; headers: http.OutgoingHttpHeaders }): http.ClientRequest;
+  /** A plain-HTTP request to `address`:`port`: the router, or a private endpoint. */
+  httpRequest(address: string, port: number, opts: { method: string; path: string; headers: http.OutgoingHttpHeaders }): http.ClientRequest;
 }
 
 export const realDeps: ProxyDeps = {
@@ -74,6 +149,8 @@ export const realDeps: ProxyDeps = {
       agent: false,
       timeout: 60_000,
     }),
+  // A local model can take minutes to the first token, so the idle limit is longer than for the API.
+  httpRequest: (address, port, o) => http.request({ host: address, port, method: o.method, path: o.path, headers: o.headers, agent: false, timeout: 300_000 }),
 };
 
 export class Refused extends Error {
@@ -98,9 +175,70 @@ export interface ProxyOptions {
   maxPageBytes: number;
   log(entry: ProxyLog): void;
   deps?: ProxyDeps;
+  /** Where endpoint grants are forwarded. Without it, an endpoint grant's requests are refused. */
+  router?: RouterTarget;
+  /** Cap on request and response bodies through the gateway; defaults to 32 MiB. Tests lower it. */
+  maxApiBody?: number;
 }
 
 const HOP = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "host"]);
+
+/**
+ * The router reply headers the gateway passes to the agent (F-013 Gate 2 M2).
+ * LiteLLM adds `x-litellm-*` headers and `llm_provider-*` copies of the
+ * endpoint's own headers, some holding the endpoint's `api_base`; an allow list
+ * keeps all of them from the agent (SR-2). What stays is what Claude Code uses:
+ * the body's type and length, its retry hints (`retry-after*`, `x-should-retry`),
+ * the request id it logs, and Anthropic-style rate-limit headers.
+ */
+const ROUTER_REPLY_HEADERS: ReadonlySet<string> = new Set(["content-type", "content-length", "cache-control", "request-id", "retry-after", "retry-after-ms", "x-should-retry"]);
+const ROUTER_REPLY_PREFIXES = ["anthropic-ratelimit-"];
+
+/** What the agent is told in place of any error body from the router: it can quote the endpoint's address. */
+export const ROUTER_ERROR_TEXT = "the model endpoint returned an error";
+
+/** Logged in place of a host or address the router asked for that is no pinned endpoint's (SR-2). */
+const NOT_AN_ENDPOINT = "(not a pinned endpoint)";
+
+/**
+ * The request paths the router may use at an endpoint (F-013 Gate 2 L2): the
+ * ones SR-1 lists plus OpenAI chat completions, which LiteLLM calls for
+ * `api: openai` endpoints. Paths below the endpoint's own base path are
+ * allowed too, since LiteLLM appends its route to the `api_base` it is given.
+ */
+export const ENDPOINT_PATHS: readonly string[] = ["/v1/models", "/v1/messages", "/v1/messages/count_tokens", "/v1/chat/completions"];
+const BASE_RELATIVE_PATHS: readonly string[] = [...ENDPOINT_PATHS, "/models", "/chat/completions"];
+
+/**
+ * Whether the router may request `pathname` from an endpoint with this base path.
+ *
+ * @param pathname the request path without its query.
+ * @param basePath the endpoint's base URL path ("" or "/v1", no trailing slash).
+ * @example
+ * routerPathAllowed("/api/v1/messages", "/api"); // true
+ * routerPathAllowed("/admin", "/api"); // false
+ */
+export function routerPathAllowed(pathname: string, basePath: string): boolean {
+  if (ENDPOINT_PATHS.includes(pathname)) return true;
+  return basePath !== "" && BASE_RELATIVE_PATHS.some((s) => pathname === `${basePath}${s}`);
+}
+
+/**
+ * The reply headers from the router that may reach the agent: the allow list
+ * above, minus any whose value holds a URL or one of `hide` (the endpoint's
+ * host and address), however the router came to put it there.
+ */
+export function routerReplyHeaders(headers: http.IncomingHttpHeaders, hide: readonly string[]): http.OutgoingHttpHeaders {
+  const out: http.OutgoingHttpHeaders = {};
+  const secret = hide.filter((h) => h !== "").map((h) => h.toLowerCase());
+  for (const [k, v] of Object.entries(headers)) {
+    if (v === undefined || !(ROUTER_REPLY_HEADERS.has(k) || ROUTER_REPLY_PREFIXES.some((p) => k.startsWith(p)))) continue;
+    const text = [v].flat().join(",").toLowerCase();
+    if (text.includes("://") || secret.some((h) => text.includes(h))) continue;
+    out[k] = v;
+  }
+  return out;
+}
 
 /**
  * The `anthropic-beta` values the gateway passes on (Security Gate 2, M1;
@@ -165,14 +303,126 @@ function safeToken(v: unknown): string {
   return String(v).replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 64);
 }
 
+/**
+ * The top-level Messages API fields the gateway passes to the router (SR-17).
+ * An allow list, not a deny list: LiteLLM reads routing and credential
+ * parameters (`api_base`, `api_key`, `user_config`, `vertex_*`, `aws_*`,
+ * `litellm_*` and more, with new ones added each release) from the request
+ * body, so any key not known to be Anthropic's is dropped.
+ */
+export const ENDPOINT_BODY_FIELDS: ReadonlySet<string> = new Set([
+  "model", "messages", "system", "tools", "tool_choice", "max_tokens", "temperature", "top_p", "top_k",
+  "stop_sequences", "stream", "thinking", "metadata", "context_management", "output_config",
+]);
+
+/**
+ * Rewrites a Messages body for an endpoint session (SR-17, FR-5): keeps only
+ * {@link ENDPOINT_BODY_FIELDS}, keeps only `user_id` inside `metadata`, and
+ * sets `model` to the granted endpoint's name so the agent can't pick another.
+ * Also folds every `messages[]` entry with role `system` into the top-level
+ * `system` field (FR-16, {@link foldSystemMessages}); this is done only here,
+ * so requests to api.anthropic.com are never changed.
+ * Returns the new body and the names of what was dropped (names only, never
+ * values). The body must already have passed {@link refusedBody}.
+ *
+ * @example
+ * sanitizeEndpointBody(Buffer.from('{"model":"x","api_base":"http://evil","messages":[]}'), "local-qwen");
+ * // { body: '{"model":"local-qwen","messages":[]}', dropped: ["api_base"] }
+ *
+ * @example
+ * sanitizeEndpointBody(Buffer.from('{"messages":[{"role":"user","content":"a"},{"role":"system","content":"env"}]}'), "ep");
+ * // { body: '{"messages":[{"role":"user","content":"a"}],"system":[{"type":"text","text":"env"}],"model":"ep"}', dropped: [] }
+ */
+export function sanitizeEndpointBody(body: Buffer, endpoint: string): { body: Buffer; dropped: string[] } {
+  const o = JSON.parse(body.toString("utf8")) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  const dropped: string[] = [];
+  for (const [k, v] of Object.entries(o)) {
+    if (!ENDPOINT_BODY_FIELDS.has(k)) dropped.push(k);
+    else if (k === "metadata") {
+      if (typeof v === "object" && v !== null && !Array.isArray(v)) {
+        const meta = v as Record<string, unknown>;
+        const kept: Record<string, unknown> = {};
+        if ("user_id" in meta) kept.user_id = meta.user_id;
+        for (const mk of Object.keys(meta)) if (mk !== "user_id") dropped.push(`metadata.${mk}`);
+        out.metadata = kept;
+      } else dropped.push(k);
+    } else out[k] = v;
+  }
+  foldSystemMessages(out, dropped);
+  out.model = endpoint;
+  return { body: Buffer.from(JSON.stringify(out)), dropped };
+}
+
+type TextBlock = { type: "text"; text: string };
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** The text of a block list or string, in order, plus how many blocks weren't text. */
+function textBlocksOf(content: unknown): { texts: TextBlock[]; nonText: number } {
+  if (typeof content === "string") return { texts: content === "" ? [] : [{ type: "text", text: content }], nonText: 0 };
+  const texts: TextBlock[] = [];
+  let nonText = 0;
+  if (Array.isArray(content)) {
+    for (const b of content) {
+      if (isRecord(b) && b.type === "text" && typeof b.text === "string") {
+        if (b.text !== "") texts.push({ type: "text", text: b.text });
+      } else nonText++;
+    }
+  }
+  return { texts, nonText };
+}
+
+/**
+ * Moves the text of every `system`-role entry of `out.messages` into
+ * `out.system` and removes those entries (FR-16). Claude Code adds a system
+ * message mid-conversation, and the local servers' chat templates reject one
+ * anywhere but first, so the gateway folds it into the top-level field they
+ * accept (spike A-1: the task passes and the server's prefix cache holds).
+ * Non-text blocks are dropped and counted in `dropped`, never their content.
+ * Blocks are rebuilt as bare text blocks, so a `cache_control` marker is not
+ * carried over: markers on moved text could push the request past the
+ * provider's marker limit, and the server's prefix cache works without them.
+ * Changes nothing when there is no system message.
+ */
+function foldSystemMessages(out: Record<string, unknown>, dropped: string[]): void {
+  const messages = out.messages;
+  if (!Array.isArray(messages)) return;
+  const isSystem = (m: unknown): boolean => isRecord(m) && m.role === "system";
+  if (!messages.some(isSystem)) return;
+  const moved: TextBlock[] = [];
+  let nonText = 0;
+  for (const m of messages) {
+    if (!isSystem(m)) continue;
+    const t = textBlocksOf((m as Record<string, unknown>).content);
+    moved.push(...t.texts);
+    nonText += t.nonText;
+  }
+  if (nonText > 0) dropped.push(`messages.system.non_text.x${nonText}`);
+  const existing = out.system;
+  const base: unknown[] = typeof existing === "string" ? textBlocksOf(existing).texts : Array.isArray(existing) ? existing : [];
+  out.system = [...base, ...moved];
+  out.messages = messages.filter((m) => !isSystem(m));
+}
+
+/** A host as compared against a pinned endpoint's: lower case, no brackets, no trailing dot. */
+function sameHost(a: string): string {
+  return a.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+}
+
 export class EgressProxy {
   private readonly grants = new Map<string, Grant>();
+  private endpoints = new Map<string, PinnedEndpoint>();
+  private readonly maxBody: number;
   private readonly extra: Cidr[];
   private readonly deps: ProxyDeps;
   readonly server: http.Server;
 
   constructor(private readonly o: ProxyOptions) {
     this.deps = o.deps ?? realDeps;
+    this.maxBody = o.maxApiBody ?? MAX_API_BODY;
     this.extra = o.blockedSubnets.map((s) => {
       const c = parseCidr(s);
       if (!c) throw new Error("bad subnet");
@@ -185,7 +435,32 @@ export class EgressProxy {
 
   grant(cred: string, g: Grant): void {
     if (!CRED_RE.test(cred)) throw new Error("bad credential");
+    if (g.kind === "router" && g.upstream !== undefined) throw new Error("a router grant has no upstream");
+    if (g.deadline !== undefined) {
+      const { promptTps, genTps, marginS } = g.deadline;
+      if (g.upstream === undefined || !(promptTps > 0 && Number.isFinite(promptTps) && genTps > 0 && Number.isFinite(genTps) && marginS >= 0 && Number.isFinite(marginS))) throw new Error("bad deadline");
+    }
     this.grants.set(cred, { ...g, allow: [...g.allow] });
+  }
+
+  /**
+   * Replaces the pinned endpoints (F-013 FR-4). Fails closed on a pin that
+   * contradicts its class, since the engine's check is the only DNS check:
+   * a public endpoint must pin a public address (SR-8), a private one a
+   * non-public address.
+   * @throws Error when an entry is malformed or its address doesn't fit its class.
+   */
+  setEndpoints(list: PinnedEndpoint[]): void {
+    const next = new Map<string, PinnedEndpoint>();
+    for (const e of list) {
+      const okShape = typeof e.name === "string" && e.name !== "" && typeof e.host === "string" && e.host !== "" && (e.class === "private" || e.class === "public") &&
+        (e.scheme === "http" || e.scheme === "https") && Number.isInteger(e.port) && e.port > 0 && e.port < 65536 && net.isIP(e.address) !== 0 && typeof e.basePath === "string";
+      if (!okShape) throw new Error("bad endpoint");
+      const blocked = blockedAddress(e.address, this.extra);
+      if ((e.class === "public") === blocked) throw new Error("endpoint address doesn't fit its class");
+      next.set(e.name, { ...e });
+    }
+    this.endpoints = next;
   }
 
   revoke(cred: string): void {
@@ -228,6 +503,14 @@ export class EgressProxy {
     const m = /^([^:\s]+|\[[0-9a-fA-F:.]+\]):(\d{1,5})$/.exec(req.url ?? "");
     if (!m) return deny(403, "bad target", g);
     const host = m[1]!;
+    if (g.kind === "router") {
+      // The router reaches a public endpoint's pinned address only: no DNS, so a
+      // changed answer can't move it, and nothing else is reachable (FR-5).
+      const port = Number(m[2]);
+      const ep = [...this.endpoints.values()].find((e) => e.class === "public" && e.scheme === "https" && sameHost(e.host) === sameHost(host) && e.port === port);
+      if (!ep) return deny(403, "not a pinned public endpoint", g, NOT_AN_ENDPOINT);
+      return this.tunnel(sock, head, found[0], g, ep.address, ep.port, ep.name, deny);
+    }
     if (m[2] !== "443") return deny(403, "only port 443", g, host);
     if (!hostAllowed(g.allow, host)) return deny(403, "host not on the role's allow list", g, host);
     let address: string;
@@ -236,14 +519,18 @@ export class EgressProxy {
     } catch (e) {
       return deny(e instanceof Refused ? e.status : 502, (e as Error).message, g, host);
     }
-    if (this.grants.get(found[0]) !== g) return deny(407, "credential revoked", g, host);
-    const up = this.deps.connect(address, 443);
+    this.tunnel(sock, head, found[0], g, address, 443, normalHost(host)!, deny);
+  }
+
+  private tunnel(sock: net.Socket, head: Buffer, cred: string, g: Grant, address: string, port: number, logHost: string, deny: (status: number, reason: string, g?: Grant, host?: string) => void): void {
+    if (this.grants.get(cred) !== g) return deny(407, "credential revoked", g, logHost);
+    const up = this.deps.connect(address, port);
     up.on("error", () => {
       sock.destroy();
       up.destroy();
     });
     up.once("connect", () => {
-      this.o.log({ t: "log", kind: "connect", session: g.session, role: g.role, host: normalHost(host)!, port: 443 });
+      this.o.log({ t: "log", kind: "connect", session: g.session, role: g.role, host: logHost, port });
       sock.write("HTTP/1.1 200 Connection Established\r\n\r\n");
       if (head.length) up.write(head);
       sock.pipe(up);
@@ -254,18 +541,15 @@ export class EgressProxy {
 
   private async onRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = req.url ?? "";
-    const refuse = (status: number, reason: string, g?: Grant) => {
-      this.o.log({ t: "log", kind: "refused", session: g?.session, role: g?.role, host: API_HOST, reason });
-      if (!res.headersSent) res.writeHead(status, { "content-type": "text/plain", connection: "close" });
-      res.end(`${reason}\n`);
-      req.resume();
-    };
+    const refuse = (status: number, reason: string, g?: Grant, host = API_HOST) => this.refuseRequest(req, res, status, reason, g, host);
+    if (/^http:\/\//i.test(url)) return this.onForward(req, res);
     if (!url.startsWith(GATEWAY_PREFIX)) return refuse(405, "only CONNECT and the model gateway");
     const rest = url.slice(GATEWAY_PREFIX.length);
     const slash = rest.indexOf("/");
     const cred = slash > 0 ? rest.slice(0, slash) : "";
     const g = this.grants.get(cred);
     if (!g) return refuse(407, "no or unknown proxy credential");
+    if (g.kind === "router") return refuse(403, "a router grant has no model gateway", g);
     const target = rest.slice(slash);
     const q = target.indexOf("?");
     const p = q >= 0 ? target.slice(0, q) : target;
@@ -278,26 +562,15 @@ export class EgressProxy {
       return refuse(403, "the request carries its own credential", g);
     }
     const len = Number(req.headers["content-length"] ?? "0");
-    if (!Number.isFinite(len) || len > MAX_API_BODY) return refuse(413, "request too large", g);
+    if (!Number.isFinite(len) || len > this.maxBody) return refuse(413, "request too large", g);
     // The body is read whole and checked (M1), so it must be plain JSON.
     const encoding = req.headers["content-encoding"];
     if (encoding !== undefined && encoding.toLowerCase() !== "identity") return refuse(415, "a compressed request body can't be checked", g);
-    const chunks: Buffer[] = [];
-    let seen = 0;
-    const body = await new Promise<Buffer | null>((resolve) => {
-      req.on("data", (d: Buffer) => {
-        seen += d.length;
-        if (seen > MAX_API_BODY) {
-          req.removeAllListeners("data");
-          resolve(null);
-        } else chunks.push(d);
-      });
-      req.on("end", () => resolve(Buffer.concat(chunks)));
-      req.on("error", () => resolve(null));
-    });
+    const body = await this.readBody(req);
     if (body === null) return refuse(413, "request too large", g);
     const bad = refusedBody(body, { webSearch: g.webSearch === true });
     if (bad) return refuse(403, bad, g);
+    if (g.upstream !== undefined) return this.toRouter(req, res, g, p, target, body);
     let address: string;
     try {
       address = await this.checkedAddress(API_HOST);
@@ -311,12 +584,7 @@ export class EgressProxy {
     }
     headers.host = API_HOST;
     headers["content-length"] = String(body.length);
-    const asked = [req.headers["anthropic-beta"] ?? []].flat().flatMap((h) => h.split(",")).map((s) => s.trim()).filter((s) => s !== "");
-    const betas = [...new Set(asked.filter((b) => ALLOWED_BETAS.has(b)))];
-    const dropped = [...new Set(asked.filter((b) => !ALLOWED_BETAS.has(b)))];
-    if (dropped.length > 0) {
-      this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host: API_HOST, path: p, reason: `dropped anthropic-beta: ${dropped.slice(0, 10).map(safeToken).join(", ")}` });
-    }
+    const betas = this.allowedBetas(req, g, p, API_HOST);
     if (this.o.credential.kind === "api_key") headers["x-api-key"] = this.o.credential.value;
     else {
       headers.authorization = `Bearer ${this.o.credential.value}`;
@@ -332,6 +600,188 @@ export class EgressProxy {
       ur.pipe(res);
     });
     up.on("error", () => refuse(502, "the model API is unreachable", g));
+    up.on("timeout", () => up.destroy(new Error("timeout")));
+    up.end(body);
+  }
+
+  private refuseRequest(req: http.IncomingMessage, res: http.ServerResponse, status: number, reason: string, g?: Grant, host = API_HOST): void {
+    this.o.log({ t: "log", kind: "refused", session: g?.session, role: g?.role, host, reason });
+    if (!res.headersSent) res.writeHead(status, { "content-type": "text/plain", connection: "close" });
+    res.end(`${reason}\n`);
+    req.resume();
+  }
+
+  /** The request body, or null if it passes the size cap or the connection fails. */
+  private readBody(req: http.IncomingMessage): Promise<Buffer | null> {
+    const chunks: Buffer[] = [];
+    let seen = 0;
+    return new Promise((resolve) => {
+      req.on("data", (d: Buffer) => {
+        seen += d.length;
+        if (seen > this.maxBody) {
+          req.removeAllListeners("data");
+          resolve(null);
+        } else chunks.push(d);
+      });
+      req.on("end", () => resolve(Buffer.concat(chunks)));
+      req.on("error", () => resolve(null));
+    });
+  }
+
+  /** The request's `anthropic-beta` values that are on {@link ALLOWED_BETAS}; the others are logged by name and dropped. */
+  private allowedBetas(req: http.IncomingMessage, g: Grant, path: string, host: string): string[] {
+    const asked = [req.headers["anthropic-beta"] ?? []].flat().flatMap((h) => h.split(",")).map((s) => s.trim()).filter((s) => s !== "");
+    const dropped = [...new Set(asked.filter((b) => !ALLOWED_BETAS.has(b)))];
+    if (dropped.length > 0) {
+      this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host, path, reason: `dropped anthropic-beta: ${dropped.slice(0, 10).map(safeToken).join(", ")}` });
+    }
+    return [...new Set(asked.filter((b) => ALLOWED_BETAS.has(b)))];
+  }
+
+  /**
+   * Relays an untrusted reply (the router's or a private endpoint's) to the
+   * client: a redirect is refused and never followed (SR-13), and the body
+   * is cut at the size cap (SR-16) by closing the connection, so the client
+   * sees a failed reply rather than a silently short one.
+   *
+   * `host` is what the log entries name: the endpoint's name, never its host
+   * or address (SR-2). With `scrub` (the gateway's relay of the router's reply
+   * to the agent, M2) only allow-listed headers pass, minus any holding a URL
+   * or one of `scrub.hide`, and a non-2xx body is replaced by a fixed message
+   * with the status kept; the original status is in the log entry.
+   */
+  private relayCapped(req: http.IncomingMessage, res: http.ServerResponse, ur: http.IncomingMessage, g: Grant, host: string, path: string, scrub?: { hide: string[] }): void {
+    const status = ur.statusCode ?? 502;
+    this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host, path, status });
+    if (status >= 300 && status < 400) {
+      ur.destroy();
+      return this.refuseRequest(req, res, 502, "the endpoint answered with a redirect", g, host);
+    }
+    if (Number(ur.headers["content-length"] ?? "0") > this.maxBody) {
+      ur.destroy();
+      return this.refuseRequest(req, res, 502, "the endpoint's reply is too large", g, host);
+    }
+    if (scrub && (status < 200 || status >= 300)) {
+      const kept = routerReplyHeaders(ur.headers, scrub.hide);
+      delete kept["content-length"];
+      ur.destroy();
+      res.writeHead(status, { ...kept, "content-type": "text/plain", connection: "close" });
+      res.end(`${ROUTER_ERROR_TEXT}
+`);
+      return;
+    }
+    const out: http.OutgoingHttpHeaders = {};
+    if (scrub) Object.assign(out, routerReplyHeaders(ur.headers, scrub.hide));
+    else for (const [k, v] of Object.entries(ur.headers)) if (v !== undefined && !HOP.has(k)) out[k] = v;
+    res.writeHead(status, out);
+    let size = 0;
+    ur.on("data", (d: Buffer) => {
+      size += d.length;
+      if (size > this.maxBody) {
+        ur.destroy();
+        res.destroy();
+        return;
+      }
+      if (!res.write(d)) {
+        ur.pause();
+        res.once("drain", () => ur.resume());
+      }
+    });
+    ur.on("end", () => res.end());
+    ur.on("error", () => res.destroy());
+  }
+
+  /** An endpoint session's model request: filtered per SR-17, then sent to the router with the master key (FR-5). */
+  private async toRouter(req: http.IncomingMessage, res: http.ServerResponse, g: Grant, p: string, target: string, body: Buffer): Promise<void> {
+    const ep = this.endpoints.get(g.upstream!);
+    const router = this.o.router;
+    if (!ep) return this.refuseRequest(req, res, 502, "the granted endpoint isn't configured", g, g.upstream);
+    if (!router) return this.refuseRequest(req, res, 502, "no model router", g, ep.name);
+    const clean = sanitizeEndpointBody(body, ep.name);
+    if (clean.dropped.length > 0) {
+      this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host: ep.name, path: p, reason: `dropped fields: ${clean.dropped.slice(0, 20).map(safeToken).join(", ")}` });
+    }
+    // Built from nothing, not copied from the agent: its headers carry the
+    // dummy key, and the Claude credential never goes near the router (AC-4).
+    const headers: http.OutgoingHttpHeaders = {
+      host: `${router.address}:${router.port}`,
+      "content-type": "application/json",
+      "content-length": String(clean.body.length),
+      authorization: `Bearer ${router.masterKey}`,
+    };
+    for (const k of ["anthropic-version", "accept"]) {
+      const v = req.headers[k];
+      if (typeof v === "string") headers[k] = v;
+    }
+    const betas = this.allowedBetas(req, g, p, ep.name);
+    if (betas.length > 0) headers["anthropic-beta"] = betas.join(",");
+    const up = this.deps.httpRequest(router.address, router.port, { method: "POST", path: target, headers });
+    // FR-12: the whole request, reply included, is held to its own deadline; the engine learns of it from the log entry and runs the role on Claude.
+    let timer: NodeJS.Timeout | undefined;
+    let expired = false;
+    if (g.deadline) {
+      timer = setTimeout(() => {
+        expired = true;
+        this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host: ep.name, path: p, status: 504, reason: "deadline" });
+        up.destroy();
+        if (res.headersSent) res.destroy();
+        else {
+          res.writeHead(504, { "content-type": "text/plain", connection: "close" });
+          res.end("the model endpoint passed its deadline\n");
+        }
+        req.resume();
+      }, requestDeadlineMs(g.deadline, clean.body));
+      res.on("close", () => clearTimeout(timer));
+    }
+    up.on("response", (ur) => {
+      if (!expired) this.relayCapped(req, res, ur, g, ep.name, p, { hide: [ep.host, ep.address, router.address] });
+    });
+    up.on("error", () => {
+      if (!expired) this.refuseRequest(req, res, 502, "the model router is unreachable", g, ep.name);
+    });
+    up.on("timeout", () => up.destroy(new Error("timeout")));
+    up.end(clean.body);
+  }
+
+  /**
+   * The router's plain-HTTP forward proxy: GET or POST to a private endpoint
+   * only, matched on host and port and sent to its pinned address with the
+   * request's own Host header (FR-5). Private endpoints have no other way in.
+   */
+  private async onForward(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const found = this.grantFrom(req.headers["proxy-authorization"]);
+    if (!found) return this.refuseRequest(req, res, 407, "no or unknown proxy credential", undefined, "");
+    const g = found[1];
+    // The router chooses the host, so a refused one is never named in the log (SR-2); a matched endpoint is named.
+    const refuse = (status: number, reason: string, name = NOT_AN_ENDPOINT) => this.refuseRequest(req, res, status, reason, g, name);
+    if (g.kind !== "router") return refuse(403, "plain HTTP forwarding is for the model router only");
+    if (req.method !== "GET" && req.method !== "POST") return refuse(405, "only GET and POST");
+    let u: URL;
+    try {
+      u = new URL(req.url ?? "");
+    } catch {
+      return refuse(400, "not a URL");
+    }
+    const host = sameHost(u.hostname);
+    if (u.protocol !== "http:" || u.username || u.password) return refuse(403, "only plain http without credentials");
+    const port = u.port === "" ? 80 : Number(u.port);
+    const ep = [...this.endpoints.values()].find((e) => e.class === "private" && e.scheme === "http" && sameHost(e.host) === host && e.port === port);
+    if (!ep) return refuse(403, "not a pinned private endpoint");
+    if (!routerPathAllowed(u.pathname, ep.basePath)) return refuse(403, "not a path the endpoint needs", ep.name);
+    const body = await this.readBody(req);
+    if (body === null) return refuse(413, "request too large", ep.name);
+    if (this.grants.get(found[0]) !== g) return refuse(407, "credential revoked", ep.name);
+    const headers: http.OutgoingHttpHeaders = {};
+    for (const [k, v] of Object.entries(req.headers)) {
+      if (v === undefined || HOP.has(k) || k === "content-length" || k.startsWith("x-forwarded")) continue;
+      headers[k] = v;
+    }
+    headers.host = req.headers.host ?? u.host;
+    if (body.length > 0 || req.method === "POST") headers["content-length"] = String(body.length);
+    const path = `${u.pathname}${u.search}`;
+    const up = this.deps.httpRequest(ep.address, ep.port, { method: req.method, path, headers });
+    up.on("response", (ur) => this.relayCapped(req, res, ur, g, ep.name, u.pathname.slice(0, 200)));
+    up.on("error", () => this.refuseRequest(req, res, 502, "the endpoint is unreachable", g, ep.name));
     up.on("timeout", () => up.destroy(new Error("timeout")));
     up.end(body);
   }

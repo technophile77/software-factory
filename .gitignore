@@ -1,3 +1,4 @@
 .factory/
 __pycache__/
 /factory-projects.local.yaml
+/factory-endpoints.local.yaml
