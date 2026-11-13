@@ -253,3 +253,4 @@ v10:
 | 10.1 | 2026-11-13 | OQ-5: the plugin finds the engine through a required `engine_path` plugin setting (FR-14, AC-15) | Owner, 2026-11-13 (decision card) |
 | 10.2 | 2026-11-13 | SR-9 v10 wording and SR-18 to SR-20 approved as written | Owner, 2026-11-13 (decision card) |
 | 10.3 | 2026-11-13 | v10 approved as a whole; readiness gate passed; development (H-0174 to H-0177) may start | Owner, 2026-11-13 (decision card) |
+| 10.4 | 2026-11-13 | H-0174 (SDK review, three conditions) approved; H-0175 to H-0177 approved as built in PR #56 | Owner, 2026-11-13 (decision cards) |
