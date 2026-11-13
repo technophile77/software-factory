@@ -127,7 +127,7 @@ which gaps closed and which opened, without duplicating anything.
 | SR-6 | `git` and `gh` are called with argument lists, never through a shell string built from repo content. | Gate 1 (S1.3) | Accepted |
 | SR-7 | Nothing on GitHub changes (protection, repo creation) without the owner's confirmation in that session; the skill never creates, reads or stores tokens. | Gate 1 (S8.2, S8.5) | Accepted |
 | SR-8 | The YAML/TOML/JSON readers in the checker fail closed: a file that can't be parsed is a reported gap, never a silent pass. YAML is read with PyYAML's safe loader, which also refuses anchors, aliases and tags. | Gate 1 (S5.1) | Accepted; amended by ADR 0020 |
-| SR-9 | The external tools take nothing from the repo being assessed but its files: zizmor runs with `--offline --no-config --no-ignores`, gitleaks with the skill's own rules, an empty ignore path and `--redact`. Both run with argument lists, a timeout and no network, and an exit code other than clean or findings is a reported gap, never a pass. | ADR 0020 (S6.1, S5.1, S4.3) | Proposed |
+| SR-9 | The external tools take nothing from the repo being assessed but its files: zizmor runs with `--offline --no-config --no-ignores`, gitleaks with the skill's own rules, an empty ignore path and `--redact`. Both run with argument lists, a timeout and no network, and an exit code other than clean or findings is a reported gap, never a pass. | ADR 0020 (S6.1, S5.1, S4.3) | Accepted (owner, 2026-11-13, decision card) |
 
 ## 10. Interface requirements
 Uses Inbox item v1.0, Role policy v2.1 and Project manifest v1.1 (both
@@ -153,4 +153,4 @@ not an inter-agent contract.
 | 4 | 2026-11-10 | One project file: maturity level and role policy move into the manifest (FR-6, FR-7, AC-11; Role policy v2.0, Project manifest v1.1) | Owner, 2026-11-10 (decision card) |
 | 5 | 2026-11-10 | OSV-Scanner audits Python, Go and Rust (AC-10 deviation withdrawn); govulncheck and cargo-audit from Beta (FR-2, AC-21) | Owner, 2026-11-10 (thread) |
 | 6 | 2026-11-10 | Role policy v2.1: tools and read rules per role, secret files unreadable (FR-7) | Owner, 2026-11-10 (decision card) |
-| 7 | 2026-11-13 | Checker uses PyYAML, zizmor and gitleaks instead of its own YAML reader, workflow scan and secret regexes (FR-12, AC-15, AC-22 to AC-24, SR-8, SR-9, constraints; ADR 0020) | Owner, 2026-11-13 (decision card, option A of proposal 0024); Python 3.11 minimum, SR-9 and the AC wording await approval with H-0145 |
+| 7 | 2026-11-13 | Checker uses PyYAML, zizmor and gitleaks instead of its own YAML reader, workflow scan and secret regexes (FR-12, AC-15, AC-22 to AC-24, SR-8, SR-9, constraints; ADR 0020) | Owner, 2026-11-13 (decision cards: option A of proposal 0024; v7 with Python 3.11 minimum and H-0145 to H-0147) |
