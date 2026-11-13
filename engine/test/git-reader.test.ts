@@ -220,6 +220,12 @@ describe("F-014 tree parsing (SR-5)", () => {
     }
   });
 
+  it("refuses entries out of git's order, where a folder sorts as if its name ended in / (Gate 2 L2)", () => {
+    expect(() => parseTree(Buffer.concat([entry("100644", "b"), entry("100644", "a")]), 20)).toThrow(/order/);
+    expect(() => parseTree(Buffer.concat([entry("40000", "a"), entry("100644", "a.txt")]), 20)).toThrow(/order/);
+    expect(parseTree(Buffer.concat([entry("100644", "a.txt"), entry("40000", "a"), entry("100644", "a0")]), 20).map((e) => e.name)).toEqual(["a.txt", "a", "a0"]);
+  });
+
   it("a crafted tree in a repo reads as unreadable, not as another file", async () => {
     const { repo } = fixture();
     const blob = git(repo, "rev-parse", "HEAD:a.txt");

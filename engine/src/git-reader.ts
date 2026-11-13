@@ -266,12 +266,14 @@ function checkName(name: string): string {
  * Parses a raw tree object (F-014 SR-5). Git doesn't check fetched trees
  * unless fsck runs on fetch, so a crafted one is refused as a whole: an
  * empty, `.`, `..` or `/`-holding name, a repeated name, a mode git
- * wouldn't write, or an id of the wrong length. Modes come back as `ls-tree`
+ * wouldn't write, an id of the wrong length, or entries out of git's sort
+ * order (names compared as bytes, a folder's as if it ended in `/`). Modes come back as `ls-tree`
  * prints them.
  */
 export function parseTree(body: Buffer, idBytes: number): TreeEntry[] {
   const out: TreeEntry[] = [];
   const seen = new Set<string>();
+  let prev: Buffer | null = null;
   let at = 0;
   while (at < body.length) {
     const sp = body.indexOf(0x20, at);
@@ -285,12 +287,18 @@ export function parseTree(body: Buffer, idBytes: number): TreeEntry[] {
     }
     if (seen.has(name)) throw new TreeError("a tree names the same entry twice");
     seen.add(name);
+    // Out of git's order, plain git would miss an entry the engine finds (Gate 2 L2, SR-5 v7).
+    const key = mode.type === "tree" ? Buffer.concat([nameBuf, SLASH]) : nameBuf;
+    if (prev && Buffer.compare(prev, key) >= 0) throw new TreeError("a tree's entries aren't in git's order");
+    prev = key;
     const sha = body.subarray(nul + 1, nul + 1 + idBytes).toString("hex");
     out.push({ mode: mode.mode, type: mode.type, sha, name });
     at = nul + 1 + idBytes;
   }
   return out;
 }
+
+const SLASH = Buffer.from("/");
 
 export class TreeError extends Error {
   override name = "TreeError";

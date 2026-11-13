@@ -4,7 +4,7 @@
 - **Status:** Approved; readiness gate passed 2026-11-13; in development
 - **Requested by / date:** Alex, 2026-11-13 (chose "Fewer engine git calls"
   from the CI speed thread's options)
-- **Spec version:** 6
+- **Spec version:** 7
 
 ## 1. Objective and business purpose
 The engine starts a new `git` process for almost every read and write it
@@ -103,7 +103,7 @@ Where the time goes today (profile of the full acceptance suite on
 | SR-2 | The reader runs with the same `overrideArgs` and environment as every engine git process (F-007 SR-11), and is only fed validated object ids and ref names. | Analyst | Approved with the spec |
 | SR-3 | The Gate 2 L7 config check still runs before every push and fetch; FR-5 only reuses its output. | Analyst | Approved with the spec |
 | SR-4 | Nothing cached outlives the engine process, and no cache crosses repos. | Analyst | Approved with the spec |
-| SR-5 | The tree parser refuses a tree with an entry name that is empty, `.`, `..`, or holds `/` or NUL, a duplicate name, an unknown mode, or an id of the wrong length; such a tree reads as unreadable. A test feeds each as a hand-built tree object. | Gate 1 #1 | Approved (owner, card, 2026-11-13) |
+| SR-5 | The tree parser refuses a tree with an entry name that is empty, `.`, `..`, or holds `/` or NUL, a duplicate name, an unknown mode, an id of the wrong length, or entries out of git's sort order (v7, Gate 2 L2); such a tree reads as unreadable. A test feeds each as a hand-built tree object. | Gate 1 #1 | Approved (owner, card, 2026-11-13) |
 | SR-6 | Each reader reply's header must name the object the engine asked for, with an expected type and a size within the read's limit, or the reader is killed and FR-2's fallback runs. Bodies over the limit are never read into memory. | Gate 1 #2 | Approved (owner, card, 2026-11-13) |
 | SR-7 | Every reader is registered with the engine's `Children`, each read has the same timeout as a git call today, and a timed-out reader is killed before the fallback runs. | Gate 1 #3 | Approved (owner, card, 2026-11-13) |
 | SR-8 | Cached values only feed steps that git then checks: factory/state writes keep their compare-and-swap, and a failed swap clears the cache. | Gate 1 #4 | Approved (owner, card, 2026-11-13) |
@@ -135,3 +135,4 @@ None. `Git` gains methods internal to the engine; no contract in
 | 4 | 2026-11-13 | A-1 approved; Gate 1 proposes SR-5 to SR-8 | Alex (card, A-1) |
 | 5 | 2026-11-13 | SR-5 to SR-8 approved; readiness gate passed (six checks) | Alex (card) |
 | 6 | 2026-11-13 | AC-1 target 35% → 30% after the build measured 31.4% (51,904 → 35,628); FR-3 and AC-5: a swap that fails on a held head commits once more on the moved head, and `sync()` reads the head fresh | Alex (card, AC-1); FR-3 wording keeps pre-F-014 behavior |
+| 7 | 2026-11-13 | SR-5 extended: trees out of git's sort order are refused (Gate 2 L2) | Alex (card) |

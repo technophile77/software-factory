@@ -88,3 +88,4 @@ Made by the developer after the review above; the reviewer's text is unchanged.
 | L6 | Added tests: the reader's arguments and environment match every engine git call and carry no token (SR-2); two repos get two readers and their own answers (SR-4). | `git-reader.test.ts` "reader setup". |
 
 L2, L3, L4 and the owner decisions are open.
+| L2 | Owner approved extending SR-5 (spec v7): `parseTree` refuses entries out of git's sort order, comparing names as bytes with a folder's as if it ended in `/`. | `git-reader.test.ts` "refuses entries out of git's order". |
