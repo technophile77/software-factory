@@ -6,8 +6,8 @@
 - **Maturity level:** Rapid prototype (the factory repo's level, as for
   F-007 to F-010). Only Critical findings block there.
 - **Result:** 7 findings: 0 Critical, 0 High, 4 Medium, 3 Low. Nothing
-  blocks. #1 needs an owner decision (Security), because it changes the
-  standards. The owner's decisions (OQ-1 to OQ-9, A-1, the confirmation
+  blocks. #1 was decided by the owner (2026-11-13, decision card): amend
+  S9.6 and S9.2. The owner's decisions (OQ-1 to OQ-9, A-1, the confirmation
   dialog) are not re-opened; the findings cover what they leave. Each
   finding cites the criterion it comes from, as the owner asked
   (2026-11-13).

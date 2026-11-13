@@ -4,7 +4,7 @@
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account)
-- **Spec version:** 12
+- **Spec version:** 13
 
 ## 1. Objective and business purpose
 Everything the factory needs the owner to approve reaches the owner in one
@@ -160,7 +160,7 @@ Hygiene items named here; none filed until the open questions are answered.
   (major) because the action set per item changes.
 - **H-0121:** withdrawn (was a signed PR approval record; not needed after
   OQ-2). Free for reuse.
-- **H-0122:** ADR 0017 (in this PR) and ADR 0006 marked superseded; plus `decision-management.md` and `development-workflow.md`
+- **H-0122:** ADR 0017 (in this PR) and ADR 0006 marked superseded; S9.2 and S9.6 in `security-standards.md` amended (Gate 1 #1, approved by the owner 2026-11-13); plus `decision-management.md` and `development-workflow.md`
   ("the owner merges" becomes "the owner approves in the inbox; the engine
   merges on that approval").
 - **H-0123 (Hygiene): the `main` ruleset** for owner-token mode in the
@@ -193,6 +193,7 @@ Hygiene items named here; none filed until the open questions are answered.
 | 10 | 2026-11-13 | OQ-7 decided (a): separate admin token for advisories only; everyday token has no Administration | Owner, 2026-11-13 (decision card) |
 | 11 | 2026-11-13 | A-1 approved | Owner, 2026-11-13 (decision card) |
 | 12 | 2026-11-13 | Security Gate 1 filed (F-011-security-gate1.md); SR-8 to SR-13 proposed; #1 (standards text) awaits the owner | — |
+| 13 | 2026-11-13 | Gate 1 #1 decided: S9.6 and S9.2 amended for ADR 0017 (in H-0122) | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
