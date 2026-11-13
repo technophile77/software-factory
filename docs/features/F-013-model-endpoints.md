@@ -1,14 +1,14 @@
 # Feature: Configurable model endpoints
 
 - **Id:** F-013
-- **Status:** Approved (owner, 2026-11-13; readiness gate passed); LiteLLM accepted with conditions (OQ-9); A-1 spike failed as-is ([report](F-013-spike-a1.md)), back with the owner (OQ-10)
+- **Status:** Approved (owner, 2026-11-13; readiness gate passed); LiteLLM accepted with conditions (OQ-9); A-1 passes with the gateway fold (OQ-10 (a), FR-16; [report](F-013-spike-a1.md)); in development
 - **Requested by / date:** Alex, 2026-11-13 ("I want to also incorporate a
   local llm api"; "this model would be a good candidate for the security
   agent, judge, or any low end agent"; "I'd rather allow a number of
   endpoints that can be specified, and allow them to be configurable, with
   local as an option that indicates it has unlimited usage"; "endpoints
   should include standard options like the model to use and an api key")
-- **Spec version:** 18
+- **Spec version:** 19
 
 ## 1. Objective and business purpose
 The factory runs every agent on Claude today. The owner wants to add other
@@ -92,6 +92,7 @@ master repo.
 | FR-12 | Request deadlines scale with size (owner, 2026-11-13). Each request's deadline is a fixed margin plus its prompt tokens divided by the endpoint's measured prompt-processing rate plus its `max_tokens` divided by its measured generation rate. Rates come from the server's per-request timings where it reports them (`llama-server` does), otherwise from measured wall time, kept per endpoint and model as a rolling median and seeded by a timing check at start. The run review reports rates by prompt-size band (under 8k, 8k to 32k, 32k to 128k, over 128k tokens). |
 | FR-14 | Format translation, keys and retries come from LiteLLM (OQ-8). Billing (FR-13) stays a factory requirement: LiteLLM enforces the limits it can express (spend caps per endpoint, request and token rate limits), and the engine does the rest itself: charging `per_token` cost to the project budget, counting `subscription` plan windows LiteLLM can't express (such as 5 hours), the reserve and fallback, and recording cost in agent reports, F-002 metrics and run reviews. The engine generates LiteLLM's configuration from the endpoints file at start; LiteLLM's admin UI, database and telemetry are off, and its master key is random per run and known only to the gateway. The factory writes no format translator of its own. |
 | FR-15 | LiteLLM is pinned to one image digest in the master repo and upgraded only by a hygiene item. Before each upgrade, and in CI, a conformance suite replays fixed tool-call conversations (generic prompts only) through LiteLLM to a recorded stub endpoint in each format and checks that Claude Code receives the same `tool_use` names, arguments and stop reasons as from a native Anthropic endpoint, streamed and unstreamed. |
+| FR-16 | For an endpoint session, the gateway moves the text of every `messages[]` entry with role `system` into the top-level `system` field (appended as text blocks, in order) and removes those entries, before forwarding (OQ-10). Non-text blocks in such a message are dropped and logged. Requests to `api.anthropic.com` are unchanged. |
 | FR-13 | Usage by billing mode. `local`: cost $0 (0% of plan in the project's `subscription` budget mode), not counted against the project budget (ADR 0012). `per_token`: tokens times `prices`, in dollars, counted against the project budget in both budget modes. `subscription`: the engine counts each limit's use per window across all projects on the PC; a task's cost is the largest share of any limit it used (as F-002 A-1 measures Claude plans); it is not charged in dollars. When any limit would pass `100 - reserve_pct` percent in its window, new sessions for that endpoint run on the role's Claude rung instead (FR-7), so the owner keeps the reserve for their own use. |
 
 ## 4. Acceptance criteria
@@ -112,6 +113,7 @@ master repo.
 | AC-15 | Given an `openai` endpoint, when an agent's request carries two tools and the model calls one, then the agent receives an Anthropic `tool_use` block with the same name and arguments, streamed and unstreamed, and its `tool_result` reaches the endpoint as a `tool` message with the matching call id. | FR-14 |
 | AC-16 | Given a LiteLLM image digest different from the pinned one, when the engine starts, then endpoint rungs are unavailable and the status says why. | FR-15 |
 | AC-17 | Given the FR-15 conformance suite, when CI runs, then it passes for both formats; and the LiteLLM container has no network route except through the egress proxy. | FR-5, FR-15 |
+| AC-18 | Given an endpoint session whose request has messages user, system, assistant, user, when the gateway forwards it, then the forwarded `messages` are user, assistant, user and the system message's text is the last block of `system`. | FR-16 |
 | AC-14 | Given a `subscription` endpoint with a limit of 100 requests per 5 hours and `reserve_pct` 10, when 90 requests have been made in the current window, then the next session for that endpoint runs on the role's Claude rung and the run review says the plan limit was reached; a run that used 9 of those requests is recorded at 9% of plan. | FR-13 |
 | AC-13 | Given a project whose manifest doesn't list an endpoint, when a role's rung names that endpoint, then the role runs on its Claude rung and the run review says why. | SR-8 |
 
@@ -251,6 +253,7 @@ yet, so until it is, a role goes onto an endpoint rung only through
 | 16 | 2026-11-13 | Spec v16 signed off; status Approved | Owner, 2026-11-13 (decision card, confirmed) |
 | 17 | 2026-11-13 | Stage 5: S4.1 review of LiteLLM; OQ-9 decided (a), SR-17 added with its conditions and accepted residual risk | Owner, 2026-11-13 (decision card) |
 | 18 | 2026-11-13 | A-1 spike: tool calls pass through LiteLLM in both formats; Claude Code fails on mid-conversation system messages with the server's template; OQ-10 opened | — |
+| 19 | 2026-11-13 | OQ-10 decided (a): the gateway folds mid-conversation system messages (FR-16, AC-18) | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -264,4 +267,4 @@ yet, so until it is, a role goes onto an endpoint rung only through
 | OQ-7 | Sending code to a public, third-party endpoint. (a) Allowed per project only after a Security decision naming the endpoint, its operator and its data-retention and training terms; private endpoints need only the manifest list. (b) The manifest list alone for every endpoint. **Recommended: (a)**: a third party receiving a project's code is a new external service under S9.1 and widens access under S8.5, which the standards make the owner's Security decision. | Security | Decided (owner, 2026-11-13, in the thread): (b); "evaluating these things is outside the scope of the project. the user should evaluate terms and security of the endpoint/model independently and within their own organization's guidelines" |
 | OQ-8 | Use an existing LLM gateway instead of building our own translator and billing? (a) LiteLLM in its own container behind the factory's gateway. (b) Build our own in the Node gateway. (c) Anthropic-format endpoints only. **Recommended: (a).** | Architecture | Decided (owner, 2026-11-13, in the thread and decision card): (a) |
 | OQ-9 | The SR-16 review of LiteLLM ([F-013-litellm-review.md](F-013-litellm-review.md)) found two release compromises in 2026 and several Critical advisories. (a) Accept with six conditions and the residual risk. (b) A smaller proxy. (c) Anthropic-format endpoints only. (d) Our own translator. **Recommended: (a).** | Security | Decided (owner, 2026-11-13, decision card): (a); conditions in SR-17 |
-| OQ-10 | A-1 spike failed: Claude Code sends a system message after the first user message, and the Qwen template on the owner's server rejects it (see [F-013-spike-a1.md](F-013-spike-a1.md)). (1) Wait for LiteLLM 1.109.x to clear quarantine (~25 Nov) and use its `supports_mid_conversation_system: false`. (2) Change the server's chat template. (3) The gateway folds later system messages into the next user message. (4) One-off spike on 1.109.1 now, ignoring quarantine. | Architecture | Open |
+| OQ-10 | Claude Code sends a `system` message after the first user message (it holds the environment section of its own prompt), and strict chat templates such as the owner's Qwen one reject it. Tested 2026-11-13 ([F-013-spike-a1.md](F-013-spike-a1.md)): LiteLLM's setting doesn't cover it; folding it into the top-level system prompt and inlining it as a `[system]` user message both pass and keep the prompt cache. (a) Fold. (b) Inline. (c) Change the server's template. **Recommended: (a).** | Architecture | Decided (owner, 2026-11-13, decision card): (a); FR-16 |
