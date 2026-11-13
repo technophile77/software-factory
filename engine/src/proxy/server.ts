@@ -222,12 +222,19 @@ export const ENDPOINT_BODY_FIELDS: ReadonlySet<string> = new Set([
  * Rewrites a Messages body for an endpoint session (SR-17, FR-5): keeps only
  * {@link ENDPOINT_BODY_FIELDS}, keeps only `user_id` inside `metadata`, and
  * sets `model` to the granted endpoint's name so the agent can't pick another.
+ * Also folds every `messages[]` entry with role `system` into the top-level
+ * `system` field (FR-16, {@link foldSystemMessages}); this is done only here,
+ * so requests to api.anthropic.com are never changed.
  * Returns the new body and the names of what was dropped (names only, never
  * values). The body must already have passed {@link refusedBody}.
  *
  * @example
  * sanitizeEndpointBody(Buffer.from('{"model":"x","api_base":"http://evil","messages":[]}'), "local-qwen");
  * // { body: '{"model":"local-qwen","messages":[]}', dropped: ["api_base"] }
+ *
+ * @example
+ * sanitizeEndpointBody(Buffer.from('{"messages":[{"role":"user","content":"a"},{"role":"system","content":"env"}]}'), "ep");
+ * // { body: '{"messages":[{"role":"user","content":"a"}],"system":[{"type":"text","text":"env"}],"model":"ep"}', dropped: [] }
  */
 export function sanitizeEndpointBody(body: Buffer, endpoint: string): { body: Buffer; dropped: string[] } {
   const o = JSON.parse(body.toString("utf8")) as Record<string, unknown>;
@@ -245,8 +252,62 @@ export function sanitizeEndpointBody(body: Buffer, endpoint: string): { body: Bu
       } else dropped.push(k);
     } else out[k] = v;
   }
+  foldSystemMessages(out, dropped);
   out.model = endpoint;
   return { body: Buffer.from(JSON.stringify(out)), dropped };
+}
+
+type TextBlock = { type: "text"; text: string };
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** The text of a block list or string, in order, plus how many blocks weren't text. */
+function textBlocksOf(content: unknown): { texts: TextBlock[]; nonText: number } {
+  if (typeof content === "string") return { texts: content === "" ? [] : [{ type: "text", text: content }], nonText: 0 };
+  const texts: TextBlock[] = [];
+  let nonText = 0;
+  if (Array.isArray(content)) {
+    for (const b of content) {
+      if (isRecord(b) && b.type === "text" && typeof b.text === "string") {
+        if (b.text !== "") texts.push({ type: "text", text: b.text });
+      } else nonText++;
+    }
+  }
+  return { texts, nonText };
+}
+
+/**
+ * Moves the text of every `system`-role entry of `out.messages` into
+ * `out.system` and removes those entries (FR-16). Claude Code adds a system
+ * message mid-conversation, and the local servers' chat templates reject one
+ * anywhere but first, so the gateway folds it into the top-level field they
+ * accept (spike A-1: the task passes and the server's prefix cache holds).
+ * Non-text blocks are dropped and counted in `dropped`, never their content.
+ * Blocks are rebuilt as bare text blocks, so a `cache_control` marker is not
+ * carried over: markers on moved text could push the request past the
+ * provider's marker limit, and the server's prefix cache works without them.
+ * Changes nothing when there is no system message.
+ */
+function foldSystemMessages(out: Record<string, unknown>, dropped: string[]): void {
+  const messages = out.messages;
+  if (!Array.isArray(messages)) return;
+  const isSystem = (m: unknown): boolean => isRecord(m) && m.role === "system";
+  if (!messages.some(isSystem)) return;
+  const moved: TextBlock[] = [];
+  let nonText = 0;
+  for (const m of messages) {
+    if (!isSystem(m)) continue;
+    const t = textBlocksOf((m as Record<string, unknown>).content);
+    moved.push(...t.texts);
+    nonText += t.nonText;
+  }
+  if (nonText > 0) dropped.push(`messages.system.non_text.x${nonText}`);
+  const existing = out.system;
+  const base: unknown[] = typeof existing === "string" ? textBlocksOf(existing).texts : Array.isArray(existing) ? existing : [];
+  out.system = [...base, ...moved];
+  out.messages = messages.filter((m) => !isSystem(m));
 }
 
 /** A host as compared against a pinned endpoint's: lower case, no brackets, no trailing dot. */

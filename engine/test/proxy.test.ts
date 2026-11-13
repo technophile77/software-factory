@@ -612,6 +612,94 @@ describe("SR-17 body filter (stochastic)", () => {
   });
 });
 
+describe("system message fold (F-013 FR-16, AC-18)", () => {
+  type Msg = { role: string; content: unknown };
+  const fold = (o: Record<string, unknown>): { sent: Record<string, unknown>; dropped: string[] } => {
+    const r = sanitizeEndpointBody(Buffer.from(JSON.stringify(o)), "ep");
+    return { sent: JSON.parse(r.body.toString("utf8")) as Record<string, unknown>, dropped: r.dropped };
+  };
+  const t = (text: string) => ({ type: "text", text });
+
+  it("AC-18: user, system, assistant, user becomes user, assistant, user with the system text last", () => {
+    const { sent } = fold({
+      system: [t("first")],
+      messages: [{ role: "user", content: "a" }, { role: "system", content: [t("env")] }, { role: "assistant", content: "b" }, { role: "user", content: "c" }],
+    });
+    expect((sent.messages as Msg[]).map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+    expect(sent.system).toEqual([t("first"), t("env")]);
+  });
+
+  it("takes a string-content system message", () => {
+    const { sent } = fold({ messages: [{ role: "user", content: "a" }, { role: "system", content: "env" }] });
+    expect(sent.system).toEqual([t("env")]);
+    expect(sent.messages).toEqual([{ role: "user", content: "a" }]);
+  });
+
+  it("turns a string top-level system into one text block first", () => {
+    const { sent } = fold({ system: "base", messages: [{ role: "system", content: "env" }, { role: "user", content: "a" }] });
+    expect(sent.system).toEqual([t("base"), t("env")]);
+  });
+
+  it("keeps the order of several system messages", () => {
+    const { sent } = fold({
+      messages: [{ role: "system", content: "s1" }, { role: "user", content: "a" }, { role: "system", content: [t("s2"), t("s3")] }, { role: "system", content: "s4" }],
+    });
+    expect(sent.system).toEqual([t("s1"), t("s2"), t("s3"), t("s4")]);
+  });
+
+  it("drops non-text blocks and cache markers, logging only a count", () => {
+    const { sent, dropped } = fold({
+      messages: [
+        { role: "system", content: [{ type: "image", source: "SECRET" }, { type: "text", text: "env", cache_control: { type: "ephemeral" } }, { type: "tool_use", id: "x" }] },
+        { role: "user", content: "a" },
+      ],
+    });
+    expect(sent.system).toEqual([t("env")]);
+    expect(dropped).toEqual(["messages.system.non_text.x2"]);
+    expect(JSON.stringify(dropped)).not.toContain("SECRET");
+  });
+
+  it("leaves the body alone, apart from the SR-17 rules, when there is no system message", () => {
+    const { sent, dropped } = fold({ system: "base", api_base: "http://evil", messages: [{ role: "user", content: "a" }] });
+    expect(sent).toEqual({ system: "base", messages: [{ role: "user", content: "a" }], model: "ep" });
+    expect(dropped).toEqual(["api_base"]);
+  });
+
+  it("does not touch a request to the Anthropic upstream", async () => {
+    const h = await harness();
+    const wire = JSON.stringify({ model: "m", system: "base", messages: [{ role: "user", content: "a" }, { role: "system", content: "env" }] });
+    await post(h.port, `/gw/${CRED}/v1/messages`, { "x-api-key": DUMMY }, wire);
+    expect(h.upstream.bodies[0]).toBe(wire);
+  });
+
+  it("stochastic: no system role remains, other messages keep order and content, system text appears once in order", () => {
+    const rand = rng(1613);
+    for (let i = 0; i < 200; i++) {
+      const msgs: Msg[] = [];
+      const expectedSystem: string[] = [];
+      const kept: Msg[] = [];
+      for (let j = 0; j < Math.floor(rand() * 10); j++) {
+        const id = `${i}-${j}`;
+        if (rand() < 0.4) {
+          const texts = Array.from({ length: 1 + Math.floor(rand() * 3) }, (_, k) => `sys${id}-${k}`);
+          expectedSystem.push(...texts);
+          const content = rand() < 0.3 && texts.length === 1 ? texts[0]! : texts.flatMap((x) => (rand() < 0.3 ? [{ type: "image" }, t(x)] : [t(x)]));
+          msgs.push({ role: "system", content });
+        } else {
+          const m: Msg = { role: rand() < 0.5 ? "user" : "assistant", content: rand() < 0.5 ? `msg${id}` : [t(`msg${id}`)] };
+          msgs.push(m);
+          kept.push(m);
+        }
+      }
+      const { sent } = fold({ messages: msgs });
+      expect((sent.messages as Msg[]).some((m) => m.role === "system")).toBe(false);
+      expect(sent.messages).toEqual(kept);
+      const folded = ((sent.system ?? []) as { text: string }[]).map((b) => b.text);
+      expect(folded).toEqual(expectedSystem);
+    }
+  });
+});
+
 describe("fetch_page through the proxy (SR-21)", () => {
   it("fetches an https page, follows a checked redirect, and caps the size", async () => {
     const h = await harness({
