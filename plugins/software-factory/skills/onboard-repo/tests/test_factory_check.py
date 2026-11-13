@@ -1,6 +1,8 @@
-"""Tests for the onboard-repo checker (F-003), standard library only.
+"""Tests for the onboard-repo checker (F-003).
 
-Run: python3 -m unittest discover -s skills/onboard-repo/tests -v
+Run with the Python that scripts/setup_tools.py prints, which has the checker's
+pinned tools (ADR 0020):
+  "$(python3 -I scripts/setup_tools.py)" -m unittest discover -s tests -v
 Property tests print their seed; set ONBOARD_SEED to replay one.
 """
 import importlib.util
@@ -20,8 +22,11 @@ SCRIPT = os.path.join(SKILL, "scripts", "factory_check.py")
 spec = importlib.util.spec_from_file_location("factory_check", SCRIPT)
 fc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fc)
+if fc.yaml is None:
+    raise SystemExit("Run these tests with the Python that scripts/setup_tools.py prints (ADR 0020).")
 
 FAKE_AWS = "AKIA" + "ABCDEFGHIJKLMNOP"  # split so this file doesn't trip scanners
+AWS_RULE = "aws-access-token"  # gitleaks' rule id
 SHA = "a" * 40
 
 
@@ -64,6 +69,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@{SHA} # v4
+        with:
+          persist-credentials: false
       - run: npm ci
       - run: npm run build
       - run: npm audit
@@ -125,23 +132,26 @@ class SecurityChecks(Base):
     def test_ac2_workflow_without_permissions(self):
         wf = "on: [push]\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo\n"
         a = self.assess({".github/workflows/ci.yml": wf})
-        g = gap_by(a, "workflow-permissions:.github/workflows/ci.yml")
+        g = gap_by(a, "workflow:excessive-permissions:.github/workflows/ci.yml:1")
         self.assertEqual(g["rule"], "S8.3")
         self.assertEqual(g["evidence"][0]["path"], ".github/workflows/ci.yml")
         self.assertIn("line", g["evidence"][0])
 
     def test_ac2_permissions_present(self):
         a = self.assess({".github/workflows/ci.yml": GOOD_WORKFLOW})
-        self.assertFalse([i for i in ids(a) if i.startswith("workflow-permissions")])
+        self.assertFalse([i for i in ids(a) if i.startswith("workflow:excessive-permissions")])
 
     def test_ac3_action_pinning(self):
-        wf = "permissions: {}\non: push\njobs:\n  b:\n    steps:\n      - uses: actions/checkout@v4\n      - uses: someone/tool@main\n      - uses: ./local\n"
+        wf = ("permissions: {}\non: push\njobs:\n  b:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@v4\n"
+              "      - uses: someone/tool@main\n      - uses: ./local\n")
         a = self.assess({".github/workflows/ci.yml": wf})
-        self.assertEqual(gap_by(a, "action-unpinned:.github/workflows/ci.yml:actions/checkout")["rule"], "S4.3")
-        self.assertEqual(gap_by(a, "action-unpinned:.github/workflows/ci.yml:someone/tool")["severity"], "medium")
-        self.assertFalse([i for i in ids(a) if "local" in i])
+        pins = [gap_by(a, f"workflow:unpinned-uses:.github/workflows/ci.yml:{n}") for n in (1, 2)]
+        self.assertEqual({g["rule"] for g in pins}, {"S4.3"})
+        self.assertEqual(sorted(g["evidence"][0]["line"] for g in pins), [7, 8])
+        self.assertEqual({g["severity"] for g in pins}, {"high"})
+        self.assertNotIn("workflow:unpinned-uses:.github/workflows/ci.yml:3", ids(a))
         a = self.assess({".github/workflows/ci.yml": GOOD_WORKFLOW})
-        self.assertFalse([i for i in ids(a) if i.startswith("action-unpinned")])
+        self.assertFalse([i for i in ids(a) if i.startswith("workflow:unpinned-uses")])
 
     def test_ac4_secret_reported_without_value(self):
         root = self.repo({"config/settings.py": f"KEY = '{FAKE_AWS}'\n"})
@@ -151,7 +161,7 @@ class SecurityChecks(Base):
         rc = fc.main(["assess", root, "--out-json", f"{out}/a.json", "--out-md", f"{out}/a.md"])
         self.assertEqual(rc, 0)
         a = json.loads(read(f"{out}/a.json"))
-        g = gap_by(a, "secret:aws-access-key:config/settings.py:1")
+        g = gap_by(a, f"secret:{AWS_RULE}:config/settings.py:1")
         self.assertEqual((g["rule"], g["severity"]), ("S3.1", "critical"))
         self.assertEqual(g["evidence"][0]["line"], 1)
         inbox = os.path.join(out, "inbox")
@@ -274,14 +284,19 @@ class Files(Base):
 
     def test_ac10_ci_template(self):
         text = read(os.path.join(SKILL, "templates", "ci-workflow.yml"))
-        info = fc.scan_workflow(text)
-        self.assertIsNotNone(info["top_permissions"])
-        self.assertIn("permissions:\n  contents: read", text)
-        self.assertTrue(info["schedule"])
-        self.assertTrue(info["uses"])
-        for _, ref in info["uses"]:
+        doc = fc.load_workflow(text)
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertTrue(fc.workflow_crons(doc))
+        uses = [s["uses"] for j in doc["jobs"].values() for s in j["steps"] if "uses" in s]
+        self.assertTrue(uses)
+        for ref in uses:
             self.assertTrue(ref.endswith("@<SHA>"), ref)
-        self.assertIn("dependency-audit", info["jobs"])
+        self.assertIn("dependency-audit", doc["jobs"])
+        self.assertIn("workflow-audit", doc["jobs"])
+        for job in doc["jobs"].values():
+            for step in job["steps"]:
+                if "uses" in step:
+                    self.assertEqual(step.get("with", {}).get("persist-credentials"), False)
         self.assertNotIn("secrets.", text)
 
 
@@ -400,11 +415,11 @@ class Idempotence(Base):
 
 
 class Portability(Base):
-    def test_ac15_runs_isolated_with_stdlib_only(self):
+    def test_ac15_copied_skill_runs_isolated_in_its_tool_environment(self):
         dest = self.repo({"README.md": "x"})
         skill_copy = os.path.join(dest, ".claude", "skills", "onboard-repo")
         shutil.copytree(SKILL, skill_copy, ignore=shutil.ignore_patterns("tests", "__pycache__"))
-        proc = subprocess.run([sys.executable, "-I", "-S", os.path.join(skill_copy, "scripts", "factory_check.py"), "assess", dest],
+        proc = subprocess.run([sys.executable, "-I", os.path.join(skill_copy, "scripts", "factory_check.py"), "assess", dest],
                               capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(json.loads(proc.stdout)["schema"], fc.SCHEMA)
@@ -429,11 +444,11 @@ class ReviewRegressions(Base):
     """One test per finding fixed from Gate 2 and validation (testing-strategy.md, Regression)."""
 
     def test_b1_same_action_in_two_jobs(self):
-        wf = ("permissions: {}\non: push\njobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n"
-              "  b:\n    steps:\n      - uses: actions/checkout@v4\n")
+        wf = ("permissions: {}\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@v4\n"
+              "  b:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@v4\n")
         a = self.assess({".github/workflows/ci.yml": wf})
-        g = gap_by(a, "action-unpinned:.github/workflows/ci.yml:actions/checkout")
-        self.assertEqual([e["line"] for e in g["evidence"]], [6, 9])
+        lines = sorted(g["evidence"][0]["line"] for g in a["gaps"] if g["id"].startswith("workflow:unpinned-uses:"))
+        self.assertEqual(lines, [7, 11])
 
     def test_m1_commented_jobs_do_not_count(self):
         template = read(os.path.join(SKILL, "templates", "ci-workflow.yml"))
@@ -450,30 +465,33 @@ class ReviewRegressions(Base):
         self.assertNotIn("cve-audit-not-weekly", ids(self.assess({".github/workflows/ci.yml": wf})))
 
     def test_gate2_hidden_uses_and_risky_triggers(self):
-        wf = ("on: [pull_request_target]\npermissions: write-all\njobs:\n  a:\n    steps:\n"
+        wf = ("on: [pull_request_target]\npermissions: write-all\njobs:\n  a:\n    runs-on: x\n    steps:\n"
               "      - {uses: evil/act@main}\n      - \"uses\": other/act@v1\n")
         a = self.assess({".github/workflows/ci.yml": wf})
-        self.assertIn("action-unpinned:.github/workflows/ci.yml:evil/act", ids(a))
-        self.assertIn("action-unpinned:.github/workflows/ci.yml:other/act", ids(a))
-        self.assertIn("workflow-write-all:.github/workflows/ci.yml", ids(a))
-        self.assertEqual(gap_by(a, "workflow-pr-target:.github/workflows/ci.yml")["severity"], "high")
+        self.assertEqual(sorted(g["evidence"][0]["line"] for g in a["gaps"] if g["id"].startswith("workflow:unpinned-uses:")),
+                         [7, 8])
+        self.assertEqual(gap_by(a, "workflow:excessive-permissions:.github/workflows/ci.yml:1")["severity"], "high")
+        self.assertEqual(gap_by(a, "workflow:dangerous-triggers:.github/workflows/ci.yml:1")["severity"], "high")
 
     def test_docker_actions_need_a_digest(self):
-        self.assertFalse(fc.action_pinned("docker://alpine:3"))
-        self.assertTrue(fc.action_pinned("docker://alpine@sha256:" + "b" * 64))
+        step = "permissions: {}\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: %s\n"
+        a = self.assess({".github/workflows/ci.yml": step % "docker://alpine:3"})
+        self.assertEqual(gap_by(a, "workflow:unpinned-images:.github/workflows/ci.yml:1")["rule"], "S4.3")
+        a = self.assess({".github/workflows/ci.yml": step % ("docker://alpine@sha256:" + "b" * 64)})
+        self.assertFalse([i for i in ids(a) if i.startswith(("workflow:unpinned-uses:", "workflow:unpinned-images:"))])
 
     def test_m2_secrets_in_vendored_folders_are_scanned(self):
         a = self.assess({"build/out.js": f"k='{FAKE_AWS}'\n", "build/package.json": "{}", "vendor/x/go.mod": "module x"})
-        self.assertIn("secret:aws-access-key:build/out.js:1", ids(a))
+        self.assertIn(f"secret:{AWS_RULE}:build/out.js:1", ids(a))
         self.assertEqual(a["stacks"], [])
 
     def test_gate2_more_secret_types(self):
         npm = "npm_" + "a1B2" * 9
         a = self.assess({".env": "DB_PASSWORD=hunter22secret\nDEBUG=1\n", ".env.example": "DB_PASSWORD=changeme123\n",
                          "ci.sh": f"echo {npm}\n"})
-        self.assertIn("secret:env-secret:.env:1", ids(a))
+        self.assertEqual(gap_by(a, "env-file:.env")["rule"], "S3.1")
         self.assertFalse([i for i in ids(a) if ".env.example" in i])
-        self.assertIn("secret:npm-token:ci.sh:1", ids(a))
+        self.assertIn("secret:npm-access-token:ci.sh:1", ids(a))
         self.assertNotIn("hunter22secret", json.dumps(a))
 
     def test_m3_docs_and_feature_folders_are_not_tests(self):
@@ -490,7 +508,7 @@ class ReviewRegressions(Base):
         inbox = tempfile.mkdtemp()
         self.roots.append(inbox)
         a = self.assess({"src/k.py": f"K='{FAKE_AWS}'\n"})
-        key = "secret:aws-access-key:src/k.py:1"
+        key = f"secret:{AWS_RULE}:src/k.py:1"
         with open(os.path.join(inbox, "D-0001.md"), "w") as f:
             f.write(f"---\nid: D-0001\n---\n\nSee x#onboard:{key} and #onboard:maturity-start\n")
         created = [c["key"] for c in fc.plan_items(a, inbox, "x", write=True)["created"]]
@@ -515,7 +533,8 @@ class ReviewRegressions(Base):
         self.assertNotIn("shell=True", source)
         self.assertNotIn("os.system", source)
         self.assertNotIn("os.popen", source)
-        self.assertEqual(source.count("subprocess.run("), 1)  # only run_git, with an argument list
+        # run_git and _git_lines run git; run_zizmor and scan_secrets run the pinned tools.
+        self.assertEqual(source.count("subprocess.run("), 4)
 
     def test_bad_manifest_encoding_fails_closed(self):
         root = self.repo({}, git=False)
@@ -532,15 +551,15 @@ class SecondReviewRegressions(Base):
     """Findings from the Gate 2 re-review and the test engineer's run."""
 
     def test_apostrophe_does_not_hide_a_comment(self):
-        wf = "permissions: {}\non: push\njobs:\n  a:\n    steps:\n      - run: echo don't # npm audit gitleaks e2e\n"
+        wf = "permissions: {}\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: echo don't # npm audit gitleaks e2e\n"
         a = self.assess({".github/workflows/ci.yml": wf})
         self.assertTrue({"cve-audit-missing", "ci-job:secret-scan", "ci-job:acceptance-tests"} <= ids(a))
 
     def test_one_line_flow_workflow(self):
-        wf = '{"on": "push", "permissions": "write-all", "jobs": {"a": {"steps": [{"uses": "evil/act@main"}]}}}\n'
+        wf = '{"on": "push", "permissions": "write-all", "jobs": {"a": {"runs-on": "x", "steps": [{"uses": "evil/act@main"}]}}}\n'
         a = self.assess({".github/workflows/ci.yml": wf})
-        self.assertIn("action-unpinned:.github/workflows/ci.yml:evil/act", ids(a))
-        self.assertIn("workflow-write-all:.github/workflows/ci.yml", ids(a))
+        self.assertIn("workflow:unpinned-uses:.github/workflows/ci.yml:1", ids(a))
+        self.assertEqual(gap_by(a, "workflow:excessive-permissions:.github/workflows/ci.yml:1")["severity"], "high")
 
     def test_malformed_previous_fails_closed(self):
         root = self.repo({"README.md": "x"})
@@ -551,7 +570,7 @@ class SecondReviewRegressions(Base):
         inbox = tempfile.mkdtemp()
         self.roots.append(inbox)
         a = self.assess({"src/k.py": f"K='{FAKE_AWS}'\n"})
-        key = "secret:aws-access-key:src/k.py:1"
+        key = f"secret:{AWS_RULE}:src/k.py:1"
         with open(os.path.join(inbox, "D-0001.md"), "w") as f:
             f.write(f"---\nid: D-0001\n---\n\n    ref: x#onboard:{key}\n")
         os.symlink(os.path.join(inbox, "D-0001.md"), os.path.join(inbox, "D-0002.md"))
@@ -559,7 +578,7 @@ class SecondReviewRegressions(Base):
         self.assertIn(key, created)
 
     def test_secret_in_a_quoted_ref_is_redacted(self):
-        wf = f"permissions: {{}}\non: push\njobs:\n  a:\n    steps:\n      - uses: x/y@{FAKE_AWS}\n"
+        wf = f"permissions: {{}}\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: x/y@{FAKE_AWS}\n"
         a = self.assess({".github/workflows/ci.yml": wf})
         self.assertNotIn(FAKE_AWS, json.dumps(a) + fc.to_markdown(a))
 
@@ -809,11 +828,13 @@ class Properties(unittest.TestCase):
             except fc.YamlError:
                 pass
 
-    def test_workflow_scanner_never_crashes(self):
+    def test_workflow_reader_never_crashes(self):
         r = self.rng()
         for _ in range(self.CASES):
-            info = fc.scan_workflow(self.random_text(r))
-            self.assertIsInstance(info["jobs"], dict)
+            doc = fc.load_workflow(self.random_text(r))
+            if doc is not fc.UNREADABLE:
+                self.assertIsInstance(fc.workflow_strings(doc), list)
+                self.assertIsInstance(fc.workflow_crons(doc), list)
 
     def test_generated_manifests_round_trip(self):
         r = self.rng()
@@ -839,7 +860,8 @@ class Properties(unittest.TestCase):
         try:
             subprocess.run(["git", "init", "-q", root], check=True)
             for i in range(self.CASES // 4):
-                key = "AKIA" + "".join(r.choice(string.ascii_uppercase + string.digits) for _ in range(16))
+                # AWS key ids are base32 after the prefix; gitleaks' rule matches only those.
+                key = "AKIA" + "".join(r.choice(string.ascii_uppercase + "234567") for _ in range(16))
                 # Keys sit next to separators in real files; the rule needs a word boundary.
                 word = "".join(r.choice(string.ascii_letters) for _ in range(r.randint(0, 12)))
                 sep = r.choice([" = ", "='", '"', ": ", "\t", ","])
@@ -848,7 +870,7 @@ class Properties(unittest.TestCase):
                 a = fc.assess(root)
                 out = json.dumps(a) + fc.to_markdown(a)
                 self.assertNotIn(key, out)
-                self.assertIn(f"secret:aws-access-key:f{i}.txt:1", ids(a))
+                self.assertIn(f"secret:{AWS_RULE}:f{i}.txt:1", ids(a))
         finally:
             shutil.rmtree(root, ignore_errors=True)
 

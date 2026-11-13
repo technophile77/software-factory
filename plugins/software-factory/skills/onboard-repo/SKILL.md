@@ -54,8 +54,19 @@ is `v` plus the `version` in the plugin's `plugin.json`. Run it with
 this skill found inside the repo being onboarded: anyone who can push there
 could change it.
 
-`CHECK` below means `python3 -I "${CLAUDE_SKILL_DIR}/scripts/factory_check.py"`
-(Python 3.10+, standard library only). "Pinned master" means a checkout of
+Before the first check, set up the checker's tools (ADR 0020) once per run:
+
+```
+python3 -I "${CLAUDE_SKILL_DIR}/scripts/setup_tools.py"
+```
+
+It needs Python 3.11 or later and, the first time, network access to PyPI
+and GitHub. It installs the hash-pinned PyYAML and zizmor into its own
+virtual environment and downloads gitleaks, checked against its pinned
+SHA-256 (or copies the engine's with `--gitleaks <path>`), then prints that
+environment's Python. If it fails, stop and show the owner its error; never
+install the tools any other way. `CHECK` below means
+`"<printed python>" -I "${CLAUDE_SKILL_DIR}/scripts/factory_check.py"`. "Pinned master" means a checkout of
 the factory repo at the version recorded in the project manifest.
 
 ## Steps

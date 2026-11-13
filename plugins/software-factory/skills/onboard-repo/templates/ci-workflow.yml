@@ -55,6 +55,24 @@ jobs:
           echo "${OSV_SCANNER_SHA256}  osv-scanner" | sha256sum --check --strict
           chmod +x osv-scanner
           ./osv-scanner scan source --recursive --no-resolve --no-call-analysis=go .
+  workflow-audit:                # every level (ADR 0020)
+    runs-on: ubuntu-24.04
+    # zizmor audits the repo's own workflows for known GitHub Actions attacks
+    # (script injection, unsafe triggers, leaked credentials, unpinned
+    # actions). The wheel is pinned by hash; upgrading it is a configuration
+    # hygiene item. No config file or ignore comment in the repo applies, so
+    # an accepted finding is a Security decision, not a comment.
+    env:
+      ZIZMOR_REQUIREMENT: "zizmor==1.32.0 --hash=sha256:84a6acb975accc13408786a2bd274b572537ca19c933ebbc13e78f3988562071"
+    steps:
+      - uses: actions/checkout@<SHA> # <tag>
+        with:
+          persist-credentials: false
+      - run: |
+          python3 -m venv "$RUNNER_TEMP/zizmor"
+          echo "$ZIZMOR_REQUIREMENT" > "$RUNNER_TEMP/zizmor.txt"
+          "$RUNNER_TEMP/zizmor/bin/pip" install --require-hashes --only-binary :all: --no-deps -r "$RUNNER_TEMP/zizmor.txt"
+      - run: '"$RUNNER_TEMP/zizmor/bin/zizmor" --offline --no-config --no-ignores --min-severity medium --format github .github/'
   # Beta and above, Go repos (owner, 2026-11-10): govulncheck reports which
   # vulnerable functions the code actually calls, which a lock-file scan can't.
   # go install checks the pinned version against the Go checksum database.

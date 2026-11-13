@@ -2,9 +2,11 @@
 
 Written by the test engineer from the spec's acceptance criteria, edge cases
 and security requirements, and the Role policy v2.1 and Project manifest v1.1
-contracts, not from the developer's tests. Standard library only (S4.1).
+contracts, not from the developer's tests. Updated for spec v7 (ADR 0020:
+PyYAML, zizmor and gitleaks), which changed gap ids and the tool environment.
 
-Run: python3 -m unittest discover -s plugins/software-factory/skills/onboard-repo/tests -v
+Run with the Python that scripts/setup_tools.py prints:
+  "$(python3 -I scripts/setup_tools.py)" -m unittest discover -s plugins/software-factory/skills/onboard-repo/tests -v
 Property tests print their seed; set ONBOARD_ACC_SEED to replay one.
 """
 import ast
@@ -47,9 +49,13 @@ MASTER = _find_master(SKILL)
 _spec = importlib.util.spec_from_file_location("factory_check_acceptance", SCRIPT)
 fc = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(fc)
+if fc.yaml is None:
+    raise SystemExit("Run these tests with the Python that scripts/setup_tools.py prints (ADR 0020).")
 
 # Built at run time so this file holds no literal credential.
-AWS_KEY = "AKIA" + "Q7XW2M4K9T3B5N8P"
+# Base32 after the prefix, as real key ids are; gitleaks matches only those.
+AWS_KEY = "AKIA" + "Q7XW2M4K6T3B5N5P"
+AWS_RULE = "aws-access-token"  # gitleaks' rule id
 SHA = "0123456789abcdef0123456789abcdef01234567"
 LEVELS = ["rapid-prototype", "alpha", "beta", "release", "production-ready"]
 GIT = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
@@ -107,6 +113,13 @@ def gap(a, gid):
 
 def gaps_like(a, prefix):
     return [g for g in a["gaps"] if g["id"].startswith(prefix)]
+
+
+def workflow_findings(a, at_least="medium"):
+    """zizmor findings at or above a severity, plus unreadable workflows (ADR 0020)."""
+    order = ["low", "medium", "high", "critical"]
+    return [g for g in a["gaps"] if g["id"].startswith("workflow-unreadable:")
+            or (g["id"].startswith("workflow:") and order.index(g["severity"]) >= order.index(at_least))]
 
 
 def snapshot(root):
@@ -172,7 +185,7 @@ def wf(jobs, top_permissions=True, schedule=True, extra_on=""):
     lines.append("jobs:")
     for name, steps in jobs.items():
         lines += [f"  {name}:", "    runs-on: ubuntu-24.04", "    steps:",
-                  f"      - uses: actions/checkout@{SHA} # v4"]
+                  f"      - uses: actions/checkout@{SHA} # v4", "        with:", "          persist-credentials: false"]
         lines += [f"      - run: {s}" for s in steps]
     return "\n".join(lines) + "\n"
 
@@ -367,7 +380,7 @@ class FR01GitHubProtection(Base):
 class AC02Permissions(Base):
     def test_ac2_workflow_without_permissions_cites_s83_with_file_and_line(self):
         a = self.assess(self.repo({".github/workflows/ci.yml": wf(BUILD_SMOKE, top_permissions=False)}))
-        g = gap(a, "workflow-permissions:.github/workflows/ci.yml")
+        g = gap(a, "workflow:excessive-permissions:.github/workflows/ci.yml:1")
         self.assertIn("S8.3", g["rule"])
         self.assertEqual(g["category"], "security")
         self.assertEqual(g["evidence"][0]["path"], ".github/workflows/ci.yml")
@@ -375,13 +388,14 @@ class AC02Permissions(Base):
 
     def test_ac2_top_level_permissions_means_no_gap(self):
         a = self.assess(self.repo({".github/workflows/ci.yml": wf(BUILD_SMOKE)}))
-        self.assertFalse(gaps_like(a, "workflow-permissions:"))
+        self.assertFalse(gaps_like(a, "workflow:excessive-permissions:"))
 
     def test_ac2_each_workflow_checked_separately(self):
         a = self.assess(self.repo({".github/workflows/ok.yml": wf(BUILD_SMOKE),
                                    ".github/workflows/bad.yaml": wf(BUILD_SMOKE, top_permissions=False)}))
-        self.assertEqual([g["id"] for g in gaps_like(a, "workflow-permissions:")],
-                         ["workflow-permissions:.github/workflows/bad.yaml"])
+        found = gaps_like(a, "workflow:excessive-permissions:")
+        self.assertTrue(found)
+        self.assertEqual({g["evidence"][0]["path"] for g in found}, {".github/workflows/bad.yaml"})
 
     def test_ac2_every_job_declaring_permissions_satisfies_s83(self):
         # S8.3: "CI jobs declare their permissions explicitly". Each job here does.
@@ -391,13 +405,15 @@ class AC02Permissions(Base):
                 "  smoke:\n    runs-on: ubuntu-24.04\n    permissions:\n      contents: read\n"
                 "    steps:\n      - run: make smoke\n")
         a = self.assess(self.repo({".github/workflows/ci.yml": text}))
-        self.assertFalse(gaps_like(a, "workflow-permissions:"),
-                         [g["evidence"] for g in gaps_like(a, "workflow-permissions:")])
+        # zizmor still asks for a workflow-level default (line 1), as defence in depth; no job is flagged.
+        found = gaps_like(a, "workflow:excessive-permissions:")
+        self.assertEqual([g["evidence"][0]["line"] for g in found], [1], [g["evidence"] for g in found])
+        self.assertEqual(found[0]["severity"], "medium")
 
     def test_write_all_is_reported(self):
         text = wf(BUILD_SMOKE, top_permissions=False).replace("jobs:", "permissions: write-all\njobs:")
         a = self.assess(self.repo({".github/workflows/ci.yml": text}))
-        self.assertTrue(gaps_like(a, "workflow-write-all:"))
+        self.assertEqual({g["severity"] for g in gaps_like(a, "workflow:excessive-permissions:")}, {"high"})
 
 
 class AC03ActionPinning(Base):
@@ -407,33 +423,36 @@ class AC03ActionPinning(Base):
 
     def test_ac3_tag_is_a_gap_citing_s43(self):
         a = self.uses("actions/checkout@v4")
-        g = gap(a, "action-unpinned:.github/workflows/ci.yml:actions/checkout")
+        g = gap(a, "workflow:unpinned-uses:.github/workflows/ci.yml:1")
         self.assertIn("S4.3", g["rule"])
         self.assertEqual(g["evidence"][0]["path"], ".github/workflows/ci.yml")
         self.assertIsInstance(g["evidence"][0]["line"], int)
 
     def test_ac3_full_sha_is_not_a_gap(self):
         a = self.uses(f"actions/checkout@{SHA}")
-        self.assertFalse(gaps_like(a, "action-unpinned:"))
+        self.assertFalse(gaps_like(a, "workflow:unpinned-"))
 
     def test_ac3_other_unpinned_forms(self):
         for ref in ("actions/checkout@main", "actions/checkout@0123456", "actions/checkout",
                     "some-org/deploy-action@v1.2.3", "some-org/repo/path@v1", "docker://alpine:3.20",
                     "actions/checkout@" + SHA[:39], "actions/checkout@" + SHA + "0"):
             with self.subTest(ref=ref):
-                self.assertTrue(gaps_like(self.uses(ref), "action-unpinned:"))
+                a = self.uses(ref)
+                # A `uses:` with no ref at all isn't a valid workflow, so the whole file is a gap.
+                self.assertTrue(gaps_like(a, "workflow:unpinned-uses:") or gaps_like(a, "workflow:unpinned-images:")
+                                or gaps_like(a, "workflow-unreadable:"), ids(a))
 
     def test_ac3_local_actions_and_sha_variants_pass(self):
         for ref in ("./.github/actions/setup", f"some-org/repo/sub/dir@{SHA}",
                     "docker://alpine@sha256:" + "b" * 64):
             with self.subTest(ref=ref):
-                self.assertFalse(gaps_like(self.uses(ref), "action-unpinned:"))
+                self.assertFalse(gaps_like(self.uses(ref), "workflow:unpinned-"))
 
     def test_ac3_reusable_workflow_at_job_level(self):
         text = ("on:\n  pull_request:\npermissions:\n  contents: read\njobs:\n"
                 "  call:\n    uses: some-org/shared/.github/workflows/build.yml@v2\n")
         a = self.assess(self.repo({".github/workflows/ci.yml": text}))
-        self.assertTrue(gaps_like(a, "action-unpinned:"))
+        self.assertTrue(gaps_like(a, "workflow:unpinned-uses:"))
 
 
 class AC05LockAndAudit(Base):
@@ -539,7 +558,7 @@ class AC04Secrets(Base):
         self.assertNotIn(AWS_KEY, read(a["_json_path"]) + a["_md"])
 
     def test_ac4_two_keys_one_file_both_reported(self):
-        other = "ASIA" + "Z9Y8X7W6V5U4T3S2"
+        other = "ASIA" + "Z7Y6X5W4V3U2T7S2"
         a = self.assess(self.repo({"k.txt": f"{AWS_KEY}\n\n{other}\n"}))
         self.assertEqual(sorted(g["evidence"][0]["line"] for g in gaps_like(a, "secret:")), [1, 3])
 
@@ -549,7 +568,8 @@ class AC04Secrets(Base):
 
     def test_env_file_assignments_flagged_examples_not(self):
         a = self.assess(self.repo({".env": "DB_PASSWORD=hunter2hunter2\n", ".env.example": "DB_PASSWORD=changeme123\n"}))
-        self.assertEqual([g["evidence"][0]["path"] for g in gaps_like(a, "secret:")], [".env"])
+        # A committed .env is a gap whatever it holds (ADR 0020); its values are never read into the report.
+        self.assertEqual([g["evidence"][0]["path"] for g in gaps_like(a, "env-file:")], [".env"])
         self.assertNotIn("hunter2hunter2", read(a["_json_path"]) + a["_md"])
 
     def test_large_and_binary_files_skipped_and_counted(self):
@@ -754,8 +774,8 @@ class AC10GeneratedWorkflow(Base):
         text = filled_ci()
         a = self.assess(self.repo({".github/workflows/factory-ci.yml": text, "package.json": "{}",
                                    "package-lock.json": "{}"}))
-        for prefix in ("workflow-permissions:", "action-unpinned:", "cve-audit", "workflow-write-all:",
-                       "workflow-pr-target:", "workflow-unreadable:", "ci-job:build", "ci-job:smoke-test"):
+        self.assertFalse(workflow_findings(a), [g["id"] for g in workflow_findings(a)])
+        for prefix in ("cve-audit", "ci-job:build", "ci-job:smoke-test"):
             with self.subTest(prefix=prefix):
                 self.assertFalse(gaps_like(a, prefix))
 
@@ -785,7 +805,7 @@ class AC10GeneratedWorkflow(Base):
     def test_ac10_unfilled_template_cannot_pass_pinning(self):
         text = read(os.path.join(TEMPLATES, "ci-workflow.yml"))
         a = self.assess(self.repo({".github/workflows/factory-ci.yml": text}))
-        self.assertTrue(gaps_like(a, "action-unpinned:"))
+        self.assertTrue(gaps_like(a, "workflow:unpinned-uses:"))
 
     def test_ac10_npm_audit_in_template_covers_dev_dependencies(self):
         a = self.assess(self.repo({".github/workflows/factory-ci.yml": filled_ci()}))
@@ -870,8 +890,7 @@ class AC21StackScanners(Base):
                 a = self.assess(self.repo({**files, ".github/workflows/factory-ci.yml": text}))
                 self.assertFalse(scanner_gaps(a, tool), [g["id"] for g in a["gaps"]])
                 # The opened-up job must itself pass the workflow checks (AC-10, SR-5).
-                for prefix in ("action-unpinned:", "workflow-permissions:", "workflow-unreadable:"):
-                    self.assertFalse(gaps_like(a, prefix), prefix)
+                self.assertFalse(workflow_findings(a), [g["id"] for g in workflow_findings(a)])
 
     def test_ac21_commented_out_scanner_does_not_count(self):
         # The unfilled template ships both jobs commented out: they must not pass the check.
@@ -1688,13 +1707,17 @@ class AC12Items(Base):
         a, inbox, result = self.plan(root, "--write")
         sec = {k: v for k, v in self.items(inbox).items() if "category: Security" in v}
         keys = sorted(re.search(r"#onboard:([^\"]+)", v).group(1) for v in sec.values())
-        self.assertEqual(len(keys), 2, keys)
+        severe = sorted(g["id"] for g in a["gaps"] if g["category"] == "security" and g["severity"] in ("critical", "high"))
+        self.assertEqual(keys, severe)
         self.assertTrue(any(k.startswith("secret:") for k in keys))
-        self.assertTrue(any(k.startswith("workflow-pr-target:") for k in keys))
+        self.assertTrue(any(k.startswith("workflow:dangerous-triggers:") for k in keys))
+        self.assertTrue(any(k.startswith("workflow:unpinned-uses:") for k in keys))
         for v in sec.values():
             self.assertIn("blocking: true", v)
             self.assertNotIn(AWS_KEY, v)
-        self.assertTrue(gaps_like(a, "action-unpinned:"))  # medium: reported, not filed
+        medium = [g["id"] for g in a["gaps"] if g["category"] == "security" and g["severity"] == "medium"]
+        self.assertTrue(medium)  # reported, not filed
+        self.assertFalse(set(medium) & set(keys))
 
     def test_dry_run_writes_nothing(self):
         a, inbox, result = self.plan(self.repo({}))
@@ -1748,7 +1771,7 @@ class AC13Idempotence(Base):
         write(root, ".github/workflows/ci.yml", wf(BUILD_SMOKE, top_permissions=False))
         second = self.assess(root, "--previous", first["_json_path"])
         self.assertIn("lock-missing:npm:.", second["since_previous"]["closed"])
-        self.assertIn("workflow-permissions:.github/workflows/ci.yml", second["since_previous"]["opened"])
+        self.assertIn("workflow:excessive-permissions:.github/workflows/ci.yml:1", second["since_previous"]["opened"])
         self.assertIn("lock-missing:npm:.", second["_md"].split("## Gaps")[0])
 
     def test_numbering_continues_after_existing_items(self):
@@ -1779,51 +1802,99 @@ class AC13Idempotence(Base):
 # AC-15 / FR-12: self-contained, standard library only
 # ---------------------------------------------------------------------------
 
+SETUP = os.path.join(SKILL, "scripts", "setup_tools.py")
+
+
+def tools_gitleaks():
+    """The gitleaks binary of the environment these tests run in, copied by
+    setup runs below instead of downloading it again."""
+    return fc._setup_module().env_paths(sys.prefix)["gitleaks"]
+
+
 class AC15Portability(Base):
-    def test_ac15_copied_skill_runs_with_stdlib_only(self):
+    def test_ac15_copied_skill_runs_in_its_tool_environment(self):
         root = self.repo({"README.md": "x\n", "package.json": "{}"}, commit=True)
         dest = os.path.join(root, ".claude", "skills", "onboard-repo")
         shutil.copytree(SKILL, dest, ignore=shutil.ignore_patterns("__pycache__"))
         script = os.path.join(dest, "scripts", "factory_check.py")
         out = self.tmp()
-        # -I: no user site, no env vars, no cwd on sys.path; -S: no site-packages at all.
+        # -I: no user site, no env vars, no cwd on sys.path. The interpreter is the
+        # tool environment's, which is how SKILL.md runs the checker (ADR 0020).
         code, stdout, stderr = cli_subprocess("assess", ".", "--out-json", os.path.join(out, "a.json"),
-                                              cwd=root, script=script, extra_flags=("-I", "-S"))
+                                              cwd=root, script=script, extra_flags=("-I",))
         self.assertEqual(code, 0, stderr)
         a = json.loads(read(os.path.join(out, "a.json")))
         self.assertEqual(mini_validate(SCHEMA, a), [])
         self.assertEqual(a["stacks"][0]["name"], "npm")
         code, stdout, stderr = cli_subprocess("plan-items", os.path.join(out, "a.json"), "--inbox-dir",
                                               os.path.join(out, "inbox"), "--assessment-ref", "x", "--write",
-                                              cwd=root, script=script, extra_flags=("-I", "-S"))
+                                              cwd=root, script=script, extra_flags=("-I",))
         self.assertEqual(code, 0, stderr)
         manifest = os.path.join(out, "m.yaml")
         with open(manifest, "w") as f:
             f.write(filled_manifest())
         code, stdout, stderr = cli_subprocess("validate-manifest", manifest, cwd=root, script=script,
-                                              extra_flags=("-I", "-S"))
+                                              extra_flags=("-I",))
         self.assertEqual(code, 0, stdout + stderr)
 
-    def test_ac15_imports_are_standard_library_and_310_syntax(self):
-        with open(SCRIPT, encoding="utf-8") as f:
-            src = f.read()
-        tree = ast.parse(src, feature_version=(3, 10))
-        mods = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                mods |= {n.name.split(".")[0] for n in node.names}
-            elif isinstance(node, ast.ImportFrom):
-                self.assertEqual(node.level, 0, "relative import breaks a copied skill")
-                mods.add(node.module.split(".")[0])
-        self.assertTrue(mods)
-        self.assertEqual(sorted(m for m in mods if m not in sys.stdlib_module_names), [])
+    def test_ac15_without_its_tools_the_checker_stops_and_says_why(self):
+        # -S: no site-packages, so no PyYAML: the checker must refuse, not fall back.
+        root = self.repo({"README.md": "x\n"}, commit=True)
+        code, stdout, stderr = cli_subprocess("assess", ".", cwd=root, extra_flags=("-I", "-S"))
+        self.assertEqual(code, 2)
+        self.assertIn("setup_tools.py", stderr)
+
+    def test_ac15_imports_are_standard_library_or_pinned_and_311_syntax(self):
+        with open(os.path.join(SKILL, "scripts", "requirements-tools.txt"), encoding="utf-8") as f:
+            pinned = {m.lower() for m in re.findall(r"(?m)^([A-Za-z0-9_.-]+)==", f.read())}
+        allowed = {"yaml"} if "pyyaml" in pinned else set()
+        for path in (SCRIPT, SETUP):
+            with self.subTest(script=os.path.basename(path)):
+                with open(path, encoding="utf-8") as f:
+                    src = f.read()
+                tree = ast.parse(src, feature_version=(3, 11))
+                mods = set()
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        mods |= {n.name.split(".")[0] for n in node.names}
+                    elif isinstance(node, ast.ImportFrom):
+                        self.assertEqual(node.level, 0, "relative import breaks a copied skill")
+                        mods.add(node.module.split(".")[0])
+                self.assertTrue(mods)
+                outside = sorted(m for m in mods if m not in sys.stdlib_module_names)
+                self.assertEqual(outside, sorted(allowed) if path == SCRIPT else [])
+
+    def test_ac15_setup_refuses_a_gitleaks_that_does_not_match_its_pin(self):
+        fake = os.path.join(self.tmp(), "gitleaks")
+        with open(fake, "wb") as f:
+            f.write(b"#!/bin/sh\necho 8.30.1\n")
+        os.chmod(fake, 0o755)
+        home = self.tmp()
+        proc = subprocess.run([sys.executable, "-I", SETUP, "--home", home, "--gitleaks", fake],
+                              capture_output=True, text=True, timeout=600)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("does not match its pinned SHA-256", proc.stderr)
+        self.assertEqual([n for n in os.listdir(home) if n.startswith("env-")], [], "a refused setup left an environment")
+
+    def test_ac15_setup_refuses_a_download_that_does_not_match_its_pin(self):
+        st = fc._setup_module()
+        with open(st.GITLEAKS_PINS, encoding="utf-8") as f:
+            pins = json.load(f)
+        with self.assertRaisesRegex(st.SetupError, "download does not match"):
+            st.install_gitleaks(os.path.join(self.tmp(), "g"), pins, st.platform_key(), None,
+                                fetcher=lambda url: b"not the release")
 
     def _run_copied_skill_on(self, python):
-        """AC-15's copied-skill run under a given interpreter, with a repo that exercises every output."""
+        """AC-15's copied-skill run under a given interpreter, through setup_tools.py as SKILL.md does."""
         fx = INVENTORY_FIXTURES["python"]
         root = self.repo({**fx["files"], "README.md": "x\n", "k.py": f"k = '{AWS_KEY}'\n"}, commit=True)
         dest = os.path.join(root, ".claude", "skills", "onboard-repo")
         shutil.copytree(SKILL, dest, ignore=shutil.ignore_patterns("__pycache__"))
+        setup = subprocess.run([python, "-I", os.path.join(dest, "scripts", "setup_tools.py"),
+                                "--home", self.tmp(), "--gitleaks", tools_gitleaks()],
+                               capture_output=True, text=True, timeout=600)
+        self.assertEqual(setup.returncode, 0, f"{python} setup: {setup.stderr}")
+        tools_python = setup.stdout.strip()
         script = os.path.join(dest, "scripts", "factory_check.py")
         out = self.tmp()
         manifest = os.path.join(out, "m.yaml")
@@ -1837,8 +1908,8 @@ class AC15Portability(Base):
             ["validate-manifest", manifest],
         ]
         for args in steps:
-            proc = subprocess.run([python, "-I", "-S", "-B", script, *args], cwd=root, capture_output=True,
-                                  timeout=120, env={"PATH": os.environ.get("PATH", "")})
+            proc = subprocess.run([tools_python, "-I", "-B", script, *args], cwd=root, capture_output=True,
+                                  timeout=300, env={"PATH": os.environ.get("PATH", "")})
             self.assertEqual(proc.returncode, 0, f"{python} {args[0]}: {proc.stderr.decode('utf-8', 'replace')}")
         a = json.loads(read(js))
         self.assertEqual(mini_validate(SCHEMA, a), [])
@@ -1847,29 +1918,32 @@ class AC15Portability(Base):
         self.assertIn("tests/unit/test_cart.py", read(md))
         self.assertTrue(os.listdir(os.path.join(out, "inbox")))
 
-    def test_fr12_checker_runs_on_the_oldest_supported_python_found(self):
-        # FR-12 and the platform constraint say Python 3.10+. A check on the running interpreter's
-        # parser can't see syntax that only older versions reject, so run the real interpreters.
+    def test_fr12_checker_runs_on_every_supported_python_found(self):
+        # FR-12 says Python 3.11+ (ADR 0020). A check on the running interpreter's parser can't see
+        # syntax that only older versions reject, so set up and run on the real interpreters.
+        # Each setup needs PyPI the first time; gitleaks is copied from this environment.
         found = {}
-        for exe in [sys.executable] + [shutil.which(f"python3.{minor}") for minor in range(10, 15)]:
+        for exe in [sys.executable] + [shutil.which(f"python3.{minor}") for minor in range(11, 15)]:
             if not exe:
                 continue
             proc = subprocess.run([exe, "-I", "-c", "import sys; print('%d.%d' % sys.version_info[:2])"],
                                   capture_output=True, timeout=60)
             if proc.returncode == 0:
                 version = tuple(int(p) for p in proc.stdout.decode().strip().split("."))
-                if version >= (3, 10):
+                if version >= (3, 11):
                     found.setdefault(version, exe)
-        oldest = min(found)
-        print(f"\n[F-003 acceptance] supported Pythons found: "
-              f"{', '.join('%d.%d' % v for v in sorted(found))}; oldest {oldest[0]}.{oldest[1]}", file=sys.stderr)
+        print(f"\n[F-003 acceptance] supported Pythons found: {', '.join('%d.%d' % v for v in sorted(found))}",
+              file=sys.stderr)
         for version in sorted(found):
             with self.subTest(python="%d.%d" % version):
                 self._run_copied_skill_on(found[version])
 
     @unittest.skipUnless(shutil.which("python3.10"), "python3.10 is not installed on this machine")
-    def test_fr12_checker_runs_on_python_3_10(self):
-        self._run_copied_skill_on(shutil.which("python3.10"))
+    def test_fr12_setup_refuses_python_3_10(self):
+        proc = subprocess.run([shutil.which("python3.10"), "-I", SETUP, "--home", self.tmp()],
+                              capture_output=True, text=True, timeout=120)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("Python 3.11 or later", proc.stderr)
 
     def test_fr12_skill_md_references_exist_inside_the_folder(self):
         text = read(os.path.join(SKILL, "SKILL.md"))
@@ -1974,12 +2048,12 @@ class AC16HostileContent(Base):
         files = {f".github/workflows/{k}": v for k, v in {**crafted, **unreadable}.items()}
         a = self.assess(self.repo(files))
         self.assertSchemaValid(a)
-        for name in unreadable:
+        # None of these is a workflow GitHub would run, so each is reported as unreadable rather
+        # than skipped (SR-8); none may crash the checker.
+        for name in list(unreadable) + list(crafted):
             with self.subTest(workflow=name):
                 g = gap(a, f"workflow-unreadable:.github/workflows/{name}")
                 self.assertIn("S5.1", g["rule"])
-        for name in crafted:
-            self.assertNotIn(f"workflow-unreadable:.github/workflows/{name}", ids(a))
 
     def test_sr6_checker_runs_only_git_with_argument_lists(self):
         with open(SCRIPT, encoding="utf-8") as f:
@@ -1998,7 +2072,12 @@ class AC16HostileContent(Base):
             self.assertEqual(ast.unparse(node.func), "subprocess.run", node.lineno)
             first = node.args[0]
             self.assertIsInstance(first, ast.List, f"line {node.lineno}: command is not a list")
-            self.assertEqual(ast.literal_eval(first.elts[0]), "git")
+            head = first.elts[0]
+            # git, or one of ADR 0020's pinned tools by the path tool_paths() checked.
+            if isinstance(head, ast.Name):
+                self.assertIn(head.id, ("binary", "gitleaks"), node.lineno)
+            else:
+                self.assertEqual(ast.literal_eval(head), "git")
 
     def test_sr7_checker_has_no_network_or_gh(self):
         with open(SCRIPT, encoding="utf-8") as f:
@@ -2601,12 +2680,12 @@ class AC20Plugin(Base):
         skill_dir = os.path.dirname(installed[0])
         for rel in ("scripts/factory_check.py", "schema/assessment.schema.json", "templates/ci-workflow.yml"):
             self.assertTrue(os.path.isfile(os.path.join(skill_dir, rel)), rel)
-        # The installed checker runs on its own (FR-12: self-contained, stdlib only).
+        # The installed checker runs on its own, in its tool environment (FR-12, ADR 0020).
         out_dir = self.tmp()
         code, stdout, stderr = cli_subprocess("assess", self.repo({"go.mod": "", "go.sum": ""}), "--out-json",
                                               os.path.join(out_dir, "a.json"),
                                               script=os.path.join(skill_dir, "scripts", "factory_check.py"),
-                                              extra_flags=("-I", "-S"))
+                                              extra_flags=("-I",))
         self.assertEqual(code, 0, stderr)
 
 
@@ -2642,7 +2721,7 @@ class Properties(Base):
 
     def test_property_secret_values_never_reach_any_output(self):
         r = self.rng()
-        alphabet = string.ascii_uppercase + string.digits
+        alphabet = string.ascii_uppercase + "234567"  # AWS key ids are base32 after the prefix
         for _ in range(self.CASES):
             key = r.choice(["AKIA", "ASIA"]) + "".join(r.choice(alphabet) for _ in range(16))
             line = r.randint(1, 30)
