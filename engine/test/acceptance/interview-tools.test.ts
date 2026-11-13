@@ -214,7 +214,10 @@ describe("Interview tools caps: over a cap is `limit`", () => {
     expect((await w.tool(feature, "interview_propose_assumption", { text: "sixth", why: "w" })).ok).toBe(true);
   });
 
-  it("[IT-10] at most 200 items per feature", { timeout: 1_200_000 }, async () => {
+  // 200 round trips take 13 minutes on a Windows runner and set the CI floor.
+  // The limit is counting logic with no platform code, so Linux checks it
+  // on every PR (owner decision 2026-11-13, H-0152).
+  it.runIf(process.platform === "linux")("[IT-10] at most 200 items per feature (Linux only: no platform code, and 13 minutes on Windows)", { timeout: 1_200_000 }, async () => {
     w = await World.create();
     const { feature, session } = await interviewReady(w);
     for (let i = 0; i < 200; i++) {

@@ -123,3 +123,20 @@ Two smaller problems:
 - **H-0132:** build fixture repos once per worker and copy them, instead of
   running about 20 git commands per test to create them (about 15% of a
   test's time in the profile).
+
+## Later changes (owner decisions of 2026-11-13)
+
+- **H-0151:** the acceptance fixtures run the SR-5 confirm command before
+  the engine's first start, so each test starts the engine once instead of
+  start, stop on the new path and restart. About 8% per test locally. The
+  confirm path itself is still the real command, and `pinning.test.ts`
+  still covers the start-then-confirm flow.
+- **H-0152:** IT-10 (200 items per feature) runs on Linux only. It is
+  counting logic with no platform code, and its 200 round trips took 13 of
+  the slowest Windows shard's 14 minutes.
+- **H-0153:** on PRs, macOS and Windows run only `npm run test:platform`,
+  the files that exercise OS-specific code; Linux still runs everything.
+  Pushes to `main` and a nightly run (which replaces the weekly CVE run)
+  test everything on all three OSes, so a Windows-only regression shows up
+  within a day. The owner chose this over running the full suite on every
+  OS for every PR.
