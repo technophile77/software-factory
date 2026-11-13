@@ -1,5 +1,90 @@
 # F-014 Validation report
 
+## Round 3
+
+- **Feature:** F-014 Fewer engine git calls, spec v8
+- **Judge:** validation-judge
+- **Date:** 2026-11-13
+- **Round:** 3 (round 1: FAIL on `761239f`; round 2: FAIL on `ccbe901`; both kept below)
+- **Commit:** `b1bdc9b` (`claude/project-thread-wx3ju7`). Since round 2: `3a09929` (the ancestry walk checks start order at every step; pids dropped on exit; a listed pid with no process is no parent; refusals log the walked pids) and `b1bdc9b` (Gate 2 re-review of the channel change; docs only). The working tree was clean at the start of this round.
+- **Maturity level:** Rapid prototype. Any number of Major findings is allowed if each is logged. A Not met line or a Blocking finding still fails.
+- **Verdict:** **NEEDS HUMAN REVIEW**
+  - **Not met: 0. Needs owner: 2 lines.** (1) §5 "behavior and messages unchanged": m4 (Gate 2 L3) and m6. (2) Security: Gate 2 L8 and L9 on the channel check. Both owner cards are open. Every other line is Met.
+  - Blocking: 0. Major: 0. Minor: 3 (m4, m6, m13).
+  - B2 is resolved: the grandchild case is handled and unit-tested, two full CI runs are green (all six Windows shards each time), and the spurious refusals are gone from the logs. M5 is resolved: Gate 2 reviewed the channel change and gave it a PASS with 2 Low findings. If the owner accepts m4/m6 as known issues and accepts L8/L9, the verdict becomes PASS without another code round.
+
+### My own run (round 3)
+
+On `b1bdc9b`, Linux container, Node 22, git 2.43.0.
+
+| Step | Result |
+|---|---|
+| `npm run -s typecheck` | Clean, exit 0 |
+| `npx vitest run test/git-reader.test.ts test/units.test.ts test/remote.test.ts test/engine.test.ts` | 4 files passed. 119 tests: 118 passed, 1 skipped (the same symbolic-link test), 0 failed. The ancestry test now also covers a grandchild holding the reused pid (my round 2 probe), a real grandchild of ours (still refused), and a listed pid with no process |
+| `FACTORY_GIT_COUNTS=<file> npx vitest run --config test/acceptance/vitest.config.mts` | 18 files passed, 1 skipped. 562 tests: 553 passed, 9 skipped, 0 failed. 553 count lines summing to **35,641** engine git processes; against `main`'s 51,904 that is **−31.3%** (target 30%) |
+| CI on `3a09929` (43430452308) | Completed, success, all jobs. Channel refusals in the logs: 5 each on `ubuntu 1/2`, `macos 2/3` and `windows 5/6`. That is the same set of intentional refusal tests on each OS, and none elsewhere. On `761239f` and `ccbe901` Windows had extra refusals |
+| CI on `b1bdc9b` (43431996907) | Completed, success. I checked each job: checks, supply-chain, Linux ×2, macOS ×3, Windows ×6, all success. This is the second green run of the same engine code, which is the repeat Windows sample asked for in round 2 |
+
+### Round 2 items
+
+| Item | Now | Evidence |
+|---|---|---|
+| B2 (Windows channel refusal) | **Resolved** | `proc.ts:36-53`: `startedAfter` is checked at every step before the engine and listed-child tests, so the walk ends where a recorded parent pid names a younger process. `:49-50`: a listed pid with no running process isn't a parent. `proc.ts:143-149` and `git-reader.ts:156-159` drop pids on `exit`. `units.test.ts` ancestry test (grandchild, real grandchild refused, stale listed pid). CI green twice, no spurious refusals |
+| M5 (security review of the channel change) | **Resolved** | `F-014-security-gate2.md` § Re-review of the channel check change (`3a09929`): PASS, 2 Low (L8, L9), no Critical, High or Medium. My own reading agrees: every new admission is a peer whose recorded parent has exited, which the walk already admitted when the pid wasn't reused; unknown times fail closed. L8 and L9 are with the owner |
+| m9, m10 | Resolved | Test report: the SR-6 row says both protections; spec v8 |
+| m11 | Resolved | `paths-file.ts:111` one plain comment |
+| m12 | Resolved | `windows.ts:129`, `unix.ts:68-69`: refusals list the walked pids; an unknown Unix peer pid has its own message |
+| m4, m6 | Needs owner (unchanged) | Owner card pending |
+
+### Evidence checklist (round 3)
+
+Lines not listed are Met as in rounds 1 and 2, re-checked on `b1bdc9b` by the runs above.
+
+| Line | Status | Evidence |
+|---|---|---|
+| FR-1 to FR-7 | Met | As round 2; FR-7's harness report used for my count above |
+| AC-1 | Met | 51,904 → 35,641 (−31.3%) with the committed harness. Every test passes on Linux (my run) and on Linux, macOS and Windows in CI (two green runs) |
+| AC-2 to AC-8 | Met | As round 2 |
+| SR-1 to SR-8 | Met | As round 2 |
+| Windows, Linux, macOS (§5) | Met | CI 43430452308 and 43431996907, all 13 test jobs green in each |
+| Behavior, errors and messages unchanged (§5) | **Needs owner** | m4 (Gate 2 L3) and m6, both fail closed. If they are logged as known issues for Alpha, this line is Met. If the owner wants them fixed first, it is Not met until they are |
+| Security | **Needs owner** | Gate 1 and Gate 2 present; Gate 2 re-reviewed through `3a09929`, PASS. Open owner card on Gate 2 L8 (a backward clock step, which needs admin rights, can admit a live engine descendant on Windows) and L9 (F-007's recorded residual risk, "can't wrongly admit", no longer describes the check; rewording is change-controlled). Recommended by the reviewer, and I agree: accept L8 as a residual risk and reword F-007's record. If the owner wants L8 fixed first, this line is Not met until it is |
+| Interface contracts | Met | No diff to `docs/interface-contracts.md`. The channel's access rule (F-007 AC-4) is unchanged in what it promises to refuse; its recorded residual risk is L9 |
+| Architecture / ADRs | Met | No conflict |
+| Change-controlled files | Met | Only `engine/` and `docs/features/F-014-*` changed. F-007's docs are left for the owner (L9) |
+| Code quality, readability, maintainability | Met | The walk reads in order (stop at a younger "parent", accept at the engine, check a listed child is alive). `lastChain` is set and read synchronously in the same call, so concurrent connections can't mix it up |
+| Comments | Met | New comments say why (`proc.ts:16-23`, `:45`, `:49`, `:146-147`; `git-reader.ts:156`) |
+| Test tools | Met | Tool choice table; Vitest 5.1.0 (F-007 OQ-9) |
+| Documentation | Met, with finding | m13 |
+
+### Findings (round 3)
+
+#### Blocking
+
+None.
+
+#### Major
+
+None.
+
+#### Minor (logged; never block)
+
+| # | Location | Finding |
+|---|---|---|
+| m4 | `engine/src/git.ts` (`reader`) | Carried: Gate 2 L3. Owner decision pending |
+| m6 | `engine/src/git.ts` (reader-path messages) | Carried: messages in crafted or corrupt repos. Owner decision pending |
+| m13 | `docs/features/F-014-test-report.md:5`; `proc.ts:143-149`, `git-reader.ts:156-159` | The test report still names `a2952bd` as the final commit tested and records no full run on `3a09929` or later. My run on `b1bdc9b` and the two green CI runs cover it. The `exit`-time pid removal has no test (Gate 2 noted the same); it is covered only by CI going green |
+
+### Counts (round 3)
+
+- Blocking: 0. Major: 0. Minor: 3 (m4, m6, m13).
+- Lines: 0 Not met. 2 Needs owner (§5 behavior and messages: m4, m6; Security: Gate 2 L8, L9).
+
+### What decides it
+
+1. **Owner:** the card on m4 and m6 (log for Alpha, recommended, or fix), and the card on L8 and L9 (accept and reword F-007's residual risk, recommended, or fix L8 first). If both are accepted, this round's verdict becomes PASS with no code change.
+2. **Test engineer (m13, optional):** update the final commit tested in the test report.
+
 ## Round 2
 
 - **Feature:** F-014 Fewer engine git calls, spec v8

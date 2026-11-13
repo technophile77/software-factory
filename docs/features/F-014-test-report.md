@@ -2,7 +2,7 @@
 
 - **Feature:** F-014 Fewer engine git calls, spec v8
 - **Date:** 2026-11-13 (updated after validation round 1)
-- **Final commit tested:** `a2952bd`
+- **Final commit tested:** `b1bdc9b` (engine code as at `3a09929`)
 - **Environment:** Linux, Node 22, git 2.43.0. Windows: the repo's CI matrix (windows-latest, git 2.56.0.windows.4, six shards).
 
 ## Tool choice
@@ -20,7 +20,9 @@
 |---|---|---|
 | Full engine suite (`npx vitest run`, unit + acceptance), Linux | `a2952bd` (final) | 909 passed, 14 skipped, 0 failed (351 s) |
 | Acceptance suite with counts on `main` | `8b20e78` (merge base) | 553 passed, 9 skipped, 0 failed |
-| CI on the code's final commit (run 43425922979) | `a2952bd` | All 13 jobs green: Linux ×2, macOS ×3, Windows ×6, checks, supply-chain. One green run doesn't prove an intermittent failure gone; the cause and its test are in § Windows channel failures |
+| Acceptance suite with counts (validation judge's run) | `b1bdc9b` | 553 passed, 9 skipped, 0 failed; 35,641 engine git processes |
+| CI, two full runs (43430452308, 43431996907) | `3a09929`, `b1bdc9b` | All jobs green both times, all six Windows shards each time |
+| CI on the first channel fix (run 43425922979) | `a2952bd` | All 13 jobs green: Linux ×2, macOS ×3, Windows ×6, checks, supply-chain. One green run doesn't prove an intermittent failure gone; the cause and its test are in § Windows channel failures |
 
 Earlier CI rows in this report's first version were wrong: GitHub lists the runs on `14263a4`, `9c7cd50`, `fc418f6`, `c004929`, `ef3bc0c`, `c235fb9` and `fcf8bec` as cancelled (superseded by newer pushes), not green.
 
@@ -50,6 +52,8 @@ Fix (`proc.ts`, `os/ffi.ts`, `git-reader.ts`):
 - The refusal log names the pids the walk went through.
 
 The first attempt (`a2952bd`) checked the order only at the matching ancestor, which missed the grandchild case; `ccbe901`'s CI failure showed it.
+
+Dropping a pid on exit has no test of its own; the green Windows runs cover it.
 
 Tests: `units.test.ts` "a recorded parent pid that one of our children took over after the parent exited isn't ancestry" (a reused pid held by a child, by a grandchild, and a pid listed after its process ended), plus a Windows-only check of the real start-time lookup. Acceptance tests print the engine's channel log lines when a connection closes without an answer.
 
