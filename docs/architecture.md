@@ -7,8 +7,9 @@ Interface details are still to be decided; see `open-decisions.md`.
 
 These are requirements, not choices:
 
-- The owner's control surface is **VS Code**, with three inboxes: Decisions,
-  Testing, and Configuration hygiene.
+- The owner's control surface is **VS Code**, with one inbox (F-011). Each
+  item is labeled by its kind: Decision (with its category), Hygiene,
+  Testing, Spec sign-off, Pull request, Maturity, or Notice.
 - Code is written through **Claude Code**.
 - There are **six primary agent roles**, three advisory support roles
   (project evaluator, context hygiene, advisor) and a web reader that fetches pages
@@ -23,7 +24,7 @@ These are requirements, not choices:
 ## Components (logical, not yet technical)
 
 ```
- Owner ── VS Code ── Inboxes (Decision, Testing, Config hygiene)
+ Owner ── VS Code ── Inbox (one queue, items labeled by kind)
                          ▲            │ approve / reject / defer ...
                          │            ▼
                   Inbox store  ◄──  Orchestration  ──►  Agents (6 roles)
