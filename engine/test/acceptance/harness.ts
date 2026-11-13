@@ -182,7 +182,7 @@ const srcModule = (p: string) => fileURLToPath(new URL(`../../src/${p}.ts`, impo
  * and the clock. The owner's answer to "type the project name" is the name
  * the prompt shows; the device code is the one the command tells the owner.
  */
-async function confirmCommand(o: EngineOptions, projectPath: string): Promise<ConfirmResult> {
+export async function confirmCommand(o: EngineOptions, projectPath: string): Promise<ConfirmResult> {
   const [{ confirmProject }, { PinStore }, { Git }, { HttpGitHub }, { FileLogger }, { realOsApi }, { Children }] = await Promise.all(
     ["config/confirm", "config/pins", "git", "github", "log", "os/ffi", "proc"].map((m) => import(/* @vite-ignore */ srcModule(m))),
   );

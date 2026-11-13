@@ -11,6 +11,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -20,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import {
   CREDENTIAL_NAMES,
   callTool,
+  confirmCommand,
   startEngine,
   logDir,
   type CredentialStore,
@@ -473,30 +475,41 @@ export class World {
     };
   }
 
-  /** Starts the engine. With `confirm`, approves each project the engine
-   * holds for a first confirmation (new path, SR-5) as its manifest owner. */
+  /** Starts the engine. With `confirm`, first approves each project the
+   * engine holds no pin for (new path, SR-5) as its manifest owner, through
+   * the same confirm command the owner runs, so the engine starts once
+   * instead of starting, stopping on the new path and restarting (H-0151).
+   * Projects the confirm command refuses stay unpinned and stopped; the
+   * test checks that. */
   async boot(opts: { confirm?: boolean } = {}): Promise<EngineHandle> {
-    this.engine = await startEngine(this.options());
-    this.analyst.adopt(this.engine);
     if (opts.confirm ?? true) {
-      let confirmed = false;
       for (const p of this.projects) {
-        if (await this.isRunning(p)) continue;
+        if (this.pinned(p)) continue;
         try {
-          await this.confirm(p, p.ownerId, false);
-          confirmed = true;
+          await this.confirmBeforeStart(p, p.ownerId);
         } catch {
-          // A project the engine refuses stays stopped; the test checks that.
+          // Refused: the engine will stop this project and file why.
         }
       }
-      // The confirm command says to restart the engine to run the project.
-      if (confirmed) {
-        await this.stop();
-        this.engine = await startEngine(this.options());
-        this.analyst.adopt(this.engine);
-      }
     }
-    return this.engine!;
+    this.engine = await startEngine(this.options());
+    this.analyst.adopt(this.engine);
+    return this.engine;
+  }
+
+  /** Whether the engine's pin store holds this project's path. */
+  pinned(p: Project): boolean {
+    const file = join(this.stateDir, "pins.json");
+    if (!existsSync(file)) return false;
+    const projects = (JSON.parse(readFileSync(file, "utf8")) as { projects?: Record<string, unknown> }).projects ?? {};
+    return Object.keys(projects).some((k) => samePath(realpathSync.native(k), realpathSync.native(p.configRepo)));
+  }
+
+  /** The SR-5 confirm command with no engine running, approved as `asUserId`. */
+  async confirmBeforeStart(p: Project, asUserId: number): Promise<void> {
+    const r = await confirmCommand(this.options(), p.configRepo);
+    if (r.approval) this.gh.approve(r.approval.user_code, asUserId);
+    await drive(this.clock, Promise.resolve(r.done), { maxMs: 1000 * 1000 });
   }
 
   /** Runs the SR-5 confirm command, approves its sign-in as `asUserId`, and

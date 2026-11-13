@@ -41,13 +41,17 @@ npm ci --ignore-scripts
 npm run typecheck
 npm run build      # dist/engine.js (koffi stays external) and dist/proxy.js (the sidecar proxy)
 npm test           # unit tests (test/*.test.ts) and the acceptance suite (test/acceptance, its own config)
+npm run test:platform  # only the files that exercise OS-specific code (what PRs run on macOS and Windows)
 npm run coverage   # the same with V8 coverage; reported, not gated
 ```
 
 CI splits the suite across several runners per OS. `FACTORY_TEST_SHARD=k/n`
 runs only shard k of n: every test file, but only its share of each file's
 tests (`test/shard.ts`). Unset, everything runs. To rerun one CI shard
-locally: `FACTORY_TEST_SHARD=2/5 npm test`.
+locally: `FACTORY_TEST_SHARD=2/5 npm test`. On PRs, macOS and Windows run
+only `test:platform`; pushes to `main` and the nightly run test everything
+on all three OSes. A new test file that touches platform code (pipes,
+ACLs, paths, process spawning, the credential store) belongs in that list.
 
 Tests that need a real Docker daemon are skipped unless
 `FACTORY_DOCKER_TESTS=1`. Run them after `npm run build`:
