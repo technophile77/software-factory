@@ -4,7 +4,7 @@
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account)
-- **Spec version:** 8
+- **Spec version:** 9
 
 ## 1. Objective and business purpose
 Everything the factory needs the owner to approve reaches the owner in one
@@ -55,7 +55,7 @@ sessions, or by the owner) can be listed too (OQ-6).
 | FR-3 | Each kind has a card with its required fields (section 10, H-0120) and only its allowed actions: Decision as today; Hygiene: Approve, Reject, Request changes, Defer; Testing: the recommended next step or another listed step, Ask for more research, Defer; Spec sign-off: Approve, Request changes, Defer; Pull request: Approve and merge, Request changes, Defer; Maturity: Approve, Reject, Defer; Notice: Dismiss. |
 | FR-4 | Every owner action is one commit on `factory/state` whose message starts with the item id. For a Pull request item the click itself is the approval and needs no signature (ADR 0017). Other kinds follow ADR 0015 (signed owner actions) unless the owner decides otherwise. |
 | FR-5 | The engine acts on each approved action: applies an approved hygiene change as its own commit or PR with the item id in the message; advances a feature past spec sign-off (definition of done item 1); records an approved maturity change in the manifest; routes Request changes on a PR to the orchestrator as review feedback; merges an approved PR (FR-7). |
-| FR-6 | The engine files a Pull request item when the orchestrator marks a PR ready (stage 9, CI green on the head). The card shows title, link, feature, definition-of-done evidence, files changed with additions and deletions, CI state, and whether the branch is behind `main`. |
+| FR-6 | The engine files a Pull request item for every open, non-draft PR into `main` of a managed repo, whoever opened it (OQ-6): for factory PRs when the orchestrator marks the PR ready (stage 9, CI green on the head); for other PRs when they are opened or leave draft. Fields a non-factory PR doesn't have (definition-of-done evidence, feature) show as "not from the factory". The card shows title, link, feature, definition-of-done evidence, files changed with additions and deletions, CI state, and whether the branch is behind `main`. |
 | FR-7 | **Approve and merge** is enabled only while every required check on the PR head is green. On confirmation (FR-15), the extension calls GitHub's merge API with the owner's VS Code GitHub sign-in, the repo's merge method, and the head commit the card showed as the expected head, then records `approved_merge` with the merge commit in the item's history. |
 | FR-8 | If the PR's head changed after the card was shown, GitHub refuses the merge (expected head mismatch); the card refreshes, shows what changed, and the owner clicks again. |
 | FR-9 | In owner-token mode, `main` in every managed repo has a ruleset that requires a pull request and the level's CI checks, with no required review and no bypass actors (H-0123). |
@@ -181,6 +181,7 @@ Hygiene items named here; none filed until the open questions are answered.
 | 6 | 2026-11-13 | Phone notifications and phone approvals moved to a separate feature; F-011 keeps VS Code and OS notifications; OQ-10 withdrawn | Owner, 2026-11-13 (thread) |
 | 7 | 2026-11-13 | Confirmation dialog on risky actions: merge, hygiene approval, maturity approval (FR-15, AC-16); ADR 0017 point 2 updated | Owner, 2026-11-13 (thread) |
 | 8 | 2026-11-13 | OQ-4 decided (a): a confirmed hygiene change's PR merges automatically when its diff matches exactly | Owner, 2026-11-13 (decision card) |
+| 9 | 2026-11-13 | OQ-6 decided (b): every open PR into `main` of a managed repo gets a Pull request item (FR-6) | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -190,7 +191,7 @@ Hygiene items named here; none filed until the open questions are answered.
 | OQ-3 | How is the owner told of new blocking items? (a) VS Code badge and a VS Code notification only. (b) (a) plus an OS notification from the engine when VS Code is closed. (c) (b) plus a phone notification (for example an email or a GitHub notification). Recommended: (b). | Product | Decided (owner, 2026-11-13): (c), with the phone part (and approving from the phone) moved to a separate feature; F-011 does (b) |
 | OQ-4 | Should an approved hygiene change need a second click for its PR? (a) No: the engine merges the PR itself if its diff equals the approved diff exactly (FR-11, SR-5). (b) Yes, always. Recommended: (a); it is the same change, and the exact comparison is done by code. | Product | Decided (owner, 2026-11-13, decision card): (a), after the FR-15 confirmation |
 | OQ-5 | Does an approval survive a merge of `main` into the PR? **Withdrawn:** with OQ-2 the merge happens on the click, so there is no stored approval to keep. | Security | Withdrawn (moot after OQ-2) |
-| OQ-6 | Which PRs appear as Pull request items? (a) Only PRs the engine opened. (b) Every open PR into `main` of a managed repo, including ones by Claude Code sessions or the owner. Recommended: (b), so this repo's own PRs stop needing a bypass; the check works the same for any author. | Product | Open |
+| OQ-6 | Which PRs appear as Pull request items? (a) Only PRs the engine opened. (b) Every open PR into `main` of a managed repo, including ones by Claude Code sessions or the owner. Recommended: (b), so this repo's own PRs stop needing a bypass; the check works the same for any author. | Product | Decided (owner, 2026-11-13, decision card): (b) |
 | OQ-7 | F-010 OQ-8 gave the factory token admin and advisory rights. With the owner's own token, admin would let the engine (or a leaked token) edit or remove the `main` ruleset, including its required CI. (a) Two tokens of the owner's: the everyday token (Contents, Pull requests, Issues read and write; no Administration) and a separate admin token used only by the advisory code path. (b) One token with admin, accepting that risk. Recommended: (a). | Security | Open |
 | OQ-8 | How strong must the owner's approval be? **Withdrawn:** decided by OQ-2 (the click alone). | Security | Withdrawn (moot after OQ-2) |
 | OQ-9 | SR-7: anything using the owner's credentials can merge without a click, and GitHub can't tell. Add a lightweight safeguard? (a) None; rely on the engine having no merge code path except FR-11. (b) A CI test in this repo that fails if engine code calls GitHub's merge API outside the FR-11 path, so a later change can't add one silently. Recommended: (b); it costs one test and no owner steps. It does not stop a leaked token or another program. | Security | Decided (owner, 2026-11-13, decision card): (b) |
