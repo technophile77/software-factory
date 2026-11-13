@@ -4,7 +4,7 @@
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account)
-- **Spec version:** 13
+- **Spec version:** 14
 
 ## 1. Objective and business purpose
 Everything the factory needs the owner to approve reaches the owner in one
@@ -149,26 +149,87 @@ sessions, or by the owner) can be listed too (OQ-6).
 | SR-7 | Residual risk, stated to the owner (OQ-9): GitHub can't tell the owner's click from anything else using the owner's credentials. The engine's token (the owner's) can merge, so an engine bug, a leaked token, or a program running as the owner could merge a PR with green CI without a click. Agents can't: they run in containers without tokens (ADR 0015). | Analyst | Stated to the owner 2026-11-13; FR-14 guards against a code change adding a merge, not against a leaked token or another program |
 
 ## 10. Interface requirements
-Hygiene items named here; none filed until the open questions are answered.
+Drafts below await the owner's approval; nothing is applied to
+`interface-contracts.md` or other change-controlled files until then, and
+each is applied as its own commit with its id.
 
-- **H-0120 (Interfaces): Inbox item v2.0.** New `kind` field (decision,
-  hygiene, testing, spec, pull_request, maturity, notice), per-kind required
-  fields and body sections, per-kind owner actions (`approved_merge`,
-  `dismissed`), a project-level location in the config repo, and two optional fields on
-  owner-action history entries for F-012: `via: vscode | phone` and
-  `ref: <comment URL>` (folds in F-012's H-0127). Breaking
-  (major) because the action set per item changes.
 - **H-0121:** withdrawn (was a signed PR approval record; not needed after
   OQ-2). Free for reuse.
-- **H-0122:** ADR 0017 (in this PR) and ADR 0006 marked superseded; S9.2 and S9.6 in `security-standards.md` amended (Gate 1 #1, approved by the owner 2026-11-13); plus `decision-management.md` and `development-workflow.md`
-  ("the owner merges" becomes "the owner approves in the inbox; the engine
-  merges on that approval").
-- **H-0123 (Hygiene): the `main` ruleset** for owner-token mode in the
-  onboarding skill (F-003 FR-10), and the same settings for this repo.
-- **H-0124 (Interfaces): Project manifest v1.5 `github` block**:
-  `mode: owner_token | machine_account`, `merge_method`, and where the
-  owner's GitHub user id and token reference live (engine config, not the
-  manifest, per the master-repo rule).
+
+### H-0120 (draft, Interfaces): Inbox item v2.0
+Changes to the Inbox item v1.1 contract:
+
+- **Location:** `.factory/inbox/<inbox>/<id>.md`, where `<inbox>` is
+  `decision`, `testing`, `hygiene`, `spec`, `pull_request`, `maturity` or
+  `notice`. Project-level items (not tied to one repo) live on the project
+  config repo's `factory/state` at the same paths.
+- **Ids:** `D-`, `T-`, `H-` as before; new `S-` (spec sign-off), `P-` (pull
+  request), `M-` (maturity), `N-` (notice), each numbered per inbox per repo.
+  Id pattern `^[DTHSPMN]-\d{4,}$` (replaces F-001 SR-4's `^[DTH]-\d{4,}$`).
+- **`inbox`** gains the four new values; it is the item's kind and its label
+  in the queue (OQ-1). `category` stays decision-only.
+- **New required fields per kind:**
+  - `spec`: `feature`, `spec_path`, `spec_version`.
+  - `pull_request`: `repo`, `pr` (number), `head` (commit), `base`,
+    `author` (login and numeric id), `from_fork` (bool),
+    `author_can_write` (bool), `factory_pr` (bool).
+  - `maturity`: `repo` (or `project`), `from_level`, `to_level`.
+  - `notice`: none beyond the common fields; `blocking` is always false.
+- **Body sections:** `spec`: Summary, Readiness, Open items.
+  `pull_request`: Summary, Definition of done (or "Not from the factory"),
+  Files changed, Checks. `maturity`: Evidence, Gaps, Recommendation.
+  `notice`: Details.
+- **Owner actions per kind** (FR-3): adds `approved_merge` (pull_request),
+  `dismissed` (notice). Allowed actions are listed per kind; the extension
+  offers no others and the engine ignores any other.
+- **History entries** gain optional `via: vscode | phone` and `ref: <URL>`
+  (folds in F-012's H-0127), and for `approved_merge`: `head`,
+  `merge_commit` (SR-13).
+- **Signing:** owner actions on `pull_request` items need no signature
+  (ADR 0017); all other kinds keep ADR 0015 signing.
+- Breaking (major): new action values and id prefixes. The F-001 extension
+  must be updated before items of the new kinds are filed.
+
+### H-0122 (applied in this PR, owner-approved): ADR 0017 and standards
+ADR 0017 added and ADR 0006 marked superseded (OQ-2); S9.2 and S9.6 in
+`security-standards.md` amended (Gate 1 #1). Still to draft for approval:
+`development-workflow.md` stage 9 note "The owner merges. Nobody else
+does." becomes "The owner approves the merge in the inbox (F-011); the
+extension merges on that confirmed click. Nobody else merges, except the
+engine for a hygiene PR identical to an approved hygiene change (FR-11)."
+`decision-management.md` gains a section listing the item kinds and their
+actions, matching H-0120.
+
+### H-0123 (draft, Hygiene): `main` ruleset in owner-token mode
+Onboarding (F-003 FR-2 check, FR-10 apply) uses these settings instead of
+"owner review required":
+
+- Target: the default branch.
+- Rules: require a pull request before merging, with 0 required approvals;
+  require the level's CI status checks to pass; block force pushes; block
+  deletion.
+- Bypass list: empty.
+- In `machine_account` mode the ADR 0006 settings stay (1 required approval).
+- The same settings are proposed for this repo's `main`; the owner applies
+  them (repo admin), or confirms and onboarding applies them with the
+  owner's `gh` login (F-003 SR-7).
+
+### H-0124 (draft, Interfaces): Project manifest v1.6 `github` block
+(v1.5 is F-010's H-0110.) New optional top-level key:
+
+```yaml
+github:
+  mode: owner_token          # owner_token (default) | machine_account
+  merge_method: squash       # merge | squash | rebase; must be enabled on the repo
+```
+
+- Absent means `mode: owner_token`, `merge_method: squash` (ADR 0005).
+- Tokens are never in the manifest. The engine reads the everyday token
+  and the admin token (OQ-7) from its own config outside Git, as
+  `github.token` and `github.admin_token`, each a reference to the OS
+  credential store, never the value.
+- `mode` is a pinned key (F-007 SR-5): changing it needs the owner's
+  confirmation.
 
 ## 11. Readiness gate
 - [ ] Clear objective
@@ -194,6 +255,7 @@ Hygiene items named here; none filed until the open questions are answered.
 | 11 | 2026-11-13 | A-1 approved | Owner, 2026-11-13 (decision card) |
 | 12 | 2026-11-13 | Security Gate 1 filed (F-011-security-gate1.md); SR-8 to SR-13 proposed; #1 (standards text) awaits the owner | — |
 | 13 | 2026-11-13 | Gate 1 #1 decided: S9.6 and S9.2 amended for ADR 0017 (in H-0122) | Owner, 2026-11-13 (decision card) |
+| 14 | 2026-11-13 | Section 10: drafts of H-0120, H-0123, H-0124 and the rest of H-0122 for owner approval | — |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
