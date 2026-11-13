@@ -6,7 +6,7 @@
   approval and merge in the inbox, no machine account; phone approvals,
   F-012; "can't [a VS Code issues extension] be used in place of the
   inbox?", proposal 0026)
-- **Spec version:** 20 (draft)
+- **Spec version:** 21 (draft)
 - **Replaces:** F-001's inbox view and all of F-012 (both superseded by this
   version, see their change logs). Their approved requirements that still
   apply are carried here, each marked with where it came from.
@@ -81,7 +81,7 @@ or a one-word command.
 | FR-7 | A valid action is one commit on the config repo's `factory/state`, appending it to the item's record (H-0165) with its source (`reaction` or `command`), the comment URL, the actor id and the time; the message starts with the item id. The engine then replies `Recorded: <action>.`, carries the action out as v19 FR-5 says, and closes the issue unless the action keeps it open (Defer, Restore priority, Ask for more research). (Replaces v19 FR-4, F-001 FR-8, F-012 FR-5, FR-6.) |
 | FR-8 | Defer lowers the effective priority one step (swaps the `priority:` label), keeps `blocking`, and keeps the issue open; Restore priority sets it back. (F-001 FR-7.) If an item changes while open, the engine edits the body to the new revision, marks the old action comments stale, and the workflow posts new ones. (F-012 FR-7.) |
 | FR-9 | Pull request items: the engine files one for every open, non-draft PR into `main` of a managed repo (v19 FR-6, OQ-6), with title, link, feature, definition-of-done evidence (or "not from the factory"), files changed, check state, whether the branch is behind `main`, and an engine-written line naming the PR author and whether it comes from a fork or an account without write access (v19 SR-8). The body says to merge in GitHub's PR view. When the engine sees the PR merged by the owner's account, it records `merged_on_github` with the merge commit and closes the issue; if it is closed unmerged, it records `closed_on_github`. **Pending OQ-12** (keep a PR item issue, or rely on GitHub's PR list). |
-| FR-10 | Hygiene approval covers the change once: when the engine applies an approved hygiene change through a PR whose diff equals the approved diff exactly (SR-11), the engine merges that PR itself; any difference files a Pull request item instead. **Pending OQ-11**: v19 SR-9 tied this to a signed approval, which ADR 0022 removes. |
+| FR-10 | Hygiene approval covers the change once: when the engine applies an approved hygiene change through a PR whose diff equals the approved diff exactly (SR-11), the engine merges that PR itself; any difference files a Pull request item instead. The proof is the owner's GitHub-proven, confirmed Approve on the Hygiene item (SR-16; OQ-11, owner, 2026-11-13). |
 | FR-11 | Risky actions (owner, 2026-11-13): merging a PR (confirmed by GitHub's merge dialog, FR-9), and Approve on a Hygiene, Maturity, Security decision or Spec sign-off item (confirmed by FR-6). The confirm comment's target is fixed per kind: hygiene, the item id, files changed and that it lands on `main`; maturity, the repo and old and new level; Security decision, the option and the risk it accepts; spec sign-off, the feature, spec version and that development starts. |
 | FR-12 | The factory ships a `githubIssues.queries` block for the GitHub Pull Requests extension (H-0163): one query per priority, each `is:open label:factory-inbox assignee:${user} label:priority:<p>`, plus "Blocking" and "Deferred". It names no repo and no owner, so it holds no owner-specific value. Onboarding offers to add it to the owner's VS Code user settings. |
 | FR-13 | Notifications: GitHub notifies the owner of each new item through the assignment and @mention (GitHub Mobile push, web, email, per the owner's GitHub settings). The engine also shows an OS notification on the PC for a new blocking item (v19 FR-12). **Pending OQ-13** (which items notify). |
@@ -104,7 +104,7 @@ or a one-word command.
 | AC-6 | Given Defer on a high-priority blocking item, then the issue stays open with label `priority:medium` and `blocking`, and the record has `deferred`; given Restore priority, then the label is `priority:high` again. | FR-8 |
 | AC-7 | Given an item revised while its issue is open, then the body shows the new revision, old action comments are marked stale, new ones are posted, and a 👍 on an old one records nothing. | FR-8 |
 | AC-8 | Given an open PR into `main`, then a Pull request item with every FR-9 field exists within one poll, and no reaction or command merges it; given the owner merges it on GitHub, then the item records `merged_on_github` with the merge commit and closes. | FR-9 |
-| AC-9 | Given an approved hygiene item applied as a PR with the identical diff, then the engine merges it and files no Pull request item; given one changed line, then nothing is merged and a Pull request item is filed (if OQ-11 keeps FR-10). | FR-10 |
+| AC-9 | Given an approved hygiene item applied as a PR with the identical diff, then the engine merges it and files no Pull request item; given one changed line, then nothing is merged and a Pull request item is filed. | FR-10 |
 | AC-10 | Given engine code that calls a merge endpoint outside the FR-10 module, or any create-reaction endpoint, then the CI test fails and names the file and line. | FR-14 |
 | AC-11 | Given the shipped query block in VS Code user settings, then the Issues view lists the owner's open inbox issues by priority, and the block contains no login, repo or user id. | FR-12 |
 | AC-12 | Given a public config repo, or a second collaborator, then the engine files no issue and reports the reason. | FR-15 |
@@ -182,12 +182,12 @@ actions to every action, or that are new, are re-checked at Gate 1.
 | SR-8 | The record keeps each action comment's id and text hash and the body's hash at posting; an action on an edited comment, or on an issue whose body differs from the engine's last version, records nothing. | F-012 SR-8 | Accepted (owner, 2026-11-13) |
 | SR-9 | The config repo must be private with the owner as only collaborator, checked at start and before filing (FR-15). | F-012 SR-9 | Accepted (owner, 2026-11-13); now mandatory |
 | SR-10 | Fields that can carry outside text (PR titles and bodies, issue text, reviewer quotes) are rendered in fenced code blocks, with @mentions and remote images stripped, under an engine-written line naming their author. | F-012 SR-10, v19 SR-8 | Accepted (owner, 2026-11-13) |
-| SR-11 | FR-10's comparison is byte for byte on `git diff --binary` from merge base to head, plus file list and modes; any difference or failure files a Pull request item instead. | v19 SR-11 | Accepted (owner, 2026-11-13); pending OQ-11 |
+| SR-11 | FR-10's comparison is byte for byte on `git diff --binary` from merge base to head, plus file list and modes; any difference or failure files a Pull request item instead. | v19 SR-11 | Accepted (owner, 2026-11-13) |
 | SR-12 | The config repo workflow has `permissions: issues: write` only, actions pinned by SHA, runs only on `repository_dispatch` from the engine, and executes nothing from the payload. | F-012 SR-12 | Accepted (owner, 2026-11-13) |
 | SR-13 | The everyday token has no Administration permission, so it can't change the `main` ruleset; admin rights are on a separate token used only for advisories (OQ-7). Both are fine-grained with at most 90 days' expiry; a Notice 7 days before. | v19 SR-3, SR-12 | Accepted (owner, 2026-11-13) |
 | SR-14 | The `main` ruleset has no bypass actors in owner-token mode, so required CI applies to every merge, including the owner's in GitHub's UI and the engine's under FR-10. | v19 SR-4 | Accepted (owner, 2026-11-13) |
 | SR-15 | The engine merges only under FR-10; FR-14 enforces it in CI. Residual risk, stated: anything holding the owner's token can merge a green PR without the owner, and GitHub can't tell (v19 SR-7). | v19 SR-5, SR-7 | Accepted (owner, 2026-11-13) |
-| SR-16 | Hygiene auto-merge proof: **pending OQ-11** (v19 SR-9 required a signed approval and withdraws FR-10 if signing goes). | v19 SR-9 | Open |
+| SR-16 | The engine merges under FR-10 only on an Approve of that Hygiene item recorded under SR-2 and confirmed under SR-3 (🚀 or `/confirm <code>`), at the revision whose diff is compared. Replaces v19 SR-9 (signed approval). Residual risk, stated: anything holding the owner's GitHub session or token could approve and confirm a hygiene change, and it then reaches `main`; that holder could already merge any green PR directly (SR-15). | v19 SR-9; OQ-11 | Accepted (owner, 2026-11-13, decision card) |
 
 Withdrawn from v19, because our extension no longer merges: SR-1 (head
 pinned in the merge call; GitHub's required checks on the current head now
@@ -218,10 +218,10 @@ Drafts, not yet approved. Each is applied only after the owner approves it.
 ## 11. Readiness gate
 - [x] Clear objective
 - [x] Expected behavior defined
-- [ ] Acceptance criteria testable (AC-8, AC-9 depend on OQ-11, OQ-12)
+- [ ] Acceptance criteria testable (AC-8 depends on OQ-12)
 - [x] Constraints documented
 - [ ] Assumptions explicit (A-3 extension and web part pending)
-- [ ] Blocking decisions resolved (OQ-11, OQ-12, OQ-13; Gate 1; H-0161 to H-0165)
+- [ ] Blocking decisions resolved (OQ-12, OQ-13; Gate 1; H-0161 to H-0165)
 
 Follow-ups outside this spec: F-003 stops writing `.factory/inbox/` and
 installs the workflow and query block; F-010's advisory path uses the admin
@@ -232,6 +232,7 @@ token (from v19).
 |---|---|---|---|
 | 1 to 19 | 2026-11-13 | Files on `factory/state`, our extension, PR merge from the extension; see git history of this file for each step | Owner, 2026-11-13 (v19 Approved) |
 | 20 | 2026-11-13 | Revised for ADR 0022: items are GitHub issues in the config repo, viewed in GitHub's VS Code extension and GitHub Mobile, acted on by 👍 or command comment, risky actions confirmed by 🚀 or `/confirm`; PRs merged in GitHub's PR view; F-012 folded in, F-001 view retired; migration of item files; OQ-11, OQ-12, OQ-13 opened | — (draft) |
+| 21 | 2026-11-13 | OQ-11 decided (a): hygiene auto-merge kept, proven by the confirmed GitHub approval (SR-16 replaces v19 SR-9) | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 OQ-1 to OQ-10 are decided or withdrawn as recorded in v19 (git history);
@@ -239,6 +240,6 @@ their outcomes are carried above.
 
 | Id | Question | Category | Status |
 |---|---|---|---|
-| OQ-11 | Hygiene auto-merge. v19 SR-9 let the engine merge a hygiene PR identical to an approved change only because the approval was SSH-signed, and withdraws that if signing goes; ADR 0022 removes signing. (a) Keep auto-merge, with the GitHub-proven, 🚀-confirmed approval as the proof (SR-2, SR-3); risk: anything holding your GitHub session or token could approve a hygiene change and see it reach `main`, which is already true of merging directly (SR-15). (b) Withdraw it: every hygiene PR also waits for you to merge it in GitHub's PR view. Recommended: (a). | Security | Open |
+| OQ-11 | Hygiene auto-merge. v19 SR-9 let the engine merge a hygiene PR identical to an approved change only because the approval was SSH-signed, and withdraws that if signing goes; ADR 0022 removes signing. (a) Keep auto-merge, with the GitHub-proven, 🚀-confirmed approval as the proof (SR-2, SR-3); risk: anything holding your GitHub session or token could approve a hygiene change and see it reach `main`, which is already true of merging directly (SR-15). (b) Withdraw it: every hygiene PR also waits for you to merge it in GitHub's PR view. Recommended: (a). | Security | Decided (owner, 2026-11-13, decision card): (a) |
 | OQ-12 | Pull requests in the inbox. (a) Keep a Pull request item issue per PR (FR-9): you get a push and see it in the same queue, and merge in GitHub's PR view from the link. (b) No issue for PRs; you find them in GitHub's PR list (the extension's Pull Requests view, Mobile), and the engine posts its definition-of-done evidence as a PR comment. With (b) you get no push for PRs the engine opens with your token, because GitHub doesn't notify you of your own PRs. Recommended: (a). | Product | Open |
 | OQ-13 | Which items notify you? v19/F-012 pushed only blocking items to the phone. Every item is now assigned to you, which notifies. (a) Every item notifies (one path; mute in GitHub settings if noisy). (b) Only blocking items notify: non-blocking ones are opened unassigned and without @mention, and need a second query in VS Code that names your config repo, set by onboarding in your user settings. Recommended: (a). | Product | Open |
