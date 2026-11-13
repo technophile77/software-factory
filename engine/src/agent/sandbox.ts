@@ -11,7 +11,7 @@ import { ContainerLimits, ContainerSpec, MountSpec, inspectMismatches, internalN
 import type { Logger } from "../log";
 import type { RolePolicy } from "../policy/role-policy";
 import type { FromProxy, ProxyStart, ToProxy } from "../proxy/main";
-import { PROXY_PORT } from "../proxy/main";
+import { PROXY_PORT } from "../proxy/port";
 import type { GrantDeadline, ModelCredential, PinnedEndpoint } from "../proxy/server";
 import { ROUTER_ALIAS, ROUTER_PORT, litellmConfig, litellmEnv } from "./litellm";
 import { AGENT_USER, CONTAINER_FLAGS, WORKSPACE } from "./session";
