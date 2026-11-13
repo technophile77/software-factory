@@ -1,0 +1,1 @@
+{"id":"chatcmpl-translatedstub","type":"message","role":"assistant","model":"translated","content":[{"type":"text","text":"Checking."},{"type":"tool_use","id":"call_translatedstub0","name":"get_status","input":{"service":"api","verbose":true}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":21,"output_tokens":18}}

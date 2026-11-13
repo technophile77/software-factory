@@ -8,6 +8,8 @@ import type { CredentialApi } from "./os/ffi";
  */
 export const MODEL_CREDENTIAL = "model-credential";
 const FACTORY_TOKEN_RE = /^factory-token\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
+// F-013 FR-3: the same shape as an endpoint name, so an `api_key_ref` can't reach any other item.
+const ENDPOINT_KEY_RE = /^endpoint-key\/[a-z0-9-]{1,32}$/;
 const MAX_SECRET_BYTES = 2048;
 
 export function factoryTokenName(project: string): string {
@@ -16,8 +18,22 @@ export function factoryTokenName(project: string): string {
   return name;
 }
 
+/**
+ * The credential store name of an endpoint's API key (F-013 FR-3).
+ *
+ * @param ref the endpoint's `api_key_ref`: lower-case letters, digits and `-`, up to 32 characters.
+ * @example
+ * endpointKeyName("lan-key"); // "endpoint-key/lan-key"
+ * @throws SecretError when `ref` is not that shape.
+ */
+export function endpointKeyName(ref: string): string {
+  const name = `endpoint-key/${ref}`;
+  if (!ENDPOINT_KEY_RE.test(name)) throw new SecretError("That reference can't name an endpoint key.");
+  return name;
+}
+
 export function isSecretName(name: string): boolean {
-  return name === MODEL_CREDENTIAL || FACTORY_TOKEN_RE.test(name);
+  return name === MODEL_CREDENTIAL || FACTORY_TOKEN_RE.test(name) || ENDPOINT_KEY_RE.test(name);
 }
 
 export class SecretError extends Error {

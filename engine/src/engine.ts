@@ -1,15 +1,20 @@
 import * as crypto from "node:crypto";
+import { lookup as dnsLookup } from "node:dns/promises";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { SessionRefused, runAnalystSession } from "./agent/analyst";
+import { type EndpointProbe, httpProbe } from "./agent/endpoint-check";
+import { EndpointService, type EndpointStatus, estimateTokens } from "./agent/endpoint-service";
 import { AgentRuntime, TurnQueue, populateWorktree, prepareWorktree, sweepLeftovers } from "./agent/runtime";
 import { runReviewerSessions, reviewerPolicy } from "./agent/reviewer";
-import { SessionGroup, runVolume } from "./agent/sandbox";
+import type { RouterConfig } from "./agent/sandbox";
+import { type GroupConfig, SessionGroup, runVolume } from "./agent/sandbox";
 import { WORKSPACE, type SessionOutcome } from "./agent/session";
 import { commitWorktree } from "./agent/worktree-commit";
 import { DockerError } from "./docker/cli";
 import { baseImageId, ensureAgentImage, skillsPluginDir } from "./docker/image";
+import { type LitellmImage, type LitellmSignatureCheck, litellmImageId } from "./docker/litellm-image";
 import { DocumentRefused, SourceDocument, documentMeta, lineOfByte, sha256 as sha256Of, sourcePath } from "./interview/document";
 import { frameDocument, frameRequest } from "./interview/frame";
 import { Conn, notification, serve } from "./channel/framing";
@@ -21,6 +26,9 @@ import { Clock, iso, systemClock } from "./clock";
 import { AuthorizationError, authorizeProject, billingMismatch, modelCredentialFor } from "./config/authorize";
 import { AgentSources, Instructions, MASTER_SOURCE_PATHS, resolveAgentSources } from "./config/agent-sources";
 import { TreeSnapshot, readFileAt, resolveFactoryVersion } from "./config/factory-source";
+import { type EndpointLookup } from "./config/endpoint-address";
+import { RoleAssignmentError, manifestAssignments, planAdvisory, planRole } from "./config/endpoint-roles";
+import { type Endpoint, EndpointsError, readEndpointsFile } from "./config/endpoints";
 import { Models, MODELS_FILE, readDefaultModels } from "./config/models";
 import { LIMITS_FILE, Limits, LimitsError, agentLimits, gate1Limits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
 import { Manifest, readManifest } from "./config/manifest";
@@ -41,10 +49,12 @@ import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, fact
 import { SecurityAlert, fileDecisionItem, fileSecurityItem } from "./state/inbox";
 import { READINESS_STAGE, analystGate1Turn, correctionTurn, gate1Resolution, records, reviewerTurn } from "./gate1/flow";
 import { findingRef, plain, renderReport } from "./gate1/render";
+import { ADVISORY_WALL_MS, type AdvisoryHints, advisoryBlock, matchRate, runAdvisory } from "./gate1/advisory";
+import { runAdvisorySession } from "./gate1/advisory-session";
 import { GATE1_STAGE, Gate1Report, REVIEWER_ROLE, readReportFile, validateReport } from "./gate1/report";
 import { StandardsError, loadStandards } from "./gate1/standards";
 import { readinessChecks, specPathPattern } from "./interview/readiness";
-import type { RolePolicy } from "./policy/role-policy";
+import { PolicyError, type RolePolicy, effectiveRole } from "./policy/role-policy";
 import { EngineRecord, RunRecord } from "./state/record";
 import { ResumePlan, RunBook, RunFacts, RunUsage, agentReport, transcriptSummary } from "./state/runs";
 import { Change, SecretFound, StateRepo } from "./state/state-repo";
@@ -92,6 +102,8 @@ export interface EngineOptions {
    * swept at start. Without it no agent starts (and resumeAnalyst is called).
    */
   agents?: AgentRuntime;
+  /** F-013: replacements for the network and the LiteLLM image check (tests only; the defaults are the real ones). */
+  endpoints?: { lookup?: EndpointLookup; probe?: EndpointProbe; litellmSignature?: LitellmSignatureCheck; slotWaitMs?: number };
 }
 
 export type ProjectState = "running" | "stopped" | "disabled";
@@ -154,6 +166,10 @@ export interface EngineHandle {
   models(project: string): Models;
   /** A role's `AGENT.md` for a running project; throws when the role has none, so it can't run. */
   instructions(project: string, role: string): Instructions;
+  /** F-013 FR-6: each configured model endpoint with whether this PC can use it and, if not, why. */
+  endpoints(): EndpointStatus[];
+  /** F-013 FR-2: why the whole endpoints file was refused (AC-2), or null. */
+  endpointsProblem(): string | null;
 }
 
 export function defaultEngineHome(): string {
@@ -229,6 +245,28 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     throw new StartError(e instanceof ConfigError ? e.message : "The project paths file couldn't be read.");
   }
 
+  let endpointConfig: { endpoints: Endpoint[] } | { problem: string };
+  try {
+    endpointConfig = readEndpointsFile(o.masterRepo, osApi);
+  } catch (e) {
+    endpointConfig = { problem: e instanceof EndpointsError ? e.message : "the endpoints file couldn't be read" };
+  }
+  let litellm: Promise<LitellmImage> | null = null;
+  const endpointSvc = await EndpointService.start({
+    config: endpointConfig, credentials, clock, log,
+    lookup: o.endpoints?.lookup ?? ((host) => dnsLookup(host, { all: true })),
+    probe: o.endpoints?.probe ?? httpProbe,
+    planFile: path.join(home, "endpoint-plans.json"), identityFile: path.join(home, "endpoint-models.json"), workDir: path.join(home, "router"),
+    ...(o.endpoints?.slotWaitMs !== undefined ? { slotWaitMs: o.endpoints.slotWaitMs } : {}),
+    ...(o.agents ? {
+      image: () => {
+        litellm ??= litellmImageId(o.agents!.docker, { signature: { env, ...o.endpoints?.litellmSignature } });
+        litellm.catch(() => (litellm = null));
+        return litellm;
+      },
+    } : {}),
+  });
+
   const projects: Project[] = listed.map((p) => ({
     path: p, name: null, state: "stopped", warnings: [], real: null, manifest: null, limits: null, sources: null, models: null, state_repo: null,
     features: new Map(), sessions: null, listener: null, conns: new Set(), token: null,
@@ -258,6 +296,22 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (!p || !p.limits || !p.sources || !p.models) throw new LimitsError(`No running project is named ${name}.`);
     return p;
   };
+
+  /**
+   * F-013 SR-9: refuses a run whose manifest puts a role on an endpoint when that role can't use one.
+   * No engine session of the roles that call this runs on an endpoint, so a plan that would is refused too.
+   */
+  function checkRoleEndpoint(p: Project, role: string, claudeDefault: string): void {
+    const assignment = manifestAssignments(p.manifest!.raw).get(role);
+    if (!assignment?.model) return;
+    try {
+      const plan = planRole({ role, assignment, claudeDefault, allowed: p.manifest!.endpoints, unavailable: (r) => endpointSvc.unavailable(r) }, effectiveRole(p.manifest!.raw, role));
+      if (plan.kind === "endpoint") throw new RoleAssignmentError(`The ${role} role can't run on an endpoint yet.`);
+    } catch (e) {
+      if (e instanceof RoleAssignmentError || e instanceof PolicyError) throw new SessionRefused(e.message);
+      throw e;
+    }
+  }
 
   /**
    * Spec v30 and Project manifest v1.4 (H-0087): the master commit that
@@ -744,6 +798,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     try {
       const credential = modelCredentialFor(env, modelCredential);
       if (!credential) throw new SessionRefused("no model credential is stored or set");
+      checkRoleEndpoint(p, "requirements-analyst", models["requirements-analyst"]);
       const analystMd = sources.instructions.get("requirements-analyst");
       if (!analystMd) throw new SessionRefused("the requirements-analyst role has no AGENT.md at factory.version or in the project's overrides");
       const readerMd = sources.instructions.get("web-reader");
@@ -1071,19 +1126,93 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       ensureOwnerDir(reportDir);
       // The mount point inside the read-only worktree; an empty folder is no change to the branch.
       fs.mkdirSync(path.join(wt.path, ...path.posix.dirname(reportRel).split("/")), { recursive: true });
-      const group = new SessionGroup({
-        docker: rt.docker, runId, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt.proxyScript,
+      const groupFor = (id: string, router?: RouterConfig): GroupConfig => ({
+        docker: rt.docker, runId: id, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt.proxyScript,
         agentLimits: roleContainerLimits(limits), proxyLimits: containerLimits(limits.proxy), maxPageBytes: maxPageBytes(limits),
-        credential, log, ...(rt.platform ? { platform: rt.platform } : {}), ...(rt.sleep ? { sleep: rt.sleep } : {}),
+        credential, log, ...(rt.platform ? { platform: rt.platform } : {}), ...(rt.sleep ? { sleep: rt.sleep } : {}), ...(router ? { router } : {}),
       });
+      const group = new SessionGroup(groupFor(runId));
       let valid: Gate1Report | null = null;
       const first = resumeId
         ? `The engine restarted. Finish your Gate 1 report at /workspace/${reportRel}.`
         : reviewerTurn({ feature: f.id, specPath, specVersion, commit, reportPath: reportRel, standards: loaded.standards, transcript: transcriptSummary(f.state) });
+      const reportTarget = `${WORKSPACE}/${path.posix.dirname(reportRel)}`;
+      // The worktree and the report folder are checked after every reviewer session, whether it ran on Claude or on an endpoint (SR-12, AC-4).
+      const verifyIn = (dir: string) => async (pol: RolePolicy) => {
+        const extra = fs.existsSync(dir) ? fs.readdirSync(dir).filter((x) => x !== reportName) : [];
+        if (extra.length) return { status: "rejected" as const, breaches: extra.slice(0, 20).map((x) => ({ path: `${path.posix.dirname(reportRel)}/${x}`, reason: "not_allowed" as const })) };
+        return commitWorktree({
+          git, gitDir: wt.gitDir, worktree: wt.path, branch: f.state.branch, base: commit, policy: { ...pol, write: { allow: [], deny: [] } }, scanner, tmpDir,
+          message: `${f.id}: Gate 1 reviewer session (run ${runId})`, limits: worktreeLimits(limits),
+        });
+      };
+      const onBreachOf = (id: string, who: string) => async (breaches: Array<{ path: string; reason: string }>) => {
+        await alert(p, `breach:${id}:${crypto.randomBytes(4).toString("hex")}`, {
+          title: `Security reviewer${who} changed files outside its report`, feature: f.id,
+          context: `The engine rejected run ${id}: ${breaches.slice(0, 20).map((b) => `${b.path || "(history)"} (${b.reason})`).join(", ")} (F-008 AC-4). Nothing was committed.`,
+          impact: "The Gate 1 run is stopped.", confirm: "Look at the reviewer's instructions and run Gate 1 again", hold: "Keep the feature stopped", recommendation: "B",
+        });
+      };
+      // F-013 FR-10: an endpoint may give the Claude reviewer unverified hints first; the gate result is only the Claude report.
+      let hints: AdvisoryHints | null = null;
+      let reviewerFirst = first;
+      if (!resumeId) {
+        const advId = `${runId}-adv`;
+        const advDir = path.join(path.dirname(reportDir), advId);
+        let advUsage: RunUsage | null = null;
+        const adv = await runAdvisory({
+          plan: planAdvisory({ role: REVIEWER_ROLE, assignment: manifestAssignments(m.raw).get(REVIEWER_ROLE), claudeDefault: model!, allowed: m.endpoints, unavailable: (r) => endpointSvc.unavailable(r) }),
+          role: REVIEWER_ROLE, standards: loaded.standards, allowed: m.endpoints, promptTokens: estimateTokens(first),
+          route: (req) => endpointSvc.route(req),
+          session: async (route) => {
+            fs.rmSync(advDir, { recursive: true, force: true });
+            ensureOwnerDir(advDir);
+            try {
+              return await runAdvisorySession({
+                route, group: new SessionGroup(groupFor(advId, route.router)), reportDir: advDir, reportName, maxBytes: g1!.reportBytes,
+                run: {
+                  sdk, docker: rt.docker, policy, worktree: wt.path, reportDir: { source: advDir, target: reportTarget }, instructions: instructions!.text,
+                  caps: { ...g1!.caps, wallTimeMs: Math.min(g1!.caps.wallTimeMs, ADVISORY_WALL_MS) }, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), first,
+                  billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
+                  verify: verifyIn(advDir), onBreach: onBreachOf(advId, "'s advisory pass"), log,
+                },
+              });
+            } finally {
+              fs.rmSync(advDir, { recursive: true, force: true });
+              await rt.docker.run(["volume", "rm", "--force", runVolume(advId)], { okCodes: [1] }).catch(() => undefined);
+            }
+          },
+          onCost: (c, u) => {
+            advUsage = { input_tokens: u.inputTokens, output_tokens: u.outputTokens, cost_usd: c.costUsd, duration_s: 0, ...(c.planShare > 0 ? { plan_share: c.planShare } : {}) };
+          },
+          log,
+        });
+        const rates = endpointSvc.bandReports();
+        if (rates.length) facts.endpoint_rates = rates;
+        if (adv.status !== "none") {
+          facts.advisory = {
+            endpoint: adv.endpoint, status: adv.status, ...(adv.status !== "ok" ? { reason: adv.reason } : {}),
+            ...(adv.status === "ok" ? { model: adv.model, hints: adv.hints.findings.length, dropped: adv.hints.dropped } : {}), ...(advUsage ? { usage: advUsage } : {}),
+            ...(adv.status !== "ok" && adv.fallback ? { fallback: adv.fallback } : {}),
+          };
+        }
+        if (adv.status === "ok" && adv.hints.findings.length) {
+          const block = advisoryBlock(adv.hints);
+          // The endpoint's words go to Claude as data only after the same secrets scan as the other inputs (F-008 SR-9).
+          const content = Buffer.from(block, "utf8");
+          if ((await scanner.scan([{ sha: sha256Hex(content), content }])).clean) {
+            hints = adv.hints;
+            reviewerFirst = `${first}\n\n${block}`;
+          } else {
+            facts.advisory!.status = "failed";
+            facts.advisory!.reason = "its hints were not passed on: the secrets scan found a secret in them";
+          }
+        } else if (adv.status === "ok") hints = adv.hints;
+      }
       const result = await runReviewerSessions({
         sdk, docker: rt.docker, group, policy, worktree: wt.path,
-        reportDir: { source: reportDir, target: `${WORKSPACE}/${path.posix.dirname(reportRel)}` },
-        instructions: instructions!.text, caps: g1!.caps, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), model: model!, first,
+        reportDir: { source: reportDir, target: reportTarget },
+        instructions: instructions!.text, caps: g1!.caps, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), model: model!, first: reviewerFirst,
         ...(resumeId ? { resume: resumeId } : {}),
         ...(known?.used ? { used: known.used } : {}),
         onUsed: (u) => void (dead || runs.update(runId, { used: u })),
@@ -1101,22 +1230,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           log.warn(`${f.id}: Gate 1 report refused: ${errors.slice(0, 5).join("; ")}`);
           return correctionTurn(reportRel, errors);
         },
-        verify: async (pol) => {
-          // SR-12: the report folder may hold the named report and nothing else.
-          const extra = fs.existsSync(reportDir) ? fs.readdirSync(reportDir).filter((x) => x !== reportName) : [];
-          if (extra.length) return { status: "rejected" as const, breaches: extra.slice(0, 20).map((x) => ({ path: `${path.posix.dirname(reportRel)}/${x}`, reason: "not_allowed" as const })) };
-          return commitWorktree({
-          git, gitDir: wt.gitDir, worktree: wt.path, branch: f.state.branch, base: commit, policy: { ...pol, write: { allow: [], deny: [] } }, scanner, tmpDir,
-          message: `${f.id}: Gate 1 reviewer session (run ${runId})`, limits: worktreeLimits(limits),
-          });
-        },
-        onBreach: async (breaches) => {
-          await alert(p, `breach:${runId}:${crypto.randomBytes(4).toString("hex")}`, {
-            title: "Security reviewer changed files outside its report", feature: f.id,
-            context: `The engine rejected run ${runId}: ${breaches.slice(0, 20).map((b) => `${b.path || "(history)"} (${b.reason})`).join(", ")} (F-008 AC-4). Nothing was committed.`,
-            impact: "The Gate 1 run is stopped.", confirm: "Look at the reviewer's instructions and run Gate 1 again", hold: "Keep the feature stopped", recommendation: "B",
-          });
-        },
+        // SR-12: the report folder may hold the named report and nothing else.
+        verify: verifyIn(reportDir),
+        onBreach: onBreachOf(runId, ""),
         onSessionId: (id) => void (dead || runs.update(runId, { session_id: id })),
         log,
       });
@@ -1128,6 +1244,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         await endGate1(p, f, runId, n, "failed", result.invalid ?? "its report couldn't be read", facts, commit);
         return;
       }
+      if (hints && facts.advisory) facts.advisory.match = matchRate((valid as Gate1Report).findings, hints);
       await acceptGate1(p, f, { runId, n, commit, wt, report: valid, specPath, specVersion, facts, limits });
     } catch (e) {
       if (dead) return;
@@ -1362,6 +1479,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     models(project) {
       return { ...running(project).models! };
     },
+    endpoints: () => endpointSvc.statuses(),
+    endpointsProblem: () => endpointSvc.fileProblem(),
     instructions(project, role) {
       const i = running(project).sources!.instructions.get(role);
       if (!i) throw new ConfigError(`The ${role} role has no AGENT.md in factory.version's master commit or in the project's overrides, so it may not run.`);
