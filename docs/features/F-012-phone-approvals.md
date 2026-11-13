@@ -1,11 +1,11 @@
 # Feature: Phone notifications and approvals for inbox items
 
 - **Id:** F-012
-- **Status:** Superseded by F-011 v20 (ADR 0022), pending the owner's approval of F-011 v20. Until then v10 stays the approved text, and nothing is built from either.
+- **Status:** Superseded by F-011 v29 (ADR 0022; owner, 2026-11-13). Nothing is built from this spec.
 - **Requested by / date:** Alex, 2026-11-13 (split from F-011 OQ-3: "the phone
   notification needs to be tied to some way to do approvals on my phone also";
   "I want a confirmation on risky actions like a merge, not just one click")
-- **Spec version:** 11 (draft)
+- **Spec version:** 11 
 
 > **Superseded.** ADR 0022 makes GitHub issues the only inbox store, so the
 > phone no longer needs its own channel: every item is an issue, acted on the
@@ -264,7 +264,7 @@ skips `factory-inbox` issues (FR-13) before either feature's build.
 | 9 | 2026-11-13 | SR-1, SR-3, SR-4, SR-5, SR-7 approved; section 10: drafts of H-0125, H-0126, H-0128; H-0129 applied | Owner, 2026-11-13 (decision card) for the SRs |
 | 10 | 2026-11-13 | H-0125, H-0126, H-0128 approved; readiness gate passed | Owner, 2026-11-13 (decision card) |
 | 10 | 2026-11-13 | Spec v10 signed off; status Approved | Owner, 2026-11-13 (decision card) |
-| 11 | 2026-11-13 | Superseded by F-011 v20 for ADR 0022 (proposal 0026); requirements carried or withdrawn as listed at the top | — (draft, with F-011 v20) |
+| 11 | 2026-11-13 | Superseded by F-011 v20 for ADR 0022 (proposal 0026); requirements carried or withdrawn as listed at the top | Owner, 2026-11-13 (F-011 v29 sign-off, decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
