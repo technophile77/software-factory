@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 (split from F-011 OQ-3: "the phone
   notification needs to be tied to some way to do approvals on my phone also";
   "I want a confirmation on risky actions like a merge, not just one click")
-- **Spec version:** 2
+- **Spec version:** 3
 
 ## 1. Objective and business purpose
 The factory stalls whenever an item is waiting for the owner and the owner is
@@ -67,7 +67,7 @@ owner already uses for the interview device approval (ADR 0014).
 | FR-5 | A valid tap becomes one owner-action commit on `factory/state`, with the same fields as a VS Code action plus `via: phone` and `ref: <action comment URL>` (F-011 H-0120). The engine then acts on it exactly as F-011 FR-5 says. |
 | FR-6 | After recording, the engine replies with what it recorded, and closes the issue. If the item is acted on elsewhere first, the engine closes the issue with "acted on in VS Code". |
 | FR-7 | If the item changes (new revision) while its issue is open, the engine edits the issue body to the new revision, marks the old action comments stale, and the workflow posts new ones; taps on stale comments are refused (FR-4). |
-| FR-8 | Risky actions need a confirmation step (owner, 2026-11-13). Risky means the actions F-011 FR-15 asks to confirm in VS Code (today: merging a PR, approving a hygiene change, approving a maturity change); the phone uses the same list. For these, the 👍 records nothing; the engine posts a confirm comment restating the exact action and target (for a hygiene change, the files; for a maturity change, the repo and levels). Only a 🚀 by the owner on that comment, within 15 minutes, while the item is still at that revision, records the action. A PR merge is confirmed by GitHub's own merge dialog (FR-9). |
+| FR-8 | Risky actions need a confirmation step (owner, 2026-11-13). Risky means the actions F-011 FR-15 asks to confirm in VS Code (owner, 2026-11-13: Approve and merge; Approve on Hygiene, Maturity, Security decision and Spec sign-off items); the phone uses the same list. For these, the 👍 records nothing; the engine posts a confirm comment restating the exact action and target (for a hygiene change, the files; for a maturity change, the repo and levels; for a Security decision, the option and the risk it accepts; for a spec sign-off, the feature and spec version). Only a 🚀 by the owner on that comment, within 15 minutes, while the item is still at that revision, records the action. A PR merge is confirmed by GitHub's own merge dialog (FR-9). |
 | FR-9 | Pull request items are not merged by a reaction. The issue links the PR and says to merge in GitHub Mobile. When the engine sees the PR merged by the owner's account, it closes the item (`merged_on_github`) and the issue. Request changes and Defer work as for other kinds. |
 | FR-10 | Decision items get one action comment per option, plus Defer. Request changes, Ask for more context (goes back to the agent that filed it) and a free-text answer, where the item allows one, are taken from a comment by the owner whose first line is the action's name, then the note. These are the only typed actions. Agents never answer for the owner; a deferred item stays open with no default (owner rule, 2026-11-10). |
 | FR-11 | Phone notifications are off until the owner turns them on per project. Turning them on checks that the config repo is private and that the workflow is installed; it refuses with the reason if either is not. Owner-specific values (login, user id) live in the config repo and the owner's engine config, never in the master repo. |
@@ -177,11 +177,12 @@ Hygiene items named here; none filed until the open questions are answered.
 |---|---|---|---|
 | 1 | 2026-11-13 | Draft with open questions OQ-1 to OQ-4; includes the owner's confirmation rule for risky actions | — |
 | 2 | 2026-11-13 | Owner: phone actions are taps, not typing. OQ-1 decided (a): GitHub issue, 👍 on an action comment, 🚀 to confirm risky actions; risky list follows F-011 FR-15; H-0127 folded into F-011 H-0120 | Owner, 2026-11-13 (thread, decision card) |
+| 3 | 2026-11-13 | OQ-3 decided with F-011 FR-15: the confirm list adds Security decisions and Spec sign-off | Owner, 2026-11-13 (decision card, F-011 thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
 |---|---|---|---|
 | OQ-1 | How does the phone get notified and act? The owner asked for taps, not typing. (a) GitHub issue per item in the private config repo, push from GitHub Mobile, tap 👍 on an action comment and 🚀 to confirm risky ones, merge PRs in GitHub Mobile. (b) ntfy notification buttons; item text and a secret pass through ntfy. (c) A phone web page from the engine over Tailscale. | Architecture | Decided (owner, 2026-11-13, decision card): (a) |
 | OQ-2 | ADR 0015 says an owner action counts only if signed with the owner's SSH key, which a phone can't do. Accept a GitHub comment from the owner's account (checked by user id, URL recorded) as proof for phone actions? (a) Yes, amend ADR 0015 for phone actions (SR-2), accepting SR-6. (b) No: phone actions are recorded as pending and need a signed confirm in VS Code. Recommended: (a); (b) means nothing finishes from the phone. | Security | Open |
-| OQ-3 | Which actions count as risky and need the confirm step? F-011 FR-15 owns the list (merge, hygiene approve, maturity approve); F-012 uses the same one. Whether to add Security risk acceptance and spec sign-off is for F-011. | Product | Follows F-011 FR-15 |
+| OQ-3 | Which actions count as risky and need the confirm step? | Product | Decided (owner, 2026-11-13, F-011 FR-15 card): Approve and merge; Approve on Hygiene, Maturity, Security decision and Spec sign-off items |
 | OQ-4 | Quiet hours (FR-12): needed now, or later? Recommended: now, it's small. | Product | Open |
