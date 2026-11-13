@@ -4,7 +4,7 @@
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account)
-- **Spec version:** 7
+- **Spec version:** 8
 
 ## 1. Objective and business purpose
 Everything the factory needs the owner to approve reaches the owner in one
@@ -180,6 +180,7 @@ Hygiene items named here; none filed until the open questions are answered.
 | 5 | 2026-11-13 | OQ-3 decided (c): VS Code, OS and phone notifications (FR-12, SR-8); OQ-10 added for the phone channel | Owner, 2026-11-13 (decision card) |
 | 6 | 2026-11-13 | Phone notifications and phone approvals moved to a separate feature; F-011 keeps VS Code and OS notifications; OQ-10 withdrawn | Owner, 2026-11-13 (thread) |
 | 7 | 2026-11-13 | Confirmation dialog on risky actions: merge, hygiene approval, maturity approval (FR-15, AC-16); ADR 0017 point 2 updated | Owner, 2026-11-13 (thread) |
+| 8 | 2026-11-13 | OQ-4 decided (a): a confirmed hygiene change's PR merges automatically when its diff matches exactly | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -187,7 +188,7 @@ Hygiene items named here; none filed until the open questions are answered.
 | OQ-1 | How is each item labeled? (a) Decisions keep the five categories; every other item shows its kind (Hygiene, Testing, Spec sign-off, Pull request, Maturity, Notice). (b) Every item is forced into one of the five categories. Recommended: (a). CLAUDE.md allows only five decision categories, and a hygiene change or a PR isn't a decision of any of them. | Product | Decided (owner, 2026-11-13, decision card): (a) |
 | OQ-2 | How does an inbox approval become a merge without a GitHub review or bypass? (a) Signed approval record plus required check. (b) The extension merges with the owner's VS Code GitHub sign-in; `main` requires only CI. (c) Machine account (ADR 0006). **Decided (owner, 2026-11-13): the owner's click is the only thing needed for approval, no signing step; (b), with (c) kept as `machine_account` mode.** | Architecture, Security | Decided (owner, 2026-11-13, thread) |
 | OQ-3 | How is the owner told of new blocking items? (a) VS Code badge and a VS Code notification only. (b) (a) plus an OS notification from the engine when VS Code is closed. (c) (b) plus a phone notification (for example an email or a GitHub notification). Recommended: (b). | Product | Decided (owner, 2026-11-13): (c), with the phone part (and approving from the phone) moved to a separate feature; F-011 does (b) |
-| OQ-4 | Should an approved hygiene change need a second click for its PR? (a) No: the engine merges the PR itself if its diff equals the approved diff exactly (FR-11, SR-5). (b) Yes, always. Recommended: (a); it is the same change, and the exact comparison is done by code. | Product | Open |
+| OQ-4 | Should an approved hygiene change need a second click for its PR? (a) No: the engine merges the PR itself if its diff equals the approved diff exactly (FR-11, SR-5). (b) Yes, always. Recommended: (a); it is the same change, and the exact comparison is done by code. | Product | Decided (owner, 2026-11-13, decision card): (a), after the FR-15 confirmation |
 | OQ-5 | Does an approval survive a merge of `main` into the PR? **Withdrawn:** with OQ-2 the merge happens on the click, so there is no stored approval to keep. | Security | Withdrawn (moot after OQ-2) |
 | OQ-6 | Which PRs appear as Pull request items? (a) Only PRs the engine opened. (b) Every open PR into `main` of a managed repo, including ones by Claude Code sessions or the owner. Recommended: (b), so this repo's own PRs stop needing a bypass; the check works the same for any author. | Product | Open |
 | OQ-7 | F-010 OQ-8 gave the factory token admin and advisory rights. With the owner's own token, admin would let the engine (or a leaked token) edit or remove the `main` ruleset, including its required CI. (a) Two tokens of the owner's: the everyday token (Contents, Pull requests, Issues read and write; no Administration) and a separate admin token used only by the advisory code path. (b) One token with admin, accepting that risk. Recommended: (a). | Security | Open |
