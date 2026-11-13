@@ -148,7 +148,9 @@ Hygiene items named here; none filed until the open questions are answered.
 - **H-0120 (Interfaces): Inbox item v2.0.** New `kind` field (decision,
   hygiene, testing, spec, pull_request, maturity, notice), per-kind required
   fields and body sections, per-kind owner actions (`approved_merge`,
-  `dismissed`), and a project-level location in the config repo. Breaking
+  `dismissed`), a project-level location in the config repo, and two optional fields on
+  owner-action history entries for F-012: `via: vscode | phone` and
+  `ref: <comment URL>` (folds in F-012's H-0127). Breaking
   (major) because the action set per item changes.
 - **H-0121:** withdrawn (was a signed PR approval record; not needed after
   OQ-2). Free for reuse.
