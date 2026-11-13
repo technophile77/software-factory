@@ -178,7 +178,7 @@ only the file name.
 
 - **H-0135 (Interfaces, changed in v9):** new contract *Model endpoints
   file v1.0* (`factory-endpoints.local.yaml`):
-  `endpoints.<name>.base_url`, `.model`, `.api` (`anthropic`), optional
+  `endpoints.<name>.base_url`, `.model`, `.api` (`anthropic` or `openai`), optional
   `.api_key_ref`, `.max_sessions` (default 1), `.billing` (`local`,
   `per_token` or `subscription`), `.prices.input_per_mtok` and
   `.prices.output_per_mtok` (for `per_token`), `.plan.limits[]` (each
