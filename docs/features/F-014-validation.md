@@ -1,5 +1,98 @@
 # F-014 Validation report
 
+## Round 4
+
+- **Feature:** F-014 Fewer engine git calls, spec v9
+- **Judge:** validation-judge
+- **Date:** 2026-11-13
+- **Round:** 4 (rounds 1 and 2: FAIL; round 3: NEEDS HUMAN REVIEW on `b1bdc9b`; all kept below)
+- **Commit:** `43e8f21` (`claude/project-thread-wx3ju7`, `main` merged in; merge base `2b11d06`). F-014 commits since round 3: `738e9be` (spec v9), `80727e2` (L8 fix: process sequence number), `1370982` (8-byte check, Windows L10 test), `f51d531` (F-007 residual risk reworded). The branch has since moved to `9d5b1de`, `888053e`, `0469ecc` and `aff2167`, each a merge of `main` with no change under `engine/`, so the engine code judged is the same at all of them.
+- **Maturity level:** Rapid prototype. Any number of Major findings is allowed if each is logged. A Not met line or a Blocking finding still fails.
+- **Verdict:** **PASS**
+  - **Not met: 0. Needs owner: 0.** Both of round 3's owner lines are decided: m4 and m6 are known issues for Alpha (spec v9 §5), L8 is fixed (the owner chose a fix), and F-007's residual risk is reworded as the owner approved (L9).
+  - Blocking: 0. Major: 1 (M6, logged). Minor: 1 (m13).
+  - **M6 must be cleared before the PR is marked ready:** no CI run of this engine code has completed green. Each run was cancelled by the next `main` merge, `supply-chain` fails in every run, and on `0469ecc` one Windows shard failed `secrets.test.ts` [SC-2]. The `supply-chain` failure also happens on `main` itself (`2b11d06`, `965fe6f`) and comes from image pins F-014 doesn't touch. SC-2 shows none of F-014's channel symptoms, but no one has classified it yet.
+
+### My own run (round 4)
+
+On `43e8f21` (the engine code at every later head), Linux container, Node 22, git 2.43.0.
+
+| Step | Result |
+|---|---|
+| `npm run -s typecheck` | Clean, exit 0 |
+| `npx vitest run test/git-reader.test.ts test/units.test.ts test/remote.test.ts test/engine.test.ts` | 4 files passed. 120 tests: 118 passed, 2 skipped, 0 failed. The skips are the symbolic-link test and the new Windows-only L10 test |
+| `FACTORY_GIT_COUNTS=<file> npx vitest run --config test/acceptance/vitest.config.mts` | 18 files passed, 1 skipped. 562 tests: 553 passed, 9 skipped, 0 failed. 553 count lines summing to **35,650** engine git processes; against `main`'s 51,904 that is **−31.3%** (target 30%). The merge from `main` added no acceptance tests |
+
+### CI (checked run by run)
+
+| Run | Head | Result |
+|---|---|---|
+| 43452447199 | `43e8f21` | Cancelled by the next push. Finished jobs: checks, Linux 1/2, macOS 1/3 and 3/3, and Windows 4/6, 5/6 and 6/6 were green. `supply-chain` **failed** |
+| 43453923296, 43454983168 | `9d5b1de`, `888053e` | Cancelled early; `supply-chain` **failed** in both |
+| 43455750104 | `0469ecc` | Cancelled by the next push. Green: checks, Linux ×2, macOS 1/3, Windows 1/6, 2/6, 4/6 and 6/6. Windows 3/6 had already passed `units.test.ts` when it was cancelled. **Windows 5/6 failed** [SC-2] "the model credential and factory token never land in the engine's state folder either": `approval failed … "The session is waiting for the owner's GitHub approval."` after 27.8 s. `supply-chain` **failed** |
+| 43452076258, 43453363359 | `main` `2b11d06`, `965fe6f` | `supply-chain` **failed** on `main` too (the same fixable image findings: glibc, oauthlib, filelock). `main`'s own Windows 5/6 failed an F-013 test (`gate1-advisory.test.ts`, timed out at 30 s) |
+
+What the completed Windows jobs show for F-014:
+- The refusal lines are the 5 deliberate refusal tests, each with a two-pid chain (`it, then its parents: 1300, 7088`). There are no spurious refusals.
+- By the suite's shard rule (`test/shard-select.ts`: position plus the FNV-1a offset of `test/units.test.ts`, mod 6), the real-lookup test (`units.test.ts:141`) runs on shard 2/6 and the L10 test (`:156`) on 3/6. Both shards reported `units.test.ts` passed on `0469ecc`, so the sequence-number lookup worked on real Windows: a child and a grandchild ranked strictly after their parents. This rests on my computing the shard mapping; the default reporter doesn't print the names of passing tests.
+
+### Round 3 items
+
+| Item | Now | Evidence |
+|---|---|---|
+| §5 behavior and messages (m4, m6) | **Met** | Owner card: recorded as known issues for Alpha, spec v9 §5 and change-log row 9. Both fail closed |
+| Security: Gate 2 L8 | **Met (fixed)** | `ffi.ts:219` (`ProcessSequenceNumber`, class 92), `:434-448` (`startOrder`: `PROCESS_QUERY_LIMITED_INFORMATION`, an 8-byte answer is required at `:441`, anything else gives null), `:95` (`ntdll.dll` with only `NtQueryInformationProcess`; `GetProcessTimes` removed). `proc.ts` ranks by `startOrder`. A per-boot kernel counter can't be reordered by the clock, so L8 is closed. Gate 2 re-review: PASS, L8 closed |
+| Security: Gate 2 L9 | **Met** | `docs/features/F-007-dev-report.md` AC-4 row reworded (`f51d531`), marked owner-approved. The new wording matches the code: it refuses a live ancestry reaching the engine or a running child, admits orphaned engine descendants, and ends the walk at a pid created later in this boot. F-007's docs are change-controlled; the commit records the owner's approval |
+| Gate 2 L10 (undocumented info class) | Low, addressed | `1370982`: the 8-byte length check, and `units.test.ts:156`, which checks that a child and a grandchild rank strictly after their parents on Windows. If the class is ever refused, the lookup gives null and the walk fails closed: spurious refusals, not admissions |
+| m13 | Open | Test report still names `b1bdc9b` as the final commit tested |
+
+### Evidence checklist (round 4)
+
+| Line | Status | Evidence |
+|---|---|---|
+| FR-1 to FR-7 | Met | Unchanged since round 3; re-run above |
+| AC-1 | Met | 51,904 → 35,650 (−31.3%); every test passes in my run. In CI, every finished test job passed except the one unclassified Windows SC-2 failure (M6) |
+| AC-2 to AC-8 | Met | As round 3 |
+| SR-1 to SR-8 | Met | As round 3 |
+| Windows, Linux, macOS (§5) | Met, with M6 | Linux and macOS: my runs and the finished CI jobs. Windows: two complete green runs on `3a09929` and `b1bdc9b` with the creation-time version. On the sequence-number version, 5 of 6 shards' F-014 tests passed, including both Windows-only lookup tests. SC-2 is unclassified (M6) |
+| Behavior, errors and messages unchanged (§5) | Met | Known issues recorded by the owner (spec v9) |
+| Interface contracts | Met | No diff to `docs/interface-contracts.md` |
+| Architecture / ADRs | Met | No conflict. The ADRs `main` brought in (0022 to 0025) don't touch F-014's code |
+| Change-controlled files | Met | F-014 commits change `engine/`, `docs/features/F-014-*`, and `docs/features/F-007-dev-report.md` with the owner's recorded approval (L9) |
+| Code quality, readability, maintainability | Met | The lookup checks the status, the length and that the value is a positive safe integer, and closes the handle in `finally`. Renaming `startedAt` to `startOrder` keeps the meaning honest |
+| Comments | Met | `ffi.ts:216-218` says where class 92 comes from and why the Windows test checks it; `proc.ts` doc updated |
+| Test tools | Met | Tool choice table; Vitest 5.1.0 |
+| Documentation | Met, with finding | Spec v9, Gate 2 re-review of the L8 fix, F-007 residual risk, test report § Windows channel failures. m13 |
+| Security | Met | Gate 1 and Gate 2 present; Gate 2 re-reviewed through `80727e2`: PASS, L8 closed, L9 decided, L10 Low and tested. No Critical, High or Medium open |
+
+### Findings (round 4)
+
+#### Blocking
+
+None.
+
+#### Major (allowed at Rapid prototype; logged)
+
+| # | Location | Finding |
+|---|---|---|
+| M6 | GitHub Actions `engine` runs 43452447199, 43453923296, 43454983168, 43455750104 | **No completed green CI run of the final engine code.** (1) Every run was cancelled by the next `main` merge (`cancel-in-progress`). (2) `supply-chain` fails in every run, as it does on `main` (`2b11d06`, `965fe6f`). The findings are fixable packages in an image pinned outside F-014 (glibc, oauthlib, filelock), so this belongs to whoever owns that pin, not to F-014. (3) On `0469ecc`, Windows 5/6 failed [SC-2] with "the session is waiting for the owner's GitHub approval" after 27.8 s. Its shard log shows no spurious channel refusal, which was F-014's earlier Windows symptom. `main`'s own Windows 5/6 also failed on `2b11d06` (a different, F-013 test), so Windows timing is under strain from `main`'s new tests. **Before the PR is marked ready (orchestrator):** classify SC-2 per `testing-strategy.md` (rerun if flaky); get `supply-chain` green on `main` and merge it; then one complete green run on this branch, all six Windows shards included. No F-014 code change is expected |
+
+#### Minor (logged; never block)
+
+| # | Location | Finding |
+|---|---|---|
+| m13 | `docs/features/F-014-test-report.md:5` | Still names `b1bdc9b` (engine code at `3a09929`) as the final commit tested; the sequence-number change came after it. My run on `43e8f21` covers it |
+
+### Counts (round 4)
+
+- Blocking: 0. Major: 1 (M6). Minor: 1 (m13).
+- Lines: 0 Not met. Needs owner: none.
+
+### Before the PR
+
+1. **Orchestrator (M6):** classify the Windows SC-2 failure; get `main`'s `supply-chain` job green and merge it in; then one complete green `engine` run on this branch. Any engine change after this verdict needs the suites re-run.
+2. **Test engineer (m13, optional):** name the final commit in the test report.
+
 ## Round 3
 
 - **Feature:** F-014 Fewer engine git calls, spec v8

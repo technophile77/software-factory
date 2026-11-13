@@ -2,7 +2,7 @@
 
 - **Feature:** F-014 Fewer engine git calls, spec v9
 - **Date:** 2026-11-13 (updated after validation round 1)
-- **Final commit tested:** `b1bdc9b` (engine code as at `3a09929`)
+- **Final commit tested:** `43e8f21` (engine code as at `1370982`; later commits only merge `main`)
 - **Environment:** Linux, Node 22, git 2.43.0. Windows: the repo's CI matrix (windows-latest, git 2.56.0.windows.4, six shards).
 
 ## Tool choice
@@ -21,6 +21,7 @@
 | Full engine suite (`npx vitest run`, unit + acceptance), Linux | `a2952bd` (final) | 909 passed, 14 skipped, 0 failed (351 s) |
 | Acceptance suite with counts on `main` | `8b20e78` (merge base) | 553 passed, 9 skipped, 0 failed |
 | Acceptance suite with counts (validation judge's run) | `b1bdc9b` | 553 passed, 9 skipped, 0 failed; 35,641 engine git processes |
+| CI on the final engine code (run 43455750104, `0469ecc`, main merged) | `0469ecc` | All 12 test jobs green, all six Windows shards. Windows shard 5 first failed `secrets.test.ts` [SC-2] with "The session is waiting for the owner's GitHub approval": the test's fake clock ran out the 900 s approval wait before the loaded runner answered the device poll, and the shard showed no channel refusals. It passed on its one re-run. `supply-chain` fails on `main` too (LiteLLM image pin from PR #48), not F-014's |
 | CI, two full runs (43430452308, 43431996907) | `3a09929`, `b1bdc9b` | All jobs green both times, all six Windows shards each time |
 | CI on the first channel fix (run 43425922979) | `a2952bd` | All 13 jobs green: Linux ×2, macOS ×3, Windows ×6, checks, supply-chain. One green run doesn't prove an intermittent failure gone; the cause and its test are in § Windows channel failures |
 
