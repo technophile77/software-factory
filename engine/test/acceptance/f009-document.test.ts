@@ -358,6 +358,10 @@ describe("AC-10 / SR-8: hidden content is refused, line by line, and nothing is 
 describe("AC-10 / SR-8 (v10): Markdown link tricks that hide text are refused, at the top level and inside containers", () => {
   const NBSP = String.fromCodePoint(0xa0);
   const EMSP = String.fromCodePoint(0x2003);
+  const B = "\\\n"; // a backslash hard break
+  const R = "\\\r\n"; // the same with CRLF
+  const VS15 = String.fromCodePoint(0xfe0e);
+  const VS16 = String.fromCodePoint(0xfe0f);
   // Each case: the document (with the marker `m` in the hidden part) and the line(s) any of which the refusal must name.
   it.each<[string, (m: string) => string, number[]]>([
     ["a used definition with a double-quoted title", (m) => `See [the ADR][adr].\n\n[adr]: https://example.org/adr "${m}"`, [3]],
@@ -549,6 +553,102 @@ describe("AC-10 / SR-8 (v10): Markdown link tricks that hide text are refused, a
     ["link text holding balanced brackets", "Lists like [a, [b]](https://example.org) nest.\n"],
     ["emphasis, a link and a lone [ in one line", "A *stress* on [ADR](https://example.org) and [ brackets.\n"],
   ])("[LNK-9] AC-10 (control): %s is accepted", async (_n, text) => {
+    w = await World.create();
+    await w.boot();
+    await startedDoc(w, doc(text));
+  });
+
+  // Validation round 4 (M5): link text or image alt that is only a backslash hard break, alone or with other
+  // blanks, at the top level and in containers; and strikethrough around a blank (GFM). Each was rendered with
+  // commonmark.js 0.31.2, markdown-it 14.1.0 and micromark 4 with GFM as a link or image with no visible text.
+  it.each<[string, (m: string) => string, number[]]>([
+    ["link text of only a backslash hard break", (m) => `Visible.\nText [${B}](# "${m}") more.`, [2, 3]],
+    ["link text of only a backslash hard break, CRLF", (m) => `Visible.\r\nText [${R}](# "${m}") more.`, [2, 3]],
+    ["a backslash hard break link that hides its target", (m) => `Visible.\nText [${B}](https://example.org/${m}) more.`, [2, 3]],
+    ["a full reference link of only a backslash hard break", (m) => `Visible.\nText [${B}][r] more.\n\n[r]: https://example.org/${m}`, [2, 3]],
+    ["a collapsed reference link of only a backslash hard break", (m) => `Visible.\nText [${B}][] more.\n\n[${B}]: https://example.org/${m}`, [2, 3, 5, 6]],
+    ["an image alt of only a backslash hard break", (m) => `Visible.\nText ![${B}](x.png "${m}") more.`, [2, 3]],
+    ["backslash hard break link text in a block quote", (m) => `Visible.\n\n> Text [${B}> ](# "${m}") more.`, [3, 4]],
+    ["backslash hard break link text in a block quote, lazy", (m) => `Visible.\n\n> Text [${B}](# "${m}") more.`, [3, 4]],
+    ["backslash hard break link text in a nested block quote", (m) => `Visible.\n\n> > Text [${B}> > ](# "${m}") more.`, [3, 4]],
+    ["backslash hard break link text in a list item", (m) => `Visible.\n\n- Text [${B}  ](# "${m}") more.`, [3, 4]],
+    ["two backslash hard breaks as link text", (m) => `Visible.\nText [${B}${B}](# "${m}") more.`, [2, 3, 4]],
+    ["a stray [ before backslash hard break link text", (m) => `Visible.\nText [[${B}](# "${m}") more.`, [2, 3]],
+    ["a blank code span and a backslash hard break as link text", (m) => `Visible.\nText [\` \`${B}](# "${m}") more.`, [2, 3]],
+    ["emphasis around &nbsp; and a backslash hard break as link text", (m) => `Visible.\nText [*&nbsp;${B}&nbsp;*](# "${m}") more.`, [2, 3]],
+    // GFM strikethrough around a blank.
+    ["~~&nbsp;~~ as link text (GFM strikethrough)", (m) => `Visible.\nText [~~&nbsp;~~](# "${m}") more.`, [2]],
+    ["~&nbsp;~ as link text (GFM single-tilde strikethrough)", (m) => `Visible.\nText [~&nbsp;~](# "${m}") more.`, [2]],
+  ])("[LNK-10] SR-8 / AC-10 (validation round 4 M5): %s is refused as hidden_content naming its line, and nothing is stored", async (_n, make, lines) => {
+    w = await World.create();
+    await w.boot();
+    const marker = `HIDDEN${rand(6)}`;
+    const before = await snapshot(w);
+    const data = refused(await startDoc(w, doc(make(marker))), "hidden_content");
+    expect(data.lines?.some((l) => lines.includes(l)), `lines ${JSON.stringify(data.lines)} name one of ${lines}`).toBe(true);
+    await expectNothingKept(w, before, marker);
+  });
+
+  // Found by the round 4 sweep (every blank code point and named entity, in each link form and container,
+  // through all three renderers): forms that still render as a link or image with no visible text.
+  it.each<[string, (m: string) => string, number[]]>([
+    // Shortcut reference links: the text is the label, so the hard break is in the definition too.
+    ["a shortcut reference link of only a backslash hard break", (m) => `Visible.\nText [${B}] more.\n\n[${B}]: https://example.org/${m}`, [2, 3, 5, 6]],
+    ["a shortcut reference link of only a backslash hard break, CRLF", (m) => `Visible.\r\nText [${R}] more.\r\n\r\n[${R}]: https://example.org/${m}`, [2, 3, 5, 6]],
+    ["a shortcut reference image of only a backslash hard break", (m) => `Visible.\nText ![${B}] more.\n\n[${B}]: https://example.org/${m}.png`, [2, 3, 5, 6]],
+    ["a shortcut reference link of &nbsp; and a backslash hard break", (m) => `Visible.\nText [&nbsp;${B}] more.\n\n[&nbsp;${B}]: https://example.org/${m}`, [2, 3, 5, 6]],
+    ["a shortcut reference link of two backslash hard breaks", (m) => `Visible.\nText [${B}${B}] more.\n\n[${B}${B}]: https://example.org/${m}`, [2, 3, 4, 6, 7, 8]],
+    ["a shortcut reference link of only a backslash hard break in a block quote", (m) => `Visible.\n\n> Text [${B}> ] more.\n>\n> [${B}> ]: https://example.org/${m}`, [3, 4, 6, 7]],
+    ["a shortcut reference link of only a backslash hard break in a list item", (m) => `Visible.\n\n- Text [${B}  ] more.\n\n  [${B}  ]: https://example.org/${m}`, [3, 4, 6, 7]],
+    // &ThickSpace; decodes to two characters, U+205F U+200A, both spaces.
+    ["link text of only &ThickSpace;", (m) => `Visible.\nText [&ThickSpace;](# "${m}") more.`, [2]],
+    ["an image alt of only &ThickSpace;", (m) => `Visible.\nText ![&ThickSpace;](x.png "${m}") more.`, [2]],
+    ["a full reference link of only &ThickSpace;", (m) => `Visible.\nText [&ThickSpace;][r] more.\n\n[r]: https://example.org/${m}`, [2]],
+    ["a shortcut reference link of only &ThickSpace;", (m) => `Visible.\nText [&ThickSpace;] more.\n\n[&ThickSpace;]: https://example.org/${m}`, [2, 4]],
+    ["emphasis around &ThickSpace; as link text", (m) => `Visible.\nText [*&ThickSpace;*](# "${m}") more.`, [2]],
+    ["&ThickSpace; link text in a block quote", (m) => `Visible.\n\n> Text [&ThickSpace;](# "${m}") more.`, [3]],
+    ["&ThickSpace; link text in a table cell", (m) => `| Item |\n| --- |\n| [&ThickSpace;](# "${m}") |`, [3]],
+    ["&ThickSpace; link text in a heading", (m) => `# Title [&ThickSpace;](# "${m}")\n\nVisible.`, [1]],
+    // A variation selector with no character before it shows nothing.
+    ["link text of only U+FE0F", (m) => `Visible.\nText [${VS16}](# "${m}") more.`, [2]],
+    ["link text of only U+FE0E", (m) => `Visible.\nText [${VS15}](# "${m}") more.`, [2]],
+    ["link text of only &#xFE0F;", (m) => `Visible.\nText [&#xFE0F;](# "${m}") more.`, [2]],
+    ["link text of only &#65038;", (m) => `Visible.\nText [&#65038;](# "${m}") more.`, [2]],
+    ["an image alt of only U+FE0F", (m) => `Visible.\nText ![${VS16}](x.png "${m}") more.`, [2]],
+    ["a full reference link of only U+FE0F", (m) => `Visible.\nText [${VS16}][r] more.\n\n[r]: https://example.org/${m}`, [2]],
+    ["&nbsp; and U+FE0F as link text", (m) => `Visible.\nText [&nbsp;${VS16}](# "${m}") more.`, [2]],
+    ["emphasis around &#xFE0F; as link text", (m) => `Visible.\nText [*&#xFE0F;*](# "${m}") more.`, [2]],
+    ["U+FE0F link text in a list item", (m) => `Visible.\n\n- Text [${VS16}](# "${m}") more.`, [3]],
+  ])("[LNK-11] SR-8 / AC-10: %s is refused as hidden_content naming its line, and nothing is stored", async (_n, make, lines) => {
+    w = await World.create();
+    await w.boot();
+    const marker = `HIDDEN${rand(6)}`;
+    const before = await snapshot(w);
+    const data = refused(await startDoc(w, doc(make(marker))), "hidden_content");
+    expect(data.lines?.some((l) => lines.includes(l)), `lines ${JSON.stringify(data.lines)} name one of ${lines}`).toBe(true);
+    await expectNothingKept(w, before, marker);
+  });
+
+  it.each<[string, string]>([
+    ["link text of &#42; (a visible *)", "See [&#42;](https://example.org \"Star\") here.\n"],
+    ["link text of &#42;&#42;", "See [&#42;&#42;](https://example.org) here.\n"],
+    ["link text of an escaped backslash", "See [\\\\](https://example.org) here.\n"],
+    ["link text of an escaped *", "See [\\*](https://example.org) here.\n"],
+    ["link text of &amp;", "See [&amp;](https://example.org) here.\n"],
+    ["a word, then a backslash hard break, as link text", `See [word${B}](https://example.org) here.\n`],
+    ["a backslash hard break, then a word, as link text", `See [${B}word](https://example.org) here.\n`],
+    ["a backslash hard break between words in link text, CRLF", `See [two${R}lines](https://example.org) here.\r\n`],
+    ["a shortcut reference link of a word and a backslash hard break", `See [word${B}] here.\n\n[word${B}]: https://example.org\n`],
+    ["a shortcut reference link of &#42;", "See [&#42;] here.\n\n[&#42;]: https://example.org\n"],
+    ["a backslash at the end of a paragraph (no hard break)", "A path ends with \\\n\nSee [the ADR](https://example.org).\n"],
+    ["a backslash hard break in prose next to a link", `First line\\\nsecond line and [the ADR](https://example.org).\n`],
+    ["an emoji with U+FE0F as link text", `See [✅${VS16} done](https://example.org) here.\n`],
+    ["a digit with U+FE0E as link text", `See [1${VS15}](https://example.org) here.\n`],
+    ["&ThickSpace; between words in link text", "See [two&ThickSpace;words](https://example.org) here.\n"],
+    ["&ThickSpace; in prose", "Wide&ThickSpace;gap, and [a link](https://example.org).\n"],
+    ["&ThickSpace; in a code span as link text (shown as written)", "See [`&ThickSpace;`](https://example.org) here.\n"],
+    ["~~words~~ as link text", "See [~~old~~ new](https://example.org) here.\n"],
+  ])("[LNK-12] AC-10 (control): %s is accepted", async (_n, text) => {
     w = await World.create();
     await w.boot();
     await startedDoc(w, doc(text));

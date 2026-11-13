@@ -421,3 +421,152 @@ as before; no F-009 test is skipped. Coverage was not re-measured.
 Unchanged from Addendum 2. Also: link text that is only a lone `*` (which
 CommonMark shows as a visible `*`) may be refused by the engine; that is
 fail-closed and not asserted either way.
+
+## Addendum 4: validation round 4 M5 on `ac086e2`
+
+Validation round 4 found link text or an image alt that is only a backslash
+hard break accepted against SR-8 and AC-10 (M5). The developer fixed it in
+`ac086e2`. Rounds 1 to 4 each found one more blank-link-text form, so this
+addendum doesn't stop at M5: it sweeps every way CommonMark and GFM can render
+a link or image with no visible text, adds tests for M5 and for each form the
+sweep found still accepted, with controls, and re-runs everything on the final
+commit. The plan's new row is marked "round 4".
+
+### Run
+
+| | |
+|---|---|
+| Code tested | `ac086e2` (`claude/project-thread-qzenwf`), plus the new tests in this commit. No product code changed |
+| Commands | `cd engine && npm run typecheck && npx vitest run`; `python3 -m unittest discover -s plugins/software-factory/skills/spec-interview/tests` |
+| Environment | Linux container, Node 22.23.4, Python 3.13.18, system git, running as root. No Docker |
+| Typecheck | Clean (engine and `test/acceptance`) |
+| Renderings | Each case was rendered with commonmark.js 0.31.2 (the CommonMark reference), markdown-it 14.1.0 and micromark 4 with `micromark-extension-gfm` 3 (GFM: strikethrough, tables, footnotes), installed in the scratch area only, not in the repo |
+| Fails before the fix | With `engine/src/interview/document.ts` from `9520656` built locally, all 14 hard-break cases of LNK-10 are accepted, so the tests detect M5 |
+
+| Suite | Run | Passed | Failed | Skipped |
+|---|---|---|---|---|
+| Engine, whole (35 files) | 779 | 741 | **24** | 14 |
+| of which F-009 acceptance (`f009-document.test.ts`) | 252 | 228 | **24** | 0 |
+| Client, whole (`spec-interview/tests`) | 428 | 428 | 0 | 0 |
+| of which F-009 acceptance (`test_acceptance_f009.py`) | 43 | 43 | 0 | 0 |
+
+The 14 engine skips are the same gated real-Docker files and platform gates
+as before; no F-009 test is skipped. Coverage was not re-measured.
+
+**Result: fail.** The 24 LNK-11 tests fail on product code (D-3, D-4, D-5).
+Every other test passes, including all of the M5 cases (LNK-10) and every
+earlier addendum's tests.
+
+### How the cases were found
+
+A scratch script (not in the repo) built each candidate, rendered it with
+the three renderers, and compared with `validateDocument`: a document any
+renderer shows with an `<a>` whose text, or an `<img>` whose alt, is only
+whitespace, separators, format or default-ignorable characters or a blank
+filler is expected to be refused. 190,582 documents in all:
+
+- **Text:** every such code point as a literal and as decimal and hex
+  entities (plus C0 controls as entities); every named entity that decodes
+  to such characters; spaces, tabs, `&#32;`, `&Tab;`, `&NewLine;`.
+- **Wrapped in:** code spans (one and two backticks, padded), `*`, `_`,
+  `**`, `__`, `***`, `*_ _*`, `~~`, `~`, `**~~ ~~**`; a backslash hard break
+  (LF and CRLF) before or after; a two-space hard break; a soft break; an
+  image inside the text; combinations of these.
+- **As:** an inline link with a title and without (target hidden), an
+  image, a full, collapsed and shortcut reference link, after a stray `[`,
+  in a block quote, a list item, a block quote in a list item, a table
+  cell, a heading, a link inside an image's alt, and an image inside a link;
+  every case with a line break also with CRLF.
+
+Visible controls (`&#42;`, `&ast;`, `\*`, `\\`, `&amp;`, a word with a hard
+break, a code span with a word, emphasis and strikethrough with words) went
+through the same forms. What was missed is in Failures; what was refused
+although visible is in Observations.
+
+### New tests
+
+| Rule | Tests | Result |
+|---|---|---|
+| SR-8 / AC-10, backslash hard break (round 4 M5) | LNK-10 ×14: link text of only a backslash hard break (LF, CRLF, with the target hidden), a full and a collapsed reference link and an image alt of one; in a block quote (marked and lazy), a nested block quote and a list item; two hard breaks; one after a stray `[`, with a blank code span, and inside emphasis with `&nbsp;` | Pass (14) |
+| SR-8 / AC-10, GFM strikethrough | LNK-10 ×2: `~~&nbsp;~~` and `~&nbsp;~` as link text (markdown-it and micromark render a struck-through blank; commonmark.js has no strikethrough) | Pass (2) |
+| SR-8 / AC-10, shortcut reference with a hard break | LNK-11 ×7: a shortcut reference link of only a backslash hard break (LF, CRLF), an image, with `&nbsp;`, two breaks, in a block quote, in a list item | **Fail (D-3)** |
+| SR-8 / AC-10, `&ThickSpace;` | LNK-11 ×8: link text, an image alt, a full and a shortcut reference link of only `&ThickSpace;`; in emphasis, a block quote, a table cell, a heading | **Fail (D-4)** |
+| SR-8 / AC-10, a lone variation selector | LNK-11 ×9: link text of only U+FE0F, U+FE0E, `&#xFE0F;`, `&#65038;`; an image alt and a full reference link of U+FE0F; `&nbsp;` and U+FE0F; emphasis around `&#xFE0F;`; in a list item | **Fail (D-5)** |
+| AC-10 controls | LNK-12 ×18: `&#42;`, `&#42;&#42;`, `\\`, `\*` and `&amp;` as link text; a word before or after a hard break in link text (also CRLF, and as a shortcut reference); a shortcut reference of `&#42;`; a backslash that ends a paragraph; a hard break in prose next to a link; an emoji with U+FE0F and a digit with U+FE0E as link text; `&ThickSpace;` between words, in prose, and in a code span as link text; strikethrough with words | Pass (18) |
+
+### Failures
+
+All three: **expected** (SR-8, AC-10 as extended in v10) a document with "a
+link or image with empty text" is refused as `hidden_content`, naming the
+line; **actual** `feature.start` succeeds (`{"feature":"F-001"}`) and the
+document is stored; failing assertion `expected error -32009, got result
+{"feature":"F-001"}` at `f009-document.test.ts` (LNK-11), in the run log.
+**Class:** product code; developer fix. `M` below stands for the test's
+marker.
+
+#### D-3 (LNK-11 ×7): a shortcut reference link of only a backslash hard break
+
+The M5 fix covers inline, full and collapsed forms (LNK-10 passes), but not
+the shortcut form, where the link text is the label itself.
+
+- **Document:**
+  ```
+  Visible.
+  Text [\
+  ] more.
+
+  [\
+  ]: https://example.org/M
+  ```
+- **Renders** (all three) as `<p>Text <a href="https://example.org/M"><br />\n</a> more.</p>`:
+  a link with no visible text, its target hidden. The label `\` plus line
+  break is valid (it holds a non-whitespace character), and the definition is
+  used and untitled. The same with CRLF; as an image (`![\` … `]`, rendered
+  `<img src="https://example.org/M.png" alt="\n" />`); with `&nbsp;` before
+  the break; with two breaks; inside a block quote (`> Text [\` / `> ] more.`)
+  and a list item.
+
+#### D-4 (LNK-11 ×8): `&ThickSpace;`
+
+- **Document:** `Visible.\nText [&ThickSpace;](# "M") more.`
+- **Renders** (all three) as `<a href="#" title="M">  </a>`: the
+  entity decodes to two characters, a medium mathematical space and a hair
+  space, and the link shows nothing. The literal pair, `&MediumSpace;` and
+  `&hairsp;` alone are all refused; only this two-character entity is missed,
+  in every link form and container tried (image alt, full and shortcut
+  reference, emphasis, block quote, table cell, heading).
+
+#### D-5 (LNK-11 ×9): link text of only a variation selector
+
+- **Document:** `Visible.\nText [`U+FE0F`](# "M") more.` (also U+FE0E,
+  `&#xFE0F;`, `&#65038;`).
+- **Renders** (all three) as `<a href="#" title="M">`U+FE0F`</a>`: a
+  variation selector with no character before it is default-ignorable and
+  draws nothing, so the link has no visible text. The engine allows U+FE0E
+  and U+FE0F anywhere (Gate 2 M1 kept them for emoji), so they don't count
+  as hidden characters; the link-text check then treats them as visible.
+  An emoji followed by U+FE0F, and a digit followed by U+FE0E, are visible
+  and accepted (LNK-12 controls).
+
+### Observations (not asserted)
+
+- **Visible link text refused.** Link text of only `*`, `_`, `~`, `` ` ``
+  or `\[` is refused, though all three renderers show that character (for
+  example `[\[](# "x")` renders `<a …>[</a>`). Fail-closed and rare in a
+  requirements document; noted for the developer, not a failure against
+  SR-8. `&#42;`, `\*` and `\\` are accepted (LNK-12).
+- **GFM footnotes.** micromark with GFM drops an unused footnote definition
+  (`[^n]: text` with no `[^n]` in the text) from the page; the engine refuses
+  it, which matches SR-8's intent though SR-8 doesn't name footnotes. A used
+  footnote (`Text[^n].` plus `[^n]: a note`, which GFM shows) is refused too.
+  Neither is asserted; whether footnotes are in scope is for the owner.
+- **markdown-it image alt.** markdown-it 14 drops entities and escapes from
+  an image's `alt` (`![&#42;](x.png)` renders `alt=""`), while CommonMark
+  and micromark keep them. The image itself still shows, and the source and
+  reference rendering have text, so this is a renderer quirk, not a hidden
+  link; not asserted.
+
+### Not tested, and why
+
+Unchanged from Addendum 3. The sweep covers inline content only; block-level
+hiding (definitions, comments) is covered by earlier addenda.
