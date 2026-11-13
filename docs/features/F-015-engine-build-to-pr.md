@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
-- **Spec version:** 8
+- **Spec version:** 9
 
 This is engine increment 4, "Build to PR" (F-007 section 13). It is a draft
 written before the owner interview, from the baseline spec, the ADRs and the
@@ -34,7 +34,8 @@ and into the project's code repos, as ADR 0005 and ADR 0009 intend.
    the code repo the spec targets (OQ-2, OQ-3), and the agent branches
    `feature/F-nnn/dev` and `feature/F-nnn/test` from it (ADR 0005).
 3. The developer and the test engineer run in parallel, each in its own
-   container, each given only the approved spec and the contracts it
+   engine worktree on the owner's machine (no containers until Beta), each
+   given only the approved spec and the contracts it
    needs. The test engineer never sees the developer's notes or reasoning.
 4. When both report done, the engine merges both agent branches into the
    feature branch and the tests run against that commit (OQ-5).
@@ -67,10 +68,10 @@ Draft. Each will be refined by section 12.
 |---|---|
 | FR-1 | A feature of an enabled, running project that passes the readiness gate enters `build_and_test_prep`. One build per feature at a time. |
 | FR-2 | Only code and tests move to the code repo (OQ-2): feature and agent branches live in the target code repo (OQ-3), named per ADR 0005, created from that repo's `main`. The spec, interview transcript, Gate reports, agent reports, run records and inbox records stay in the private config repo (its feature branch and `factory/state`). Nothing from the config repo is committed to a code repo. The PR description links the spec at its approved commit in the config repo. |
-| FR-3 | The developer and the test engineer run as Agent SDK sessions in their own containers under the project's role policy and every container rule of the Role policy contract, in parallel. Each gets its `AGENT.md`, the approved spec at the readiness-gate commit (read-only, fixed path), and the contracts. Neither gets the other's branch, report or transcript. |
+| FR-3 | The developer and the test engineer run in parallel as Agent SDK sessions, one per role (not subagents), each in its own engine-made worktree on the owner's machine, under the project's role policy as the engine enforces it on the host: allowed tools, file tool read and write checks, and the end-of-session write check (owner, 2026-11-13: no containers until Beta; ADR by the worktree thread). Each gets its `AGENT.md`, the approved spec at the readiness-gate commit (read-only, at a fixed path outside its worktree), and the contracts. Neither gets the other's branch, report or transcript. Build tools are the owner's own installed tools (OQ-6). |
 | FR-4 | Agent edits are committed by the engine after each edit (ADR 0012), with the secrets scan before each commit; the end-of-session write check applies (F-007 FR-9). |
 | FR-5 | When both agents report done, the engine merges `dev` and `test` into the feature branch. A merge conflict between them is handled per ADR 0013. |
-| FR-6 | The engine runs the tests, not an agent (OQ-5). Each code repo's manifest entry declares its test command and the path of the JUnit XML results file it writes (H-0193), set at onboarding. The engine runs the command against the merged commit in the repo's container with no model, reads the results file, and builds the run report per `testing-strategy.md`: commit tested, counts, failures with expected, actual and logs, anything not run and why. The test engineer agent writes the tests and the acceptance-criteria-to-test map; the engine joins that map to the results. A missing or unreadable results file, or an unexplained skip, makes the run incomplete. |
+| FR-6 | The engine runs the tests, not an agent (OQ-5). Each code repo's manifest entry declares its test command and the path of the JUnit XML results file it writes (H-0193), set at onboarding. The engine runs the command against the merged commit in a worktree of that commit on the owner's machine with no model, reads the results file, and builds the run report per `testing-strategy.md`: commit tested, counts, failures with expected, actual and logs, anything not run and why. The test engineer agent writes the tests and the acceptance-criteria-to-test map; the engine joins that map to the results. A missing or unreadable results file, or an unexplained skip, makes the run incomplete. |
 | FR-7 | Stage 6 applies the failure table in `testing-strategy.md` exactly: rerun counts by cause, at most 3 fix cycles per role, 2 developer/test-engineer disagreements on one test go to the Decision inbox, 4 hours of stage 6 agent time escalates. Every escalation is a Testing item with the fields of spec section 5. Engine code does the mechanical work: runs and reruns, counts fix cycles, files items, and in stage 9 pushes, opens the PR and reads CI (OQ-4). An orchestrator agent session, read-only with no shell, runs only when a test run fails: it names each failure's cause from the table and writes the evidence for the review note and any Testing item; the engine then applies the table to that cause. |
 | FR-8 | Stage 7 runs Semgrep CE from the image pinned in ADR 0024 on the feature diff, then the security reviewer (Gate 2) with the findings as evidence, reusing the F-008 report checks. Blocking per `security-standards.md` at the repo's maturity level. |
 | FR-9 | Stage 8 runs the validation judge with the spec, diff, run report and both gate reports. Its verdict is applied per `development-workflow.md` § Going backwards and the allowances in its `AGENT.md`. |
@@ -90,8 +91,8 @@ To be written once section 12 is answered; each FR gets at least one.
 - TypeScript on Node (ADR 0001); Windows, macOS and Linux; Docker Desktop.
 - Every new tool or image gets an S4.1 review and an Architecture decision,
   is pinned and CVE-checked in CI (S4.1, S4.3, S4.4).
-- Reuses the container, proxy, policy, commit, scan and report code of
-  F-007 and F-008. No new runtime library unless approved.
+- Reuses the worktree, policy, commit, scan and report code of F-007 and
+  F-008. No containers until Beta (owner, 2026-11-13). No new runtime library unless approved.
 - The engine's own repo maturity is Rapid prototype until promoted.
 - Change-controlled files change only through hygiene items H-0190 to H-0199.
 - Repetitive steps (running tests, reading CI, counting retries, opening the
@@ -127,7 +128,7 @@ recorded otherwise.
 To be drafted with the analyst's draft requirements and then Security Gate 1.
 Known topics: the owner token's scope on code repos (contents, pull requests,
 checks), pushing to a code repo that may be public, agents running the repo's
-own build and test code inside containers, package registry egress for the
+own build and test code on the owner's machine with the owner's rights (no containers until Beta), package registry egress for the
 developer and test engineer, and the spec and transcript reaching a public
 repo (OQ-2).
 
@@ -160,7 +161,7 @@ Asked one at a time on decision cards. None is assumed.
 | OQ-3 | Can one feature change more than one code repo (one PR per repo), or is it one repo per feature for now? | Product | Decided: one repo per feature; a request needing several repos becomes linked features, one per repo, and a dependent feature waits for the other's PR to merge (owner, decision card, 2026-11-13) |
 | OQ-4 | Who runs stages 6 and 9: engine code only, engine code plus an orchestrator agent session just to classify failures, or an orchestrator agent session for the whole stage. | Architecture | Decided: engine code, plus a read-only orchestrator agent session only to classify failures (FR-7) (owner, decision card, 2026-11-13) |
 | OQ-5 | Who runs the tests: the engine runs a test command the manifest declares and reads its JUnit XML, or the test engineer agent runs them and reports. | Architecture | Decided: the engine runs each repo's declared test command and reads its JUnit XML; the test engineer writes tests and the criteria map (FR-6) (owner, decision card, 2026-11-13) |
-| OQ-6 | Where each project's build toolchain comes from for the agent containers: a Dockerfile in the config repo built on the factory image, the code repo's dev container definition, or a fixed set of factory toolchain images. | Architecture, Security | On hold: the owner is revisiting containers versus Claude Code's isolated worktrees (2026-11-13); this question depends on that outcome |
+| OQ-6 | Where each project's build toolchain comes from for the agent containers. | Architecture, Security | Superseded: the owner dropped containers until Beta (2026-11-13), so build and test tools are the ones installed on the owner's machine. The question returns with containers at Beta |
 | OQ-7 | Who commits appear to come from in code repos: the engine's own identity (today) or the owner's name with his GitHub noreply address. | Product | Decided: the owner's name and GitHub noreply address, unsigned, risk stated on the card (FR-17) (owner, decision card, 2026-11-13) |
 
 ## 13. Change log
@@ -174,3 +175,4 @@ Asked one at a time on decision cards. None is assumed.
 | 6 | 2026-11-13 | OQ-5: the engine runs each repo's declared test command and reads JUnit XML results; the test engineer writes tests and the criteria map (FR-6, H-0193) | Owner, 2026-11-13 (decision card) |
 | 7 | 2026-11-13 | OQ-7: code repo commits authored as the owner with the GitHub noreply address, unsigned (FR-17). OQ-6 on hold while the owner revisits containers versus worktrees | Owner, 2026-11-13 (decision card) |
 | 8 | 2026-11-13 | FR-17: the commit identity is whoever owns the project, derived from the config repo's pinned owner id and that GitHub account, with an optional manifest `owner.commit_name` override; nothing owner-specific in the master repo | Owner, 2026-11-13 (thread) |
+| 9 | 2026-11-13 | No containers until Beta: agents run as one SDK session per role in engine worktrees on the owner's machine; build tools are the owner's installed ones; OQ-6 superseded (FR-3, FR-6) | Owner, 2026-11-13 (thread) |
