@@ -9,7 +9,7 @@
 - **Result:** **Conditional.** Usable with the SR-11 conditions below, run as
   OQ-1 decides, with the owner accepting the residual risk (Security
   decision, F-002 OQ-2). Agents don't accept it for the owner (S4.6).
-- **Owner decision:** pending (F-002 OQ-2).
+- **Owner decision:** accepted with the conditions and the residual risk (owner, 2026-11-13, decision card, F-002 OQ-2). Viewer allowed on 127.0.0.1 (OQ-3).
 
 How this was checked: the npm registry record and the 0.125.1 tarball itself,
 `npm install --package-lock-only --omit=optional` then `npm audit` on the
@@ -32,7 +32,7 @@ result (2026-11-13), and the project's GitHub security advisory page.
 
 | Package (version pulled in) | Advisories | Reached by the factory's use? | Fix |
 |---|---|---|---|
-| `@hono/node-server` 2.1.5 (pinned exactly by promptfoo) | [GHSA-qv5m-9pm6-hqp3](https://github.com/advisories/GHSA-qv5m-9pm6-hqp3), [GHSA-jpvv-r467-5p4w](https://github.com/advisories/GHSA-jpvv-r467-5p4w), Moderate | Only by the web viewer (OQ-3) | override to ≥ 2.1.6 |
+| `@hono/node-server` 2.1.5 (pinned exactly by promptfoo) | [GHSA-qv5m-9pm6-hqp3](https://github.com/advisories/GHSA-qv5m-9pm6-hqp3), [GHSA-jpvv-r467-5p4w](https://github.com/advisories/GHSA-jpvv-r467-5p4w), Moderate | Yes, by the web viewer the owner allowed (OQ-3) | override to ≥ 2.1.6 |
 | `basic-ftp` 5.3.1 (via `proxy-agent` → `pac-proxy-agent` → `get-uri`) | [GHSA-c475-qrg2-pj4r](https://github.com/advisories/GHSA-c475-qrg2-pj4r) High, [GHSA-5pm8-86m8-9m6r](https://github.com/advisories/GHSA-5pm8-86m8-9m6r), [GHSA-r4jh-29pc-gfqr](https://github.com/advisories/GHSA-r4jh-29pc-gfqr) Moderate | No: only for a PAC proxy file fetched over FTP | override to ≥ 6.2.4 (major bump; test that the unused path still loads) |
 | `glob` 13.0.7 | [GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4), Moderate | Only with config globs, which the engine doesn't use | override to a fixed release |
 | `minimatch` 10.2.6 | [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249), Moderate | As above | override to ≥ 11.0.1 |
