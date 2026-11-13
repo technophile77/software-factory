@@ -36,10 +36,13 @@ import { Manifest, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin } from "./config/pins";
 import { ConfirmIo, confirmProject as runConfirm } from "./config/confirm";
-import { CAPABILITIES, ENGINE_JSON, FEATURE_ID_RE, GITHUB_WEB_BASE, INTERVIEW_STAGE, SERVED_CHANNEL_VERSION } from "./constants";
+import { CAPABILITIES, ENGINE_JSON, FEATURE_ID_RE, GITHUB_API_BASE, GITHUB_WEB_BASE, INTERVIEW_STAGE, SERVED_CHANNEL_VERSION } from "./constants";
 import { ensureOwnerDir, findOnPath, sha256Hex, writeFileAtomic } from "./fsutil";
 import { Git } from "./git";
 import { GitHubClient, HttpGitHub, checkBase } from "./github";
+import { HttpIssues, IssuesApi } from "./inbox/github-issues";
+import { Inbox, Recorded } from "./inbox/store";
+import { osNotifier } from "./os/notify";
 import { Gitleaks, SecretsScanner } from "./gitleaks";
 import { FeatureInterview } from "./interview/feature";
 import { InterviewTools, ResearchConfig, createInterviewTools } from "./interview/tools";
@@ -96,6 +99,14 @@ export interface EngineOptions {
    * Tests replace the real resume through this; without it, the resumed run
    * waits for the next interviewTools call for its feature.
    */
+  /**
+   * F-011: the GitHub issues API for a project's factory token. Absent, the
+   * engine uses GitHub's own API when `push` is set, and otherwise records
+   * inbox items without filing them (tests).
+   */
+  issues?: (token: string) => IssuesApi;
+  /** How often each project's inbox is read; F-011 calls it "one poll". */
+  inboxPollMs?: number;
   resumeAnalyst?: (r: { feature: string; worktree: string; tools: InterviewTools; plan: ResumePlan }) => void;
   /**
    * Docker and the Agent SDK. With it, feature.start and every resume run the
@@ -134,6 +145,7 @@ interface Project extends ProjectStatus {
   listener: Listener | null;
   conns: Set<Conn>;
   token: string | null;
+  inbox: Inbox | null;
 }
 
 export interface EngineHandle {
@@ -280,15 +292,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   const projects: Project[] = listed.map((p) => ({
     path: p, name: null, state: "stopped", warnings: [], real: null, manifest: null, limits: null, sources: null, models: null, state_repo: null,
-    features: new Map(), sessions: null, listener: null, conns: new Set(), token: null,
+    features: new Map(), sessions: null, listener: null, conns: new Set(), token: null, inbox: null,
   }));
 
+  const notify = osNotifier({ platform: osApi.platform, children, log, cwd: home });
   const alert = async (p: Project, key: string, a: SecurityAlert) => {
-    if (!p.state_repo || dead) return;
+    if (!p.inbox || dead) return;
     const k = sha256Hex(`${p.real}\0${key}`);
     if (record.alert(k)) return;
     try {
-      const id = await fileSecurityItem(p.state_repo, clock, a);
+      const id = await fileSecurityItem(p.inbox, key.split(":", 1)[0]!, a);
       record.setAlert(k, id);
       log.warn(`${p.name ?? p.path}: filed Security item ${id}: ${a.title}`);
     } catch (e) {
@@ -332,6 +345,21 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
    * be resolved, or a value above a default, stops the project and files a
    * Security item.
    */
+  /** F-011: the inbox reads GitHub with the project's factory token, as the pinned owner (SR-2). */
+  async function connectInbox(p: Project): Promise<void> {
+    if (!p.inbox || !p.token || !p.state_repo || !(o.issues || o.push)) return;
+    const pin = pins.get(p.real!);
+    if (!pin) return;
+    try {
+      const url = await p.state_repo.remoteUrl(gitBase, await p.state_repo.refuseRedirectingConfig());
+      const repo = url.slice(gitBase.length + 1).replace(/\.git$/, "");
+      const api = o.issues ? o.issues(p.token) : new HttpIssues(p.token, log, GITHUB_API_BASE);
+      p.inbox.connect({ api, repo, ownerId: pin.owner.github_id });
+    } catch (e) {
+      log.warn(`${p.name ?? p.path}: the inbox can't reach GitHub, so items are recorded but not filed (${engineWords(e)}).`);
+    }
+  }
+
   async function checkSources(p: Project): Promise<boolean> {
     const m = p.manifest!;
     let reason: string;
@@ -385,6 +413,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       stop(p, `factory/state couldn't be checked out at .factory (${(e as Error).message})`);
       continue;
     }
+    p.inbox = new Inbox({ state: p.state_repo, clock, log, notify });
     try {
       p.manifest = await readManifest(git, p.real);
       p.name = p.manifest.name;
@@ -442,6 +471,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       });
       continue;
     }
+    await connectInbox(p);
     await loadFeatures(p);
     await checkRemote(p);
   }
@@ -1029,9 +1059,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const filed: Array<{ n: number; item: string }> = [];
     for (const n of r.rejected.filter((x) => !f.state.gate1.riskFiled.includes(x))) {
       const finding = f.state.gate1.findings.find((x) => x.n === n)!;
-      const item = await fileDecisionItem(p.state_repo!, clock, {
+      const item = await fileDecisionItem(p.inbox!, {
         title: `${findingRef(n)} for ${f.id}: accept the risk or send it back`, feature: f.id,
-        context: `Security Gate 1 found a gap in ${f.id}'s spec (${specPath}) and suggested a requirement. After the interview, no requirement in the spec takes it up, which usually means you said no (F-008 FR-13). The reviewer's words, shown as plain text: ${plain(finding.criterion)}, ${plain(finding.severity)}: ${plain(finding.explanation)} Suggested requirement: ${plain(finding.fix)}`,
+        effect: { type: "gate1_risk", feature: f.id, finding: n },
+        context: [
+          { engine: `Security Gate 1 found a gap in ${f.id}'s spec (${specPath}) and suggested a requirement. After the interview, no requirement in the spec takes it up, which usually means you said no (F-008 FR-13).` },
+          { outside: `${finding.criterion}, ${finding.severity}: ${finding.explanation}\nSuggested requirement: ${finding.fix}`, author: "the security reviewer" },
+        ],
         impact: `${f.id} stays at Security Gate 1 until this is decided.`,
         options: [
           { id: "A", label: "Accept the risk and leave it out of the spec", detail: "The finding is recorded as an accepted risk." },
@@ -1310,9 +1344,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const findings = a.report.findings;
     for (const [i, fd] of findings.entries()) {
       if (!fd.needs_owner) continue;
-      items.set(i + 1, await fileDecisionItem(p.state_repo!, clock, {
+      items.set(i + 1, await fileDecisionItem(p.inbox!, {
         title: `${findingRef(i + 1)} for ${f.id}: the owner's choice`, feature: f.id,
-        context: `Security Gate 1 on ${f.id} (${a.specPath}) found a choice only you can make. The reviewer's words, shown as plain text: ${plain(fd.criterion)}, ${plain(fd.severity)}, at ${plain(fd.location)}: ${plain(fd.explanation)} What the options decide: ${plain(fd.fix)}`,
+        effect: { type: "gate1_choice", feature: f.id, finding: i + 1 },
+        context: [
+          { engine: `Security Gate 1 on ${f.id} (${a.specPath}) found a choice only you can make.` },
+          { outside: `${fd.criterion}, ${fd.severity}, at ${fd.location}: ${fd.explanation}\nWhat the options decide: ${fd.fix}`, author: "the security reviewer" },
+        ],
         impact: `${f.id} waits at Security Gate 1 until this is decided.`,
         options: fd.options!.map((op) => ({ id: op.id, label: op.label.replace(/\s+/g, " "), shown: plain(op.label) })),
         recommendation: fd.recommendation!,

@@ -1,7 +1,7 @@
 # Feature: The engine acts on the owner's inbox answers and runs the readiness gate
 
 - **Id:** F-016
-- **Status:** Draft
+- **Status:** Approved (owner, 2026-11-13; spec v10 signed off; readiness gate passed)
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until I
   can start onboarding some of my existing projects?"; chose to build engine
   increment 3 next, decision card)
@@ -208,6 +208,7 @@ Checked 2026-11-13 against spec v10.
 | 8 | 2026-11-13 | H-0180, H-0182, H-0183 approved | Owner, 2026-11-13 (decision card) |
 | 9 | 2026-11-13 | SR-1 to SR-5 and SR-11 approved | Owner, 2026-11-13 (decision card) |
 | 10 | 2026-11-13 | A-1 approved; readiness gate passed | Owner, 2026-11-13 (decision card); orchestrator (gate) |
+| 10 | 2026-11-13 | Spec v10 signed off; status Approved | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
