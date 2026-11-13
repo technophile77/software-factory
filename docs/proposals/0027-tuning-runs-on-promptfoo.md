@@ -4,7 +4,7 @@
   rebuilds existing tools", item 3)
 - **Category:** Architecture (a new external component, S4.1 notes below;
   F-002 A-7 says the tuning logic is engine code)
-- **Status:** Open
+- **Status:** Decided: option A (ADR 0023), by the owner on 2026-11-13 (decision card)
 - **Scope:** F-002 model and effort tuning, which is approved but not built.
   The ladder policy, triggers and hygiene items are not changed.
 
@@ -74,7 +74,7 @@ OSV-Scanner in CI. promptfoo's red-team and cloud features are not used.
 
 1. A new ADR records it; F-002 A-7 changes from "logic is engine code" to
    "engine code driving promptfoo", spec v-next through the interview.
-2. Hygiene items (from H-0161): the pinned dependency, the adapter, and
+2. Hygiene items (H-0166 to H-0168): the pinned dependency, the adapter, and
    the S4.1 review.
 3. Cost per trial: Claude runs keep the Agent SDK's own cost figure; runs
    on F-013 endpoints use LiteLLM's price table, so FR-3's hand-kept
@@ -90,3 +90,7 @@ lighter-governance alternative.
 
 Low. F-002's build waits for the engine either way; deciding first avoids
 building the runner by hand.
+
+## Outcome (2026-11-13)
+
+The owner chose option A. Recorded as ADR 0023. Hygiene items H-0166 to H-0168 cover the pinned promptfoo dependency with its S4.1 review, the custom provider adapter, and the F-002 spec change. Spec changes go through the requirements interview before anything is built.

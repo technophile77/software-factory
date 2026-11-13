@@ -4,7 +4,7 @@
   rebuilds existing tools", item 4)
 - **Category:** Security (what the gates check, `docs/security-standards.md`)
   and Architecture (new external components, S4.1 notes below)
-- **Status:** Open
+- **Status:** Decided: option A (ADR 0024), by the owner on 2026-11-13 (decision card)
 - **Scope:** Security Gate 2 (code review after build), the CI the
   onboarding skill adds to project repos, and the master repo's own CI
 
@@ -75,7 +75,7 @@ change. Its rules' licence still needs checking before it could be chosen.
 1. `security-standards.md` gets a criterion that Gate 2 runs the approved
    static analysis and every finding at the tool's highest severity is
    either fixed or accepted by the owner; ADR records the tools.
-2. Hygiene items (from H-0161): the CodeQL workflow, the Semgrep job in
+2. Hygiene items (H-0169 to H-0173): the CodeQL workflow, the Semgrep job in
    `templates/ci-workflow.yml` with an onboarding gap when it is missing,
    the S4.1 reviews, and a note in F-008 for the engine's Gate 2 step
    when Gate 2 is automated.
@@ -89,3 +89,7 @@ covers the private project repos where CodeQL is paid.
 
 Low to medium. Each Gate 2 meanwhile relies on an agent finding code
 patterns by reading.
+
+## Outcome (2026-11-13)
+
+The owner chose option A. Recorded as ADR 0024. Hygiene items H-0169 to H-0173 cover the CodeQL workflow, the Semgrep job in the onboarding CI template with an onboarding gap when it is missing, the `security-standards.md` criterion, the S4.1 reviews, and the Gate 2 step when Gate 2 is automated. Spec changes go through the requirements interview before anything is built.
