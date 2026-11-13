@@ -4,7 +4,7 @@
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account)
-- **Spec version:** 15
+- **Spec version:** 16
 
 ## 1. Objective and business purpose
 Everything the factory needs the owner to approve reaches the owner in one
@@ -62,7 +62,7 @@ sessions, or by the owner) can be listed too (OQ-6).
 | FR-10 | Two GitHub modes per project (manifest, H-0124): `owner_token` (default; the engine opens PRs with the owner's fine-grained token; FR-7 to FR-9 apply) and `machine_account` (ADR 0006; the inbox approval submits a real GitHub approving review using the owner's VS Code GitHub sign-in, and the required-review rule stays). |
 | FR-11 | Hygiene approval covers the change once: when the engine applies an approved hygiene change through a PR whose diff equals the approved diff exactly, the engine merges that PR without a second click (OQ-4). Any difference files a Pull request item instead. |
 | FR-12 | The owner is told of new blocking items by the VS Code badge and notification, by an OS notification from the engine when VS Code is closed (OQ-3). Phone notifications and approving from the phone are F-012 (owner, 2026-11-13). |
-| FR-15 | Risky actions ask for confirmation before anything happens: Approve and merge, Approve on a Hygiene item, and Approve on a Maturity item. The confirmation is a modal dialog naming the action and its target (for a merge: repo, PR number and title, head commit, files changed, check state; for hygiene: the files changed and that it lands on `main`; for maturity: the repo and the old and new level). Its confirm button is not the default, so Enter or Escape cancels. Cancelling records nothing (owner, 2026-11-13). |
+| FR-15 | Risky actions ask for confirmation before anything happens: Approve and merge, Approve on a Hygiene item, Approve on a Maturity item, Approve on a Security decision item (accepting a risk or a security choice), and Approve on a Spec sign-off item. The confirmation is a modal dialog naming the action and its target (for a merge: repo, PR number and title, head commit, files changed, check state; for hygiene: the files changed and that it lands on `main`; for maturity: the repo and the old and new level; for a Security decision: the option chosen and its stated risk; for spec sign-off: the feature, spec version and that development starts). Its confirm button is not the default, so Enter or Escape cancels. Cancelling records nothing (owner, 2026-11-13). |
 | FR-14 | A CI test in this repo fails if engine code calls GitHub's merge API anywhere except the FR-11 hygiene path (OQ-9). |
 | FR-13 | Onboarding (F-003) prepares the owner-token mode: the ruleset (pull request and required checks, no required review, no bypass actors) and the token scopes, applied only after the owner confirms. |
 
@@ -81,7 +81,7 @@ sessions, or by the owner) can be listed too (OQ-6).
 | AC-12 | Given `machine_account` mode, when the owner approves, then a GitHub review by the owner's account is submitted on the PR's head commit. | FR-10 |
 | AC-13 | Given an approved hygiene item applied as a PR with the identical diff, then the engine merges it with no Pull request item; given one changed line, then nothing is merged and a Pull request item is filed. | FR-11 |
 | AC-15 | Given engine code that calls GitHub's merge endpoint (REST `PUT .../pulls/{n}/merge` or the GraphQL `mergePullRequest` mutation) outside the FR-11 module, then the CI test fails and names the file and line. | FR-14 |
-| AC-16 | Given Approve and merge, Hygiene Approve or Maturity Approve, then a modal dialog with the FR-15 details appears; pressing Enter or Escape, or closing it, merges and records nothing; only the explicit confirm button acts. Given any other action, then no dialog appears. | FR-15 |
+| AC-16 | Given Approve and merge, or Approve on a Hygiene, Maturity, Security decision or Spec sign-off item, then a modal dialog with the FR-15 details appears; pressing Enter or Escape, or closing it, merges and records nothing; only the explicit confirm button acts. Given any other action, then no dialog appears. | FR-15 |
 | AC-14 | Given a new blocking item, then the owner is notified as OQ-3 decides within one engine poll. | FR-12 |
 
 ## 5. Constraints
@@ -257,6 +257,7 @@ github:
 | 13 | 2026-11-13 | Gate 1 #1 decided: S9.6 and S9.2 amended for ADR 0017 (in H-0122) | Owner, 2026-11-13 (decision card) |
 | 14 | 2026-11-13 | Section 10: drafts of H-0120, H-0123, H-0124 and the rest of H-0122 for owner approval | — |
 | 15 | 2026-11-13 | SR-8 to SR-13 approved | Owner, 2026-11-13 (decision card) |
+| 16 | 2026-11-13 | FR-15: confirmation also on Security decision approval and spec sign-off | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
