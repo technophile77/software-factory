@@ -1,6 +1,6 @@
 # Decision management
 
-The owner works through one inbox in VS Code (F-011). Agents fill it; the
+The owner works through one inbox of GitHub issues, in VS Code or on the phone (F-011, ADR 0022). Agents fill it; the
 owner acts on it. Each item is labeled by its kind. Sections 1 to 3 describe
 the Decision, Testing and Hygiene kinds; "One inbox" below lists every kind
 and its actions.
@@ -59,22 +59,24 @@ commit message, so it can be traced and reverted.
 
 ## One inbox (F-011)
 
-All item kinds appear in one queue in VS Code, each labeled by its kind;
-decisions also show their category. The kinds stay separate item types and
-stores (F-011 A-1).
+Every item is a GitHub issue in the project's private config repo (ADR 0022,
+Inbox item v3.0), assigned to the owner and labelled `factory-inbox` and by
+kind; decisions also carry their category. The owner sees them in VS Code
+through Microsoft's GitHub Pull Requests extension and on the phone through
+GitHub Mobile, and acts with a 👍 on an action comment or a command comment.
+Pull requests are not items: the owner merges them in GitHub's PR view
+(F-011 OQ-12).
 
-| Kind | Owner actions | Confirmation dialog |
+| Kind | Owner actions | Confirmation step |
 |---|---|---|
-| Decision | Approve, Reject, Request changes, Ask for more research, Defer | On Approve of a Security decision |
+| Decision | Choose an option, Reject, Request changes, Ask for more research, Defer, Restore priority | On a Security decision: 🚀 or `/confirm <code>` |
 | Hygiene | Approve, Reject, Request changes, Defer | On Approve |
 | Testing | The recommended next step or another listed step, Ask for more research, Defer | No |
 | Spec sign-off | Approve, Request changes, Defer | On Approve |
-| Pull request | Approve and merge, Request changes, Defer | On Approve and merge |
 | Maturity | Approve, Reject, Defer | On Approve |
 | Notice | Dismiss | No |
 
-The item format for the new kinds is Inbox item v2.0 (F-011 H-0120), which
-takes effect when F-011 is built.
+A PR merge is confirmed by GitHub's own merge dialog (F-011 A-3).
 
 ## Item lifecycle
 
