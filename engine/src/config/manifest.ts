@@ -1,6 +1,7 @@
 import YAML from "yaml";
 import { MANIFEST_FILE } from "../constants";
 import { Git } from "../git";
+import { RoleAssignmentError, parseRoleAssignments } from "./endpoint-roles";
 import { ENDPOINT_NAME_RE } from "./models";
 import { ConfigError } from "./paths-file";
 
@@ -110,6 +111,12 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
       if (endpoints.includes(n as string)) bad(`settings.endpoints lists '${n as string}' twice`);
       endpoints.push(n as string);
     }
+  }
+  try {
+    parseRoleAssignments(isObj(doc.settings) ? doc.settings.agents : undefined);
+  } catch (e) {
+    if (e instanceof RoleAssignmentError) bad(e.message);
+    throw e;
   }
   return {
     name: doc.name as string,

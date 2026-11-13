@@ -9,7 +9,7 @@ import {
   type Plan,
   type PlanLimit,
 } from "../src/agent/endpoint-usage";
-import { FakeClock } from "./acceptance/support/clock";
+import { FakeClock } from "./helpers";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;

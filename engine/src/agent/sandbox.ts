@@ -358,8 +358,11 @@ export class SessionGroup {
    * `"run"` gives it the run's own volume (`runVolume`), created if missing
    * and kept across groups, so a resumed run finds its SDK session (FR-14);
    * the caller removes it when the run ends.
+   * `upstream` names the model endpoint the gateway sends this session's model
+   * requests to (F-013 FR-5); it must be one the group's router serves, and
+   * the agent can't change it.
    */
-  async startAgent(policy: RolePolicy, worktree: string | null, o: { sessionVolume?: boolean | "run"; reportDir?: { source: string; target: string } } = {}): Promise<AgentContainer> {
+  async startAgent(policy: RolePolicy, worktree: string | null, o: { sessionVolume?: boolean | "run"; reportDir?: { source: string; target: string }; upstream?: string } = {}): Promise<AgentContainer> {
     if (!this.proxy) throw new DockerError("the group isn't open");
     const limits = Object.prototype.hasOwnProperty.call(this.c.agentLimits, policy.role) ? this.c.agentLimits[policy.role] : undefined;
     if (!limits) throw new DockerError(`no container limits for the ${policy.role} role`);
@@ -420,7 +423,8 @@ export class SessionGroup {
       labels: { ...this.labels(), "factory.role": policy.role },
     };
     const webSearch = policy.role === "web-reader" && policy.tools.includes("WebSearch");
-    this.proxy.send({ t: "grant", cred, session: name, role: policy.role, allow: policy.network, webSearch });
+    if (o.upstream !== undefined && !this.c.router?.endpoints.some((e) => e.name === o.upstream)) throw new DockerError("the session names an endpoint this run doesn't route to");
+    this.proxy.send({ t: "grant", cred, session: name, role: policy.role, allow: policy.network, webSearch, ...(o.upstream !== undefined ? { upstream: o.upstream } : {}) });
     try {
       await this.c.docker.run(runArgs(spec), { env: values });
       await this.verify(spec);

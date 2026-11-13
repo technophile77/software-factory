@@ -48,6 +48,8 @@ export interface ReviewerRunInput {
   caps: SessionCaps;
   skillsPluginDir?: string;
   model: string;
+  /** F-013: the model endpoint the session's requests go to; the group must have a router for it. Default: Claude. */
+  upstream?: string;
   first: string;
   /** Resume from an SDK session on the run's volume (FR-10). */
   resume?: string;
@@ -102,7 +104,7 @@ export async function runReviewerSessions(i: ReviewerRunInput): Promise<Reviewer
         return { outcome: total ?? { status: "cap", reason: caps, turns: 0, outputTokens: 0, inputTokens: 0, costUsd: 0, durationMs: 0 }, invalid: `it reached the run's ${caps} cap`, breach: false, sessions: n - 1 };
       }
       let outcome: SessionOutcome;
-      const agent = await i.group.startAgent(i.policy, i.worktree, { sessionVolume: "run", reportDir: i.reportDir });
+      const agent = await i.group.startAgent(i.policy, i.worktree, { sessionVolume: "run", reportDir: i.reportDir, ...(i.upstream !== undefined ? { upstream: i.upstream } : {}) });
       try {
         const abort = new AbortController();
         const opts = sessionOptions({

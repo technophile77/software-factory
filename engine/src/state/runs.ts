@@ -1,6 +1,7 @@
 import * as crypto from "node:crypto";
 import { Clock, iso } from "../clock";
 import { MAX_RESUMES } from "../constants";
+import type { MatchRate } from "../gate1/advisory";
 import type { InterviewState } from "../interview/model";
 import type { Change } from "./state-repo";
 import { EngineRecord, RunRecord } from "./record";
@@ -10,6 +11,8 @@ export interface RunUsage {
   output_tokens: number;
   cost_usd: number;
   duration_s: number;
+  /** Agent report v1.4: a `subscription` endpoint run's share of its plan limits, 0 to 1. */
+  plan_share?: number;
 }
 
 /** What the engine fills in an Agent report v1.1 (FR-13); agents never write these. */
@@ -19,6 +22,23 @@ export interface RunFacts {
   rung?: number;
   usage?: RunUsage;
   transcript_ref?: string;
+  /** Agent report v1.4 (F-013 FR-7): the role was meant for an endpoint but ran on Claude. */
+  fallback?: { endpoint: string; reason: string; waited_s: number; prompt_tokens: number };
+  /** F-013 FR-10: what the gate's advisory pass did and how much of the Claude reviewer's work it also found. */
+  advisory?: AdvisoryFacts;
+}
+
+/** The advisory pass of a gate role, for the run review (F-013 FR-10). Names the endpoint, never its address. */
+export interface AdvisoryFacts {
+  endpoint: string;
+  status: "ok" | "skipped" | "failed";
+  reason?: string;
+  /** `<endpoint>/<model>` of the pass that ran. */
+  model?: string;
+  usage?: RunUsage;
+  hints?: number;
+  dropped?: number;
+  match?: MatchRate;
 }
 
 export type ResumePlan =

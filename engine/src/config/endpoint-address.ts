@@ -152,9 +152,9 @@ function classOfAll(name: string, addresses: string[], allowLoopback: boolean): 
  * @throws EndpointAddressError On a bad URL, failed or empty resolution, a refused address, mixed classes, public without https or key, or public with billing `local`.
  * @example
  * await resolveEndpoint(
- *   { name: "lan", baseUrl: "http://llm.local:8080/v1", hasKey: false, billing: "local", allowLoopback: false },
+ *   { name: "lan", baseUrl: "http://llm.example:8080/v1", hasKey: false, billing: "local", allowLoopback: false },
  *   async () => [{ address: "192.168.1.20", family: 4 }],
- * ); // { name: "lan", class: "private", scheme: "http", host: "llm.local", address: "192.168.1.20", port: 8080, basePath: "/v1" }
+ * ); // { name: "lan", class: "private", scheme: "http", host: "llm.example", address: "192.168.1.20", port: 8080, basePath: "/v1" }
  * @see classifyAddress
  */
 export async function resolveEndpoint(input: EndpointInput, lookup: EndpointLookup): Promise<PinnedEndpoint> {

@@ -26,6 +26,7 @@ SKIP = {"scripts/tests/test_check_placeholders.py", "scripts/tests/test_check_en
 # was checked against the tree when it was added.
 ADDRESS_ALLOWED = (
     "engine/src/proxy/",  # blocked-range CIDR tables and subnet doc examples (docker bridge addresses)
+    "engine/src/config/endpoint-address.ts",  # private-range tables and classification doc examples, like engine/src/proxy/
     "engine/test/",  # fixtures that prove the proxy refuses private ranges
     "docs/features/F-007-test-plan.md",  # AC-15 lists the refused addresses
     "docs/features/F-007-test-report.md",  # reports the same AC-15 run

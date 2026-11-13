@@ -38,7 +38,7 @@ export function endpointKeyVar(index: number): string {
  * @param pins the resolved address parts, one per endpoint, matched by name.
  * @example
  * litellmConfig([lan], [{ name: "lan", scheme: "http", host: "llm.local", port: 8080, basePath: "" }]);
- * // model_list[0].litellm_params.api_base === "http://llm.local:8080"
+ * // model_list[0].litellm_params.api_base === "http://llm.example:8080"
  * @throws DockerError when an endpoint has no pin, or a name is repeated.
  * @see litellmEnv
  */

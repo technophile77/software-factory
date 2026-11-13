@@ -150,7 +150,7 @@ function checkEndpoint(name: string, e: unknown): Endpoint {
  *
  * @param doc the YAML document, `{ endpoints: { <name>: { ... } } }`.
  * @example
- * validateEndpoints({ endpoints: { lan: { base_url: "http://llm.local:8080", model: "qwen3", api: "anthropic", billing: "local" } } })
+ * validateEndpoints({ endpoints: { lan: { base_url: "http://llm.example:8080", model: "qwen3", api: "anthropic", billing: "local" } } })
  *   .endpoints[0].max_sessions; // 1
  * @throws EndpointsError on the first problem found.
  */

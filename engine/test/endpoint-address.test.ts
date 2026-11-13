@@ -117,7 +117,7 @@ describe("resolveEndpoint", () => {
   });
 
   it("refuses an unusable base URL", async () => {
-    for (const baseUrl of ["", "llm.local:8080", "ftp://llm.local", "http://user:pw@llm.local"]) {
+    for (const baseUrl of ["", "llm.local:8080", "ftp://llm.local", "http://user:pw@llm.invalid"]) {
       await refused({ ...base, baseUrl }, "10.0.0.1");
     }
   });
