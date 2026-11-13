@@ -69,19 +69,22 @@ jobs:
       # store) that only runs on its own OS. Each shard runs every test file
       # but only its share of each file's tests (engine/test/shard.ts), so a
       # long file no longer sets the floor; slower runners get more shards
-      # (H-0130).
+      # (H-0130). Workers: these tests mostly wait on git, so Linux takes
+      # more than its cores, but on Windows 6 workers made single tests 2-3x
+      # slower and some timed out, so Windows keeps Vitest's default of 3.
       matrix:
         include:
-          - { os: ubuntu-latest, shard: 1/2 }
-          - { os: ubuntu-latest, shard: 2/2 }
-          - { os: macos-latest, shard: 1/3 }
-          - { os: macos-latest, shard: 2/3 }
-          - { os: macos-latest, shard: 3/3 }
-          - { os: windows-latest, shard: 1/5 }
-          - { os: windows-latest, shard: 2/5 }
-          - { os: windows-latest, shard: 3/5 }
-          - { os: windows-latest, shard: 4/5 }
-          - { os: windows-latest, shard: 5/5 }
+          - { os: ubuntu-latest, shard: 1/2, workers: 6 }
+          - { os: ubuntu-latest, shard: 2/2, workers: 6 }
+          - { os: macos-latest, shard: 1/3, workers: 4 }
+          - { os: macos-latest, shard: 2/3, workers: 4 }
+          - { os: macos-latest, shard: 3/3, workers: 4 }
+          - { os: windows-latest, shard: 1/6, workers: 3 }
+          - { os: windows-latest, shard: 2/6, workers: 3 }
+          - { os: windows-latest, shard: 3/6, workers: 3 }
+          - { os: windows-latest, shard: 4/6, workers: 3 }
+          - { os: windows-latest, shard: 5/6, workers: 3 }
+          - { os: windows-latest, shard: 6/6, workers: 3 }
     runs-on: ${{ matrix.os }}
     # A Windows run hung for 54 minutes once (H-0086); a shard takes about 10.
     timeout-minutes: 30
@@ -98,7 +101,7 @@ jobs:
           cache: npm
           cache-dependency-path: engine/package-lock.json
       - run: npm ci --ignore-scripts
-      - run: npm test -- --maxWorkers=${{ matrix.workers || 6 }}
+      - run: npm test -- --maxWorkers=${{ matrix.workers }}
         env:
           FACTORY_TEST_SHARD: ${{ matrix.shard }}
 

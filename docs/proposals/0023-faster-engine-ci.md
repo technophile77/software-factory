@@ -70,11 +70,14 @@ Two smaller problems:
      f009-document's 30 minutes on one runner. The shards together run each
      test exactly once (`shard.test.ts` checks this with random inputs).
      Locally, without the variable, nothing changes.
-   - **Shards per OS:** Windows 5, macOS 3, Linux 2, sized so each shard
-     takes about the same time. That is 10 test jobs instead of 3.
-   - **More workers per runner:** `--maxWorkers=6` on 3 to 4 vCPU runners.
-     Vitest's default is cores minus one, but these tests mostly wait on
-     child processes, so more files in flight use the idle CPU.
+   - **Shards per OS:** Windows 6, macOS 3, Linux 2, sized so each shard
+     takes about the same time. That is 11 test jobs instead of 3.
+   - **Workers per runner:** Linux 6, macOS 4, Windows 3 (Vitest's default
+     of cores minus one). These tests mostly wait on child processes, so
+     extra workers use idle CPU on Linux and macOS. On Windows the first CI
+     run with 6 workers made single tests 2 to 3 times slower, and two hit
+     their time limit, so Windows stays at the default and gets one more
+     shard instead.
    - **One `checks` job** on Linux runs the audit, typecheck and build.
      None of them depends on the OS.
    - **Cancel superseded PR runs.** A `concurrency` group per PR with
@@ -92,7 +95,7 @@ Two smaller problems:
    - **Runner minutes.** Each shard repeats checkout, setup and `npm ci`
      (about 30 to 60 seconds), so total minutes rise a little. The repo is
      public, so GitHub-hosted runners cost nothing. A free account runs up
-     to 20 jobs at once, 5 of them macOS: one engine run now uses 12 jobs
+     to 20 jobs at once, 5 of them macOS: one engine run now uses 13 jobs
      (3 macOS), so two PRs pushing at the same moment can queue briefly.
    - **Required checks.** `main` has no required status checks today. If
      some are added later, they must name the new job names
