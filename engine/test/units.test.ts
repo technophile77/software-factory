@@ -18,7 +18,7 @@ import { frameTurn } from "../src/interview/frame";
 import { FileLogger, MemoryLogger } from "../src/log";
 import { CredentialApi, FfiError, FUNCTIONS, Handle, OsApi, WindowsApi, realOsApi } from "../src/os/ffi";
 import { isOwnerOnlyPipe, isOwnerWritableOnly, ownerOnlyPipeSddl, parseSddl, withSelfSid } from "../src/os/sddl";
-import { Children, osParent, osStartedAt } from "../src/proc";
+import { Children, osParent, osStartOrder } from "../src/proc";
 import { MemoryCredentialStore, OsCredentialStore, SecretError, factoryTokenName } from "../src/secrets";
 import { EngineRecord } from "../src/state/record";
 import { RunBook, transcriptSummary } from "../src/state/runs";
@@ -133,8 +133,8 @@ describe("secrets (SR-20, OQ-7)", () => {
     stale.add(700);
     expect(stale.startedByEngine(900)).toBe(false);
     // Only Windows looks at start times, and a failed lookup gives no answer instead of an error.
-    expect(osStartedAt({ platform: "linux", windows: () => ({}) })).toBeUndefined();
-    const failing = osStartedAt({ platform: "win32", windows: () => ({ startedAt: () => { throw new Error("x"); } }) })!;
+    expect(osStartOrder({ platform: "linux", windows: () => ({}) })).toBeUndefined();
+    const failing = osStartOrder({ platform: "win32", windows: () => ({ startOrder: () => { throw new Error("x"); } }) })!;
     expect(failing(900)).toBeNull();
   });
 
@@ -145,11 +145,11 @@ describe("secrets (SR-20, OQ-7)", () => {
     expect(api.parentPid!(2 ** 31 - 2)).toBeNull();
     if (process.platform === "win32") {
       const win = os.windows();
-      const mine = win.startedAt!(process.pid);
-      const parent = win.startedAt!(process.ppid);
+      const mine = win.startOrder!(process.pid);
+      const parent = win.startOrder!(process.ppid);
       expect(mine).toBeGreaterThan(0);
-      expect(parent).toBeLessThanOrEqual(mine!);
-      expect(win.startedAt!(2 ** 31 - 2)).toBeNull();
+      expect(parent).toBeLessThan(mine!);
+      expect(win.startOrder!(2 ** 31 - 2)).toBeNull();
     }
   });
 

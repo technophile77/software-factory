@@ -47,7 +47,7 @@ Three Windows CI runs failed one acceptance test each with "connection closed" f
 Cause: the channel refuses a client that the engine started, by walking the client's parent pids and checking each against the engine and its live children. Windows records a parent's pid and never clears it, and reuses pids at once. When an ancestor of the client (the test process here; Explorer's exited parent on a desktop) had exited, its pid could be held by an engine child or grandchild (the git behind a Git for Windows launcher), so the walk ended at "our child" and refused the client. Before F-014 git processes lived for milliseconds, so the overlap was rare; readers live for seconds.
 
 Fix (`proc.ts`, `os/ffi.ts`, `git-reader.ts`):
-- At every step of the walk the engine compares start times (`GetProcessTimes`). A recorded parent started after its child is a reused pid, so the chain ends there and the client isn't refused for it. An unknown start time keeps the old answer.
+- At every step of the walk the engine compares creation order: Windows' per-boot process sequence number (`NtQueryInformationProcess`, `ProcessSequenceNumber`). A recorded parent created after its child is a reused pid, so the chain ends there and the client isn't refused for it. An unknown rank keeps the old answer. A first version used creation times (`GetProcessTimes`); Gate 2 L8 showed that setting the clock back could reorder them, so the owner chose the sequence number.
 - A child's pid is dropped from the list when it exits, not when its pipes close, and a listed pid with no running process is not a parent.
 - The refusal log names the pids the walk went through.
 

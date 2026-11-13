@@ -14,7 +14,9 @@ export class Children {
   lastChain: number[] = [];
 
   /**
-   * `startedAt` gives a process's start time on one clock, or null if unknown.
+   * `startOrder` ranks processes by when they were created (on Windows the
+   * kernel's per-boot sequence number, which a clock change can't reorder),
+   * or gives null if unknown.
    * Windows reuses pids at once and records a parent's pid without ever
    * clearing it, so a client whose recorded parent has exited can name a pid
    * that now belongs to one of our children or theirs (the git behind a Git
@@ -23,7 +25,7 @@ export class Children {
    */
   constructor(
     private readonly parentOf: (pid: number) => number | null = linuxParent,
-    private readonly startedAt?: (pid: number) => number | null,
+    private readonly startOrder?: (pid: number) => number | null,
   ) {}
 
   add(pid: number): void {
@@ -52,25 +54,25 @@ export class Children {
     return false;
   }
 
-  /** True only when both start times are known and `parent` started after `child`. */
+  /** True only when both ranks are known and `parent` was created after `child`. */
   private startedAfter(parent: number, child: number): boolean {
-    if (!this.startedAt) return false;
-    const p = this.startedAt(parent);
-    const c = this.startedAt(child);
+    if (!this.startOrder) return false;
+    const p = this.startOrder(parent);
+    const c = this.startOrder(child);
     return p !== null && c !== null && p > c;
   }
 }
 
 /**
- * A process's start time, to tell a reused pid from a parent (see `Children`).
+ * A process's creation rank, to tell a reused pid from a parent (see `Children`).
  * Only Windows reuses pids soon enough to matter; elsewhere it is left out.
  * A failed lookup gives null, which keeps the plain ancestry answer.
  */
-export function osStartedAt(os: { platform: NodeJS.Platform; windows(): { startedAt?(pid: number): number | null } }): ((pid: number) => number | null) | undefined {
+export function osStartOrder(os: { platform: NodeJS.Platform; windows(): { startOrder?(pid: number): number | null } }): ((pid: number) => number | null) | undefined {
   if (os.platform !== "win32") return undefined;
   return (pid) => {
     try {
-      return os.windows().startedAt?.(pid) ?? null;
+      return os.windows().startOrder?.(pid) ?? null;
     } catch {
       return null;
     }

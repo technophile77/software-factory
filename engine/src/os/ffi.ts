@@ -52,8 +52,11 @@ export interface WindowsApi {
   processUserSid(pid: number): string;
   /** A live process's parent pid from a Toolhelp snapshot, or null if it isn't running. */
   parentPid?(pid: number): number | null;
-  /** A process's creation time (GetProcessTimes, 100 ns units), or null if it can't be opened. */
-  startedAt?(pid: number): number | null;
+  /**
+   * A process's creation sequence number, unique and increasing per boot, or null if it can't be
+   * read. Unlike a creation time, setting the clock can't reorder it.
+   */
+  startOrder?(pid: number): number | null;
   /** Bytes waiting; throws once the client has gone. Never blocks. */
   pipeAvailable(h: Handle): number;
   readPipe(h: Handle, n: number): Buffer;
@@ -87,8 +90,9 @@ export const FUNCTIONS = {
     "kernel32.dll": [
       "CreateNamedPipeW", "ConnectNamedPipe", "DisconnectNamedPipe", "GetNamedPipeClientProcessId", "PeekNamedPipe",
       "SetNamedPipeHandleState", "ReadFile", "WriteFile", "CloseHandle", "OpenProcess", "GetCurrentProcess", "LocalFree",
-      "CreateToolhelp32Snapshot", "Process32FirstW", "Process32NextW", "GetProcessTimes",
+      "CreateToolhelp32Snapshot", "Process32FirstW", "Process32NextW",
     ],
+    "ntdll.dll": ["NtQueryInformationProcess"],
     "advapi32.dll": [
       "OpenProcessToken", "GetTokenInformation", "ConvertSidToStringSidW", "GetSecurityInfo", "GetNamedSecurityInfoW",
       "ConvertStringSecurityDescriptorToSecurityDescriptorW", "ConvertSecurityDescriptorToStringSecurityDescriptorW",
@@ -209,6 +213,10 @@ const DACL_SECURITY_INFORMATION = 0x4;
 const SE_FILE_OBJECT = 1;
 const SE_KERNEL_OBJECT = 6;
 const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+// PROCESSINFOCLASS ProcessSequenceNumber (Windows 10 and later): the kernel's per-boot process creation
+// counter, as in System Informer's phnt headers (ntpsapi.h). Not in the SDK headers, so the Windows-only
+// unit test checks it against this process and its parent.
+const PROCESS_SEQUENCE_NUMBER = 92;
 const TOKEN_QUERY = 0x8;
 const TOKEN_USER_CLASS = 1;
 const ERROR_PIPE_CONNECTED = 535;
@@ -240,7 +248,8 @@ function windowsApi(): WindowsApi {
   const LocalFree = k("void * __stdcall LocalFree(void *p)");
   const CreateToolhelp32Snapshot = k("factory_HANDLE __stdcall CreateToolhelp32Snapshot(uint32 flags, uint32 pid)");
   const Process32FirstW = k("int32 __stdcall Process32FirstW(factory_HANDLE snap, _Inout_ factory_PROCESSENTRY32W *pe)");
-  const GetProcessTimes = k("int32 __stdcall GetProcessTimes(factory_HANDLE p, _Out_ uint64 *created, _Out_ uint64 *exited, _Out_ uint64 *kernel, _Out_ uint64 *user)");
+  const nt = lib("win32", "ntdll.dll");
+  const NtQueryInformationProcess = nt("int32 __stdcall NtQueryInformationProcess(factory_HANDLE p, int32 cls, _Out_ uint64 *info, uint32 len, _Out_ uint32 *ret)");
   const Process32NextW = k("int32 __stdcall Process32NextW(factory_HANDLE snap, _Inout_ factory_PROCESSENTRY32W *pe)");
   const OpenProcessToken = a("int32 __stdcall OpenProcessToken(factory_HANDLE p, uint32 access, _Out_ factory_HANDLE *token)");
   const GetTokenInformation = a("int32 __stdcall GetTokenInformation(factory_HANDLE token, int32 cls, void *buf, uint32 len, _Out_ uint32 *ret)");
@@ -422,14 +431,17 @@ function windowsApi(): WindowsApi {
         }
       });
     },
-    startedAt(pid) {
+    startOrder(pid) {
       if (!Number.isInteger(pid) || pid <= 0) return null;
       const p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
       if (invalid(p)) return null;
       try {
-        const created = [0n];
-        if (!GetProcessTimes(p, created, [0n], [0n], [0n])) return null;
-        return Number(created[0]);
+        const seq = [0n];
+        if (NtQueryInformationProcess(p, PROCESS_SEQUENCE_NUMBER, seq, 8, [0]) !== 0) return null;
+        const n = Number(seq[0]);
+        return Number.isSafeInteger(n) && n > 0 ? n : null;
+      } catch {
+        return null;
       } finally {
         CloseHandle(p);
       }
