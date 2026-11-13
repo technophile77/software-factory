@@ -60,6 +60,12 @@ export function readPathsFile(masterRepo: string, os: OsApi): string[] {
   });
 }
 
+/**
+ * The master clone's root commits and origin, read once per `Git` (one per
+ * engine start) rather than once per project path checked (F-014 FR-4).
+ */
+const masterFacts = new WeakMap<Git, Map<string, Promise<{ roots: Set<string>; origin: string | null }>>>();
+
 const normUrl = (u: string) => u.trim().toLowerCase().replace(/\.git$/, "").replace(/\/+$/, "");
 
 /**
@@ -102,9 +108,27 @@ export async function checkProjectPath(p: string, masterRepo: string, git: Git):
       return null;
     }
   };
-  const [mr, pr] = [await roots(master), await roots(real)];
+  // undefined: the read failed; null: the master has no origin. A failed read isn't cached (Gate 2 L5).
+  const masterOrigin = async (dir: string) => {
+    const r = await git.run(dir, ["remote", "get-url", "origin"], { okCodes: [2] }).catch(() => undefined);
+    return r === undefined ? undefined : r.code === 0 ? normUrl(r.stdout.toString("utf8")) : null;
+  };
+  let byMaster = masterFacts.get(git);
+  if (!byMaster) masterFacts.set(git, (byMaster = new Map()));
+  let facts = byMaster.get(master);
+  if (!facts) {
+    facts = (async () => {
+      const [r, o] = [await roots(master), await masterOrigin(master)];
+      // The master clone always has a root commit, so none, or an origin read that failed, means try again next check.
+      if (r.size === 0 || o === undefined) byMaster!.delete(master);
+      return { roots: r, origin: o ?? null };
+    })();
+    byMaster.set(master, facts);
+  }
+  const { roots: mr, origin: mo } = await facts;
+  const pr = await roots(real);
   if ([...pr].some((r) => mr.has(r))) throw new ConfigError("The path is a clone of the master repo (same root commit).");
-  const [mo, po] = [await origin(master), await origin(real)];
+  const po = await origin(real);
   if (mo && po && mo === po) throw new ConfigError("The path is a clone of the master repo (same remote).");
   return real;
 }

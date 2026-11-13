@@ -65,7 +65,8 @@ export async function listenUnix(o: {
       const cred = o.os.peerCred(fdOf(sock));
       if (cred.uid !== euid) throw new ChannelRefused(`peer uid ${cred.uid} is not the owner`);
       pid = cred.pid;
-      if (pid === null || o.children.startedByEngine(pid)) throw new ChannelRefused(`peer ${pid} is a process the engine started`);
+      if (pid === null) throw new ChannelRefused("the peer's pid is unknown");
+      if (o.children.startedByEngine(pid)) throw new ChannelRefused(`peer ${pid} is a process the engine started (it, then its parents: ${o.children.lastChain.join(", ")})`);
     } catch (e) {
       o.log.warn(`Refused a channel connection: ${e instanceof ChannelRefused ? e.message : "the peer check failed"}.`);
       sock.destroy();

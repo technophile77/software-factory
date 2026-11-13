@@ -107,7 +107,8 @@ describe("remote factory/state (GS-4: SR-1, SR-11)", () => {
     const { w, srv } = await remoteWorld();
     const g = new Git({ gitPath: GIT_PATH, homeDir: path.join(w.root, "l7home"), children: new Children() });
     const s = new StateRepo(g, { scan: async () => [] } as never, w.config, new MemoryLogger(), path.join(w.root, "l7tmp"));
-    await expect(s.refuseRedirectingConfig()).resolves.toBeUndefined();
+    // A clean config passes, and gives back origin's URL so no second git call is needed (F-014 FR-5).
+    await expect(s.refuseRedirectingConfig()).resolves.toBe(git(w.config, "remote", "get-url", "origin"));
     const cfg = path.join(git(w.config, "rev-parse", "--absolute-git-dir"), "config");
     const clean = fs.readFileSync(cfg, "utf8");
     for (const [extra, shown] of [

@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as path from "node:path";
@@ -18,7 +18,7 @@ import { frameTurn } from "../src/interview/frame";
 import { FileLogger, MemoryLogger } from "../src/log";
 import { CredentialApi, FfiError, FUNCTIONS, Handle, OsApi, WindowsApi, realOsApi } from "../src/os/ffi";
 import { isOwnerOnlyPipe, isOwnerWritableOnly, ownerOnlyPipeSddl, parseSddl, withSelfSid } from "../src/os/sddl";
-import { Children, osParent } from "../src/proc";
+import { Children, osParent, osStartOrder } from "../src/proc";
 import { MemoryCredentialStore, OsCredentialStore, SecretError, factoryTokenName } from "../src/secrets";
 import { EngineRecord } from "../src/state/record";
 import { RunBook, transcriptSummary } from "../src/state/runs";
@@ -107,11 +107,76 @@ describe("secrets (SR-20, OQ-7)", () => {
     }
   });
 
+  it("a recorded parent pid that one of our children took over after the parent exited isn't ancestry", () => {
+    // The client (pid 900) was started by a process that has exited; Windows gave its pid, 700, to a git reader of ours.
+    const parents: Record<number, number> = { 900: 700, 700: process.pid };
+    const started: Record<number, number> = { 900: 100, 700: 500 };
+    const kids = new Children((p) => parents[p] ?? null, (p) => started[p] ?? null);
+    kids.add(700);
+    expect(kids.startedByEngine(900)).toBe(false);
+    // A real child of ours, started before its own child, still counts, as does an unknown start time.
+    started[700] = 50;
+    expect(kids.startedByEngine(900)).toBe(true);
+    expect(new Children((p) => parents[p] ?? null, () => null).startedByEngine(900)).toBe(true);
+    // The reused pid can belong to a grandchild, such as the git behind a Git for Windows launcher (600, ours).
+    const tree: Record<number, number> = { 900: 701, 701: 600, 600: process.pid };
+    const born: Record<number, number> = { 900: 100, 701: 500, 600: 400 };
+    const grand = new Children((p) => tree[p] ?? null, (p) => born[p] ?? null);
+    grand.add(600);
+    expect(grand.startedByEngine(900)).toBe(false);
+    expect(grand.lastChain).toEqual([900, 701]);
+    // A real grandchild of ours, younger than each parent, is refused.
+    born[900] = 900;
+    expect(grand.startedByEngine(900)).toBe(true);
+    // A pid still listed after its process ended is no parent either.
+    const stale = new Children((p) => (p === 900 ? 700 : null));
+    stale.add(700);
+    expect(stale.startedByEngine(900)).toBe(false);
+    // Only Windows looks at start times, and a failed lookup gives no answer instead of an error.
+    expect(osStartOrder({ platform: "linux", windows: () => ({}) })).toBeUndefined();
+    const failing = osStartOrder({ platform: "win32", windows: () => ({ startOrder: () => { throw new Error("x"); } }) })!;
+    expect(failing(900)).toBeNull();
+  });
+
   it.runIf(process.platform === "darwin" || process.platform === "win32")("the real parent lookup reports this process's parent", () => {
     const os = realOsApi();
     const api = process.platform === "win32" ? os.windows() : os.unix();
     expect(api.parentPid!(process.pid)).toBe(process.ppid);
     expect(api.parentPid!(2 ** 31 - 2)).toBeNull();
+    if (process.platform === "win32") {
+      const win = os.windows();
+      const mine = win.startOrder!(process.pid);
+      const parent = win.startOrder!(process.ppid);
+      expect(mine).toBeGreaterThan(0);
+      expect(parent).toBeLessThan(mine!);
+      expect(win.startOrder!(2 ** 31 - 2)).toBeNull();
+    }
+  });
+
+  it.runIf(process.platform === "win32")("Windows ranks a child and a grandchild strictly after their parents (Gate 2 L10)", async () => {
+    const win = realOsApi().windows();
+    const script = "const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},20000)']);console.log(c.pid);setTimeout(()=>c.kill(),20000)";
+    const child = spawn(process.execPath, ["-e", script], { stdio: ["ignore", "pipe", "ignore"] });
+    let grandchild = 0;
+    try {
+      grandchild = await new Promise<number>((resolve, reject) => {
+        child.stdout!.once("data", (d: Buffer) => resolve(Number(d.toString().trim())));
+        child.once("error", reject);
+      });
+      const ranks = [process.pid, child.pid!, grandchild].map((p) => win.startOrder!(p));
+      for (const r of ranks) expect(Number.isSafeInteger(r)).toBe(true);
+      expect(ranks[0]!).toBeLessThan(ranks[1]!);
+      expect(ranks[1]!).toBeLessThan(ranks[2]!);
+    } finally {
+      if (grandchild) {
+        try {
+          process.kill(grandchild);
+        } catch {
+          // already gone
+        }
+      }
+      child.kill();
+    }
   });
 
   it("the FFI module declares a fixed list of functions per OS", () => {
@@ -460,17 +525,17 @@ describe("git (SR-11)", () => {
     const orig = g.run.bind(g);
     g.run = (cwd, args, o) => (calls.push(args[0]!), orig(cwd, args, o));
     await state.commit([{ path: "interviews/F-001/a.jsonl", content: "one\n" }], "F-001: one");
-    // head, write the blob, read-tree, index, tree, commit, ref, the checkout's index.
-    expect(calls).toEqual(["rev-parse", "hash-object", "read-tree", "update-index", "write-tree", "commit-tree", "update-ref", "update-index"]);
+    // Write the blob, read-tree, index, tree, commit, ref, the checkout's index; the head comes from the reader (F-014).
+    expect(calls).toEqual(["hash-object", "read-tree", "update-index", "write-tree", "commit-tree", "update-ref", "update-index"]);
     calls.length = 0;
     await state.commit([{ path: "interviews/F-001/a.jsonl", content: "one\ntwo\n" }, { path: "interviews/F-001/b.jsonl", content: "b\n" }], "F-001: two");
-    // On top of its own last commit the temp index is reused; two blobs still take one process.
-    expect(calls).toEqual(["rev-parse", "hash-object", "update-index", "write-tree", "commit-tree", "update-ref", "update-index"]);
+    // On top of its own last commit the temp index is reused and the head is held (A-1); two blobs still take one process.
+    expect(calls).toEqual(["hash-object", "update-index", "write-tree", "commit-tree", "update-ref", "update-index"]);
     expect(git(repo, "show", "factory/state:interviews/F-001/a.jsonl")).toBe("one\ntwo");
     expect(git(repo, "show", "factory/state:interviews/F-001/b.jsonl")).toBe("b");
     expect(git(repo, "show", "factory/state~1:interviews/F-001/a.jsonl")).toBe("one");
     expect(git(path.join(repo, ".factory"), "status", "--porcelain")).toBe("");
-    // A commit made elsewhere moves the branch: the next one reads the tree again and keeps that commit's files.
+    // A commit made elsewhere moves the branch: the held head fails the swap, and the commit is made again on the moved head, reading its tree and keeping its files (F-014 AC-5).
     const other = git(repo, "commit-tree", git(repo, "rev-parse", "factory/state^{tree}"), "-p", "factory/state", "-m", "elsewhere");
     git(repo, "update-ref", "refs/heads/factory/state", other);
     calls.length = 0;
