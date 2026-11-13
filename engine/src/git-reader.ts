@@ -78,18 +78,23 @@ export class CatFileReader {
     });
   }
 
-  close(): void {
+  /**
+   * Ends the reader by closing its input, so git exits by itself. Killing it
+   * would not be enough on Windows: Git for Windows' `cmd\git.exe` and
+   * `bin\git.exe` are launchers, and a killed launcher leaves the real git
+   * running in the repo, which keeps the folder from being deleted. Resolves
+   * when the process is gone, killing it after `graceMs` as a last resort.
+   */
+  close(graceMs = 2000): Promise<void> {
     if (this.idle) clearTimeout(this.idle);
     this.idle = null;
     const c = this.child;
     this.child = null;
-    if (c) {
-      c.stdin.end();
-      c.kill();
-      // A read still waiting (an engine stop mid-read) fails over rather than hanging.
-      this.dead = new ReaderBroken("the reader was closed");
-      this.wake?.();
-    }
+    if (!c) return Promise.resolve();
+    // A read still waiting (an engine stop mid-read) fails over rather than hanging.
+    this.dead = new ReaderBroken("the reader was closed");
+    this.wake?.();
+    return endProcess(c, graceMs);
   }
 
   private serial<T>(f: () => Promise<T>): Promise<T> {
@@ -105,7 +110,7 @@ export class CatFileReader {
         clearTimeout(timer);
         if (this.child) {
           this.ref(false);
-          this.idle = setTimeout(() => this.close(), this.o.idleMs);
+          this.idle = setTimeout(() => void this.close(), this.o.idleMs);
           this.idle.unref();
         }
       }
@@ -170,7 +175,8 @@ export class CatFileReader {
   private breakOff(why: string): ReaderBroken {
     const c = this.child;
     this.child = null;
-    if (c) c.kill("SIGKILL");
+    // A reader out of step or stuck may not read its input, so it gets a short grace only.
+    if (c) void endProcess(c, 200);
     this.dead = new ReaderBroken(why);
     this.wake?.();
     return this.dead;
@@ -221,6 +227,18 @@ export class CatFileReader {
       };
     });
   }
+}
+
+function endProcess(c: ChildProcessWithoutNullStreams, graceMs: number): Promise<void> {
+  if (c.exitCode !== null || c.signalCode !== null) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => c.kill("SIGKILL"), graceMs);
+    c.once("close", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    c.stdin.end();
+  });
 }
 
 /** The body was over the read's limit. Not a broken reader: the read fails as an oversized read does today. */

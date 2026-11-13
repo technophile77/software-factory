@@ -1342,7 +1342,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         p.sessions?.closeAll();
         await p.listener?.close().catch(() => undefined);
       }
-      git.closeReaders();
+      await git.closeReaders();
       done();
     },
     async sync() {
@@ -1380,7 +1380,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           await p.listener?.close().catch(() => undefined);
           if (p.state_repo) fs.rmSync(path.join(p.state_repo.factoryDir, ENGINE_JSON), { force: true });
         }
-        git.closeReaders();
+        await git.closeReaders();
         log.info(`engine stopped at ${iso(clock.now())}`);
         done();
       })();

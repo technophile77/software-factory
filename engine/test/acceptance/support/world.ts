@@ -681,6 +681,9 @@ export class World {
     await Promise.race([this.stop().catch(() => undefined), new Promise<void>((r) => (timer = setTimeout(r, 15_000)))]);
     clearTimeout(timer);
     await this.gh.stop().catch(() => undefined);
+    // F-014 readers outside the engine (the confirm command's) hold their repo on Windows until they exit.
+    const { Git } = await import(/* @vite-ignore */ fileURLToPath(new URL("../../../src/git.ts", import.meta.url)));
+    await Git.closeAllReaders();
     removeTree(this.root);
   }
 }

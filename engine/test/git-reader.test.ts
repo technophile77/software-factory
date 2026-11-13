@@ -59,7 +59,7 @@ describe("F-014 reader parity (FR-1)", () => {
     // One reader served every read above.
     expect(fast.spawns.get("cat-file --batch-command")).toBe(1);
     expect(fast.spawnCount()).toBe(1);
-    fast.closeReaders();
+    await fast.closeReaders();
   });
 
   it("sees a ref moved and objects written after it started", async () => {
@@ -73,7 +73,7 @@ describe("F-014 reader parity (FR-1)", () => {
     expect(after).not.toBe(before);
     expect((await g.readBlob(repo, after!, "new.txt"))!.toString()).toBe("n\n");
     expect(g.spawnCount()).toBe(1);
-    g.closeReaders();
+    await g.closeReaders();
   });
 });
 
@@ -87,7 +87,7 @@ describe("F-014 reader failures (FR-2, AC-3, SR-6, SR-7)", () => {
     await new Promise((r) => setTimeout(r, 100));
     expect((await g.readBlob(repo, head, "dir/b.txt"))!.toString()).toBe("b\n");
     expect(await g.revParse(repo, "refs/heads/main")).toBe(head);
-    g.closeReaders();
+    await g.closeReaders();
   });
 
   it.skipIf(process.platform === "win32")("a reader that answers out of step is killed and the read falls back to plain git", async () => {
@@ -107,7 +107,7 @@ describe("F-014 reader failures (FR-2, AC-3, SR-6, SR-7)", () => {
     await g.revParse(repo, "HEAD");
     expect(g.spawns.get("cat-file --batch-command")).toBe(readers);
     expect(readers).toBe(3);
-    g.closeReaders();
+    await g.closeReaders();
   });
 
   it.skipIf(process.platform === "win32")("a reader that hangs times out, is killed, and the read fails over", async () => {
@@ -119,7 +119,7 @@ describe("F-014 reader failures (FR-2, AC-3, SR-6, SR-7)", () => {
     const children = new Children();
     const r = new CatFileReader({ gitPath: fake, args: ["-C", repo], cwd: repo, env: process.env, children, idleMs: 1000, timeoutMs: 200 });
     await expect(r.info("HEAD")).rejects.toBeInstanceOf(ReaderBroken);
-    r.close();
+    await r.close();
   });
 
   it("a body over the limit is refused before it is read, and the reader stays in step", async () => {
@@ -128,7 +128,7 @@ describe("F-014 reader failures (FR-2, AC-3, SR-6, SR-7)", () => {
     const big = git(repo, "rev-parse", `${head}:engine/config/limits.yaml`);
     await expect(r.contents(big, 2)).rejects.toBeInstanceOf(ReaderLimit);
     expect((await r.contents(big, 100))!.body.toString()).toBe("l: 1\n");
-    r.close();
+    await r.close();
   });
 
   it("names the reader isn't given go to plain git (SR-2)", async () => {
@@ -137,7 +137,7 @@ describe("F-014 reader failures (FR-2, AC-3, SR-6, SR-7)", () => {
     expect(await g.revParse(repo, "refs/heads/../main")).toBeNull();
     expect(await g.revParse(repo, "main\ninfo HEAD")).toBeNull();
     expect(g.spawns.get("rev-parse")).toBe(2);
-    g.closeReaders();
+    await g.closeReaders();
   });
 });
 
@@ -154,7 +154,7 @@ describe("F-014 idle close (OQ-1, AC-7)", () => {
     expect(() => process.kill(pid, 0)).toThrow();
     expect(await g.revParse(repo, "HEAD")).toBe(head);
     expect(g.spawns.get("cat-file --batch-command")).toBe(2);
-    g.closeReaders();
+    await g.closeReaders();
   });
 });
 
@@ -191,6 +191,6 @@ describe("F-014 tree parsing (SR-5)", () => {
     const g = make();
     await expect(g.readBlob(repo, commit, "x")).rejects.toBeInstanceOf(GitError);
     await expect(g.lsTree(repo, commit)).rejects.toBeInstanceOf(GitError);
-    g.closeReaders();
+    await g.closeReaders();
   });
 });

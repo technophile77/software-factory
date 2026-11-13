@@ -168,7 +168,7 @@ describe("git process budgets (F-014 FR-7, AC-2)", () => {
     await readManifest(g, w.config);
     await readManifest(g, w.config);
     const manifestReads = Git.processes - before;
-    g.closeReaders();
+    await g.closeReaders();
     expect(firstStart).toBeLessThanOrEqual(BUDGET_FIRST_START);
     expect(secondStart).toBeLessThanOrEqual(BUDGET_SECOND_START);
     // Both reads share one reader: one process, not two per read.

@@ -160,10 +160,20 @@ export class Git {
     return n;
   }
 
-  /** Closes every reader, as the engine does when it stops. */
-  closeReaders(): void {
-    for (const r of this.readers.values()) r.close();
+  /** Every `Git` with readers, so a test can close them all before deleting its folders. */
+  private static readonly withReaders = new Set<Git>();
+
+  /** Closes every reader and resolves when their processes are gone, as the engine does when it stops. */
+  async closeReaders(): Promise<void> {
+    const all = [...this.readers.values()];
     this.readers.clear();
+    Git.withReaders.delete(this);
+    await Promise.all(all.map((r) => r.close()));
+  }
+
+  /** Closes the readers of every `Git` in this process (tests, before removing their folders). */
+  static async closeAllReaders(): Promise<void> {
+    await Promise.all([...Git.withReaders].map((g) => g.closeReaders()));
   }
 
   private reader(cwd: string): CatFileReader | null {
@@ -181,6 +191,7 @@ export class Git {
         onSpawn: () => this.count("cat-file --batch-command"),
       });
       this.readers.set(cwd, r);
+      Git.withReaders.add(this);
     }
     return r;
   }
