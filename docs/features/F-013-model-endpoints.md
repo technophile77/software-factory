@@ -1,14 +1,14 @@
 # Feature: Configurable model endpoints
 
 - **Id:** F-013
-- **Status:** Approved (owner, 2026-11-13; readiness gate passed); LiteLLM accepted with conditions (OQ-9); A-1 spike in progress
+- **Status:** Approved (owner, 2026-11-13; readiness gate passed); LiteLLM accepted with conditions (OQ-9); A-1 passes with the gateway fold (OQ-10 (a), FR-16; [report](F-013-spike-a1.md)); in development
 - **Requested by / date:** Alex, 2026-11-13 ("I want to also incorporate a
   local llm api"; "this model would be a good candidate for the security
   agent, judge, or any low end agent"; "I'd rather allow a number of
   endpoints that can be specified, and allow them to be configurable, with
   local as an option that indicates it has unlimited usage"; "endpoints
   should include standard options like the model to use and an api key")
-- **Spec version:** 17
+- **Spec version:** 20
 
 ## 1. Objective and business purpose
 The factory runs every agent on Claude today. The owner wants to add other
@@ -59,10 +59,13 @@ master repo.
    egress proxy (OQ-2, OQ-8, ADR 0019). The agent never learns the address
    or the key.
 5. **Choosing roles.** As F-002: calibration, then the role's transcripts,
-   then a hygiene item the owner approves. Before F-002's calibration is
-   built, the owner can set a role to an endpoint rung in
-   `engine/config/models.yaml` through a hygiene item. Gate roles get an
-   endpoint only as an advisory first pass (OQ-1). Calibration starts with
+   then a hygiene item the owner approves. The assignment lives in the
+   project manifest, in the private config repo, under F-002's
+   `settings.agents.<role>` (OQ-11): `model` (an endpoint rung) with a
+   Claude `fallback`, or for a gate role an `advisory` endpoint. It changes
+   through a hygiene item; the master `engine/config/models.yaml` stays
+   Claude-only. Gate roles get an endpoint only as an advisory first pass
+   (OQ-1). Calibration starts with
    the gate roles and the low-end roles (OQ-4).
 6. **Busy or down.** The engine sends no more than an endpoint's session
    cap to it. A session that waits more than 10 minutes for a slot, or whose
@@ -78,7 +81,7 @@ master repo.
 ## 3. Functional requirements
 | Id | Requirement |
 |---|---|
-| FR-1 | A rung (and, before F-002, a `models.yaml` entry) can name `<endpoint>/<model>`. The master repo holds no endpoint address, host, port or key. |
+| FR-1 | A rung can name `<endpoint>/<model>`. A role is assigned to an endpoint only in the project manifest's `settings.agents.<role>` (`model` with a Claude `fallback`, or `advisory` for a gate role; OQ-11); an endpoint `model` without a `fallback`, an `advisory` on a non-gate role, or an endpoint rung for a role that isn't read-only (SR-9) is refused. The master repo holds no endpoint name, address, host, port or key. |
 | FR-2 | `factory-endpoints.local.yaml` in the master clone, git-ignored, lists named endpoints. Each has: `base_url`, `model`, `api` (`anthropic` or `openai`; OQ-6), optional `api_key_ref` (a credential store entry name), `max_sessions` (default 1), `billing` (`local`, `per_token` or `subscription`; required), `prices` (input and output per million tokens; required for `per_token`), `plan` (for `subscription`: one or more limits, each a count of requests, input tokens or output tokens per window of 5 hours, a day, a week or a month, plus an optional `reserve_pct`, default 10), optional `deadline` overrides (FR-12), and `allow_loopback` (default false). The file is refused unless only the owner can write it (as H-0081). |
 | FR-3 | API keys come only from the OS credential store. The engine hands each to the LiteLLM container alone, at its start, the way it hands the Claude credential to the proxy today (never in an argument, a committed file or an agent's environment). The Claude credential is never given to LiteLLM, and LiteLLM sends each key only to its own endpoint (SR-13). |
 | FR-4 | Before each session, the engine resolves the endpoint's host on the PC (so `.local` mDNS names work) and pins the address it checked. A **private** endpoint (every address in RFC 1918, RFC 4193 or link-local; loopback only with `allow_loopback`) may use plain HTTP and no key (SR-5). A **public** endpoint (every address public) must use HTTPS with certificate checks and an API key (SR-12). A name resolving to a mix of private and public addresses is refused. |
@@ -92,6 +95,7 @@ master repo.
 | FR-12 | Request deadlines scale with size (owner, 2026-11-13). Each request's deadline is a fixed margin plus its prompt tokens divided by the endpoint's measured prompt-processing rate plus its `max_tokens` divided by its measured generation rate. Rates come from the server's per-request timings where it reports them (`llama-server` does), otherwise from measured wall time, kept per endpoint and model as a rolling median and seeded by a timing check at start. The run review reports rates by prompt-size band (under 8k, 8k to 32k, 32k to 128k, over 128k tokens). |
 | FR-14 | Format translation, keys and retries come from LiteLLM (OQ-8). Billing (FR-13) stays a factory requirement: LiteLLM enforces the limits it can express (spend caps per endpoint, request and token rate limits), and the engine does the rest itself: charging `per_token` cost to the project budget, counting `subscription` plan windows LiteLLM can't express (such as 5 hours), the reserve and fallback, and recording cost in agent reports, F-002 metrics and run reviews. The engine generates LiteLLM's configuration from the endpoints file at start; LiteLLM's admin UI, database and telemetry are off, and its master key is random per run and known only to the gateway. The factory writes no format translator of its own. |
 | FR-15 | LiteLLM is pinned to one image digest in the master repo and upgraded only by a hygiene item. Before each upgrade, and in CI, a conformance suite replays fixed tool-call conversations (generic prompts only) through LiteLLM to a recorded stub endpoint in each format and checks that Claude Code receives the same `tool_use` names, arguments and stop reasons as from a native Anthropic endpoint, streamed and unstreamed. |
+| FR-16 | For an endpoint session, the gateway moves the text of every `messages[]` entry with role `system` into the top-level `system` field (appended as text blocks, in order) and removes those entries, before forwarding (OQ-10). Non-text blocks in such a message are dropped and logged. Requests to `api.anthropic.com` are unchanged. |
 | FR-13 | Usage by billing mode. `local`: cost $0 (0% of plan in the project's `subscription` budget mode), not counted against the project budget (ADR 0012). `per_token`: tokens times `prices`, in dollars, counted against the project budget in both budget modes. `subscription`: the engine counts each limit's use per window across all projects on the PC; a task's cost is the largest share of any limit it used (as F-002 A-1 measures Claude plans); it is not charged in dollars. When any limit would pass `100 - reserve_pct` percent in its window, new sessions for that endpoint run on the role's Claude rung instead (FR-7), so the owner keeps the reserve for their own use. |
 
 ## 4. Acceptance criteria
@@ -112,6 +116,7 @@ master repo.
 | AC-15 | Given an `openai` endpoint, when an agent's request carries two tools and the model calls one, then the agent receives an Anthropic `tool_use` block with the same name and arguments, streamed and unstreamed, and its `tool_result` reaches the endpoint as a `tool` message with the matching call id. | FR-14 |
 | AC-16 | Given a LiteLLM image digest different from the pinned one, when the engine starts, then endpoint rungs are unavailable and the status says why. | FR-15 |
 | AC-17 | Given the FR-15 conformance suite, when CI runs, then it passes for both formats; and the LiteLLM container has no network route except through the egress proxy. | FR-5, FR-15 |
+| AC-18 | Given an endpoint session whose request has messages user, system, assistant, user, when the gateway forwards it, then the forwarded `messages` are user, assistant, user and the system message's text is the last block of `system`. | FR-16 |
 | AC-14 | Given a `subscription` endpoint with a limit of 100 requests per 5 hours and `reserve_pct` 10, when 90 requests have been made in the current window, then the next session for that endpoint runs on the role's Claude rung and the run review says the plan limit was reached; a run that used 9 of those requests is recorded at 9% of plan. | FR-13 |
 | AC-13 | Given a project whose manifest doesn't list an endpoint, when a role's rung names that endpoint, then the role runs on its Claude rung and the run review says why. | SR-8 |
 
@@ -129,7 +134,7 @@ master repo.
 - Claude Code needs the Anthropic Messages API, tool use and a large
   context. Endpoints that serve only OpenAI's chat-completions format are
   reached through LiteLLM's translation (OQ-6, OQ-8, FR-14).
-- Change-controlled files touched: `engine/config/models.yaml`,
+- Change-controlled files touched:
   `docs/interface-contracts.md`, the proxy, the engine's container plan
   (a LiteLLM container beside the proxy sidecar), `.gitignore`, CI.
 
@@ -152,7 +157,7 @@ master repo.
 
 ## 7. Dependencies
 - F-002 (ladder, calibration, run reviews). Until it is built, the
-  `models.yaml` path in § 2 item 5 is the only way a role uses an endpoint.
+  manifest assignment in § 2 item 5 is set by hand through a hygiene item.
 - Engine credential gateway and egress proxy (F-007, SR-6 to SR-9).
 - ADR 0012 budgets (FR-13).
 - The endpoints themselves (outside the factory).
@@ -166,7 +171,7 @@ master repo.
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | External services (S9.1): the endpoints in the owner's file, each read-and-generate only (`GET /v1/models`, `POST /v1/messages`, `POST /v1/messages/count_tokens`). No other path. | Analyst (S9.1, S2.2) | Accepted (owner, 2026-11-13); widened in v9 from one server to the listed endpoints; re-approved (owner, 2026-11-13, decision card) |
+| SR-1 | External services (S9.1): the endpoints in the owner's file, each read-and-generate only: `GET /v1/models`, `POST /v1/messages`, `POST /v1/messages/count_tokens`, and for `api: openai` endpoints only `POST /v1/chat/completions` (Gate 2; owner, 2026-11-13). No other path. | Analyst (S9.1, S2.2); Gate 2 | Accepted (owner, 2026-11-13, decision cards) |
 | SR-2 | Endpoint addresses and keys never appear in Git, logs, agent environment or reports (S3.1, S3.3); logs name the endpoint, not the host. | Analyst (S3.1) | Accepted (owner, 2026-11-13, decision card) |
 | SR-3 | Each endpoint's address is resolved on the PC, classed private or public, and pinned per session (FR-4). A private endpoint never resolves to a public address and a public one never to a private address, so a misconfigured or hijacked name can't send project content somewhere unexpected (S9.4; CWE-918). | Analyst | Accepted (owner, 2026-11-13); rescoped in v9 to both classes; re-approved (owner, 2026-11-13, decision card) |
 | SR-4 | Agents still cannot reach private addresses or endpoints directly (F-007 SR-8 unchanged); only the gateway reaches an endpoint, and only for a session the engine granted it (S8.1). | Analyst (S8.1) | Accepted (owner, 2026-11-13, decision card) |
@@ -179,6 +184,7 @@ master repo.
 | SR-11 | The engine records each endpoint model's name, parameter count, byte size and quant type (whatever the endpoint reports) at each check; any change counts as a new model, resets its calibration results and advisory match rate, and tells the owner. Residual: a swap keeping all of these the same is not detectable without a digest. | Gate 1 #4 (S4.1, S4.3) | Accepted (owner, 2026-11-13, decision card) |
 | SR-16 | LiteLLM is a new external component (S4.1): before it is approved for use, a security review covers its source and maintainers, known CVEs, install and start-up scripts, the permissions it needs and what it pulls in, recorded with H-0139. It is pinned by image digest (S4.3), scanned for CVEs in CI and before each upgrade (S4.4), with S4.6 deadlines. **Its container holds the endpoint keys**, so it runs as a non-root user on a read-only file system, with no inbound access except from the gateway, no outbound access except through the egress proxy grant (FR-5), its admin UI, database and telemetry off, and a per-run master key. Its replies are untrusted: the gateway keeps its body size caps and FR-12 deadlines on them (S4.5, S5.1). | v13 delta #6 (S4.1, S4.3 to S4.6, S8.1, S8.4) | Accepted (owner, 2026-11-13, decision card) |
 | SR-17 | LiteLLM conditions (OQ-9): LTS line only, pinned by image digest with its cosign signature verified against the key at a pinned LiteLLM commit; no release adopted until 14 days after publication unless it fixes a CVE in a feature the factory uses, never a floating tag; database, admin UI, MCP, SSO, guardrails, callbacks, caching and telemetry off; the gateway passes only the Anthropic Messages fields Claude Code sends and strips LiteLLM routing and credential parameters (`api_base`, `api_key`, `user_config`, provider credential fields, routing keys in `metadata`); endpoint keys rotated if a release the factory ran is later reported compromised, with the engine status naming them. Residual risk accepted: a bad release past these controls could misuse or leak the endpoint keys or alter replies, leaving only through the owner's endpoints. | S4.1 review (S4.1 to S4.6) | Accepted (owner, 2026-11-13, decision card) |
+| SR-18 | Endpoint keys reach the LiteLLM container as environment variables (OQ-14 (b)). Accepted risk, stated to the owner: anyone with admin-level access to Docker on the owner's PC can read them with `docker inspect`; the owner treats the PC as trusted and puts usability first. Keys still never reach agents, logs or reports (SR-2). | Gate 2 (S3.1, S8.2) | Risk accepted (owner, 2026-11-13, decision card) |
 | SR-12 | Public endpoints must use HTTPS with certificate and host-name checks (TLS 1.2 or later) and an API key from the credential store; an `http://` URL or a missing key makes the endpoint unavailable (OWASP ASVS 5.0 V12, secure communication; NIST SP 800-53 SC-8, SC-23). | v9 delta #1 | Accepted (owner, 2026-11-13, decision card) |
 | SR-13 | An endpoint's key is sent only to that endpoint, only in its auth header, and never on a redirect; the gateway follows no redirects from an endpoint (S8.2; CWE-522). | v9 delta #2 | Accepted (owner, 2026-11-13, decision card) |
 | SR-14 | Every endpoint that costs money is bounded: `per_token` spend counts against the project budget and its run-cost estimate (prices required), and `subscription` use stops at its plan limits less the reserve; so a mispriced, misconfigured or looping agent can't run up an unbounded bill or exhaust the owner's plan (ADR 0012; OWASP LLM10, unbounded consumption). | v9 delta #3 | Accepted (owner, 2026-11-13, decision card) |
@@ -226,8 +232,9 @@ Re-checked 2026-11-13 against spec v16.
 
 Before build: the SR-16 security review of LiteLLM, and the A-1 spike. A
 failed review or spike sends the spec back to the owner. F-002 is not built
-yet, so until it is, a role goes onto an endpoint rung only through
-`engine/config/models.yaml` and a hygiene item (§ 2 item 5).
+yet, so until it is, a role goes onto an endpoint rung only through the
+project manifest's `settings.agents.<role>` and a hygiene item (§ 2 item 5,
+OQ-11).
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -250,6 +257,9 @@ yet, so until it is, a role goes onto an endpoint rung only through
 | 16 | 2026-11-13 | H-0135 to H-0139 and widened A-1 approved; ADR 0019 Accepted; readiness gate passed | Owner, 2026-11-13 (decision card) |
 | 16 | 2026-11-13 | Spec v16 signed off; status Approved | Owner, 2026-11-13 (decision card, confirmed) |
 | 17 | 2026-11-13 | Stage 5: S4.1 review of LiteLLM; OQ-9 decided (a), SR-17 added with its conditions and accepted residual risk | Owner, 2026-11-13 (decision card) |
+| 18 | 2026-11-13 | A-1 spike: tool calls pass through LiteLLM in both formats; Claude Code fails on mid-conversation system messages with the server's template; OQ-10 opened | — |
+| 19 | 2026-11-13 | OQ-10 decided (a): the gateway folds mid-conversation system messages (FR-16, AC-18) | Owner, 2026-11-13 (decision card) |
+| 20 | 2026-11-13 | Security Gate 2 ([F-013-security-gate2.md](F-013-security-gate2.md)) and owner decisions: OQ-11 (a) role assignment in the project manifest; OQ-12 (a) LiteLLM 1.108.x LTS once 14 days old; OQ-13 (a) bundled cosign; OQ-14 (b) keys as environment variables, risk accepted (SR-18); SR-1 adds `/v1/chat/completions` for `api: openai` | Owner, 2026-11-13 (decision cards; recording approved in the thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -263,3 +273,8 @@ yet, so until it is, a role goes onto an endpoint rung only through
 | OQ-7 | Sending code to a public, third-party endpoint. (a) Allowed per project only after a Security decision naming the endpoint, its operator and its data-retention and training terms; private endpoints need only the manifest list. (b) The manifest list alone for every endpoint. **Recommended: (a)**: a third party receiving a project's code is a new external service under S9.1 and widens access under S8.5, which the standards make the owner's Security decision. | Security | Decided (owner, 2026-11-13, in the thread): (b); "evaluating these things is outside the scope of the project. the user should evaluate terms and security of the endpoint/model independently and within their own organization's guidelines" |
 | OQ-8 | Use an existing LLM gateway instead of building our own translator and billing? (a) LiteLLM in its own container behind the factory's gateway. (b) Build our own in the Node gateway. (c) Anthropic-format endpoints only. **Recommended: (a).** | Architecture | Decided (owner, 2026-11-13, in the thread and decision card): (a) |
 | OQ-9 | The SR-16 review of LiteLLM ([F-013-litellm-review.md](F-013-litellm-review.md)) found two release compromises in 2026 and several Critical advisories. (a) Accept with six conditions and the residual risk. (b) A smaller proxy. (c) Anthropic-format endpoints only. (d) Our own translator. **Recommended: (a).** | Security | Decided (owner, 2026-11-13, decision card): (a); conditions in SR-17 |
+| OQ-10 | Claude Code sends a `system` message after the first user message (it holds the environment section of its own prompt), and strict chat templates such as the owner's Qwen one reject it. Tested 2026-11-13 ([F-013-spike-a1.md](F-013-spike-a1.md)): LiteLLM's setting doesn't cover it; folding it into the top-level system prompt and inlining it as a `[system]` user message both pass and keep the prompt cache. (a) Fold. (b) Inline. (c) Change the server's template. **Recommended: (a).** | Architecture | Decided (owner, 2026-11-13, decision card): (a); FR-16 |
+| OQ-11 | Where a role is assigned to an endpoint (with its Claude fallback, and a gate role's advisory endpoint). (a) Project manifest `settings.agents.<role>`, private, per project, Project manifest v1.6. (b) Master `engine/config/models.yaml`. (c) The PC-local endpoints file. **Recommended: (a).** | Interfaces | Decided (owner, 2026-11-13, decision card): (a); FR-1, § 2 item 5 |
+| OQ-12 | Which LiteLLM release the factory runs (Gate 2 H1: the code pinned 1.109.1, approved only for the no-secrets spike). (a) The newest 1.108.x LTS release at least 14 days old, once one exists (from 18 Nov); endpoints unavailable until then. (b) 1.106.4 now. (c) Keep 1.109.1 with keys. **Recommended: (a).** | Security | Decided (owner, 2026-11-13, decision card): (a) |
+| OQ-13 | Verifying LiteLLM's image signature (SR-17). (a) Bundle cosign, pinned by hash, and verify against LiteLLM's key at a pinned commit before first use. (b) Verify by hand per pin, recorded in the hygiene item. **Recommended: (a).** | Security | Decided (owner, 2026-11-13, decision card): (a) |
+| OQ-14 | How endpoint keys reach the LiteLLM container. (a) A file on a memory-only mount. (b) Environment variables, readable with `docker inspect` on the PC. **Recommended: (a).** | Security | Decided (owner, 2026-11-13, decision card): (b), risk accepted (SR-18) |
