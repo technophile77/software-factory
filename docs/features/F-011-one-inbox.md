@@ -6,7 +6,7 @@
   approval and merge in the inbox, no machine account; phone approvals,
   F-012; "can't [a VS Code issues extension] be used in place of the
   inbox?", proposal 0026)
-- **Spec version:** 28 (draft)
+- **Spec version:** 29
 - **Replaces:** F-001's inbox view and all of F-012 (both superseded by this
   version, see their change logs). Their approved requirements that still
   apply are carried here, each marked with where it came from.
@@ -204,7 +204,10 @@ session), SR-13 (`approved_merge` entry; replaced by `merged_on_github` in
 the record, SR-2).
 
 ## 10. Interface requirements
-Drafts, not yet approved. Each is applied only after the owner approves it.
+H-0161 to H-0165 approved by the owner, 2026-11-13 (decision card). Applied in
+this PR: H-0165 (Inbox item v3.0 in `docs/interface-contracts.md`) and the doc
+edits of H-0164. H-0161 to H-0163, and H-0164's removal of the extension, are
+applied in the F-011 build, each as its own commit with its id.
 
 - **H-0161 (Hygiene):** the engine's issue store and action reader, built in
   the F-011 build (FR-1 to FR-11, FR-15): `engine/src/state/inbox.ts`
@@ -260,7 +263,7 @@ Drafts, not yet approved. Each is applied only after the owner approves it.
   H-0125). On approval it replaces the Inbox item entry in
   `docs/interface-contracts.md`.
 
-### H-0165 draft (Interfaces): Inbox item v3.0
+### H-0165 (approved and applied, owner, 2026-11-13, decision card, Interfaces): Inbox item v3.0
 - Used by: engine (files, reads, records), config repo workflow (opens,
   posts action comments), Microsoft's GitHub Pull Requests extension and
   GitHub Mobile (view only).
@@ -371,12 +374,14 @@ actor id), `merged_on_github` (merge commit, merged by), `closed_on_github`.
   (manifest `github` block) and H-0123 (`main` ruleset) stand unchanged.
 
 ## 11. Readiness gate
+Checked 2026-11-13 against spec v29.
+
 - [x] Clear objective
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit (A-1 to A-3 approved; A-2 checked in a spike before build)
-- [ ] Blocking decisions resolved (OQ-11 to OQ-13 decided; SRs and A-3 accepted; pending: H-0161 to H-0165)
+- [x] Blocking decisions resolved (OQ-11 to OQ-13 decided; SR-1 to SR-21 and A-1 to A-3 approved; H-0161 to H-0165 approved, H-0165 and H-0164's doc edits applied)
 
 Follow-ups outside this spec: F-003 stops writing `.factory/inbox/` and
 installs the workflow and query block; F-010's advisory path uses the admin
@@ -395,6 +400,7 @@ token (from v19).
 | 26 | 2026-11-13 | SR-17 to SR-21 approved; SR-1, SR-2, SR-4 approved as widened to every action | Owner, 2026-11-13 (decision card) |
 | 27 | 2026-11-13 | A-3 approved for the extension, web and Mobile | Owner, 2026-11-13 (decision card) |
 | 28 | 2026-11-13 | Migration is a one-time script deleted after use, not engine code (FR-16, AC-13, H-0161, H-0164) | Owner, 2026-11-13 (thread) |
+| 29 | 2026-11-13 | H-0161 to H-0165 approved; H-0165 and H-0164's doc edits applied; readiness gate passed | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 OQ-1 to OQ-10 are decided or withdrawn as recorded in v19 (git history);

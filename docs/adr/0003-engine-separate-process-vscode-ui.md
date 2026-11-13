@@ -1,6 +1,6 @@
 # 0003. Engine runs as a separate local process; VS Code extension is the UI
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by 0022: the VS Code UI for the inbox is Microsoft's GitHub Pull Requests extension; the engine stays a separate process
 - **Date:** 2026-11-08
 - **Decided by:** owner
 - **Decision item:** open decision 1; write-up in `docs/proposals/0001-vscode-extension.md`

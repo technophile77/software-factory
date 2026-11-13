@@ -1,6 +1,6 @@
 # 0009. Inbox items live on a dedicated factory/state branch
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by 0022: `factory/state` holds inbox records, not items
 - **Date:** 2026-11-08
 - **Decided by:** owner
 - **Decision item:** F-001 requirements interview, assumption A-2
