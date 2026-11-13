@@ -12,7 +12,7 @@ import type { Logger } from "../log";
 import type { RolePolicy } from "../policy/role-policy";
 import type { FromProxy, ProxyStart, ToProxy } from "../proxy/main";
 import { PROXY_PORT } from "../proxy/main";
-import type { ModelCredential, PinnedEndpoint } from "../proxy/server";
+import type { GrantDeadline, ModelCredential, PinnedEndpoint } from "../proxy/server";
 import { ROUTER_ALIAS, ROUTER_PORT, litellmConfig, litellmEnv } from "./litellm";
 import { AGENT_USER, CONTAINER_FLAGS, WORKSPACE } from "./session";
 
@@ -60,6 +60,8 @@ export interface RouterConfig {
   workDir: string;
   /** How long to wait for the router to answer its health check. Defaults to 15 minutes: the spike's first start took about 8 under a read-only root. */
   readyTimeoutMs?: number;
+  /** The measured speeds the gateway holds each of the session's requests to (F-013 FR-12); absent while none is known. */
+  deadline?: GrantDeadline;
 }
 
 const ROUTER_CONFIG_TARGET = "/app/config.yaml";
@@ -100,7 +102,7 @@ export class ProxyClient {
   private readonly pending = new Map<number, (m: Extract<FromProxy, { t: "fetched" }>) => void>();
   private readyWait: { resolve(v: { address: string }): void; reject(e: Error): void } | null = null;
 
-  constructor(private readonly child: Pick<ChildProcess, "stdin" | "stdout" | "on">, private readonly log: Logger) {
+  constructor(private readonly child: Pick<ChildProcess, "stdin" | "stdout" | "on">, private readonly log: Logger, private readonly onDeadline: () => void = () => undefined) {
     const rl = readline.createInterface({ input: child.stdout!, crlfDelay: Infinity });
     rl.on("line", (line) => this.onLine(line));
     child.on("exit", () => {
@@ -127,6 +129,7 @@ export class ProxyClient {
       r?.(m);
     } else if (m.t === "log") {
       // The proxy's record of each connection (SR-4, SR-21). It never holds a credential.
+      if (m.kind === "gateway" && m.status === 504 && m.reason === "deadline") this.onDeadline();
       const { t: _t, ...rest } = m;
       this.log.info(`proxy ${JSON.stringify(rest).slice(0, 1000)}`);
     }
@@ -177,6 +180,7 @@ export class SessionGroup {
   private readonly volumes = new Set<string>();
   private subnets: string[] = [];
   private seq = 0;
+  private deadlineSeen = false;
 
   constructor(private readonly c: GroupConfig) {
     const id = c.runId.toLowerCase();
@@ -184,6 +188,11 @@ export class SessionGroup {
     this.outside = dockerName(id, "out");
     this.proxyName = dockerName(id, "proxy");
     this.routerName = dockerName(id, "router");
+  }
+
+  /** True once the gateway stopped a request of this group's sessions at its FR-12 deadline (it answered 504). */
+  deadlineHit(): boolean {
+    return this.deadlineSeen;
   }
 
   private labels(): Record<string, string> {
@@ -245,7 +254,7 @@ export class SessionGroup {
     const child = this.c.docker.spawn(runArgs(spec));
     child.stderr?.resume();
     this.proxyChild = child;
-    this.proxy = new ProxyClient(child, this.c.log);
+    this.proxy = new ProxyClient(child, this.c.log, () => (this.deadlineSeen = true));
     await this.verify(spec);
     // The router starts before the proxy does because ProxyStart needs its address; it makes no
     // outbound call of its own until the proxy listens and its grant is in.
@@ -424,7 +433,7 @@ export class SessionGroup {
     };
     const webSearch = policy.role === "web-reader" && policy.tools.includes("WebSearch");
     if (o.upstream !== undefined && !this.c.router?.endpoints.some((e) => e.name === o.upstream)) throw new DockerError("the session names an endpoint this run doesn't route to");
-    this.proxy.send({ t: "grant", cred, session: name, role: policy.role, allow: policy.network, webSearch, ...(o.upstream !== undefined ? { upstream: o.upstream } : {}) });
+    this.proxy.send({ t: "grant", cred, session: name, role: policy.role, allow: policy.network, webSearch, ...(o.upstream !== undefined ? { upstream: o.upstream } : {}), ...(o.upstream !== undefined && this.c.router?.deadline ? { deadline: this.c.router.deadline } : {}) });
     try {
       await this.c.docker.run(runArgs(spec), { env: values });
       await this.verify(spec);

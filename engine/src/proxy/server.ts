@@ -16,6 +16,44 @@ const MAX_API_BODY = 32 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
 const CRED_RE = /^[A-Za-z0-9_-]{32,128}$/;
 
+/**
+ * The measured speeds an endpoint session's requests are held to (F-013
+ * FR-12). Each forwarded request gets its own deadline from them; see
+ * {@link requestDeadlineMs}.
+ */
+export interface GrantDeadline {
+  /** Prompt-processing speed, tokens per second (> 0). */
+  promptTps: number;
+  /** Generation speed, tokens per second (> 0). */
+  genTps: number;
+  /** Fixed allowance for connection and queueing, seconds (>= 0). */
+  marginS: number;
+}
+
+/** The `max_tokens` assumed for a request whose body has none. */
+export const DEFAULT_MAX_TOKENS = 8192;
+
+/**
+ * One request's deadline in ms: `marginS + promptTokens / promptTps + maxTokens / genTps`
+ * seconds. The gateway has no tokenizer for the endpoint's model, so the prompt
+ * is estimated as the body's length in bytes / 4; the body's `max_tokens` is
+ * the generation allowance, `DEFAULT_MAX_TOKENS` when it has none.
+ *
+ * @example
+ * // AC-11: 200 and 10 tokens/s, 60 s margin, a 400,000-byte body and max_tokens 4000: 60 + 500 + 400 s
+ * requestDeadlineMs({ promptTps: 200, genTps: 10, marginS: 60 }, Buffer.from(JSON.stringify({ max_tokens: 4000, p: "x".repeat(399_970) }))); // about 960000
+ */
+export function requestDeadlineMs(d: GrantDeadline, body: Buffer): number {
+  let max = DEFAULT_MAX_TOKENS;
+  try {
+    const m = (JSON.parse(body.toString("utf8")) as { max_tokens?: unknown }).max_tokens;
+    if (typeof m === "number" && Number.isFinite(m) && m > 0) max = m;
+  } catch {
+    // An unreadable body is refused by the router; the default allowance applies meanwhile.
+  }
+  return (d.marginS + body.length / 4 / d.promptTps + max / d.genTps) * 1000;
+}
+
 export interface Grant {
   session: string;
   role: string;
@@ -28,6 +66,8 @@ export interface Grant {
    * grant, not the agent, picks it: the gateway rewrites `model` to this name.
    */
   upstream?: string;
+  /** With `upstream`: the speeds each request is held to. Absent while no speed is known; requests then have only the idle timeout. */
+  deadline?: GrantDeadline;
   /**
    * `router` marks the LiteLLM container's own grant (its HTTP(S)_PROXY
    * credential): it may reach the pinned endpoints and nothing else, and has
@@ -339,6 +379,10 @@ export class EgressProxy {
   grant(cred: string, g: Grant): void {
     if (!CRED_RE.test(cred)) throw new Error("bad credential");
     if (g.kind === "router" && g.upstream !== undefined) throw new Error("a router grant has no upstream");
+    if (g.deadline !== undefined) {
+      const { promptTps, genTps, marginS } = g.deadline;
+      if (g.upstream === undefined || !(promptTps > 0 && Number.isFinite(promptTps) && genTps > 0 && Number.isFinite(genTps) && marginS >= 0 && Number.isFinite(marginS))) throw new Error("bad deadline");
+    }
     this.grants.set(cred, { ...g, allow: [...g.allow] });
   }
 
@@ -599,8 +643,29 @@ export class EgressProxy {
     const betas = this.allowedBetas(req, g, p, ep.host);
     if (betas.length > 0) headers["anthropic-beta"] = betas.join(",");
     const up = this.deps.httpRequest(router.address, router.port, { method: "POST", path: target, headers });
-    up.on("response", (ur) => this.relayCapped(req, res, ur, g, ep.host, p));
-    up.on("error", () => this.refuseRequest(req, res, 502, "the model router is unreachable", g, ep.host));
+    // FR-12: the whole request, reply included, is held to its own deadline; the engine learns of it from the log entry and runs the role on Claude.
+    let timer: NodeJS.Timeout | undefined;
+    let expired = false;
+    if (g.deadline) {
+      timer = setTimeout(() => {
+        expired = true;
+        this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host: ep.host, path: p, status: 504, reason: "deadline" });
+        up.destroy();
+        if (res.headersSent) res.destroy();
+        else {
+          res.writeHead(504, { "content-type": "text/plain", connection: "close" });
+          res.end("the model endpoint passed its deadline\n");
+        }
+        req.resume();
+      }, requestDeadlineMs(g.deadline, clean.body));
+      res.on("close", () => clearTimeout(timer));
+    }
+    up.on("response", (ur) => {
+      if (!expired) this.relayCapped(req, res, ur, g, ep.host, p);
+    });
+    up.on("error", () => {
+      if (!expired) this.refuseRequest(req, res, 502, "the model router is unreachable", g, ep.host);
+    });
     up.on("timeout", () => up.destroy(new Error("timeout")));
     up.end(clean.body);
   }

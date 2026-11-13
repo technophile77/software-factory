@@ -112,6 +112,7 @@ describe("runAdvisory (FR-11: never blocks the gate)", () => {
   const rung = { endpoint: "lan", model: "qwen3" };
   const route = (over: Partial<EndpointRoute> = {}): EndpointRoute => ({
     endpoint: {} as never, sdkModel: "lan", reportModel: "lan/qwen3", router: {} as never, upstream: "lan", waitedS: 0,
+    stopped: (reason) => ({ endpoint: "lan", reason, waited_s: 0, prompt_tokens: 1000 }),
     finish: () => ({ costUsd: 0, planShare: 0, chargesBudget: false }), abandon: () => undefined, ...over,
   });
   const deps = (over: Partial<AdvisoryDeps> = {}): AdvisoryDeps => ({
@@ -154,5 +155,34 @@ describe("runAdvisory (FR-11: never blocks the gate)", () => {
     expect(finished).toBe(1);
     expect(await runAdvisory(deps({ session: async () => ({ text: null, usage, failure: null }) }))).toMatchObject({ status: "failed" });
     expect(await runAdvisory(deps({ session: async () => ({ text: "}{", usage, failure: null }) }))).toMatchObject({ status: "failed" });
+  });
+});
+
+describe("runAdvisory past its deadline (FR-7, FR-12)", () => {
+  const rung = { endpoint: "lan", model: "qwen3" };
+
+  const stoppedRun = async (stopped: "deadline" | "wall_cap") => {
+    const reasons: string[] = [];
+    const costs: unknown[] = [];
+    const out = await runAdvisory({
+      plan: { kind: "run", rung }, role: "security-reviewer", standards: STANDARDS, promptTokens: 1000, allowed: ["lan"],
+      route: async () => ({
+        endpoint: {} as never, sdkModel: "lan", reportModel: "lan/qwen3", router: {} as never, upstream: "lan", waitedS: 0,
+        stopped: (reason) => (reasons.push(reason), { endpoint: "lan", reason, waited_s: 0, prompt_tokens: 1000 }), finish: () => ({ costUsd: 0, planShare: 0, chargesBudget: false }), abandon: () => undefined,
+      }),
+      session: async (): Promise<AdvisorySession> => ({ text: null, usage: { inputTokens: 5, outputTokens: 6, requests: 2 }, failure: "it reached the wall time cap", stopped }),
+      onCost: (_c, u) => costs.push(u), log: new MemoryLogger(),
+    });
+    expect(reasons).toEqual([stopped]);
+    expect(costs).toEqual([{ inputTokens: 5, outputTokens: 6, requests: 2 }]);
+    return out;
+  };
+
+  it("a request the gateway cut at its deadline ends the pass as failed with a fallback of reason deadline, so the gate runs without it", async () => {
+    expect(await stoppedRun("deadline")).toMatchObject({ status: "failed", endpoint: "lan", fallback: { endpoint: "lan", reason: "deadline", prompt_tokens: 1000 } });
+  });
+
+  it("the gate's own wall cap is recorded as wall_cap, not deadline", async () => {
+    expect(await stoppedRun("wall_cap")).toMatchObject({ status: "failed", fallback: { reason: "wall_cap" } });
   });
 });

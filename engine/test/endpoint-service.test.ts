@@ -1,7 +1,9 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { EndpointService, type EndpointServiceOptions } from "../src/agent/endpoint-service";
-import type { EndpointProbe } from "../src/agent/endpoint-check";
+import { EndpointService, type EndpointServiceOptions, estimateTokens } from "../src/agent/endpoint-service";
+import type { EndpointProbe, ModelIdentity } from "../src/agent/endpoint-check";
+import { requestDeadlineMs } from "../src/proxy/server";
 import { SessionGroup } from "../src/agent/sandbox";
 import { type Endpoint, validateEndpoints } from "../src/config/endpoints";
 import { type DockerCli, DockerError } from "../src/docker/cli";
@@ -33,7 +35,7 @@ interface Rig {
   opts: EndpointServiceOptions;
 }
 
-async function rig(config: EndpointServiceOptions["config"], o: { probe?: EndpointProbe; lookup?: EndpointServiceOptions["lookup"]; planFile?: string; clock?: FakeClock; keys?: Record<string, string> } = {}): Promise<Rig> {
+async function rig(config: EndpointServiceOptions["config"], o: { probe?: EndpointProbe; lookup?: EndpointServiceOptions["lookup"]; planFile?: string; clock?: FakeClock; keys?: Record<string, string>; identityFile?: string; onModelChanged?: (endpoint: string) => void } = {}): Promise<Rig> {
   const dir = tmpdir();
   const probed: Rig["probed"] = [];
   const clock = o.clock ?? new FakeClock();
@@ -45,6 +47,8 @@ async function rig(config: EndpointServiceOptions["config"], o: { probe?: Endpoi
     planFile: o.planFile ?? path.join(dir, "plans.json"), workDir: path.join(dir, "router"),
     image: async () => IMAGE,
     slotWaitMs: 10 * 60_000,
+    ...(o.identityFile ? { identityFile: o.identityFile } : {}),
+    ...(o.onModelChanged ? { onModelChanged: o.onModelChanged } : {}),
   };
   return { svc: await EndpointService.start(opts), clock, log, probed, opts };
 }
@@ -186,8 +190,9 @@ describe("EndpointService.route (FR-4, FR-7, FR-13)", () => {
 
   it("falls back, without holding the slot, when the router image can't be used", async () => {
     const r = await rig({ endpoints: endpoints() });
-    let fail = true;
+    let fail = false;
     const svc = await EndpointService.start({ ...r.opts, image: async () => { if (fail) throw new DockerError("the LiteLLM image's cosign signature hasn't been verified"); return IMAGE; } });
+    fail = true;
     expect(await svc.route(req)).toMatchObject({ fallback: { reason: expect.stringContaining("cosign") } });
     fail = false;
     expect("router" in (await svc.route(req))).toBe(true);
@@ -229,6 +234,31 @@ describe("a routed session group (FR-5)", () => {
     route.finish({ inputTokens: 1, outputTokens: 1, requests: 1 });
   });
 
+  it("FR-12: puts the measured rates in the agent's grant, and the group notes a gateway 504 deadline", async () => {
+    const r = await rig({ endpoints: endpoints() }, { probe: seededProbe });
+    const route = await r.svc.route({ rung: RUNG, role: "log-reader", allowed: ["lan"], promptTokens: 10 });
+    if (!("router" in route)) throw new Error("expected a route");
+    const d = new FakeDocker();
+    const group = new SessionGroup({
+      docker: d as unknown as DockerCli, runId: "R-0a1b2c-adv", project: "demo", agentImageId: `sha256:${"a".repeat(64)}`, proxyImageId: `sha256:${"b".repeat(64)}`,
+      proxyScript: "/opt/engine/dist/proxy.js", agentLimits: { "log-reader": LIMITS }, proxyLimits: LIMITS, maxPageBytes: 1 << 20,
+      credential: { kind: "api_key", value: "claude-credential-placeholder" }, log: new MemoryLogger(), platform: "linux", sleep: async () => undefined,
+      router: { ...route.router, workDir: tmpdir() },
+    });
+    await group.open();
+    const agent = await group.startAgent(POLICY, null, { upstream: route.upstream });
+    expect(d.spawned[0]!.child.sent().find((m) => m.t === "grant" && m.session === agent.name)).toMatchObject({ deadline: { promptTps: 200, genTps: 10, marginS: 60 } });
+    const log = (o: Record<string, unknown>) => d.spawned[0]!.child.stdout.write(`${JSON.stringify({ t: "log", kind: "gateway", session: agent.name, ...o })}\n`);
+    log({ status: 200 });
+    await settle();
+    expect(group.deadlineHit()).toBe(false);
+    log({ status: 504, reason: "deadline" });
+    await settle();
+    expect(group.deadlineHit()).toBe(true);
+    await group.close();
+    route.abandon();
+  });
+
   it("refuses an upstream the run's router doesn't serve, and a session on Claude has no upstream", async () => {
     const d = new FakeDocker();
     const group = new SessionGroup({
@@ -241,5 +271,152 @@ describe("a routed session group (FR-5)", () => {
     await group.startAgent(POLICY, null);
     expect(d.spawned[0]!.child.sent().find((m) => m.t === "grant" && m.role === "log-reader")).not.toHaveProperty("upstream");
     await group.close();
+  });
+});
+
+// Rates seeded the way the AC-11 example has them: 2,000 prompt tokens in 10 s is 200 per second, 100 generated in 10 s is 10 per second.
+const SEED_TIMING = { promptTokens: 2000, generatedTokens: 100, promptMs: 10_000, generatedMs: 10_000 };
+const seededProbe: EndpointProbe = async () => ({ ok: true, toolChecked: true, timing: SEED_TIMING });
+
+describe("request deadlines from measured rates (FR-12, AC-11)", () => {
+  const big = { rung: RUNG, role: "log-reader", allowed: ["lan"], promptTokens: 100_000 };
+  // A request body the gateway reads as 100,000 prompt tokens (400,000 bytes / 4) and max_tokens 4,000.
+  const body = Buffer.from(JSON.stringify({ max_tokens: 4000, p: "x".repeat(400_000 - 40) }));
+
+  it("AC-11: the probe seeds the rates the grant carries, so the gateway's deadline for that request is 60 + 500 + 400 = 960 s", async () => {
+    const r = await rig({ endpoints: endpoints() }, { probe: seededProbe });
+    const got = await r.svc.route(big);
+    if (!("router" in got)) throw new Error("expected a route");
+    expect(got.router.deadline).toEqual({ promptTps: 200, genTps: 10, marginS: 60 });
+    expect(requestDeadlineMs(got.router.deadline!, body)).toBeCloseTo(960_000, -2);
+    got.abandon();
+  });
+
+  it("uses the endpoint's own deadline.margin_s", async () => {
+    const r = await rig({ endpoints: endpoints({ lan: { deadline: { margin_s: 100 } } }) }, { probe: seededProbe });
+    const got = await r.svc.route(big);
+    if (!("router" in got)) throw new Error("expected a route");
+    expect(got.router.deadline).toEqual({ promptTps: 200, genTps: 10, marginS: 100 });
+    got.abandon();
+  });
+
+  it("has no grant deadline while no rate is known", async () => {
+    const r = await rig({ endpoints: endpoints() });
+    const got = await r.svc.route(big);
+    if (!("router" in got)) throw new Error("expected a route");
+    expect(got.router.deadline).toBeUndefined();
+    got.abandon();
+  });
+
+  it("records a finished session's usage and duration, reports them by band, and prefers them to the seed afterwards", async () => {
+    const r = await rig({ endpoints: endpoints() }, { probe: seededProbe });
+    expect(r.svc.bandReports()).toEqual([]);
+    const got = await r.svc.route(big);
+    if (!("router" in got)) throw new Error("expected a route");
+    r.clock.t += 10_000;
+    got.finish({ inputTokens: 1000, outputTokens: 100, requests: 2 });
+    // 1,100 tokens in 10 s is 110 per second, for both rates (wall time split by tokens).
+    const report = r.svc.bandReports();
+    expect(report).toHaveLength(1);
+    expect(report[0]).toMatchObject({ endpoint: "lan", model: "qwen3" });
+    expect(report[0]!.bands[0]).toEqual({ band: "<8k", count: 1, medianPromptRate: 110, medianGenRate: 110 });
+    expect(report[0]!.bands.slice(1).map((b) => b.count)).toEqual([0, 0, 0]);
+    const next = await r.svc.route(big);
+    if (!("router" in next)) throw new Error("expected a route");
+    expect(next.router.deadline).toEqual({ promptTps: 110, genTps: 110, marginS: 60 });
+    next.abandon();
+  });
+
+  it("a stopped session is recorded as a fallback with the given reason, frees its slot and adds no sample", async () => {
+    const r = await rig({ endpoints: endpoints() }, { probe: seededProbe });
+    const got = await r.svc.route(big);
+    if (!("router" in got)) throw new Error("expected a route");
+    r.clock.t += 960_000;
+    expect(got.stopped("deadline")).toEqual({ endpoint: "lan", reason: "deadline", waited_s: 0, prompt_tokens: 100_000 });
+    got.finish({ inputTokens: 5, outputTokens: 5, requests: 1 });
+    expect(r.svc.bandReports()).toEqual([]);
+    expect(r.log.text()).toContain("deadline");
+    expect("router" in (await r.svc.route(big))).toBe(true);
+  });
+
+  it("records the gate's own wall cap as wall_cap", async () => {
+    const r = await rig({ endpoints: endpoints() }, { probe: seededProbe });
+    const got = await r.svc.route(big);
+    if (!("router" in got)) throw new Error("expected a route");
+    expect(got.stopped("wall_cap").reason).toBe("wall_cap");
+    got.abandon();
+  });
+
+  it("estimates tokens as one per four characters, rounded up", () => {
+    expect(estimateTokens("a".repeat(400))).toBe(100);
+    expect(estimateTokens("abcde")).toBe(2);
+    expect(estimateTokens("")).toBe(0);
+  });
+});
+
+describe("a changed endpoint model (SR-11)", () => {
+  const probeOf = (identity: ModelIdentity): EndpointProbe => async () => ({ ok: true, toolChecked: true, identity, timing: SEED_TIMING });
+  const QWEN = { name: "qwen3", params: 8_190_735_360, sizeBytes: 5_027_783_680, quant: "Q4_K_M" };
+
+  it("keeps the identity, and tells nobody the first time or when it is unchanged", async () => {
+    const file = path.join(tmpdir(), "models.json");
+    const changed: string[] = [];
+    const first = await rig({ endpoints: endpoints() }, { probe: probeOf(QWEN), identityFile: file, onModelChanged: (n) => changed.push(n) });
+    expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual({ lan: { model: "qwen3", identity: QWEN } });
+    const again = await rig({ endpoints: endpoints() }, { probe: probeOf({ ...QWEN }), identityFile: file, onModelChanged: (n) => changed.push(n) });
+    expect(changed).toEqual([]);
+    expect(first.svc.statuses()[0]).not.toHaveProperty("notice");
+    expect(again.svc.statuses()[0]).not.toHaveProperty("notice");
+    expect(again.log.text()).not.toContain("changed");
+  });
+
+  it.each([
+    ["parameter count", { ...QWEN, params: 14_000_000_000 }],
+    ["byte size", { ...QWEN, sizeBytes: 9_000_000_000 }],
+    ["quant type", { ...QWEN, quant: "Q8_0" }],
+    ["name", { ...QWEN, name: "qwen3-instruct" }],
+  ])("a different %s counts as a new model: it is stored, logged, shown in the status and passed on so the match rate resets", async (_what, next) => {
+    const file = path.join(tmpdir(), "models.json");
+    await rig({ endpoints: endpoints() }, { probe: probeOf(QWEN), identityFile: file });
+    const changed: string[] = [];
+    const r = await rig({ endpoints: endpoints() }, { probe: probeOf(next), identityFile: file, onModelChanged: (n) => changed.push(n) });
+    expect(changed).toEqual(["lan"]);
+    const st = r.svc.statuses()[0]!;
+    expect(st).toMatchObject({ name: "lan", available: true, notice: expect.stringContaining("model changed") });
+    expect(r.log.text()).toContain("model changed");
+    expect(JSON.stringify([st, r.log.lines])).not.toContain("llm.example");
+    expect(JSON.parse(fs.readFileSync(file, "utf8")).lan.identity).toEqual(next);
+  });
+
+  it("a probe that reports no identity changes nothing", async () => {
+    const file = path.join(tmpdir(), "models.json");
+    await rig({ endpoints: endpoints() }, { probe: probeOf(QWEN), identityFile: file });
+    const r = await rig({ endpoints: endpoints() }, { probe: seededProbe, identityFile: file });
+    expect(r.svc.statuses()[0]).not.toHaveProperty("notice");
+    expect(JSON.parse(fs.readFileSync(file, "utf8")).lan.identity).toEqual(QWEN);
+  });
+});
+
+describe("the LiteLLM image at engine start (AC-16)", () => {
+  it("a failing image check at start makes every endpoint rung unavailable with the reason, without probing", async () => {
+    const r = await rig({ endpoints: endpoints({ other: {} }) });
+    const probed: string[] = [];
+    const svc = await EndpointService.start({
+      ...r.opts, probe: async (e) => (probed.push(e.name), { ok: true, toolChecked: true }),
+      image: async () => { throw new DockerError("the LiteLLM image doesn't carry the pinned digest"); },
+    });
+    expect(probed).toEqual([]);
+    for (const st of svc.statuses()) expect(st).toMatchObject({ available: false, reason: expect.stringContaining("pinned digest") });
+    expect(svc.unavailable(RUNG)).toContain("pinned digest");
+  });
+
+  it("checks the image once at start, not at first use, and not at all with no endpoint configured", async () => {
+    let calls = 0;
+    const image = async () => (calls++, IMAGE);
+    const r = await rig({ endpoints: endpoints() });
+    await EndpointService.start({ ...r.opts, image });
+    expect(calls).toBe(1);
+    await EndpointService.start({ ...r.opts, image, config: { endpoints: [] } });
+    expect(calls).toBe(1);
   });
 });

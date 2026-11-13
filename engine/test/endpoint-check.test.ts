@@ -1,7 +1,7 @@
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { httpProbe } from "../src/agent/endpoint-check";
+import { httpProbe, identityOf, timingOf } from "../src/agent/endpoint-check";
 import type { PinnedEndpoint } from "../src/config/endpoint-address";
 import { type Endpoint, validateEndpoints } from "../src/config/endpoints";
 
@@ -47,7 +47,7 @@ const TOOL_USE = { content: [{ type: "tool_use", id: "t1", name: "get_status", i
 describe("httpProbe (F-013 FR-6)", () => {
   it("AC-6: passes an Anthropic-format endpoint that lists the model and answers the tool request with a tool_use, sending the key as x-api-key", async () => {
     const { pin, seen } = await serve((r) => ({ body: r.url === "/v1/models" ? MODELS : TOOL_USE }));
-    expect(await httpProbe(endpoint({ api_key_ref: "lan-key" }), pin, "the-key")).toEqual({ ok: true, toolChecked: true });
+    expect(await httpProbe(endpoint({ api_key_ref: "lan-key" }), pin, "the-key")).toMatchObject({ ok: true, toolChecked: true });
     expect(seen.map((s) => `${s.method} ${s.url}`)).toEqual(["GET /v1/models", "POST /v1/messages"]);
     expect(seen.every((s) => s.headers["x-api-key"] === "the-key" && s.headers.authorization === undefined)).toBe(true);
     expect(seen[0]!.headers.host).toBe(`llm.example:${pin.port}`);
@@ -58,7 +58,7 @@ describe("httpProbe (F-013 FR-6)", () => {
 
   it("accepts llama-server's model list shape, and sends no key header when there is none", async () => {
     const { pin, seen } = await serve((r) => ({ body: r.url === "/v1/models" ? { models: [{ name: "qwen3", model: "qwen3" }] } : TOOL_USE }));
-    expect(await httpProbe(endpoint(), pin, null)).toEqual({ ok: true, toolChecked: true });
+    expect(await httpProbe(endpoint(), pin, null)).toMatchObject({ ok: true, toolChecked: true });
     expect(seen[0]!.headers["x-api-key"]).toBeUndefined();
   });
 
@@ -79,7 +79,7 @@ describe("httpProbe (F-013 FR-6)", () => {
 
   it("checks an OpenAI-format endpoint's model list only, sending the key as a bearer token", async () => {
     const { pin, seen } = await serve(() => ({ body: MODELS }));
-    expect(await httpProbe(endpoint({ api: "openai", api_key_ref: "lan-key" }), pin, "the-key")).toEqual({ ok: true, toolChecked: false });
+    expect(await httpProbe(endpoint({ api: "openai", api_key_ref: "lan-key" }), pin, "the-key")).toMatchObject({ ok: true, toolChecked: false });
     expect(seen).toHaveLength(1);
     expect(seen[0]!.headers.authorization).toBe("Bearer the-key");
     expect(seen[0]!.headers["x-api-key"]).toBeUndefined();
@@ -99,5 +99,32 @@ describe("httpProbe (F-013 FR-6)", () => {
     const { pin } = await serve(() => ({ status: 302, body: "" }));
     expect((await httpProbe(endpoint(), pin, "k")).ok).toBe(false);
     expect(other.seen).toHaveLength(0);
+  });
+});
+
+describe("what the check learns for SR-11 and FR-12", () => {
+  const LLAMA_MODELS = { data: [{ id: "qwen3", owned_by: "llamacpp", meta: { n_params: 8_190_735_360, size: 5_027_783_680 } }] };
+
+  it("identityOf keeps whatever the model list reports for the configured model, and nothing else", () => {
+    expect(identityOf(JSON.stringify(LLAMA_MODELS), "qwen3")).toEqual({ name: "qwen3", params: 8_190_735_360, sizeBytes: 5_027_783_680, ownedBy: "llamacpp" });
+    expect(identityOf(JSON.stringify({ models: [{ name: "qwen3", size: 42, details: { quantization_level: "Q4_K_M", parameter_count: 7 } }] }), "qwen3")).toEqual({ name: "qwen3", params: 7, sizeBytes: 42, quant: "Q4_K_M" });
+    expect(identityOf(JSON.stringify({ data: [{ id: "qwen3" }] }), "qwen3")).toEqual({ name: "qwen3" });
+    expect(identityOf(JSON.stringify(LLAMA_MODELS), "other")).toBeUndefined();
+    expect(identityOf("not json", "qwen3")).toBeUndefined();
+  });
+
+  it("timingOf prefers the server's timings, else the usage token counts with the wall time", () => {
+    expect(timingOf(JSON.stringify({ timings: { prompt_n: 100, prompt_ms: 500, predicted_n: 20, predicted_ms: 2000 } }), 3000)).toEqual({ promptTokens: 100, generatedTokens: 20, promptMs: 500, generatedMs: 2000, wallMs: 3000 });
+    expect(timingOf(JSON.stringify({ usage: { input_tokens: 30, output_tokens: 10 } }), 4000)).toEqual({ promptTokens: 30, generatedTokens: 10, wallMs: 4000 });
+    expect(timingOf(JSON.stringify({ content: [] }), 4000)).toBeUndefined();
+    expect(timingOf("nope", 4000)).toBeUndefined();
+  });
+
+  it("httpProbe returns the identity and the measured timing of the endpoint it checked", async () => {
+    const { pin } = await serve((req) => (req.method === "GET"
+      ? { body: LLAMA_MODELS }
+      : { body: { content: [{ type: "tool_use", name: "get_status", input: {} }], usage: { input_tokens: 40, output_tokens: 12 }, timings: { prompt_n: 40, prompt_ms: 200, predicted_n: 12, predicted_ms: 1200 } } }));
+    const r = await httpProbe(endpoint(), pin, null);
+    expect(r).toMatchObject({ ok: true, toolChecked: true, identity: { name: "qwen3", params: 8_190_735_360 }, timing: { promptTokens: 40, generatedTokens: 12, promptMs: 200, generatedMs: 1200 } });
   });
 });

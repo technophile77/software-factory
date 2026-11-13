@@ -291,23 +291,23 @@ export class RateTracker {
    * negative time, zero tokens) yield no rate for that metric.
    */
   record(endpoint: string, model: string, s: RateSample): void {
-    const reported = s.promptMs !== undefined || s.generatedMs !== undefined;
-    let promptRate: number | null;
-    let genRate: number | null;
-    if (reported) {
-      promptRate = rate(s.promptTokens, s.promptMs);
-      genRate = rate(s.generatedTokens, s.generatedMs);
-    } else {
-      const total = rate(s.promptTokens + s.generatedTokens, s.wallMs);
-      promptRate = s.promptTokens > 0 ? total : null;
-      genRate = s.generatedTokens > 0 ? total : null;
-    }
+    const { promptRate, genRate } = ratesOf(s);
     if (promptRate === null && genRate === null) return;
     const k = RateTracker.key(endpoint, model);
     const list = this.samples.get(k) ?? [];
     list.push({ promptTokens: s.promptTokens, promptRate, genRate });
     if (list.length > RATE_WINDOW) list.splice(0, list.length - RATE_WINDOW);
     this.samples.set(k, list);
+  }
+
+  /**
+   * Forgets the samples and the seed of an endpoint+model: its model was
+   * swapped (SR-11), so what was measured says nothing about the new one.
+   */
+  reset(endpoint: string, model: string): void {
+    const k = RateTracker.key(endpoint, model);
+    this.samples.delete(k);
+    this.seeds.delete(k);
   }
 
   /** Current median rates, falling back per metric to the seed, then null. */
@@ -350,6 +350,22 @@ export class RateTracker {
       };
     });
   }
+}
+
+/**
+ * The rates one timing amounts to: server-reported times win; without them the
+ * wall time is split in proportion to tokens, so both rates equal total tokens /
+ * wall time. A crude estimate, but the only one available.
+ *
+ * @example
+ * ratesOf({ promptTokens: 1000, generatedTokens: 50, promptMs: 5000, generatedMs: 5000 }); // { promptRate: 200, genRate: 10 }
+ */
+export function ratesOf(s: RateSample): Rates {
+  if (s.promptMs !== undefined || s.generatedMs !== undefined) {
+    return { promptRate: rate(s.promptTokens, s.promptMs), genRate: rate(s.generatedTokens, s.generatedMs) };
+  }
+  const total = rate(s.promptTokens + s.generatedTokens, s.wallMs);
+  return { promptRate: s.promptTokens > 0 ? total : null, genRate: s.generatedTokens > 0 ? total : null };
 }
 
 function rate(tokens: number, ms: number | undefined): number | null {

@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { SessionRefused, runAnalystSession } from "./agent/analyst";
 import { type EndpointProbe, httpProbe } from "./agent/endpoint-check";
-import { EndpointService, type EndpointStatus } from "./agent/endpoint-service";
+import { EndpointService, type EndpointStatus, estimateTokens } from "./agent/endpoint-service";
 import { AgentRuntime, TurnQueue, populateWorktree, prepareWorktree, sweepLeftovers } from "./agent/runtime";
 import { runReviewerSessions, reviewerPolicy } from "./agent/reviewer";
 import type { RouterConfig } from "./agent/sandbox";
@@ -256,7 +256,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     config: endpointConfig, credentials, clock, log,
     lookup: o.endpoints?.lookup ?? ((host) => dnsLookup(host, { all: true })),
     probe: o.endpoints?.probe ?? httpProbe,
-    planFile: path.join(home, "endpoint-plans.json"), workDir: path.join(home, "router"),
+    planFile: path.join(home, "endpoint-plans.json"), identityFile: path.join(home, "endpoint-models.json"), workDir: path.join(home, "router"),
     ...(o.endpoints?.slotWaitMs !== undefined ? { slotWaitMs: o.endpoints.slotWaitMs } : {}),
     ...(o.agents ? {
       image: () => {
@@ -1162,7 +1162,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         let advUsage: RunUsage | null = null;
         const adv = await runAdvisory({
           plan: planAdvisory({ role: REVIEWER_ROLE, assignment: manifestAssignments(m.raw).get(REVIEWER_ROLE), claudeDefault: model!, allowed: m.endpoints, unavailable: (r) => endpointSvc.unavailable(r) }),
-          role: REVIEWER_ROLE, standards: loaded.standards, allowed: m.endpoints, promptTokens: Math.ceil(first.length / 4),
+          role: REVIEWER_ROLE, standards: loaded.standards, allowed: m.endpoints, promptTokens: estimateTokens(first),
           route: (req) => endpointSvc.route(req),
           session: async (route) => {
             fs.rmSync(advDir, { recursive: true, force: true });
@@ -1187,10 +1187,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           },
           log,
         });
+        const rates = endpointSvc.bandReports();
+        if (rates.length) facts.endpoint_rates = rates;
         if (adv.status !== "none") {
           facts.advisory = {
             endpoint: adv.endpoint, status: adv.status, ...(adv.status !== "ok" ? { reason: adv.reason } : {}),
             ...(adv.status === "ok" ? { model: adv.model, hints: adv.hints.findings.length, dropped: adv.hints.dropped } : {}), ...(advUsage ? { usage: advUsage } : {}),
+            ...(adv.status !== "ok" && adv.fallback ? { fallback: adv.fallback } : {}),
           };
         }
         if (adv.status === "ok" && adv.hints.findings.length) {

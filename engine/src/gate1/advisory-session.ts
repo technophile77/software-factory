@@ -37,9 +37,12 @@ export async function runAdvisorySession(i: AdvisorySessionInput): Promise<Advis
     onUsed: () => undefined,
     onSessionId: () => undefined,
   });
+  // A request the gateway cut at its FR-12 deadline counts first, whatever the session did after the 504; the gate's own wall cap is a different stop.
+  const stopped = i.group.deadlineHit() ? "deadline" : r.outcome.status === "cap" && r.outcome.reason === "wall time" ? "wall_cap" : undefined;
   return {
     text: r.invalid === null ? text : null,
     usage: { inputTokens: r.outcome.inputTokens, outputTokens: r.outcome.outputTokens, requests: r.outcome.turns },
     failure: r.invalid,
+    ...(stopped ? { stopped } : {}),
   };
 }

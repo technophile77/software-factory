@@ -2,7 +2,7 @@
 // message per line on stdin from the engine, one per line on stdout back.
 import * as os from "node:os";
 import * as readline from "node:readline";
-import { EgressProxy, PinnedEndpoint, ProxyLog, Refused, RouterTarget } from "./server";
+import { EgressProxy, GrantDeadline, PinnedEndpoint, ProxyLog, Refused, RouterTarget } from "./server";
 import { blockedAddress, parseCidr, toBits } from "./rules";
 
 export const PROXY_PORT = 3128;
@@ -24,7 +24,7 @@ export interface ProxyStart {
 
 export type ToProxy =
   | ProxyStart
-  | { t: "grant"; cred: string; session: string; role: string; allow: string[]; webSearch?: boolean; upstream?: string; kind?: "agent" | "router" }
+  | { t: "grant"; cred: string; session: string; role: string; allow: string[]; webSearch?: boolean; upstream?: string; deadline?: GrantDeadline; kind?: "agent" | "router" }
   | { t: "revoke"; cred: string }
   | { t: "endpoints"; list: PinnedEndpoint[] }
   | { t: "fetch"; id: number; cred: string; url: string };
@@ -95,7 +95,7 @@ function main(): void {
     }
     if (!proxy) return send({ t: "error", reason: "not started" });
     try {
-      if (m.t === "grant") proxy.grant(m.cred, { session: m.session, role: m.role, allow: m.allow, webSearch: m.webSearch === true, upstream: m.upstream, kind: m.kind });
+      if (m.t === "grant") proxy.grant(m.cred, { session: m.session, role: m.role, allow: m.allow, webSearch: m.webSearch === true, upstream: m.upstream, kind: m.kind, ...(m.deadline ? { deadline: m.deadline } : {}) });
       else if (m.t === "revoke") proxy.revoke(m.cred);
       else if (m.t === "endpoints") proxy.setEndpoints(m.list);
       else if (m.t === "fetch") {

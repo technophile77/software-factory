@@ -5,7 +5,7 @@ import { htmlToText, pageText, stripInvisible } from "../src/agent/page-text";
 import { addressOn } from "../src/proxy/main";
 import { blockedAddress, hostAllowed, normalHost, parseCidr, toBits } from "../src/proxy/rules";
 import { inSubnet } from "../src/proxy/main";
-import { ALLOWED_BETAS, ENDPOINT_BODY_FIELDS, EgressProxy, PinnedEndpoint, ProxyDeps, ProxyLog, Resolved, refusedBody, sanitizeEndpointBody } from "../src/proxy/server";
+import { ALLOWED_BETAS, ENDPOINT_BODY_FIELDS, EgressProxy, PinnedEndpoint, ProxyDeps, ProxyLog, Resolved, refusedBody, requestDeadlineMs, sanitizeEndpointBody } from "../src/proxy/server";
 
 describe("SR-8 address rules", () => {
   it("refuses loopback, private, CGNAT, link-local, unique-local, multicast, unspecified and mapped forms", () => {
@@ -126,6 +126,7 @@ async function harness(o: { dns?: Record<string, string[]>; kind?: "api_key" | "
           setTimeout(() => res.end("b".repeat(600)), 20);
           return;
         }
+        if (key.includes("ROUTER-SLOW")) return; // never answers: the gateway's deadline must end it
         if (key.includes("/declared-big") || key.includes("ROUTER-DECLARED-BIG")) return void res.writeHead(200, { "content-length": "5000" }).end("x".repeat(5000));
         res.writeHead(200, { "content-type": "application/json" });
         res.end('{"ok":true}');
@@ -424,6 +425,34 @@ describe("endpoint gateway (F-013 FR-5, SR-13, SR-17, AC-4)", () => {
     expect((await post(h.port, `/gw/${ROUTER_CRED}/v1/messages`, { "x-api-key": DUMMY }, JSON.stringify(MESSAGES))).status).toBe(403);
     expect(() => h.proxy.grant("q".repeat(43), { session: "s", role: "r", allow: [], kind: "router", upstream: "local" })).toThrow();
     expect(h.router.paths).toHaveLength(0);
+  });
+
+  it("FR-12: a request still running past its own deadline is aborted upstream, answered 504 and logged with reason deadline", async () => {
+    const h = await endpointHarness();
+    const SLOW = "s".repeat(43);
+    // 0.05 s margin + 10 tokens at 100/s: about 0.15 s.
+    h.proxy.grant(SLOW, { session: "s5", role: "x", allow: [], upstream: "local", deadline: { promptTps: 1000, genTps: 100, marginS: 0.05 } });
+    const marked = (m: string) => JSON.stringify({ ...MESSAGES, messages: [{ role: "user", content: m }] });
+    const r = await post(h.port, `/gw/${SLOW}/v1/messages`, { "x-api-key": DUMMY }, marked("ROUTER-SLOW"));
+    expect(r.status).toBe(504);
+    expect(r.body).toContain("deadline");
+    expect(h.logs.filter((l) => l.kind === "gateway" && l.reason === "deadline")).toEqual([expect.objectContaining({ session: "s5", status: 504 })]);
+    expect(JSON.stringify(h.logs)).not.toContain(ROUTER.address);
+    // A request that answers in time is untouched by the same grant.
+    expect((await post(h.port, `/gw/${SLOW}/v1/messages`, { "x-api-key": DUMMY }, marked("plain"))).status).toBe(200);
+  });
+
+  it("FR-12: the deadline is marginS + prompt/promptTps + max_tokens/genTps, the prompt being body bytes / 4 and max_tokens 8192 when absent", () => {
+    const d = { promptTps: 200, genTps: 10, marginS: 60 };
+    expect(requestDeadlineMs(d, Buffer.from(JSON.stringify({ max_tokens: 4000, p: "x".repeat(400_000 - 40) })))).toBeCloseTo(960_000, -2);
+    expect(requestDeadlineMs({ promptTps: 100, genTps: 100, marginS: 1 }, Buffer.from("{}"))).toBeCloseTo((1 + 0.5 / 100 + 8192 / 100) * 1000, 3);
+    expect(requestDeadlineMs({ promptTps: 100, genTps: 100, marginS: 1 }, Buffer.from("not json"))).toBeCloseTo((1 + 2 / 100 + 8192 / 100) * 1000, 3);
+  });
+
+  it("refuses a malformed grant deadline, and one without an upstream", async () => {
+    const h = await endpointHarness();
+    expect(() => h.proxy.grant("a".repeat(43), { session: "s", role: "r", allow: [], upstream: "local", deadline: { promptTps: 0, genTps: 1, marginS: 1 } })).toThrow();
+    expect(() => h.proxy.grant("b".repeat(43), { session: "s", role: "r", allow: [], deadline: { promptTps: 1, genTps: 1, marginS: 1 } })).toThrow();
   });
 
   it("SR-13: a redirect from the router is refused, not followed", async () => {

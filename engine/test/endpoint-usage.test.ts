@@ -5,6 +5,7 @@ import {
   RateTracker,
   costFor,
   median,
+  ratesOf,
   type Lease,
   type Plan,
   type PlanLimit,
@@ -277,5 +278,26 @@ describe("PlanCounter (AC-14)", () => {
       }
       expect(log.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("RateTracker.reset and ratesOf (SR-11, FR-12)", () => {
+  it("reset forgets the samples and the seed of one endpoint+model, and leaves others", () => {
+    const t = new RateTracker();
+    t.seed("a", "m", { promptRate: 200, genRate: 10 });
+    t.record("a", "m", { promptTokens: 1000, generatedTokens: 100, promptMs: 5000, generatedMs: 10_000 });
+    t.seed("b", "m", { promptRate: 50, genRate: 5 });
+    t.reset("a", "m");
+    expect(t.rates("a", "m")).toEqual({ promptRate: null, genRate: null });
+    expect(t.deadlineMs("a", "m", { promptTokens: 1, maxTokens: 1, marginS: 60 })).toBeNull();
+    expect(t.bandReport("a", "m").every((b) => b.count === 0)).toBe(true);
+    expect(t.rates("b", "m")).toEqual({ promptRate: 50, genRate: 5 });
+  });
+
+  it("ratesOf uses the server's times when given, else splits the wall time by tokens", () => {
+    expect(ratesOf({ promptTokens: 1000, generatedTokens: 50, promptMs: 5000, generatedMs: 5000 })).toEqual({ promptRate: 200, genRate: 10 });
+    expect(ratesOf({ promptTokens: 900, generatedTokens: 100, wallMs: 10_000 })).toEqual({ promptRate: 100, genRate: 100 });
+    expect(ratesOf({ promptTokens: 0, generatedTokens: 100, wallMs: 10_000 })).toEqual({ promptRate: null, genRate: 10 });
+    expect(ratesOf({ promptTokens: 10, generatedTokens: 10 })).toEqual({ promptRate: null, genRate: null });
   });
 });

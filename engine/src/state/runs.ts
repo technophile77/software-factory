@@ -1,6 +1,7 @@
 import * as crypto from "node:crypto";
 import { Clock, iso } from "../clock";
 import { MAX_RESUMES } from "../constants";
+import type { EndpointRateReport } from "../agent/endpoint-service";
 import type { MatchRate } from "../gate1/advisory";
 import type { InterviewState } from "../interview/model";
 import type { Change } from "./state-repo";
@@ -26,6 +27,8 @@ export interface RunFacts {
   fallback?: { endpoint: string; reason: string; waited_s: number; prompt_tokens: number };
   /** F-013 FR-10: what the gate's advisory pass did and how much of the Claude reviewer's work it also found. */
   advisory?: AdvisoryFacts;
+  /** F-013 FR-12: the endpoints' measured speeds by prompt-size band, for the run review. */
+  endpoint_rates?: EndpointRateReport[];
 }
 
 /** The advisory pass of a gate role, for the run review (F-013 FR-10). Names the endpoint, never its address. */
@@ -39,6 +42,8 @@ export interface AdvisoryFacts {
   hints?: number;
   dropped?: number;
   match?: MatchRate;
+  /** F-013 FR-7: the pass fell back (reason "deadline", say) and the gate ran without it. */
+  fallback?: { endpoint: string; reason: string; waited_s: number; prompt_tokens: number };
 }
 
 export type ResumePlan =

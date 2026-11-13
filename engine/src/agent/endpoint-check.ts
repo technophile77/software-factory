@@ -2,11 +2,27 @@ import * as http from "node:http";
 import * as https from "node:https";
 import type { PinnedEndpoint } from "../config/endpoint-address";
 import type { Endpoint } from "../config/endpoints";
+import type { RateSample } from "./endpoint-usage";
 
 /** What the start-time check (F-013 FR-6) found: usable, or why not in words fit for the owner. */
 export type ProbeResult =
-  | { ok: true; toolChecked: boolean }
+  | { ok: true; toolChecked: boolean; identity?: ModelIdentity; timing?: RateSample }
   | { ok: false; reason: string };
+
+/**
+ * What an endpoint's model list says about the model (SR-11): only the fields
+ * it reports are present. Compared as a whole, so any change is a new model.
+ */
+export interface ModelIdentity {
+  name?: string;
+  /** Parameter count. */
+  params?: number;
+  /** Size in bytes. */
+  sizeBytes?: number;
+  /** Quantisation type. */
+  quant?: string;
+  ownedBy?: string;
+}
 
 /**
  * The check of one endpoint, injectable so tests need no network. `key` is the
@@ -74,6 +90,73 @@ function listsModel(body: string, model: string): boolean {
   return entries.some((x) => x && typeof x === "object" && ((x as { id?: unknown }).id === model || (x as { model?: unknown }).model === model || (x as { name?: unknown }).name === model));
 }
 
+const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined);
+const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 && v.length <= 200 ? v : undefined);
+const rec = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+
+/**
+ * The identity the model list gives for `model`, whatever of it is present:
+ * `llama-server` reports `meta.n_params` and `meta.size`; other servers put the
+ * parameter count, size and quantisation level under `details` or `meta`.
+ *
+ * @example
+ * identityOf('{"data":[{"id":"qwen3","owned_by":"llamacpp","meta":{"n_params":8190735360,"size":5027783680}}]}', "qwen3");
+ * // { name: "qwen3", params: 8190735360, sizeBytes: 5027783680, ownedBy: "llamacpp" }
+ */
+export function identityOf(body: string, model: string): ModelIdentity | undefined {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  const d = rec(doc);
+  const entries = [...(Array.isArray(d.data) ? d.data : []), ...(Array.isArray(d.models) ? d.models : [])].map(rec);
+  const x = entries.find((m) => m.id === model || m.model === model || m.name === model);
+  if (!x) return undefined;
+  const meta = rec(x.meta);
+  const details = rec(x.details);
+  const id: ModelIdentity = {};
+  const name = str(x.id) ?? str(x.model) ?? str(x.name);
+  const params = num(meta.n_params) ?? num(details.parameter_count);
+  const sizeBytes = num(meta.size) ?? num(x.size);
+  const quant = str(meta.ftype) ?? str(meta.quantization) ?? str(details.quantization_level);
+  const ownedBy = str(x.owned_by);
+  if (name) id.name = name;
+  if (params) id.params = params;
+  if (sizeBytes) id.sizeBytes = sizeBytes;
+  if (quant) id.quant = quant;
+  if (ownedBy) id.ownedBy = ownedBy;
+  return id;
+}
+
+/**
+ * The timing of the tool-call reply for FR-12: the server's own `timings`
+ * (`llama-server`) where it reports them, else the `usage` token counts with
+ * the wall time. Undefined when the reply gives no token counts.
+ *
+ * @example
+ * timingOf('{"timings":{"prompt_n":100,"prompt_ms":500,"predicted_n":20,"predicted_ms":2000}}', 3000);
+ * // { promptTokens: 100, generatedTokens: 20, promptMs: 500, generatedMs: 2000 }
+ */
+export function timingOf(body: string, wallMs: number): RateSample | undefined {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  const d = rec(doc);
+  const t = rec(d.timings);
+  if (num(t.prompt_n) !== undefined && num(t.predicted_n) !== undefined) {
+    return { promptTokens: num(t.prompt_n)!, generatedTokens: num(t.predicted_n)!, ...(num(t.prompt_ms) !== undefined ? { promptMs: num(t.prompt_ms)! } : {}), ...(num(t.predicted_ms) !== undefined ? { generatedMs: num(t.predicted_ms)! } : {}), wallMs };
+  }
+  const u = rec(d.usage);
+  const promptTokens = num(u.input_tokens);
+  const generatedTokens = num(u.output_tokens);
+  return promptTokens !== undefined && generatedTokens !== undefined ? { promptTokens, generatedTokens, wallMs } : undefined;
+}
+
 function hasToolUse(body: string): boolean {
   try {
     const doc = JSON.parse(body) as { content?: unknown };
@@ -110,7 +193,8 @@ export const httpProbe: EndpointProbe = async (e, pin, key) => {
   }
   if (models.status < 200 || models.status > 299) return { ok: false, reason: `it answered the model list with status ${models.status}` };
   if (!listsModel(models.body, e.model)) return { ok: false, reason: "it doesn't list the configured model" };
-  if (e.api === "openai") return { ok: true, toolChecked: false };
+  const identity = identityOf(models.body, e.model);
+  if (e.api === "openai") return { ok: true, toolChecked: false, ...(identity ? { identity } : {}) };
   const body = JSON.stringify({
     model: e.model, max_tokens: 64,
     tools: [{ name: TOOL_NAME, description: "Reports the status.", input_schema: { type: "object", properties: {}, required: [] } }],
@@ -118,6 +202,7 @@ export const httpProbe: EndpointProbe = async (e, pin, key) => {
     messages: [{ role: "user", content: "Call the tool." }],
   });
   let reply: Reply;
+  const began = Date.now();
   try {
     reply = await request(pin, "POST", "/v1/messages", { ...headers, "content-type": "application/json", "anthropic-version": "2023-06-01" }, body, TOOL_TIMEOUT_MS);
   } catch (err) {
@@ -125,5 +210,6 @@ export const httpProbe: EndpointProbe = async (e, pin, key) => {
   }
   if (reply.status < 200 || reply.status > 299) return { ok: false, reason: `it answered the tool-call test with status ${reply.status}` };
   if (!hasToolUse(reply.body)) return { ok: false, reason: "it didn't answer the tool-call test with a tool call" };
-  return { ok: true, toolChecked: true };
+  const timing = timingOf(reply.body, Date.now() - began);
+  return { ok: true, toolChecked: true, ...(identity ? { identity } : {}), ...(timing ? { timing } : {}) };
 };

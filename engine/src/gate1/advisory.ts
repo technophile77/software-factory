@@ -159,6 +159,8 @@ export interface AdvisorySession {
   usage: { inputTokens: number; outputTokens: number; requests: number };
   /** Plain words for why the session didn't finish (a cap, an error, a change outside its report); null when it did. */
   failure: string | null;
+  /** Why the session was stopped, when it was: the gateway cut a request at its FR-12 deadline, or the gate's own wall-time cap was reached. */
+  stopped?: "deadline" | "wall_cap";
 }
 
 export interface AdvisoryDeps {
@@ -205,6 +207,8 @@ export async function runAdvisory(d: AdvisoryDeps): Promise<AdvisoryOutcome> {
   }
   const cost = routed.finish(session.usage);
   d.onCost?.(cost, session.usage);
+  // FR-7: a stopped session falls back; for the advisory pass that means the gate runs without it.
+  if (session.stopped) return { status: "failed", endpoint: rung.endpoint, reason: session.stopped === "deadline" ? "a request passed its deadline" : "it reached the wall-time cap", fallback: routed.stopped(session.stopped) };
   if (session.failure) return { status: "failed", endpoint: rung.endpoint, reason: session.failure };
   const hints = session.text === null ? null : parseAdvisory(session.text, d.standards);
   if (!hints) return { status: "failed", endpoint: rung.endpoint, reason: "it wrote no usable report" };
