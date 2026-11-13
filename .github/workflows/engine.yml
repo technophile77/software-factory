@@ -27,13 +27,14 @@ on:
       - "plugins/software-factory/skills/onboard-repo/templates/factory-project.yaml"
       - ".gitignore"
       - "scripts/osv_fixable.py"
-  # Weekly, so a CVE published after a merge is still found (S4.4).
+  # Nightly: a CVE published after a merge is still found (S4.4), and the
+  # full suite runs on Windows and macOS, which PRs only sample (H-0153).
   schedule:
-    - cron: "0 6 * * 1"
+    - cron: "0 6 * * *"
 permissions:
   contents: read
 # A newer push to a PR makes its older run moot, so that run stops and frees
-# its runners (H-0130). Runs on main and the weekly scan each get their own
+# its runners (H-0130). Runs on main and the nightly run each get their own
 # group, so none of them is ever cancelled or held back.
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('engine-pr-{0}', github.event.pull_request.number) || format('engine-{0}', github.run_id) }}
@@ -62,7 +63,7 @@ jobs:
       - run: npm run build
 
   test:
-    name: test (${{ matrix.os }}, ${{ matrix.shard }})
+    name: test (${{ matrix.os }}, ${{ matrix.scope }} ${{ matrix.shard }})
     strategy:
       fail-fast: false
       # The engine has platform code (named pipe ACL, peer checks, credential
@@ -72,21 +73,34 @@ jobs:
       # (H-0130). Workers: these tests mostly wait on git, so Linux takes
       # more than its cores, but on Windows 6 workers made single tests 2-3x
       # slower and some timed out, so Windows keeps Vitest's default of 3.
-      matrix:
-        include:
-          - { os: ubuntu-latest, shard: 1/2, workers: 6 }
-          - { os: ubuntu-latest, shard: 2/2, workers: 6 }
-          - { os: macos-latest, shard: 1/3, workers: 4 }
-          - { os: macos-latest, shard: 2/3, workers: 4 }
-          - { os: macos-latest, shard: 3/3, workers: 4 }
-          - { os: windows-latest, shard: 1/6, workers: 3 }
-          - { os: windows-latest, shard: 2/6, workers: 3 }
-          - { os: windows-latest, shard: 3/6, workers: 3 }
-          - { os: windows-latest, shard: 4/6, workers: 3 }
-          - { os: windows-latest, shard: 5/6, workers: 3 }
-          - { os: windows-latest, shard: 6/6, workers: 3 }
+      #
+      # On PRs, Linux runs the full suite and macOS and Windows run only the
+      # files that exercise platform code (`npm run test:platform`); pushes
+      # to main and the nightly run test everything on all three (owner
+      # decision 2026-11-13, H-0153). The two matrices, as JSON:
+      matrix: >-
+        ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[
+        {"os": "ubuntu-latest", "shard": "1/2", "workers": 6, "scope": "full"},
+        {"os": "ubuntu-latest", "shard": "2/2", "workers": 6, "scope": "full"},
+        {"os": "macos-latest", "shard": "1/1", "workers": 4, "scope": "platform"},
+        {"os": "windows-latest", "shard": "1/2", "workers": 3, "scope": "platform"},
+        {"os": "windows-latest", "shard": "2/2", "workers": 3, "scope": "platform"}
+        ]}'
+        || '{"include":[
+        {"os": "ubuntu-latest", "shard": "1/2", "workers": 6, "scope": "full"},
+        {"os": "ubuntu-latest", "shard": "2/2", "workers": 6, "scope": "full"},
+        {"os": "macos-latest", "shard": "1/3", "workers": 4, "scope": "full"},
+        {"os": "macos-latest", "shard": "2/3", "workers": 4, "scope": "full"},
+        {"os": "macos-latest", "shard": "3/3", "workers": 4, "scope": "full"},
+        {"os": "windows-latest", "shard": "1/6", "workers": 3, "scope": "full"},
+        {"os": "windows-latest", "shard": "2/6", "workers": 3, "scope": "full"},
+        {"os": "windows-latest", "shard": "3/6", "workers": 3, "scope": "full"},
+        {"os": "windows-latest", "shard": "4/6", "workers": 3, "scope": "full"},
+        {"os": "windows-latest", "shard": "5/6", "workers": 3, "scope": "full"},
+        {"os": "windows-latest", "shard": "6/6", "workers": 3, "scope": "full"}
+        ]}') }}
     runs-on: ${{ matrix.os }}
-    # A Windows run hung for 54 minutes once (H-0086); a shard takes about 10.
+    # A Windows run hung for 54 minutes once (H-0086); a shard takes about 7.
     timeout-minutes: 30
     defaults:
       run:
@@ -101,9 +115,15 @@ jobs:
           cache: npm
           cache-dependency-path: engine/package-lock.json
       - run: npm ci --ignore-scripts
-      - run: npm test -- --maxWorkers=${{ matrix.workers }}
+      # Matrix values reach the command through env vars, not template
+      # expansion: the matrix comes from fromJSON, so zizmor can't prove the
+      # values are constant. Bash so the same line works on Windows.
+      - run: npm run "$TEST_SCRIPT" -- --maxWorkers="$TEST_WORKERS"
+        shell: bash
         env:
           FACTORY_TEST_SHARD: ${{ matrix.shard }}
+          TEST_SCRIPT: ${{ matrix.scope == 'platform' && 'test:platform' || 'test' }}
+          TEST_WORKERS: ${{ matrix.workers }}
 
   # SR-19 (H-0088): known CVEs in both lockfiles and in the agent image.
   supply-chain:
