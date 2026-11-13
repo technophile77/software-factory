@@ -89,3 +89,25 @@ Made by the developer after the review above; the reviewer's text is unchanged.
 
 L2, L3, L4 and the owner decisions are open.
 | L2 | Owner approved extending SR-5 (spec v7): `parseTree` refuses entries out of git's sort order, comparing names as bytes with a folder's as if it ended in `/`. | `git-reader.test.ts` "refuses entries out of git's order". |
+
+## Re-review of fixes (HEAD `70af2af`)
+
+Reviewed `git diff ef3bc0c 70af2af -- engine/` (commits `14263a4`, `fcf8bec`, `70af2af`). The four test files passed 116, skipped 1, failed 0 (Linux, git 2.43). The probes below were re-run against a bundle of `70af2af`.
+
+| Finding | Fix | Verdict | Evidence |
+|---|---|---|---|
+| M1 | `catBlobs` keeps a running total and throws "output over the limit" past `readLimit`; `populateWorktree`'s per-file fallback then runs as on `main` | Confirmed | Code at `git.ts` `catBlobs`; new test "a catBlobs call over the read limit in total fails as one plain call did" |
+| M2 | The data handler ignores any child but the current one; `breakOff` clears the buffer, removes the old stdout's `data` listeners, destroys stdin and sends `SIGKILL` at once | Confirmed | Probe 4 with a stand-in whose stale line comes from a background writer that outlives the kill (a model of output already in the pipe): correct in 2 of 2 runs at `70af2af`. With the guard **and** the listener removal both taken out of a copy: wrong (`1111…`) in 2 of 2 runs. Either protection alone was enough. SR-7 (killed before the fallback) holds again. |
+| L2 | `parseTree` refuses entries out of git's order (bytes; a tree's name compared as if it ended in `/`), SR-5 v7 | Confirmed | Probe 2's unsorted tree is now refused (`GitError`). A real tree with `Z`, `a b`, `a-b`, `a.b`, folder `a`, `a0`, `sub`, `subz` and a non-ASCII name lists the same as `ls-tree`. New SR-5 test. |
+| L4 | `refuseRedirectingConfig` returns the origin only when the listing holds exactly one non-empty `remote.origin.url`; otherwise `null`, and `git remote get-url` is asked | Confirmed (by reading the code) | With a single non-empty value, every git version gives the same answer. Several values or an empty one go to git itself. No test covers several values or an empty value (see below). |
+| L5 | The master facts are not kept when no root commit was read or the origin read failed (exit 2, "no such remote", is kept as no origin) | Confirmed | New test "a master read that failed isn't kept". A failed read still lets that one check through, as on `main`. |
+| L6 | Tests for SR-2 (reader argv and environment) and SR-4 (one reader per repo) | Partly | SR-2 and SR-4 tests added. Still not asserted: that a timed-out reader's process is gone before the fallback runs (SR-7). |
+| L3 | — | Open (not in this round) | A repo re-created at the same path still reads as missing until its reader idles out; fails closed. |
+
+**About the M2 regression test.** The new test ("output a timed-out reader writes later never reaches the next reader") passes with the guard removed. Its stand-in writes its late line from the reader process itself, and the immediate `SIGKILL` stops that process before it writes. So the test checks the kill, not the guard. That is not enough as a regression test. The guard and the listener removal protect against output that git wrote **before** the kill but Node hadn't read yet, and the kill can't prevent that. Recommended: make the stand-in write its late line from a background process that outlives the kill (`( sleep 0.05; echo "<id> commit 5" ) &`, as in probe 4), and follow it with a read by ref. That test fails only when both protections are removed, so it guards against a future change dropping them. Low (S7.1), non-blocking.
+
+**New findings:** none. One residual test gap (Low, S7.1, non-blocking) adds to L6: no test for L4's several-values and empty-value cases.
+
+**Windows (reasoned, not run).** `breakOff` now destroys stdin before the kill, so a real `git.exe` behind a killed launcher still sees end of input. Its later output goes nowhere, because the stream is still flowing with no listener, so it can't block on a full pipe. `close()` keeps the graceful end for the idle and stop paths that fixed the EBUSY failures.
+
+**Updated result:** PASS. M1, M2, L2, L4 and L5 are fixed. L3 is open, and L6 is partly open, with the gaps above. Nothing blocks.

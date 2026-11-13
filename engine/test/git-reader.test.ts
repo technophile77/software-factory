@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 import { Git, GitError } from "../src/git";
 import { CatFileReader, ReaderBroken, ReaderLimit, TreeError, parseTree } from "../src/git-reader";
 import { checkProjectPath } from "../src/config/paths-file";
+import { MemoryLogger } from "../src/log";
 import { Children } from "../src/proc";
+import { StateRepo } from "../src/state/state-repo";
 import { GIT_PATH, git, initRepo, tmpdir } from "./helpers";
 
 // F-014: reads through one `cat-file --batch-command` per repo give exactly
@@ -155,11 +157,17 @@ describe("F-014 reader failures (FR-2, AC-3, SR-6, SR-7)", () => {
     const mark = path.join(tmpdir(), "first");
     // The first reader answers too late, with the wrong commit; later readers are the real git.
     const g = make({
-      gitPath: fakeGit(`if [ ! -e "${mark}" ]; then : > "${mark}"; read l; sleep 0.6; echo "${other} commit 5"; printf 'xxxxx\\n'; sleep 2; else exec "${GIT_PATH}" "$@"; fi`),
+      // The late line comes from a process the kill doesn't reach, standing in for output git wrote before it died.
+      gitPath: fakeGit(`if [ ! -e "${mark}" ]; then : > "${mark}"; read l; ( sleep 0.3; echo "${other} commit 5" ) & sleep 5; else exec "${GIT_PATH}" "$@"; fi`),
       timeoutMs: 200,
     });
     expect(await g.revParse(repo, "refs/heads/main")).toBe(head);
-    await new Promise((r) => setTimeout(r, 800));
+    // SR-7: the timed-out reader was let go (and killed) before the plain call answered.
+    const first = (g as unknown as { readers: Map<string, { child: { pid: number } | null }> }).readers.get(repo)!;
+    expect(first.child).toBeNull();
+    // The next reader starts before the late line arrives, and is asked again after it has.
+    expect(await g.revParse(repo, "refs/heads/main")).toBe(head);
+    await new Promise((r) => setTimeout(r, 500));
     expect(await g.revParse(repo, "refs/heads/main")).toBe(head);
     expect(await g.revParse(repo, "HEAD")).toBe(head);
     await g.closeReaders();
@@ -244,6 +252,22 @@ describe("F-014 master repo facts (FR-4, Gate 2 L5)", () => {
     execFileSync("git", ["clone", "-q", repo, master]);
     await expect(checkProjectPath(repo, master, g)).rejects.toThrow(/clone of the master repo/);
     await g.closeReaders();
+  });
+});
+
+describe("F-014 origin from the config listing (FR-5, Gate 2 L4)", () => {
+  it("is used only when it is one non-empty value; otherwise git is asked", async () => {
+    const { repo } = fixture();
+    const s = new StateRepo(make(), { scan: async () => [] } as never, repo, new MemoryLogger(), path.join(tmpdir(), "t"));
+    expect(await s.refuseRedirectingConfig()).toBeNull();
+    git(repo, "remote", "add", "origin", "https://github.com/acme/web.git");
+    expect(await s.refuseRedirectingConfig()).toBe("https://github.com/acme/web.git");
+    git(repo, "config", "--add", "remote.origin.url", "https://github.com/acme/other.git");
+    expect(await s.refuseRedirectingConfig()).toBeNull();
+    git(repo, "config", "--unset-all", "remote.origin.url");
+    git(repo, "config", "--add", "remote.origin.url", "");
+    git(repo, "config", "--add", "remote.origin.url", "https://github.com/acme/web.git");
+    expect(await s.refuseRedirectingConfig()).toBeNull();
   });
 });
 
