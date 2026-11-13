@@ -26,3 +26,4 @@ in order, using `template.md`.
 | [0015](0015-agent-containers-signed-owner-actions.md) | Container per agent session, path matching, signed owner actions | Accepted |
 | [0016](0016-python-coverage-tool.md) | coverage.py measures coverage for the factory's Python code | Accepted |
 | [0017](0017-owner-account-prs-inbox-merge.md) | PRs with the owner's own account; the inbox click is the approval | Accepted |
+| [0018](0018-phone-actions-proven-by-github.md) | Owner actions from the phone are proven by the owner's GitHub account | Accepted |
