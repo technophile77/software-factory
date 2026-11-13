@@ -8,6 +8,8 @@
 - **Result:** **Conditional.** Usable only with the conditions below, and
   only with the owner accepting the stated residual risk (Security
   decision). Agents don't accept it for the owner (S4.6).
+- **Owner decision:** accepted with all six conditions and the residual risk
+  (owner, 2026-11-13, decision card, F-013 OQ-9 (a)).
 
 ## Findings
 
