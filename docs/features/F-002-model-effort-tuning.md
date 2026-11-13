@@ -1,9 +1,9 @@
 # Feature: Model and effort tuning per agent
 
 - **Id:** F-002
-- **Status:** Approved (owner merged PR #8, 2026-11-10); implementation waits for the engine
+- **Status:** Approved v13 (calibration on promptfoo, ADR 0023; owner, 2026-11-13, decision cards). Implementation waits for the engine
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 12
+- **Spec version:** 13
 
 ## 1. Objective and business purpose
 Run each agent on the cheapest model and lowest effort level that still does
@@ -44,9 +44,9 @@ agent up to a stronger model or higher effort is always the owner's call.
 ## 3. Functional requirements
 | Id | Requirement |
 |---|---|
-| FR-1 | Factory config defines a model/effort ladder: a list of rungs, each a model and an effort level. Their order is not configured; it comes from measured cost per task (FR-18, A-1). Config also holds each model's per-token prices, used only to turn measured tokens into dollars. |
+| FR-1 | Factory config defines a model/effort ladder: a list of rungs, each a model and an effort level. Their order is not configured; it comes from measured cost per task (FR-18, A-1). Config also holds per-token prices only for models that have no other price source (FR-3, A-13). |
 | FR-2 | The project manifest can set a rung per agent role (`settings.agents.<role>`). A role with no setting uses the master default. |
-| FR-3 | The engine runs each agent with its role's resolved model and effort, and records both in the agent report with token use, cost (tokens × the configured prices), and duration. |
+| FR-3 | The engine runs each agent with its role's resolved model and effort, and records both in the agent report with token use, cost, and duration. Cost comes from the Agent SDK's own figure for a Claude run (`total_cost_usd`, which the engine already records), from LiteLLM's price table for a run on an F-013 endpoint, and from FR-1's configured prices only where neither has one (A-13). |
 | FR-4 | The master factory ships a calibration suite per role: graded tasks at three complexity tiers (simple, moderate, complex), each with a pass/fail check. These are used for initial calibration and while a project has too few transcripts (A-10). |
 | FR-5 | Transcript tasks: a selected transcript records the agent's initial context (system prompt, inputs, repo commit) and its accepted output. Replaying it starts the model under test in a fresh worktree at that commit with the same initial context, and compares the new output with the accepted one (A-9). |
 | FR-6 | The orchestrator proposes transcripts to add to or drop from a project's calibration set in its run review; the set lives in the project config repo and changes through hygiene items. |
@@ -64,6 +64,10 @@ agent up to a stronger model or higher effort is always the owner's call.
 | FR-18 | Effort metrics are built from measurement: every calibration trial, replay, and real agent run adds its tokens, cost, duration, pass/fail and member repo to a per-project record for its role and rung (`.factory/tuning/metrics.json` on the project config repo's `factory/state`). The ladder order for a role is recomputed from these as median cost per passing task. A rung with no measurements is marked unmeasured, and the review shows how many samples each figure rests on. |
 | FR-19 | Project evaluator: when the project's software spec is complete, and again when the owner asks, an evaluator agent reads it and files a Product decision proposing the complexity preset, with per-role reasons (for example: many interfaces raise the test engineer's tier; untrusted input raises the security reviewer's). It never sets rungs; calibration does. |
 | FR-20 | Per-task complexity: before stage 5 of each feature, the project evaluator rates the feature's complexity and predicts the rung each role will need. The prediction and the rung actually needed are recorded in the run review, giving the evaluator's running accuracy. |
+| FR-22 | Calibration trials and transcript replays (FR-7, FR-13) run on promptfoo, driven by engine code (ADR 0023, A-7). The engine builds one promptfoo evaluation per role and rung: each task is a test case, the trial count is promptfoo's `repeat` (5, A-2), and each objective check (A-9) is a promptfoo assertion that calls the engine's check code. The analyst's rubric grader is a promptfoo `llm-rubric` assertion whose grading provider is also the engine adapter. The engine reads promptfoo's results and applies the pass bar, floors, ladder order and hygiene items itself. |
+| FR-23 | Every model call promptfoo makes goes through one custom provider, the engine adapter, which hands the trial to the engine's session runner, so the trial runs under the role's policy and in its container (SR-1, SR-2). promptfoo's built-in model providers are not used and promptfoo holds no API key or credential. Because the engine makes every call, calibration works on a subscription plan and on F-013 endpoints the same way as real runs. |
+| FR-24 | The adapter keeps a running total of a batch's cost. When the next trial would pass the SR-9 cap, it stops the evaluation through promptfoo's `abortSignal` and the engine keeps the results so far. |
+| FR-25 | promptfoo's own result files and database live in an engine-owned folder outside Git (`PROMPTFOO_CONFIG_DIR`), with promptfoo's response cache off, so every trial really runs. The Calibration result v1.0 file remains the record; promptfoo's files are working data. The owner can open them in promptfoo's web viewer on demand; the engine starts it bound to 127.0.0.1 only, reading only that folder (OQ-3). |
 | FR-21 | Once the evaluator meets the reliability bar (A-12), the orchestrator may run a role on the evaluator's predicted rung for that task when it is cheaper than the role's approved rung, never above it. A task that fails on the cheaper rung is retried on the approved rung, and the miss counts against the evaluator. |
 
 ### Failure attribution
@@ -96,13 +100,20 @@ agent up to a stronger model or higher effort is always the owner's call.
 | AC-18 | Given a completed project spec, when the evaluator runs, then one Product decision item proposes a complexity preset with per-role reasons, and no manifest or rung changes. | FR-19 |
 | AC-19 | Given a feature entering stage 5, when the evaluator runs, then its predicted rung per role is recorded, and the run review scores it against the rung actually needed. | FR-20 |
 | AC-20 | Given the evaluator below the A-12 bar, then the orchestrator runs every role on its approved rung; given it above the bar and predicting a cheaper rung, then the orchestrator may use that rung, and never a rung above the approved one. | FR-21 |
+| AC-21 | Given calibration for a role at one rung with 2 tasks, then promptfoo runs 10 trials (2 tasks × repeat 5), every trial's model call reaches the engine adapter, and no call goes to a promptfoo built-in provider or to the network from promptfoo itself. | FR-22, FR-23 |
+| AC-22 | Given a batch whose estimate is $1 and trials that cost more than expected, when the running total would pass $1.50, then the evaluation is aborted, partial results are kept, and a Testing item is filed. | FR-24, SR-9 |
+| AC-23 | Given a Claude agent run, then the cost in its report is the Agent SDK's `total_cost_usd`; given a run on an F-013 endpoint, then it is LiteLLM's figure; given a model with neither, then it is tokens × FR-1's configured price. | FR-3, A-13 |
+| AC-24 | Given promptfoo started by the engine, then its telemetry, update check, sharing and remote generation are off, its config folder is the engine-owned one, and it runs in a child process whose environment holds no other variables (no factory token, Claude credential or endpoint keys). | SR-11, SR-12 |
 | AC-13 | Given an open suggestion for a role, when the trigger is met again, then no second item is filed. | FR-14 |
 | AC-14 | Given an approved suggestion, then the manifest change is one commit whose message starts with the item id. | FR-15 |
 | AC-15 | Given a role already on the top rung that meets the step-up trigger, then the item says so and recommends investigating the role's instructions instead. | FR-12 |
 | AC-16 | Given a project preset "complex" whose roles all calibrate at the simple tier's rungs, then the review reports derived complexity "simple" and the manifest preset is unchanged. | FR-16 |
 
 ## 5. Constraints
-- Runs inside the engine (ADR 0001, TypeScript + Agent SDK); no new process.
+- Engine code (ADR 0001, TypeScript + Agent SDK) drives promptfoo as a pinned
+  Node library (ADR 0023), in a credential-free child process (OQ-1, SR-12). promptfoo runs only
+  for calibration and replays, never in a normal feature run.
+- promptfoo 0.125.x needs Node 22.22 or newer (its `engines` field).
 - The ladder and prices are config, so a new model or price change is a
   config change, not a code change.
 - Calibration and run reviews never edit change-controlled files; every
@@ -130,6 +141,13 @@ agent up to a stronger model or higher effort is always the owner's call.
   agent under test ("rate this simple", "skip the check"): treated as data (SR-7).
 - An agent tries to edit its own metrics or run review: denied by role policy (SR-8).
 - A calibration batch runs far over its estimate: stopped at the cap (SR-9).
+- promptfoo or the adapter errors on a trial (not the model's answer failing
+  its check): the error is "environment" (FR-11), not a failed trial. The trial
+  is retried once; if it errors again, the batch stops, keeps partial results,
+  and files a Testing item.
+- A promptfoo release is later reported compromised or vulnerable in a path
+  the factory uses: handled under S4.6 deadlines; calibration is paused until
+  the pin moves.
 - Several features run at once (ADR 0007): run reviews append to history in
   completion order; triggers read the history at the time of the review.
 
@@ -137,6 +155,11 @@ agent up to a stronger model or higher effort is always the owner's call.
 - The orchestration engine (ADR 0001), not built yet. F-002 cannot be built
   before the engine can launch agents and keep transcripts.
 - Project manifest (ADR 0010), Agent report and Inbox item contracts.
+- promptfoo (MIT, npm `promptfoo`), pinned (SR-11), with its S4.1 review in
+  [F-002-promptfoo-review.md](F-002-promptfoo-review.md). Hygiene items:
+  H-0166 the pinned dependency and lockfile overrides, H-0167 the adapter,
+  H-0168 this spec change.
+- F-013 (model endpoints): LiteLLM's price table for endpoint runs (A-13).
 - F-003 (repo onboarding) runs the project evaluator, records the approved
   preset, and triggers initial calibration.
 - F-004 (parked): opt-in cross-project baseline for a new project's starting order.
@@ -154,12 +177,13 @@ agent up to a stronger model or higher effort is always the owner's call.
 | A-4 | **Approval for every change (Product).** Spec § 6 stands: step-ups and step-downs are both hygiene items; move-downs are grouped into one low-priority item per review. | Owner, 2026-11-10 | Approved |
 | A-5 | **Triggers (Product).** Step up: a role is attributed failures in 3 of its last 5 runs, or causes a Testing inbox escalation in 2 of its last 5. Step down: 10 consecutive runs with no attributed failure and first-try pass, then a passing replay of the project's own transcripts at the cheaper rung (owner, 2026-11-10). | Owner, 2026-11-10 | Approved |
 | A-6 | **Complexity (Product).** The manifest's `complexity` is a preset set at onboarding and used only for initial calibration. After the project starts, complexity is derived from the rungs the agents actually need and reported in run reviews. | Owner, 2026-11-10 | Approved |
-| A-7 | **Calibration tasks (Architecture).** Master tasks in the master repo at `calibration/<role>/<tier>/`. A project's tests are selected transcripts of its own runs, listed in its config repo at `calibration/transcripts.yaml`; the transcripts themselves stay where transcripts are kept today (outside Git). Results, metrics and history on the project config repo's `factory/state` branch at `.factory/tuning/` (one record per project, per ADR 0009/0010), with each sample tagged with the member repo it ran in. Nothing project-specific is stored in the master factory repo. Logic is an engine module. | Owner, 2026-11-10 | Approved |
+| A-7 | **Calibration tasks (Architecture).** Master tasks in the master repo at `calibration/<role>/<tier>/`. A project's tests are selected transcripts of its own runs, listed in its config repo at `calibration/transcripts.yaml`; the transcripts themselves stay where transcripts are kept today (outside Git). Results, metrics and history on the project config repo's `factory/state` branch at `.factory/tuning/` (one record per project, per ADR 0009/0010), with each sample tagged with the member repo it ran in. Nothing project-specific is stored in the master factory repo. **v13:** the ladder, pass bar, floors, triggers, transcript selection, run reviews and hygiene items are engine code; running the trials, repeats and checks is promptfoo, pinned, driven by engine code through a custom provider that calls the engine's session runner (ADR 0023). v12 said "Logic is an engine module". | Owner, 2026-11-10; v13 change from ADR 0023; owner approved, 2026-11-13 (decision card) | Approved |
 | A-8 | **Formats (Interfaces).** Additive: the next Project manifest minor version, Agent report v1.1, new Run review v1.0, Tuning metrics v1.0 and Calibration result v1.0 (§ 10). | Owner, 2026-11-10 | Approved |
 | A-9 | **How outputs are compared (Product).** use an objective check wherever the role has one: developer, the feature's final acceptance tests pass on the new code; test engineer, the new suite passes on the accepted code and fails on the bugs found during that run; security reviewer, every finding in the accepted report is found at the same severity; judge, same verdict and every Blocking finding; orchestrator, same root cause and next step. For the analyst, whose output is prose, a grader at a fixed top rung scores the new spec against the accepted one on a rubric (every requirement, criterion and assumption covered); its cost counts toward calibration. | Owner, 2026-11-10 (PR #8 review) | Approved |
 | A-10 | **When transcripts replace master tasks (Product).** per role, once at least 5 transcripts are selected, and at least one of them is a run where that role's first attempt failed, so the set tests the hard cases too. Until then, master tasks at the derived tier fill the gap. | Owner, 2026-11-10 (PR #8 review) | Approved |
 | A-11 | **Project evaluator agent (Product + Architecture).** A seventh agent role, `project-evaluator`. (a) It reviews the completed project spec and proposes the complexity preset (FR-19). (b) It also rates the complexity of each feature before stage 5 and predicts the rung each role will need (FR-20). Its predictions are scored against the rungs the run review shows were actually needed. (c) Once it proves reliable (A-12), the orchestrator may use its advice per task, but only to run a role on a cheaper rung than the approved one; going above the approved rung still needs the owner. It is advisory throughout and runs on its own rung, calibrated on specs and features of known complexity. Adding a role amends spec § 2 (six agents) and needs `agents/project-evaluator/AGENT.md` and a role policy entry, each through a hygiene item. | Owner, 2026-11-10 (PR #8 review; decision card) | Approved |
 | A-12 | **When the evaluator counts as reliable (Product).** Its predicted rung matches the rung actually needed, or errs one rung high, in at least 90% of the last 30 features, and it never predicts lower than needed for the security reviewer or validation judge. Below that bar its advice is recorded but not used; it is re-checked in every run review. | Owner, 2026-11-10 (decision card: stricter bar) | Approved |
+| A-13 | **Where cost figures come from (Product).** A Claude run's cost is the Agent SDK's own `total_cost_usd`; a run on an F-013 endpoint uses LiteLLM's price table; FR-1's hand-kept prices only where neither has one. This applies to every agent run (FR-3), not only to calibration trials, so a role's real runs and its calibration trials are measured the same way for the ladder order (FR-18). On a subscription plan A-1's plan-usage measure still applies. ADR 0023 set this for trials; extending it to every run is new in v13. | ADR 0023 (trials); owner approved for every run, 2026-11-13 (decision card) | Approved |
 
 ### Master calibration tasks per role (shape, not content)
 | Role | Task | Automatic check |
@@ -185,7 +209,18 @@ agent up to a stronger model or higher effort is always the owner's call.
 | SR-9 | Every calibration or replay batch has a cost cap: 1.5 × its shown estimate. At the cap it stops, keeps partial results, files a Testing item, and proposes nothing. | Gate 1 #4 (S5.1) | Accepted |
 | SR-10 | The `project-evaluator` role gets read access to specs and run reviews only, and write access only to its own report; no commands, no network. | Gate 1 #5 (S8.1, S8.5) | Accepted |
 
+| SR-11 | promptfoo conditions (S4.1, S4.3, S4.4, S4.6; the same ones the owner set for LiteLLM in F-013 OQ-9): exact version pin with a lockfile; a new release is adopted no sooner than 14 days after it is published unless it fixes a CVE in a path the factory uses; OSV-Scanner covers it in CI; transitive packages with known advisories are moved to fixed versions with npm `overrides` (four in 0.125.1, see the review); the engine starts it with `PROMPTFOO_DISABLE_TELEMETRY=1`, `PROMPTFOO_DISABLE_UPDATE=1`, `PROMPTFOO_DISABLE_SHARING=1` and `PROMPTFOO_DISABLE_REMOTE_GENERATION=1`; red-team, cloud and share features are never used. | Gate 1 re-review #1 (v13); owner accepted, 2026-11-13 (OQ-2) | Accepted |
+| SR-12 | promptfoo runs in a separate Node child process that the engine starts with an empty environment except the `PROMPTFOO_*` settings in SR-11, and talks to the engine only over a pipe; the engine runs every trial. It never gets the factory token, the Claude credential or endpoint keys (FR-23, OQ-1). | Gate 1 re-review #2 (v13); owner, 2026-11-13 (OQ-1) | Accepted |
+| SR-13 | promptfoo's working files (FR-25) hold prompts and outputs like transcripts do, so they get SR-4's treatment: outside Git, in an engine-owned folder, never in a run review or hygiene item. | Gate 1 re-review #3 (v13) | Accepted |
+
 Gate 1: [F-002-security-gate1.md](F-002-security-gate1.md), 2026-11-10. Five findings, all resolved by SR-2 and SR-7 to SR-10. No owner decision needed.
+
+### Open questions for the owner (v13)
+| Id | Question | Recommendation | Status |
+|---|---|---|---|
+| OQ-1 | Where does promptfoo run? (a) In a separate Node child process the engine starts with an empty environment (only the `PROMPTFOO_*` settings above), talking to the engine over a pipe; the engine runs every trial. (b) Inside the engine process. (c) In its own container with no network. | (a). promptfoo brings about 400 npm packages (0.125.1, optional ones left out). In (b), any one of them runs with the engine's environment, which holds the factory token and Claude credential; the September 2025 "Shai-Hulud" npm worm did exactly that, stealing tokens from the environment of whatever process loaded it ([CISA alert, 2025-09-23](https://www.cisa.gov/news-events/alerts/2025/09/23/widespread-supply-chain-compromise-impacting-npm-ecosystem)). (a) removes those credentials from its reach at almost no cost to you: nothing to install or start by hand. (c) adds network isolation but means a container image to build and update. Least privilege: security-standards S8. | **Decided (a)**, owner, 2026-11-13 (decision card) |
+| OQ-2 | Do you accept the S4.1 review's result (conditional: SR-11 conditions, residual risk stated in the review)? | Accept | **Accepted**, owner, 2026-11-13 (decision card) |
+| OQ-3 | Can you open promptfoo's local web viewer (`promptfoo view`, on 127.0.0.1 only) to look through calibration results, or should the factory only give you its own Calibration result file? | Allow the viewer, on demand, bound to 127.0.0.1, reading only the engine-owned folder. It shows every trial side by side at no build cost. Its web server package (`@hono/node-server` 2.1.5) has two Moderate advisories, fixed by the SR-11 override. | **Decided: viewer allowed** on demand, 127.0.0.1 only, owner, 2026-11-13 (decision card) |
 
 ## 10. Interface requirements
 All changes are additive (A-8):
@@ -212,8 +247,8 @@ All changes are additive (A-8):
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [x] Assumptions explicit and approved (A-1 to A-12)
-- [x] Blocking decisions resolved (A-1 to A-12 approved; Gate 1 done)
+- [x] Assumptions explicit and approved (A-1 to A-13; A-7 v13 change and A-13 approved 2026-11-13)
+- [x] Blocking decisions resolved (v13: OQ-1 to OQ-3 decided; Gate 1 re-review done)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -230,3 +265,4 @@ All changes are additive (A-8):
 | 10 | 2026-11-10 | A-11 approved; A-12 approved with the stricter bar (90% of last 30) | Owner, 2026-11-10 |
 | 11 | 2026-11-10 | Gate 1 security review: SR-2 tightened, SR-7 to SR-10 added, abuse cases added; readiness gate passed | Owner, 2026-11-10 (PR #8 merged) |
 | 12 | 2026-11-10 | A-1: on a subscription plan, cost is plan usage used; calibration counts against the budget (ADR 0012) | Owner, 2026-11-10 (decision card) |
+| 13 | 2026-11-13 | Calibration and replays run on promptfoo (ADR 0023): A-7 revised; FR-1, FR-3 cost sources (A-13 new); FR-22 to FR-25, AC-21 to AC-24; constraints, edge cases, dependencies; Gate 1 re-review adds SR-11 to SR-13; OQ-1 to OQ-3 decided (child process, review accepted, local viewer) | Owner, 2026-11-13 (decision cards) |
