@@ -16,35 +16,38 @@ go to the proxy's credential gateway, which forwards them to
 ## Options considered
 | Option | Pros | Cons |
 |---|---|---|
-| **A. The gateway forwards to configured endpoints, chosen per session by the engine** | Agents, containers and SR-8 don't change; the agent never sees an address or key; the engine picks the endpoint when it grants the session | The gateway now holds several upstreams and keys, and one class (private endpoints) may be plain HTTP (F-013 SR-5) |
+| **A. The gateway forwards to configured endpoints, chosen per session by the engine** | Agents, containers and SR-8 don't change; the agent never sees an address or key; the engine picks the endpoint when it grants the session | The gateway gains one more upstream (LiteLLM), which holds the endpoint keys; one endpoint class (private) may be plain HTTP (F-013 SR-5) |
 | B. Endpoint-rung containers get network access to their endpoint | No gateway change | Breaks SR-8 for every such agent; the agent learns the address and holds the key |
 
 ## Implications
-- **Security:** the engine resolves each endpoint on the PC, classes it
+- **Security:** LiteLLM holds the endpoint keys and is an external
+  component under S4.1 (F-013 SR-16). The engine resolves each endpoint on the PC, classes it
   private or public, and pins the address per session (F-013 SR-3). Public
   endpoints need HTTPS and a key (SR-12); private ones may be plain HTTP
   with no key, a risk the owner accepted (SR-5). Each key goes only to its
-  own endpoint, and the gateway follows no redirects (SR-13). Endpoint rungs
+  own endpoint, with no redirects followed (SR-13). Endpoint rungs
   are limited to read-only roles (SR-9).
-- **Maintenance:** the gateway's body checks apply to every upstream.
-  Anthropic-format endpoints get `/v1/messages` and
-  `/v1/messages/count_tokens` as they are; OpenAI-format endpoints go
-  through a translator in the gateway (F-013 OQ-6 (b), FR-14), which is new
-  parsing code in the component that holds the credentials, so it carries
-  its own fixture, round-trip and fuzz tests (FR-15) and strict input rules
-  (SR-16).
+- **Maintenance:** format translation, per-endpoint keys, budgets and
+  rate limits come from LiteLLM, an existing open-source proxy, rather than
+  factory code (owner: include it "instead of building another thing").
+  The factory keeps one pinned LiteLLM image, upgraded by hygiene item
+  after a conformance run (F-013 FR-15) and CVE checks (SR-16).
 - **Cost:** `per_token` endpoints count against project budgets, `subscription`
   endpoints stop at their plan limits, and `local`
   endpoints don't (F-013 FR-13).
 
 ## Decision
 Option A. A session grant names its upstream: `anthropic` or a configured
-endpoint name. The gateway forwards to that upstream only, with that
-upstream's credential only.
+endpoint name. `anthropic` goes to `api.anthropic.com` as today. A
+configured endpoint goes to the factory's LiteLLM container (F-013 OQ-8,
+H-0139), which adds that endpoint's key, translates the format if needed,
+and calls the endpoint through the egress proxy under a grant that allows
+only the configured endpoints at their pinned addresses.
 
 ## Consequences
 - Agents and their containers are unchanged by which endpoint a rung uses.
-- Two API formats are supported: Anthropic Messages natively and OpenAI
-  chat-completions through the translator. A further format would be
-  another translator, with its own spec and Security review.
+- Any API format LiteLLM supports can be added by configuration; the
+  factory writes no translator. LiteLLM becomes a security-relevant
+  dependency: it holds the endpoint keys, so it runs locked down (F-013
+  SR-16) and its upgrades are change-controlled.
 - Rules out giving agent containers direct access to model endpoints.

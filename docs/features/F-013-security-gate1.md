@@ -75,3 +75,13 @@ is refused by FR-4 and SR-3.
 | # | Criterion | Severity | Blocks? | Finding | Recommendation |
 |---|---|---|---|---|---|
 | 6 | S1.1, S4.5, S5.1 | Medium | No | OQ-6 (b) adds a translator inside the gateway, the component that holds every credential. It parses replies and stream events from endpoints, including public third-party ones. A parser bug could hang the gateway, pass malformed tool calls to an agent, or let an endpoint shape text that an agent reads as a tool call. | SR-16: strict parsing with size caps, a fixed schema, unknown fields dropped, tool arguments must be a JSON object, and stalled streams cut off by the deadline; FR-15's fixture, stochastic round-trip and fuzz tests in CI. Requests the table doesn't cover are refused, not passed through (FR-14). |
+
+## Delta review, spec v13 (LiteLLM instead of a home-made translator)
+
+Finding #6 above is replaced: there is no home-made translator. The new
+risk is an external component that holds keys.
+
+| # | Criterion | Severity | Blocks? | Finding | Recommendation |
+|---|---|---|---|---|---|
+| 7 | S4.1, S4.3 to S4.6, S8.1, S8.4 | High | No | LiteLLM is a large Python project with frequent releases and many transitive dependencies, and its container holds every endpoint key. A compromised or vulnerable release could leak keys or send project content elsewhere. It also has features the factory doesn't need (admin UI, database, telemetry, callbacks to outside services). | SR-16: S4.1 review before approval (H-0139); pinned image digest; CVE scans in CI and before each upgrade with S4.6 deadlines; non-root, read-only file system; inbound only from the gateway; outbound only through the egress proxy grant for the configured endpoints (FR-5), so even a compromised LiteLLM can't reach other hosts; unused features off; per-run master key; the gateway keeps its size caps and deadlines on its replies. FR-15's conformance suite checks each upgrade. |
+| 8 | S8.2 | Medium | No | LiteLLM's egress through the proxy must allow plain HTTP to private endpoints (SR-5) without opening plain HTTP to anywhere else. | FR-5: the proxy grant for LiteLLM lists each endpoint with its pinned address and class; plain HTTP forwarding only to a private-class endpoint, HTTPS (CONNECT) only to a public-class endpoint's host. |

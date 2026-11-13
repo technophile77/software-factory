@@ -1,14 +1,14 @@
 # Feature: Configurable model endpoints
 
 - **Id:** F-013
-- **Status:** Draft (v12; OQ-1 to OQ-7 decided, Security Gate 1 delta done, changed items need re-approval)
+- **Status:** Draft (v13; OQ-1 to OQ-8 decided, Security Gate 1 delta done, changed items need re-approval)
 - **Requested by / date:** Alex, 2026-11-13 ("I want to also incorporate a
   local llm api"; "this model would be a good candidate for the security
   agent, judge, or any low end agent"; "I'd rather allow a number of
   endpoints that can be specified, and allow them to be configurable, with
   local as an option that indicates it has unlimited usage"; "endpoints
   should include standard options like the model to use and an api key")
-- **Spec version:** 12
+- **Spec version:** 13
 
 ## 1. Objective and business purpose
 The factory runs every agent on Claude today. The owner wants to add other
@@ -19,6 +19,14 @@ options (base URL, model, API key, limits) and a billing mode (owner,
 though still limited by speed and sessions), `per_token` (priced per token,
 counted against the project budget), or `subscription` (a flat plan with
 usage limits, counted as a share of those limits).
+
+The factory doesn't build its own multi-provider layer: it runs LiteLLM, an
+open-source LLM proxy that already translates between API formats, holds
+per-endpoint keys, and enforces budgets and rate limits (owner, 2026-11-13:
+"that's exactly the thing that should be included instead of building
+another thing"; OQ-8). The factory adds what LiteLLM doesn't know about:
+which role and project may use which endpoint, keeping keys and addresses
+out of agent containers, and the F-002 evidence that picks rungs.
 
 The factory already decides each role's model by evidence (F-002): the
 cheapest rung that passes calibration, approved by the owner. Each
@@ -44,9 +52,12 @@ master repo.
    only the endpoints its manifest allows (SR-8); none by default.
 4. **Agents don't change.** An agent on an endpoint rung still runs Claude
    Code in its container. Its model requests go to the engine's credential
-   gateway as today, and the gateway forwards them to the endpoint the
-   engine granted for that session (OQ-2, ADR 0019). The agent never learns
-   the address or the key.
+   gateway as today. For an endpoint session, the gateway forwards them to
+   the factory's LiteLLM container, naming the endpoint the engine granted
+   for that session; LiteLLM translates the format if the endpoint speaks
+   OpenAI's, adds that endpoint's key, and calls it through the factory's
+   egress proxy (OQ-2, OQ-8, ADR 0019). The agent never learns the address
+   or the key.
 5. **Choosing roles.** As F-002: calibration, then the role's transcripts,
    then a hygiene item the owner approves. Before F-002's calibration is
    built, the owner can set a role to an endpoint rung in
@@ -69,9 +80,9 @@ master repo.
 |---|---|
 | FR-1 | A rung (and, before F-002, a `models.yaml` entry) can name `<endpoint>/<model>`. The master repo holds no endpoint address, host, port or key. |
 | FR-2 | `factory-endpoints.local.yaml` in the master clone, git-ignored, lists named endpoints. Each has: `base_url`, `model`, `api` (`anthropic` or `openai`; OQ-6), optional `api_key_ref` (a credential store entry name), `max_sessions` (default 1), `billing` (`local`, `per_token` or `subscription`; required), `prices` (input and output per million tokens; required for `per_token`), `plan` (for `subscription`: one or more limits, each a count of requests, input tokens or output tokens per window of 5 hours, a day, a week or a month, plus an optional `reserve_pct`, default 10), optional `deadline` overrides (FR-12), and `allow_loopback` (default false). The file is refused unless only the owner can write it (as H-0081). |
-| FR-3 | API keys come only from the OS credential store, never from the file, an argument or an environment variable; they reach the gateway on stdin as the Claude credential does today. The Claude credential is never sent to another endpoint, and an endpoint's key never to another endpoint. |
+| FR-3 | API keys come only from the OS credential store. The engine hands each to the LiteLLM container alone, at its start, the way it hands the Claude credential to the proxy today (never in an argument, a committed file or an agent's environment). The Claude credential is never given to LiteLLM, and LiteLLM sends each key only to its own endpoint (SR-13). |
 | FR-4 | Before each session, the engine resolves the endpoint's host on the PC (so `.local` mDNS names work) and pins the address it checked. A **private** endpoint (every address in RFC 1918, RFC 4193 or link-local; loopback only with `allow_loopback`) may use plain HTTP and no key (SR-5). A **public** endpoint (every address public) must use HTTPS with certificate checks and an API key (SR-12). A name resolving to a mix of private and public addresses is refused. |
-| FR-5 | The gateway forwards an endpoint session's `/v1/messages` and `/v1/messages/count_tokens` requests, with the body checks it applies today, to that session's pinned endpoint only. The grant names the endpoint; an agent cannot choose it. |
+| FR-5 | The gateway forwards an endpoint session's `/v1/messages` and `/v1/messages/count_tokens` requests, with the body checks it applies today, to the LiteLLM container, naming the session's granted endpoint; the grant names the endpoint and an agent cannot choose it. LiteLLM's own egress goes through the factory's egress proxy under a grant that allows only the configured endpoints, each at its address pinned per FR-4 (plain HTTP forwarding is allowed only to a private endpoint). |
 | FR-6 | At start, the engine checks each endpoint: it lists the configured model (`GET /v1/models`) and answers an Anthropic Messages request with a tool call. A failing endpoint's rungs are unavailable, with the reason. |
 | FR-7 | No more than an endpoint's `max_sessions` run on it at once. A session that waits more than 10 minutes for a slot, whose endpoint is unreachable, or whose request passes its FR-12 deadline, runs on the role's Claude rung instead; the run review records each fallback with role, endpoint, reason, prompt size and time waited. |
 | FR-8 | The agent report's `model` field carries the endpoint prefix (`<endpoint>/<model>`); metrics, run reviews and the calibration result group by it. |
@@ -79,8 +90,8 @@ master repo.
 | FR-10 | Gate roles (security reviewer, validation judge) stay on their Claude rung (F-002 A-3 unchanged). An endpoint enabled for a gate role runs first as an advisory pass on the same inputs; its findings or verdict go to the Claude reviewer as data, which still decides. The run review records, per run, how many of the Claude reviewer's findings the advisory pass also found and at what severity, plus its verdict match (OQ-1). |
 | FR-11 | The advisory pass never blocks or delays a gate beyond the 10-minute slot wait: if it is unavailable, the Claude reviewer runs without it. |
 | FR-12 | Request deadlines scale with size (owner, 2026-11-13). Each request's deadline is a fixed margin plus its prompt tokens divided by the endpoint's measured prompt-processing rate plus its `max_tokens` divided by its measured generation rate. Rates come from the server's per-request timings where it reports them (`llama-server` does), otherwise from measured wall time, kept per endpoint and model as a rolling median and seeded by a timing check at start. The run review reports rates by prompt-size band (under 8k, 8k to 32k, 32k to 128k, over 128k tokens). |
-| FR-14 | OpenAI-format endpoints (OQ-6 (b)): for an endpoint with `api: openai`, the gateway translates each Anthropic Messages request into an OpenAI chat-completions request (`POST /v1/chat/completions`) and the reply back, both whole and streamed: system prompt, user and assistant turns, text, images, tool definitions, `tool_use` to `tool_calls` and `tool_result` to `tool` messages, stop reasons, and token usage. `count_tokens` is answered by the gateway with an estimate, marked as one in the logs. Anthropic-only request features with no OpenAI equivalent (prompt-cache markers, thinking settings, beta headers) are dropped by a fixed table in the code; anything not in the table is refused with a 400, never passed through. The translator runs in the proxy sidecar on Node's built-in modules only (F-007 OQ-5). |
-| FR-15 | Translator tests. (1) Fixture conversations, recorded once from a server that speaks both formats with the same model (the owner's `llama-server`, using only generic test prompts), are replayed through the translator; the translated replies must match the native Anthropic replies in structure: same tool names and arguments, same stop reason, same text. (2) Stochastic round-trip tests generate random valid conversations (any mix of text, tools, tool results, images and stream chunk splits) and check that translating to OpenAI and back loses nothing the table doesn't list. (3) Fuzz tests feed the stream parser random and malformed chunks, oversized events and broken JSON, and it must refuse cleanly without hanging. (4) FR-6's start check runs the same tool-call conversation against each `openai` endpoint. All four run in CI. |
+| FR-14 | Format translation, keys, retries, and the enforcement of `per_token` budgets and `subscription` rate limits use LiteLLM's own features where it has them (OQ-8). The engine generates LiteLLM's configuration from the endpoints file at start; LiteLLM's admin UI, database and telemetry are off, and its master key is random per run and known only to the gateway. The factory writes no format translator of its own. |
+| FR-15 | LiteLLM is pinned to one image digest in the master repo and upgraded only by a hygiene item. Before each upgrade, and in CI, a conformance suite replays fixed tool-call conversations (generic prompts only) through LiteLLM to a recorded stub endpoint in each format and checks that Claude Code receives the same `tool_use` names, arguments and stop reasons as from a native Anthropic endpoint, streamed and unstreamed. |
 | FR-13 | Usage by billing mode. `local`: cost $0 (0% of plan in the project's `subscription` budget mode), not counted against the project budget (ADR 0012). `per_token`: tokens times `prices`, in dollars, counted against the project budget in both budget modes. `subscription`: the engine counts each limit's use per window across all projects on the PC; a task's cost is the largest share of any limit it used (as F-002 A-1 measures Claude plans); it is not charged in dollars. When any limit would pass `100 - reserve_pct` percent in its window, new sessions for that endpoint run on the role's Claude rung instead (FR-7), so the owner keeps the reserve for their own use. |
 
 ## 4. Acceptance criteria
@@ -99,8 +110,8 @@ master repo.
 | AC-11 | Given measured rates of 200 prompt and 10 generation tokens per second and a 60-second margin, when a request has a 100,000-token prompt and `max_tokens` 4,000, then its deadline is 60 + 500 + 400 = 960 seconds; a request still running after that falls back per FR-7. | FR-12 |
 | AC-12 | Given a `per_token` endpoint priced at $1 / $2 per million tokens, when a run uses 1M input and 0.5M output tokens on it, then its cost is $2 and the project budget is charged $2. | FR-13 |
 | AC-15 | Given an `openai` endpoint, when an agent's request carries two tools and the model calls one, then the agent receives an Anthropic `tool_use` block with the same name and arguments, streamed and unstreamed, and its `tool_result` reaches the endpoint as a `tool` message with the matching call id. | FR-14 |
-| AC-16 | Given a request with a field outside the translator's table, when it is sent to an `openai` endpoint, then the gateway refuses it with 400 and logs the field name. | FR-14 |
-| AC-17 | Given the FR-15 test suites, when CI runs, then the fixture, round-trip and fuzz tests all pass. | FR-15 |
+| AC-16 | Given a LiteLLM image digest different from the pinned one, when the engine starts, then endpoint rungs are unavailable and the status says why. | FR-15 |
+| AC-17 | Given the FR-15 conformance suite, when CI runs, then it passes for both formats; and the LiteLLM container has no network route except through the egress proxy. | FR-5, FR-15 |
 | AC-14 | Given a `subscription` endpoint with a limit of 100 requests per 5 hours and `reserve_pct` 10, when 90 requests have been made in the current window, then the next session for that endpoint runs on the role's Claude rung and the run review says the plan limit was reached; a run that used 9 of those requests is recorded at 9% of plan. | FR-13 |
 | AC-13 | Given a project whose manifest doesn't list an endpoint, when a role's rung names that endpoint, then the role runs on its Claude rung and the run review says why. | SR-8 |
 
@@ -117,9 +128,10 @@ master repo.
   waited over 10 minutes for a slot while other long prompts ran.
 - Claude Code needs the Anthropic Messages API, tool use and a large
   context. Endpoints that serve only OpenAI's chat-completions format are
-  reached through the gateway's translator (OQ-6, FR-14).
+  reached through LiteLLM's translation (OQ-6, OQ-8, FR-14).
 - Change-controlled files touched: `engine/config/models.yaml`,
-  `docs/interface-contracts.md`, the proxy, `.gitignore`, CI.
+  `docs/interface-contracts.md`, the proxy, the engine's container plan
+  (a LiteLLM container beside the proxy sidecar), `.gitignore`, CI.
 
 ## 6. Edge cases
 - A private endpoint's `.local` name resolves to a different address later
@@ -148,7 +160,7 @@ master repo.
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | An endpoint's Anthropic Messages API works with Claude Code, including streaming and tool use; checked for the owner's `llama-server` in a spike before build, and by FR-6 for every endpoint at start. A failed spike sends the spec back. | OQ-2 | Approved (owner, 2026-11-13, decision card); wording widened in v9 from the one server to every endpoint |
+| A-1 | LiteLLM's Anthropic-format endpoint (`/v1/messages`) works with Claude Code, including streaming and tool use, for both an Anthropic-format and an OpenAI-format endpoint behind it. Checked in a spike before build with the owner's `llama-server` (which speaks both); a failed spike sends the spec back. | OQ-2, OQ-8 | Approved for the server itself (owner, 2026-11-13); widened in v13 to LiteLLM, needs re-approval |
 | A-2 | An endpoint model's results count as F-002 calibration evidence the same way a Claude model's do: same tasks, same pass bar (F-002 A-2). | OQ-1 | Approved (owner, 2026-11-13, decision card) |
 
 ## 9. Security considerations
@@ -165,7 +177,7 @@ master repo.
 | SR-9 | An endpoint rung is allowed only for a role whose role policy is read-only on the worktree (writing only its `.factory/` report) with no network beyond the gateway; any other role needs its own Security decision first. | Gate 1 #2 (S6.2, S8.1, S4.5) | Accepted (owner, 2026-11-13, decision card) |
 | SR-10 | Advisory output reaches the Claude gate reviewer only as engine-validated structured data: findings (criterion id, severity, location, description capped at 500 characters) and a verdict word; anything else is dropped. The Claude prompt marks it as unverified hints, and the gate result comes only from the Claude reviewer's own report. | Gate 1 #3 (S6.1, S9.3) | Accepted (owner, 2026-11-13, decision card) |
 | SR-11 | The engine records each endpoint model's name, parameter count, byte size and quant type (whatever the endpoint reports) at each check; any change counts as a new model, resets its calibration results and advisory match rate, and tells the owner. Residual: a swap keeping all of these the same is not detectable without a digest. | Gate 1 #4 (S4.1, S4.3) | Accepted (owner, 2026-11-13, decision card) |
-| SR-16 | The translator treats everything from an endpoint as untrusted input (S1.1, S4.5): replies and stream events are size-capped (the gateway's existing 32 MiB body cap, and 1 MiB per stream event), parsed strictly, and checked against a fixed schema; unknown fields are dropped; tool-call arguments must parse as a JSON object or the reply is turned into an error, never passed through as text that looks like a tool call. A stalled stream is cut off by the FR-12 deadline. | v10 delta #6 (S1.1, S4.5, S5.1) | Proposed |
+| SR-16 | LiteLLM is a new external component (S4.1): before it is approved for use, a security review covers its source and maintainers, known CVEs, install and start-up scripts, the permissions it needs and what it pulls in, recorded with H-0139. It is pinned by image digest (S4.3), scanned for CVEs in CI and before each upgrade (S4.4), with S4.6 deadlines. **Its container holds the endpoint keys**, so it runs as a non-root user on a read-only file system, with no inbound access except from the gateway, no outbound access except through the egress proxy grant (FR-5), its admin UI, database and telemetry off, and a per-run master key. Its replies are untrusted: the gateway keeps its body size caps and FR-12 deadlines on them (S4.5, S5.1). | v13 delta #6 (S4.1, S4.3 to S4.6, S8.1, S8.4) | Proposed |
 | SR-12 | Public endpoints must use HTTPS with certificate and host-name checks (TLS 1.2 or later) and an API key from the credential store; an `http://` URL or a missing key makes the endpoint unavailable (OWASP ASVS 5.0 V12, secure communication; NIST SP 800-53 SC-8, SC-23). | v9 delta #1 | Proposed |
 | SR-13 | An endpoint's key is sent only to that endpoint, only in its auth header, and never on a redirect; the gateway follows no redirects from an endpoint (S8.2; CWE-522). | v9 delta #2 | Proposed |
 | SR-14 | Every endpoint that costs money is bounded: `per_token` spend counts against the project budget and its run-cost estimate (prices required), and `subscription` use stops at its plan limits less the reserve; so a mispriced, misconfigured or looping agent can't run up an unbounded bill or exhaust the owner's plan (ADR 0012; OWASP LLM10, unbounded consumption). | v9 delta #3 | Proposed |
@@ -178,7 +190,7 @@ only the file name.
 
 - **H-0135 (Interfaces, changed in v9):** new contract *Model endpoints
   file v1.0* (`factory-endpoints.local.yaml`):
-  `endpoints.<name>.base_url`, `.model`, `.api` (`anthropic` or `openai`), optional
+  `endpoints.<name>.base_url`, `.model`, `.api` (`anthropic` or `openai`, as LiteLLM names the provider), optional
   `.api_key_ref`, `.max_sessions` (default 1), `.billing` (`local`,
   `per_token` or `subscription`), `.prices.input_per_mtok` and
   `.prices.output_per_mtok` (for `per_token`), `.plan.limits[]` (each
@@ -197,8 +209,9 @@ only the file name.
 - **H-0138 (Architecture, changed in v9):** [ADR
   0019](../adr/0019-model-endpoints-through-gateway.md), configured model
   endpoints as upstreams of the credential gateway.
-- **H-0139:** reserved (OQ-1 chose (a), so F-002 A-3 is not amended; a later
-  move of a gate role onto an endpoint would need its own Security decision).
+- **H-0139 (Architecture, new in v13):** adopt LiteLLM as the factory's
+  model router (OQ-8), pinned by image digest, after the S4.1 review in
+  SR-16 passes; recorded in ADR 0019.
 
 ## 11. Readiness gate
 Re-checked 2026-11-13 against spec v9.
@@ -208,7 +221,7 @@ Re-checked 2026-11-13 against spec v9.
 - [x] Acceptance criteria testable (AC-1 to AC-17)
 - [x] Constraints documented (first endpoint measured 2026-11-13)
 - [x] Assumptions explicit (A-1, A-2)
-- [ ] Blocking decisions resolved: OQ-1 to OQ-7 decided; SR-1, SR-3, SR-8 and SR-12 to SR-16 need approval; H-0135, H-0136, H-0138 need re-approval
+- [ ] Blocking decisions resolved: OQ-1 to OQ-8 decided; SR-1, SR-3, SR-8 and SR-12 to SR-16 need approval; A-1 needs re-approval; H-0135, H-0136, H-0138 need re-approval and H-0139 approval
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -225,6 +238,7 @@ Re-checked 2026-11-13 against spec v9.
 | 10 | 2026-11-13 | Owner: endpoints get a billing mode: `local`, `per_token` or `subscription` (plan limits with a reserve). FR-2, FR-13, SR-14, SR-15, H-0135 updated; AC-14 added | Owner, 2026-11-13 (thread) for the change; items pending |
 | 11 | 2026-11-13 | OQ-6 decided (b): OpenAI chat-completions endpoints through a translator in the gateway; FR-14, FR-15 (fixture, stochastic round-trip and fuzz tests), AC-15 to AC-17, SR-16 added | Owner, 2026-11-13 (thread) |
 | 12 | 2026-11-13 | OQ-7 decided (b): the project's endpoint list is the only control; evaluating an endpoint's terms and security is the user's, outside the factory. SR-8 reworded | Owner, 2026-11-13 (thread) |
+| 13 | 2026-11-13 | OQ-8 decided (a): LiteLLM replaces the home-made translator and billing; § 1, § 2 item 4, FR-3, FR-5, FR-14, FR-15, AC-16, AC-17, A-1, SR-16 rewritten; H-0139 added | Owner, 2026-11-13 (thread, decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -234,5 +248,6 @@ Re-checked 2026-11-13 against spec v9.
 | OQ-3 | Securing the link to the LAN server. | Security | Decided (owner, 2026-11-13, decision card): (c) as is; v9 limits this to private endpoints (SR-5), public ones follow SR-12 |
 | OQ-4 | Which roles to calibrate first. (a) Gate roles (advisory) and low-end roles. | Product | Decided (owner, 2026-11-13, decision card): (a) |
 | OQ-5 | Busy or down. (a) 10-minute slot wait, then the role's Claude rung. | Product | Decided (owner, 2026-11-13, decision card): (a); request deadlines per FR-12 |
-| OQ-6 | Which API formats endpoints may speak (now decided). Claude Code only speaks Anthropic Messages. (a) Anthropic Messages only in this feature; an OpenAI-only endpoint fails FR-6 with a clear message. `llama-server` and a growing number of servers and providers serve both. (b) Also OpenAI chat-completions, through a translator in the gateway that converts requests, tool calls and streaming both ways. **Recommended: (a)**: the translator would be new parsing code in the security-critical gateway, and tool-call translation is easy to get subtly wrong; it can be its own feature if a needed endpoint lacks the Anthropic format. | Architecture | Decided (owner, 2026-11-13, in the thread: "both should be supported"): (b); risk stated on the card and accepted; FR-14, FR-15, SR-16 added |
+| OQ-6 | Which API formats endpoints may speak (now decided). Claude Code only speaks Anthropic Messages. (a) Anthropic Messages only in this feature; an OpenAI-only endpoint fails FR-6 with a clear message. `llama-server` and a growing number of servers and providers serve both. (b) Also OpenAI chat-completions, through a translator in the gateway that converts requests, tool calls and streaming both ways. **Recommended: (a)**: the translator would be new parsing code in the security-critical gateway, and tool-call translation is easy to get subtly wrong; it can be its own feature if a needed endpoint lacks the Anthropic format. | Architecture | Decided (owner, 2026-11-13, in the thread: "both should be supported"): (b); risk stated on the card and accepted; translation now done by LiteLLM (OQ-8) |
 | OQ-7 | Sending code to a public, third-party endpoint. (a) Allowed per project only after a Security decision naming the endpoint, its operator and its data-retention and training terms; private endpoints need only the manifest list. (b) The manifest list alone for every endpoint. **Recommended: (a)**: a third party receiving a project's code is a new external service under S9.1 and widens access under S8.5, which the standards make the owner's Security decision. | Security | Decided (owner, 2026-11-13, in the thread): (b); "evaluating these things is outside the scope of the project. the user should evaluate terms and security of the endpoint/model independently and within their own organization's guidelines" |
+| OQ-8 | Use an existing LLM gateway instead of building our own translator and billing? (a) LiteLLM in its own container behind the factory's gateway. (b) Build our own in the Node gateway. (c) Anthropic-format endpoints only. **Recommended: (a).** | Architecture | Decided (owner, 2026-11-13, in the thread and decision card): (a) |
