@@ -1,6 +1,6 @@
 # 0002. Inbox items and decisions stored as one file per item in the repo
 
-- **Status:** Accepted
+- **Status:** Superseded by 0022 for inbox items
 - **Date:** 2026-11-08
 - **Decided by:** owner
 - **Decision item:** open decision 3; write-up in `docs/proposals/0003-inbox-storage.md`
