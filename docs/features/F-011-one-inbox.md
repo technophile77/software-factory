@@ -61,7 +61,7 @@ sessions, or by the owner) can be listed too (OQ-6).
 | FR-9 | In owner-token mode, `main` in every managed repo has a ruleset that requires a pull request and the level's CI checks, with no required review and no bypass actors (H-0123). |
 | FR-10 | Two GitHub modes per project (manifest, H-0124): `owner_token` (default; the engine opens PRs with the owner's fine-grained token; FR-7 to FR-9 apply) and `machine_account` (ADR 0006; the inbox approval submits a real GitHub approving review using the owner's VS Code GitHub sign-in, and the required-review rule stays). |
 | FR-11 | Hygiene approval covers the change once: when the engine applies an approved hygiene change through a PR whose diff equals the approved diff exactly, the engine merges that PR without a second click (OQ-4). Any difference files a Pull request item instead. |
-| FR-12 | The owner is told of new blocking items by the VS Code badge and notification, by an OS notification from the engine when VS Code is closed (OQ-3). Phone notifications and approving from the phone are a separate feature (owner, 2026-11-13). |
+| FR-12 | The owner is told of new blocking items by the VS Code badge and notification, by an OS notification from the engine when VS Code is closed (OQ-3). Phone notifications and approving from the phone are F-012 (owner, 2026-11-13). |
 | FR-14 | A CI test in this repo fails if engine code calls GitHub's merge API anywhere except the FR-11 hygiene path (OQ-9). |
 | FR-13 | Onboarding (F-003) prepares the owner-token mode: the ruleset (pull request and required checks, no required review, no bypass actors) and the token scopes, applied only after the owner confirms. |
 
@@ -121,7 +121,7 @@ sessions, or by the owner) can be listed too (OQ-6).
 - H-0115 keep-PRs-mergeable workflow, for FR-8.
 - ADR 0017 (supersedes ADR 0006), from proposal 0021.
 
-- The separate phone notifications and approvals feature will reuse F-011's
+- F-012 (phone notifications and approvals) will reuse F-011's
   item kinds and actions.
 
 ## 8. Assumptions
