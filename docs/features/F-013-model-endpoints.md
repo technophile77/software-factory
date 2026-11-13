@@ -1,7 +1,7 @@
 # Feature: Configurable model endpoints
 
 - **Id:** F-013
-- **Status:** In review (readiness gate passed 2026-11-13; awaiting owner sign-off)
+- **Status:** Approved (owner, 2026-11-13; readiness gate passed); stage 5 starts with the SR-16 LiteLLM review and the A-1 spike
 - **Requested by / date:** Alex, 2026-11-13 ("I want to also incorporate a
   local llm api"; "this model would be a good candidate for the security
   agent, judge, or any low end agent"; "I'd rather allow a number of
@@ -247,6 +247,7 @@ yet, so until it is, a role goes onto an endpoint rung only through
 | 14 | 2026-11-13 | FR-14 clarified (owner asked): billing modes and accounting stay; LiteLLM only enforces the limits it can express, the engine does the rest | Owner, 2026-11-13 (thread) |
 | 15 | 2026-11-13 | SR-12 to SR-16 approved; rescoped SR-1, SR-3, SR-5, SR-8 re-approved | Owner, 2026-11-13 (decision card) |
 | 16 | 2026-11-13 | H-0135 to H-0139 and widened A-1 approved; ADR 0019 Accepted; readiness gate passed | Owner, 2026-11-13 (decision card) |
+| 16 | 2026-11-13 | Spec v16 signed off; status Approved | Owner, 2026-11-13 (decision card, confirmed) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
