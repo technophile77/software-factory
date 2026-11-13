@@ -6,7 +6,7 @@
   approval and merge in the inbox, no machine account; phone approvals,
   F-012; "can't [a VS Code issues extension] be used in place of the
   inbox?", proposal 0026)
-- **Spec version:** 24 (draft)
+- **Spec version:** 25 (draft)
 - **Replaces:** F-001's inbox view and all of F-012 (both superseded by this
   version, see their change logs). Their approved requirements that still
   apply are carried here, each marked with where it came from.
@@ -87,7 +87,7 @@ or a one-word command.
 | FR-10 | Hygiene approval covers the change once: when the engine applies an approved hygiene change through a PR whose diff equals the approved diff exactly (SR-11), the engine merges that PR itself; on any difference it merges nothing and posts a PR comment saying the diff differs from the approved one, so the owner merges or rejects it in GitHub's PR view. The proof is the owner's GitHub-proven, confirmed Approve on the Hygiene item (SR-16; OQ-11, owner, 2026-11-13). |
 | FR-11 | Risky actions (owner, 2026-11-13): merging a PR (confirmed by GitHub's merge dialog, FR-9), and Approve on a Hygiene, Maturity, Security decision or Spec sign-off item (confirmed by FR-6). The confirm comment's target is fixed per kind: hygiene, the item id, files changed and that it lands on `main`; maturity, the repo and old and new level; Security decision, the option and the risk it accepts; spec sign-off, the feature, spec version and that development starts. |
 | FR-12 | The factory ships a `githubIssues.queries` block for the GitHub Pull Requests extension (H-0163): one query per priority, each `is:open label:factory-inbox assignee:${user} label:priority:<p>`, plus "Blocking" and "Deferred"; and a `githubPullRequests.queries` entry "Factory PRs to merge", `is:open is:pr user:${user} base:main -is:draft` (repos the owner owns; a project whose repos sit in an organization adds `org:` during onboarding, in user settings only). It names no repo and no owner, so it holds no owner-specific value. Onboarding offers to add it to the owner's VS Code user settings. |
-| FR-13 | Notifications: GitHub notifies the owner of each new item through the assignment and @mention (GitHub Mobile push, web, email, per the owner's GitHub settings). The engine also shows an OS notification on the PC for a new blocking item (v19 FR-12). **Pending OQ-13** (which items notify). |
+| FR-13 | Notifications: GitHub notifies the owner of each new item through the assignment and @mention (GitHub Mobile push, web, email, per the owner's GitHub settings). The engine also shows an OS notification on the PC for a new blocking item (v19 FR-12). Every item notifies, blocking or not (OQ-13, owner, 2026-11-13); the owner filters in GitHub's notification settings. |
 | FR-14 | The engine has no merge call except FR-10; a CI test fails if engine code calls GitHub's merge API (REST `PUT .../pulls/{n}/merge`, GraphQL `mergePullRequest`) anywhere else, naming file and line (v19 FR-14, OQ-9). A second CI test fails if engine code calls the create-reaction API (REST or GraphQL `addReaction`): the engine only reads reactions (F-012 SR-11). |
 | FR-15 | The inbox works only when the config repo is private and the owner is its only collaborator; the engine checks both at start and before filing, and otherwise files nothing, stops the affected work, and shows the reason on the PC (OS notification and engine log). (F-012 FR-11, SR-9.) |
 | FR-16 | Migration: on first start with this version, the engine files an issue for every open item file under `.factory/inbox/` on each managed repo's and the config repo's `factory/state`, writes its record, and removes the file in the same commit. Item files of other schemas are listed in one Notice. After migration the engine reads no item files. |
@@ -216,7 +216,7 @@ Drafts, not yet approved. Each is applied only after the owner approves it.
   revising F-012's approved H-0126: `on: repository_dispatch` type
   `factory-inbox` only; `permissions: issues: write` only; actions pinned by
   commit SHA (SR-12); it opens the issue from the payload's rendered title,
-  body and labels, assigns `${{ vars.FACTORY_OWNER_LOGIN }}` (per OQ-13),
+  body and labels, assigns `${{ vars.FACTORY_OWNER_LOGIN }}` on every item (OQ-13),
   and posts the action comments in order; it runs nothing from the payload
   and makes no other call. Onboarding installs it in the config repo.
 - **H-0163 (Hygiene):** `templates/vscode/factory-inbox-queries.json`, offered
@@ -281,7 +281,7 @@ more than the highest record of that prefix on the config repo's
   `category:<product|architecture|interfaces|assumptions|security>` (decision
   only); `priority:<critical|high|medium|low>` (the effective priority);
   `blocking` when blocking.
-- Assignee: the owner (`FACTORY_OWNER_LOGIN`), per OQ-13.
+- Assignee: the owner (`FACTORY_OWNER_LOGIN`), for every item (OQ-13).
 - Body: first line `<!-- factory-item: <id> rev <n> -->`; then the kind's
   sections as fixed headings; then `Revision <n>.`. Sections: decision:
   Context, Options (numbered, with pros and cons), Project impact,
@@ -375,7 +375,7 @@ actor id), `merged_on_github` (merge commit, merged by), `closed_on_github`.
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [ ] Assumptions explicit (A-3 extension and web part pending)
-- [ ] Blocking decisions resolved (OQ-13; Gate 1; H-0161 to H-0165)
+- [ ] Blocking decisions resolved (OQ-11 to OQ-13 decided; pending: SR-1, SR-2, SR-4, SR-17 to SR-21, A-3, H-0161 to H-0165)
 
 Follow-ups outside this spec: F-003 stops writing `.factory/inbox/` and
 installs the workflow and query block; F-010's advisory path uses the admin
@@ -390,6 +390,7 @@ token (from v19).
 | 22 | 2026-11-13 | OQ-12 decided (b): PRs are not inbox issues; the owner uses GitHub's PR list; the engine posts definition-of-done evidence on the PR and reads `/changes` there (FR-9); Pull request kind removed | Owner, 2026-11-13 (decision card) |
 | 23 | 2026-11-13 | Security Gate 1, second review (`F-011-security-gate1-r2.md`): 0 Critical, 0 High, 2 Medium, 3 Low; SR-17 to SR-21 proposed | — |
 | 24 | 2026-11-13 | Section 10: draft of Inbox item v3.0 (H-0165) | — |
+| 25 | 2026-11-13 | OQ-13 decided (a): every item is assigned to the owner and notifies | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 OQ-1 to OQ-10 are decided or withdrawn as recorded in v19 (git history);
@@ -399,4 +400,4 @@ their outcomes are carried above.
 |---|---|---|---|
 | OQ-11 | Hygiene auto-merge. v19 SR-9 let the engine merge a hygiene PR identical to an approved change only because the approval was SSH-signed, and withdraws that if signing goes; ADR 0022 removes signing. (a) Keep auto-merge, with the GitHub-proven, 🚀-confirmed approval as the proof (SR-2, SR-3); risk: anything holding your GitHub session or token could approve a hygiene change and see it reach `main`, which is already true of merging directly (SR-15). (b) Withdraw it: every hygiene PR also waits for you to merge it in GitHub's PR view. Recommended: (a). | Security | Decided (owner, 2026-11-13, decision card): (a) |
 | OQ-12 | Pull requests in the inbox. (a) Keep a Pull request item issue per PR (FR-9): you get a push and see it in the same queue, and merge in GitHub's PR view from the link. (b) No issue for PRs; you find them in GitHub's PR list (the extension's Pull Requests view, Mobile), and the engine posts its definition-of-done evidence as a PR comment. With (b) you get no push for PRs the engine opens with your token, because GitHub doesn't notify you of your own PRs. Recommended: (a). | Product | Decided (owner, 2026-11-13, decision card): (b), accepting no push for PRs opened with the owner's token |
-| OQ-13 | Which items notify you? v19/F-012 pushed only blocking items to the phone. Every item is now assigned to you, which notifies. (a) Every item notifies (one path; mute in GitHub settings if noisy). (b) Only blocking items notify: non-blocking ones are opened unassigned and without @mention, and need a second query in VS Code that names your config repo, set by onboarding in your user settings. Recommended: (a). | Product | Open |
+| OQ-13 | Which items notify you? v19/F-012 pushed only blocking items to the phone. Every item is now assigned to you, which notifies. (a) Every item notifies (one path; mute in GitHub settings if noisy). (b) Only blocking items notify: non-blocking ones are opened unassigned and without @mention, and need a second query in VS Code that names your config repo, set by onboarding in your user settings. Recommended: (a). | Product | Decided (owner, 2026-11-13, decision card): (a) |
