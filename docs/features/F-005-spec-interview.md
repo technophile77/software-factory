@@ -1,9 +1,9 @@
 # Feature: Answer spec questions from Claude Code
 
 - **Id:** F-005
-- **Status:** Approved v9 (readiness gate passed 2026-11-10); v10 in interview (ADR 0025)
+- **Status:** Approved (readiness gate passed 2026-11-10; v10 passed 2026-11-13, ADR 0025)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 10 (draft)
+- **Spec version:** 10
 
 ## 1. Objective and business purpose
 The requirements analyst runs inside the engine, but the owner has no way to
@@ -235,7 +235,7 @@ build. It is versioned (FR-18) and described in the skill, not added to
 v10:
 - [x] OQ-5 answered (plugin setting)
 - [x] SR-9 v10 wording and SR-18 to SR-20 approved by the owner
-- [ ] Owner approves v10 as a whole
+- [x] Owner approves v10 as a whole (2026-11-13, decision card)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -249,6 +249,7 @@ v10:
 | 7 | 2026-11-10 | Wording only, to match approved channel v1.1 (FR-1, SR-15); no requirement changed | — (wording) |
 | 8 | 2026-11-10 | H-0026 (channel details) and H-0027 (readiness-gate interview rules, web reader in the role docs) approved; AC-7 and AC-8 tests move to the engine feature | Owner, 2026-11-10 (decision card) |
 | 9 | 2026-11-10 | Wording only: SR-16 names the `busy` exception H-0026 approved | — (wording) |
-| 10 | 2026-11-13 | Draft for ADR 0025: interview tools from the engine's `mcp` mode instead of the Python client (FR-1, FR-2, FR-14 to FR-19, AC-1, AC-2, AC-11, AC-13 to AC-17, constraints, edge cases, dependencies, SR-9 reworded, SR-18 to SR-20, OQ-5, H-0174 to H-0177) | — (draft) |
+| 10 | 2026-11-13 | For ADR 0025: interview tools from the engine's `mcp` mode instead of the Python client (FR-1, FR-2, FR-14 to FR-19, AC-1, AC-2, AC-11, AC-13 to AC-17, constraints, edge cases, dependencies, SR-9 reworded, SR-18 to SR-20, OQ-5, H-0174 to H-0177) | — (draft) |
 | 10.1 | 2026-11-13 | OQ-5: the plugin finds the engine through a required `engine_path` plugin setting (FR-14, AC-15) | Owner, 2026-11-13 (decision card) |
 | 10.2 | 2026-11-13 | SR-9 v10 wording and SR-18 to SR-20 approved as written | Owner, 2026-11-13 (decision card) |
+| 10.3 | 2026-11-13 | v10 approved as a whole; readiness gate passed; development (H-0174 to H-0177) may start | Owner, 2026-11-13 (decision card) |

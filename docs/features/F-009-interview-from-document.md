@@ -3,7 +3,7 @@
 - **Id:** F-009
 - **Status:** Approved (readiness gate passed 2026-11-12); in development
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 14 (draft, wording for F-005 v10)
+- **Spec version:** 14
 
 ## 1. Objective and business purpose
 The owner often has a finished spec or a working document before a feature
@@ -188,4 +188,4 @@ Passed 2026-11-12 (orchestrator check on spec v6):
 | OQ-2 | Which formats in this increment? (a) Markdown and plain text only. (b) Also .docx and PDF, which need a parser, its S4.1 security review and CVE tracking. Recommended: (a); convert other formats before handing them over. | Product, Security | Decided: (a) (owner, thread, 2026-11-12) |
 | OQ-3 | Size limit for a document. Recommended: 256 KiB of text, well under the 1 MiB file limit and inside the analyst's context with room to work. | Product | Decided: 256 KiB (owner, thread, 2026-11-12) |
 | OQ-4 | Can the owner add or replace the document after the interview starts? Recommended: not in this increment; start a new feature. | Product | Decided: not in this increment (owner, thread, 2026-11-12) |
-| 14 | 2026-11-13 | Wording for F-005 v10 (ADR 0025): "client script" becomes the client, now the engine's MCP mode (section 2, FR-2, AC-2, constraints, SR-2, SR-4, H-0108); FR-2 names the tool argument and the project directory for relative paths. No requirement changed | — (draft, with F-005 v10) |
+| 14 | 2026-11-13 | Wording for F-005 v10 (ADR 0025): "client script" becomes the client, now the engine's MCP mode (section 2, FR-2, AC-2, constraints, SR-2, SR-4, H-0108); FR-2 names the tool argument and the project directory for relative paths. No requirement changed | Owner, 2026-11-13 (decision card, with F-005 v10) |
