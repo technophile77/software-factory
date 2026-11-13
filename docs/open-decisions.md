@@ -12,7 +12,7 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 | 1 | VS Code extension architecture and technology stack | Architecture | Decided | [0003](adr/0003-engine-separate-process-vscode-ui.md) |
 | 4 | Agent execution isolation and permissions | Security | Decided | [0004](adr/0004-agent-isolation-worktrees-permissions.md) |
 | 5 | Git branching and commit strategy | Architecture | Decided | [0005](adr/0005-branching-feature-agent-branches-squash.md) |
-| 9 | Pull request creation and repository integration | Architecture | Decided | [0006](adr/0006-pr-factory-token-protected-main.md) |
+| 9 | Pull request creation and repository integration | Architecture | Decided | [0006](adr/0006-pr-factory-token-protected-main.md), superseded by [0017](adr/0017-owner-account-prs-inbox-merge.md) |
 | 6 | Test retry limits and escalation thresholds | Product | Decided (in [testing-strategy.md](testing-strategy.md)) | — |
 | 7 | Security severity definitions | Security | Decided (in [security-standards.md](security-standards.md)) | — |
 | 8 | Validation judge scoring and evidence requirements | Product | Decided (in [validation-judge](../agents/validation-judge/AGENT.md)) | — |
