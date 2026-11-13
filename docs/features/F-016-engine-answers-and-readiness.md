@@ -169,7 +169,7 @@ Drafts, for the owner's approval:
   | `pins` (owner keys changed, new project path; F-007 SR-5) | owner keys: re-pin and start the project (OQ-3), only from the previously pinned owner id |
   | `chain` (transcript changed outside the engine) | resume: re-read the transcript; if the chain is intact again, reopen the feature, else file anew |
   | `breach` (analyst or reviewer wrote outside its rules) | resume, within the run caps (SR-8) |
-  | `gate1cap` (Gate 1 run limit) | resume: one more Gate 1 run, counted against no cap but filed again at the next limit |
+  | `gate1cap` (Gate 1 run limit) | resume: the feature's Gate 1 run cap rises by one for this approval only (the owner's explicit override of F-008 SR-11); the next limit files a new item |
   | `sources`, `manifest`, `auth`, `fetch`, `dup`, `additions`, `secret` | record only (the owner fixes the cause; the engine re-checks at its next check) |
   | Gate 1 choice and risk items | FR-3 to FR-5 |
   | Spec sign-off | FR-9 |
