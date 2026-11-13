@@ -26,9 +26,13 @@ go to the proxy's credential gateway, which forwards them to
   with no key, a risk the owner accepted (SR-5). Each key goes only to its
   own endpoint, and the gateway follows no redirects (SR-13). Endpoint rungs
   are limited to read-only roles (SR-9).
-- **Maintenance:** the gateway's body checks apply to every upstream; each
-  endpoint uses the same `/v1/messages` and `/v1/messages/count_tokens`
-  paths (Anthropic format, F-013 OQ-6).
+- **Maintenance:** the gateway's body checks apply to every upstream.
+  Anthropic-format endpoints get `/v1/messages` and
+  `/v1/messages/count_tokens` as they are; OpenAI-format endpoints go
+  through a translator in the gateway (F-013 OQ-6 (b), FR-14), which is new
+  parsing code in the component that holds the credentials, so it carries
+  its own fixture, round-trip and fuzz tests (FR-15) and strict input rules
+  (SR-16).
 - **Cost:** `per_token` endpoints count against project budgets, `subscription`
   endpoints stop at their plan limits, and `local`
   endpoints don't (F-013 FR-13).
@@ -40,6 +44,7 @@ upstream's credential only.
 
 ## Consequences
 - Agents and their containers are unchanged by which endpoint a rung uses.
-- A new API format (for example OpenAI chat-completions) would be a
-  translator inside the gateway, with its own spec and Security review.
+- Two API formats are supported: Anthropic Messages natively and OpenAI
+  chat-completions through the translator. A further format would be
+  another translator, with its own spec and Security review.
 - Rules out giving agent containers direct access to model endpoints.

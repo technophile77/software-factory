@@ -69,3 +69,9 @@ TLS host checks (#1); information disclosure to third parties by the
 per-project list and OQ-7 (#5); key misuse by #2; denial of wallet by #3
 and #4. The DNS-rebinding case, a public name resolving to a LAN address,
 is refused by FR-4 and SR-3.
+
+## Delta review, spec v11 (OpenAI-format translator)
+
+| # | Criterion | Severity | Blocks? | Finding | Recommendation |
+|---|---|---|---|---|---|
+| 6 | S1.1, S4.5, S5.1 | Medium | No | OQ-6 (b) adds a translator inside the gateway, the component that holds every credential. It parses replies and stream events from endpoints, including public third-party ones. A parser bug could hang the gateway, pass malformed tool calls to an agent, or let an endpoint shape text that an agent reads as a tool call. | SR-16: strict parsing with size caps, a fixed schema, unknown fields dropped, tool arguments must be a JSON object, and stalled streams cut off by the deadline; FR-15's fixture, stochastic round-trip and fuzz tests in CI. Requests the table doesn't cover are refused, not passed through (FR-14). |
