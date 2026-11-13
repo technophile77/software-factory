@@ -4,7 +4,7 @@
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account)
-- **Spec version:** 9
+- **Spec version:** 10
 
 ## 1. Objective and business purpose
 Everything the factory needs the owner to approve reaches the owner in one
@@ -136,7 +136,7 @@ sessions, or by the owner) can be listed too (OQ-6).
 |---|---|---|---|
 | SR-1 | The merge call carries the head commit the owner saw as the expected head, so a push after the card was shown is never merged on that click (OWASP LLM Top 10 2025, LLM06: human approval of high-impact actions). | Analyst | Proposed |
 | SR-2 | The merge uses the owner's VS Code GitHub sign-in, held by VS Code; it is never written to items, logs or the engine, and agents never see it (S3.1). | Analyst (S3.1) | Proposed |
-| SR-3 | The engine's token has no Administration permission, so it can't change or remove the `main` ruleset. | Analyst (S8) | Proposed; conflicts with F-010 OQ-8, see OQ-7 |
+| SR-3 | The engine's token has no Administration permission, so it can't change or remove the `main` ruleset. | Analyst (S8) | Proposed; admin rights on a separate token used only for advisories (OQ-7) |
 | SR-4 | The `main` ruleset has no bypass actors in owner-token mode, so required CI applies to every merge. | Analyst (S8) | Proposed |
 | SR-5 | The engine merges only in FR-11 (hygiene diff identical to the approved one); it has no other merge code path. | Analyst (LLM06) | Proposed; enforced in CI by FR-14 |
 | SR-6 | Tokens never appear in items, logs, commits or the Actions log (S3.1). | Analyst (S3.1) | Proposed |
@@ -184,6 +184,7 @@ Hygiene items named here; none filed until the open questions are answered.
 | 7 | 2026-11-13 | Confirmation dialog on risky actions: merge, hygiene approval, maturity approval (FR-15, AC-16); ADR 0017 point 2 updated | Owner, 2026-11-13 (thread) |
 | 8 | 2026-11-13 | OQ-4 decided (a): a confirmed hygiene change's PR merges automatically when its diff matches exactly | Owner, 2026-11-13 (decision card) |
 | 9 | 2026-11-13 | OQ-6 decided (b): every open PR into `main` of a managed repo gets a Pull request item (FR-6) | Owner, 2026-11-13 (decision card) |
+| 10 | 2026-11-13 | OQ-7 decided (a): separate admin token for advisories only; everyday token has no Administration | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -194,7 +195,7 @@ Hygiene items named here; none filed until the open questions are answered.
 | OQ-4 | Should an approved hygiene change need a second click for its PR? (a) No: the engine merges the PR itself if its diff equals the approved diff exactly (FR-11, SR-5). (b) Yes, always. Recommended: (a); it is the same change, and the exact comparison is done by code. | Product | Decided (owner, 2026-11-13, decision card): (a), after the FR-15 confirmation |
 | OQ-5 | Does an approval survive a merge of `main` into the PR? **Withdrawn:** with OQ-2 the merge happens on the click, so there is no stored approval to keep. | Security | Withdrawn (moot after OQ-2) |
 | OQ-6 | Which PRs appear as Pull request items? (a) Only PRs the engine opened. (b) Every open PR into `main` of a managed repo, including ones by Claude Code sessions or the owner. Recommended: (b), so this repo's own PRs stop needing a bypass; the check works the same for any author. | Product | Decided (owner, 2026-11-13, decision card): (b) |
-| OQ-7 | F-010 OQ-8 gave the factory token admin and advisory rights. With the owner's own token, admin would let the engine (or a leaked token) edit or remove the `main` ruleset, including its required CI. (a) Two tokens of the owner's: the everyday token (Contents, Pull requests, Issues read and write; no Administration) and a separate admin token used only by the advisory code path. (b) One token with admin, accepting that risk. Recommended: (a). | Security | Open |
+| OQ-7 | F-010 OQ-8 gave the factory token admin and advisory rights. With the owner's own token, admin would let the engine (or a leaked token) edit or remove the `main` ruleset, including its required CI. (a) Two tokens of the owner's: the everyday token (Contents, Pull requests, Issues read and write; no Administration) and a separate admin token used only by the advisory code path. (b) One token with admin, accepting that risk. Recommended: (a). | Security | Decided (owner, 2026-11-13, decision card): (a). F-010's advisory path (its OQ-8, SR-17) must use the admin token only; F-010 needs a matching amendment |
 | OQ-8 | How strong must the owner's approval be? **Withdrawn:** decided by OQ-2 (the click alone). | Security | Withdrawn (moot after OQ-2) |
 | OQ-9 | SR-7: anything using the owner's credentials can merge without a click, and GitHub can't tell. Add a lightweight safeguard? (a) None; rely on the engine having no merge code path except FR-11. (b) A CI test in this repo that fails if engine code calls GitHub's merge API outside the FR-11 path, so a later change can't add one silently. Recommended: (b); it costs one test and no owner steps. It does not stop a leaked token or another program. | Security | Decided (owner, 2026-11-13, decision card): (b) |
 | OQ-10 | Which phone channel? **Withdrawn:** moved with phone notifications and approvals to a separate feature (owner, 2026-11-13). | Product | Withdrawn |
