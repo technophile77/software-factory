@@ -5,7 +5,7 @@ import { ROUTER_TIMEOUT_S, litellmConfig, litellmEnv } from "../src/agent/litell
 import { SessionGroup } from "../src/agent/sandbox";
 import type { Endpoint } from "../src/config/endpoints";
 import { DockerCli, DockerError } from "../src/docker/cli";
-import { LITELLM_IMAGE_DIGEST, LITELLM_IMAGE_REF, LITELLM_SIGNATURE_ENV, litellmImageId, verifyLitellmSignature } from "../src/docker/litellm-image";
+import { LITELLM_PIN, type LitellmPin, NoLitellmPinError, litellmImageId, litellmImageRef, litellmPinProblem } from "../src/docker/litellm-image";
 import { inspectMismatches, runArgs } from "../src/docker/plan";
 import type { ContainerSpec } from "../src/docker/plan";
 import { MemoryLogger } from "../src/log";
@@ -101,34 +101,93 @@ describe("litellmConfig with random endpoint sets", () => {
   });
 });
 
+const DAY = 86_400_000;
+const NOW = Date.parse("2026-12-01T00:00:00Z");
+const PIN: LitellmPin = { version: "1.108.2", digest: `sha256:${"e".repeat(64)}`, publishedAt: "2026-11-10T00:00:00Z" };
+const ok = async () => undefined;
+
+describe("litellmPinProblem (SR-17, OQ-12 (a))", () => {
+  it("accepts a 1.108.x release at least 14 days old, and exactly 14 days", () => {
+    expect(litellmPinProblem(PIN, NOW)).toBeNull();
+    expect(litellmPinProblem({ ...PIN, publishedAt: new Date(NOW - 14 * DAY).toISOString() }, NOW)).toBeNull();
+  });
+
+  it("refuses a release under 14 days old, a future date and an unreadable date", () => {
+    expect(litellmPinProblem({ ...PIN, publishedAt: new Date(NOW - 14 * DAY + 1).toISOString() }, NOW)).toMatch(/less than 14 days/);
+    expect(litellmPinProblem({ ...PIN, publishedAt: new Date(NOW + DAY).toISOString() }, NOW)).toMatch(/less than 14 days/);
+    expect(litellmPinProblem({ ...PIN, publishedAt: "yesterday" }, NOW)).toMatch(/isn't readable/);
+  });
+
+  it("refuses versions off the 1.108.x line", () => {
+    for (const version of ["1.109.1", "1.107.9", "1.108", "1.1080.0", "1.108.x", "1.108.1-rc1", "2.108.0", "1x108.0"]) {
+      expect(litellmPinProblem({ ...PIN, version }, NOW), version).toMatch(/LTS line/);
+    }
+  });
+
+  it("refuses a digest that isn't a sha256 image digest", () => {
+    for (const digest of ["", "latest", `sha256:${"E".repeat(64)}`, `sha256:${"e".repeat(63)}`]) expect(litellmPinProblem({ ...PIN, digest }, NOW)).toMatch(/digest/);
+  });
+});
+
 describe("the pinned LiteLLM image", () => {
-  it("is pinned by digest and refuses to be used until its signature is said to be verified", async () => {
-    expect(LITELLM_IMAGE_REF).toBe(`ghcr.io/berriai/litellm-non_root@${LITELLM_IMAGE_DIGEST}`);
-    expect(() => verifyLitellmSignature({ env: {} })).toThrow(DockerError);
-    expect(() => verifyLitellmSignature({ env: { [LITELLM_SIGNATURE_ENV]: "sha256:" + "0".repeat(64) } })).toThrow(DockerError);
-    expect(() => verifyLitellmSignature({ env: { [LITELLM_SIGNATURE_ENV]: LITELLM_IMAGE_DIGEST } })).not.toThrow();
+  it("has no release pinned yet (1.108.0 is under 14 days old), so the engine refuses to use it before any docker call", async () => {
+    expect(LITELLM_PIN).toBeNull();
     const d = new FakeDocker();
-    await expect(litellmImageId(d as unknown as DockerCli, { signature: { env: {} } })).rejects.toThrow(DockerError);
+    let verified = false;
+    const verify = async () => { verified = true; };
+    const err = await litellmImageId(d as unknown as DockerCli, { verify }).catch((e) => e);
+    expect(err).toBeInstanceOf(NoLitellmPinError);
+    expect(err.message).toBe("no approved LiteLLM release pinned yet (SR-17)");
+    expect(d.calls).toHaveLength(0);
+    expect(verified).toBe(false);
+    expect(() => litellmImageRef(null)).toThrow(NoLitellmPinError);
+  });
+
+  it("is used by digest, after the pin rule and the signature check, and never pulled when either refuses", async () => {
+    expect(litellmImageRef(PIN)).toBe(`ghcr.io/berriai/litellm-non_root@${PIN.digest}`);
+    const seen: string[] = [];
+    const d = new FakeDocker();
+    await litellmImageId(d as unknown as DockerCli, { pin: PIN, now: () => NOW, verify: async (ref) => void seen.push(ref) });
+    expect(seen).toEqual([litellmImageRef(PIN)]);
+
+    const young = new FakeDocker();
+    await expect(litellmImageId(young as unknown as DockerCli, { pin: PIN, now: () => Date.parse(PIN.publishedAt) + DAY, verify: ok })).rejects.toThrow(/refused.*less than 14 days/);
+    const bad = new FakeDocker();
+    await expect(litellmImageId(bad as unknown as DockerCli, { pin: PIN, now: () => NOW, verify: async () => { throw new DockerError("cosign refused"); } })).rejects.toThrow("cosign refused");
+    expect(young.calls).toHaveLength(0);
+    expect(bad.calls).toHaveLength(0);
+  });
+
+  it("ignores the old environment claim: only verify counts", async () => {
+    const d = new FakeDocker();
+    const saved = process.env.FACTORY_LITELLM_SIGNATURE_VERIFIED;
+    process.env.FACTORY_LITELLM_SIGNATURE_VERIFIED = PIN.digest;
+    try {
+      await expect(litellmImageId(d as unknown as DockerCli, { pin: PIN, now: () => NOW, verify: async () => { throw new DockerError("not signed"); } })).rejects.toThrow("not signed");
+    } finally {
+      if (saved === undefined) delete process.env.FACTORY_LITELLM_SIGNATURE_VERIFIED;
+      else process.env.FACTORY_LITELLM_SIGNATURE_VERIFIED = saved;
+    }
     expect(d.calls).toHaveLength(0);
   });
 
   it("returns the id and the image's own numeric user after checking the digest", async () => {
     const d = new FakeDocker();
-    const got = await litellmImageId(d as unknown as DockerCli, { signature: { verifiedOutOfBand: true } });
+    const got = await litellmImageId(d as unknown as DockerCli, { pin: PIN, now: () => NOW, verify: ok });
     expect(got).toEqual({ id: `sha256:${"c".repeat(64)}`, user: "65532:65532" });
   });
 
   it("pairs a bare numeric uid with the same gid, as the real image reports 65534", async () => {
     const d = new FakeDocker();
     d.litellmUser = "65534";
-    expect((await litellmImageId(d as unknown as DockerCli, { signature: { verifiedOutOfBand: true } })).user).toBe("65534:65534");
+    expect((await litellmImageId(d as unknown as DockerCli, { pin: PIN, now: () => NOW, verify: ok })).user).toBe("65534:65534");
   });
 
   it("refuses an image that runs as a user name or as root", async () => {
     for (const user of ["nobody", "0:0", ""]) {
       const d = new FakeDocker();
       d.litellmUser = user;
-      await expect(litellmImageId(d as unknown as DockerCli, { signature: { verifiedOutOfBand: true } })).rejects.toThrow(/non-root/);
+      await expect(litellmImageId(d as unknown as DockerCli, { pin: PIN, now: () => NOW, verify: ok })).rejects.toThrow(/non-root/);
     }
   });
 });

@@ -7,6 +7,7 @@ import { requestDeadlineMs } from "../src/proxy/server";
 import { SessionGroup } from "../src/agent/sandbox";
 import { type Endpoint, validateEndpoints } from "../src/config/endpoints";
 import { type DockerCli, DockerError } from "../src/docker/cli";
+import { NoLitellmPinError } from "../src/docker/litellm-image";
 import { MemoryLogger } from "../src/log";
 import type { RolePolicy } from "../src/policy/role-policy";
 import { MemoryCredentialStore } from "../src/secrets";
@@ -434,6 +435,18 @@ describe("the LiteLLM image at engine start (AC-16)", () => {
     expect(probed).toEqual([]);
     for (const st of svc.statuses()) expect(st).toMatchObject({ available: false, reason: expect.stringContaining("pinned digest") });
     expect(svc.unavailable(RUNG)).toContain("pinned digest");
+  });
+
+  it("with no LiteLLM release pinned (SR-17), every rung is unavailable with the plain reason and nothing is probed", async () => {
+    const r = await rig({ endpoints: endpoints({ other: {} }) });
+    const probed: string[] = [];
+    const svc = await EndpointService.start({
+      ...r.opts, probe: async (e) => (probed.push(e.name), { ok: true, toolChecked: true }),
+      image: async () => { throw new NoLitellmPinError(); },
+    });
+    expect(probed).toEqual([]);
+    for (const st of svc.statuses()) expect(st).toMatchObject({ available: false, reason: "no approved LiteLLM release pinned yet (SR-17)" });
+    expect(svc.unavailable(RUNG)).toBe("unavailable since the engine started: no approved LiteLLM release pinned yet (SR-17)");
   });
 
   it("checks the image once at start, not at first use, and not at all with no endpoint configured", async () => {
