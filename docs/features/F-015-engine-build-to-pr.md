@@ -79,8 +79,8 @@ Draft. Each will be refined by section 12.
 | FR-12 | Every run writes an Agent report (contract v1.4) and is resumable and interruptible as earlier runs are, within `MAX_RESUMES`. |
 | FR-13 | Models and limits for the new roles come from the master `engine/config/models.yaml` and `limits.yaml` at the pinned factory version (hygiene items in section 10); the engine has no defaults; a project may only lower limits. |
 | FR-14 | The PR parts of F-011 are built here, since nothing opens PRs before this increment (agreed with increment 3, F-016): the FR-9 definition-of-done comment, `/changes <note>` on managed PRs, recording `merged_on_github` / `closed_on_github`, and FR-10's hygiene auto-merge with its SR-11 diff check. Inbox issues, inbox records and PR records stay on the config repo's `factory/state` (F-011, Inbox item v3.0). |
-| FR-16 | Each feature targets exactly one code repo of its project, named in its spec (OQ-3). A request needing several repos becomes linked features, one per repo; a feature that depends on another doesn't start stage 5 until that feature's PR has merged. |
 | FR-15 | The build starts from the stage `build_and_test_prep`, which increment 3 records when the owner approves the spec sign-off. |
+| FR-16 | Each feature targets exactly one code repo of its project, named in its spec (OQ-3). A request needing several repos becomes linked features, one per repo; a feature that depends on another doesn't start stage 5 until that feature's PR has merged. |
 
 ## 4. Acceptance criteria
 To be written once section 12 is answered; each FR gets at least one.
