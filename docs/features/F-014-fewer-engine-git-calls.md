@@ -4,7 +4,7 @@
 - **Status:** Approved; readiness gate passed 2026-11-13; in development
 - **Requested by / date:** Alex, 2026-11-13 (chose "Fewer engine git calls"
   from the CI speed thread's options)
-- **Spec version:** 7
+- **Spec version:** 8
 
 ## 1. Objective and business purpose
 The engine starts a new `git` process for almost every read and write it
@@ -38,7 +38,7 @@ Where the time goes today (profile of the full acceptance suite on
 ## 3. Functional requirements
 | Id | Requirement |
 |---|---|
-| FR-1 | **One reader per repo.** Reads of refs, trees and blobs go through one `git cat-file --batch` process per repo, kept open while the engine is busy in that repo and closed after 2 seconds with no read (OQ-1, owner 2026-11-13). Modes come from the tree objects the engine parses itself, so a symbolic link or submodule is still refused where it is today. |
+| FR-1 | **One reader per repo.** Reads of refs, trees and blobs go through one `git cat-file --batch-command` process per repo, kept open while the engine is busy in that repo and closed after 2 seconds with no read (OQ-1, owner 2026-11-13). Modes come from the tree objects the engine parses itself, so a symbolic link or submodule is still refused where it is today. |
 | FR-2 | **Reader failure falls back.** If the reader dies, times out or returns output the engine can't parse, the engine kills it, makes that one read with a separate git process as today, and starts a new reader on the next read. A read never returns a wrong answer because the reader got out of step. |
 | FR-3 | **factory/state head held in memory.** The engine keeps the factory/state commit it last wrote or read, and updates it on every commit, fetch and fast-forward it makes (A-1). A commit whose compare-and-swap fails on a held head reloads it and commits once more on the moved head, which is what a fresh read gave before; `sync()`, whose job is to see changes made outside the engine, always reads the head from git. |
 | FR-4 | **Master repo facts read once.** The master repo's root commits and origin URL, used by the project path check (SR-13), are read once per engine start instead of once per project path check. |
@@ -61,8 +61,7 @@ Where the time goes today (profile of the full acceptance suite on
 ## 5. Constraints
 - Git safety overrides (`overrideArgs`, the clean environment) apply to the
   reader process exactly as to every other git process.
-- Works with the git versions the engine supports today. Plain `cat-file
-  --batch` predates every version in use, so no new minimum.
+- Fast reads need git 2.36 or later (`cat-file --batch-command`, 2022). With older git the reader fails to start, and after three tries per repo every read takes the plain path, as before F-014: correct, just not faster (owner, v8).
 - No new dependency. No native git library: the engine keeps using the
   owner's own git binary.
 - Works on Windows, Linux and macOS.
@@ -136,3 +135,4 @@ None. `Git` gains methods internal to the engine; no contract in
 | 5 | 2026-11-13 | SR-5 to SR-8 approved; readiness gate passed (six checks) | Alex (card) |
 | 6 | 2026-11-13 | AC-1 target 35% → 30% after the build measured 31.4% (51,904 → 35,628); FR-3 and AC-5: a swap that fails on a held head commits once more on the moved head, and `sync()` reads the head fresh | Alex (card, AC-1); FR-3 wording keeps pre-F-014 behavior |
 | 7 | 2026-11-13 | SR-5 extended: trees out of git's sort order are refused (Gate 2 L2) | Alex (card) |
+| 8 | 2026-11-13 | §5: fast reads need git 2.36+ (`cat-file --batch-command`); older git falls back to plain calls after three failed starts per repo (Gate 2 owner item 2) | Alex (card) |
