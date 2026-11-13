@@ -162,3 +162,21 @@ jobs:
             --format json --output-file "$RUNNER_TEMP/image-scan.json" factory-agent:ci || rc=$?
           test "$rc" -le 1
           python3 -I scripts/osv_fixable.py "$RUNNER_TEMP/image-scan.json"
+      # F-013 SR-16 / FR-15: the LiteLLM image holds the endpoint keys, so it is
+      # scanned like the agent image. It is pulled by the digest the engine
+      # pins, read from the source so the two can't drift apart.
+      - name: Pull the pinned LiteLLM image
+        run: |
+          repo=$(sed -n 's/^export const LITELLM_IMAGE = "\(ghcr\.io\/[a-z0-9._\/-]*\)";$/\1/p' engine/src/docker/litellm-image.ts)
+          digest=$(sed -n 's/^export const LITELLM_IMAGE_DIGEST = "\(sha256:[0-9a-f]\{64\}\)";$/\1/p' engine/src/docker/litellm-image.ts)
+          test -n "$repo" && test -n "$digest"
+          docker pull "$repo@$digest"
+          docker tag "$repo@$digest" factory-router:ci
+      # Same rule as the agent image: only a CVE with a fix fails the job.
+      - name: Scan the LiteLLM image
+        run: |
+          rc=0
+          "$RUNNER_TEMP/osv-scanner" scan image --config engine/osv-scanner.toml \
+            --format json --output-file "$RUNNER_TEMP/router-scan.json" factory-router:ci || rc=$?
+          test "$rc" -le 1
+          python3 -I scripts/osv_fixable.py "$RUNNER_TEMP/router-scan.json"

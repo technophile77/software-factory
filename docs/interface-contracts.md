@@ -33,6 +33,11 @@ owner 2026-11-11 (decision card). Engine control channel v1.4 (H-0105),
 Interview tools v1.1 (H-0106) and Role policy v2.6 (H-0107) for F-009 (start
 an interview from a document) approved by the owner 2026-11-12 (PR #29
 merged; decision card, as drafted).
+Model endpoints file v1.0 (H-0135), Project manifest v1.5 (`settings.endpoints`,
+H-0135) and Agent report v1.4 (H-0136) for F-013 approved by the owner
+2026-11-13 (decision card). Inbox item v3.0 (F-011 H-0165, ADR 0022: items
+are GitHub issues) approved by the owner 2026-11-13 (decision card); it
+replaces v1.1 and the never-applied v2.0, v2.1 and Phone issue v1.0.
 
 ## Contract entry format
 
@@ -47,96 +52,126 @@ merged; decision card, as drafted).
 
 ---
 
-## Inbox item — v1.1
+## Inbox item — v3.0
 
 - Status: Approved
-- Owner decision: follows ADR 0002; v1.1 by the owner, 2026-11-10 (H-0062, F-006, decision card)
-- Used by: engine, all agents that file items, VS Code extension
-- Compatibility: adding an optional field is non-breaking; renaming,
-  removing, or changing the meaning of a field is breaking (major version).
+- Owner decision: ADR 0022; v3.0 by the owner, 2026-11-13 (F-011 H-0165, decision card). Replaces v1.1, and v2.0 (F-011 H-0120), v2.1 and Phone issue v1.0 (F-012 H-0125), which were approved but never applied.
+- Used by: engine (files, reads, records), the config repo workflow (opens issues, posts action comments), Microsoft's GitHub Pull Requests extension and GitHub Mobile (view only)
+- Compatibility: breaking (major) from v1.1: items are issues in the project's private config repo, not files; `pull_request` is not a kind (F-011 OQ-12); owner actions are proven by GitHub (ADR 0018, ADR 0022), not signed commits. Adding a kind, action, label or optional record field is minor; changing a template's fixed text, the marker lines or the command grammar is major.
 
-**Location:** `.factory/inbox/<inbox>/<id>.md`, where `<inbox>` is
-`decision`, `testing`, or `hygiene`.
+**Ids.** `^[DTHSMN]-\d{4,}$`: `D` decision, `T` testing, `H` hygiene, `S` spec
+sign-off, `M` maturity, `N` notice. Numbered per project: the next id is one
+more than the highest record of that prefix on the config repo's
+`factory/state`.
 
-**Ids:** `D-0001`, `T-0001`, `H-0001`, numbered per inbox per repo.
+**Issue** (config repo):
+- Title: `<id> <Kind>[ (<Category>)]: <title>`, at most 120 characters;
+  Security items use SR-19's fixed title.
+- Labels: `factory-inbox`; `kind:<decision|testing|hygiene|spec|maturity|notice>`;
+  `category:<product|architecture|interfaces|assumptions|security>` (decision
+  only); `priority:<critical|high|medium|low>` (the effective priority);
+  `blocking` when blocking.
+- Assignee: the owner (`FACTORY_OWNER_LOGIN`), for every item (OQ-13).
+- Body: first line `<!-- factory-item: <id> rev <n> -->`; then the kind's
+  sections as fixed headings; then `Revision <n>.`. Sections: decision:
+  Context, Options (numbered, with pros and cons), Project impact,
+  Recommendation, Cost of delay, and Advisor when advice exists (v1.1);
+  testing: Expected, Actual, Logs, Root cause, Recovery attempts, Recommended
+  next step; hygiene: File, Reason, Diff, Benefits, Risks, Recommendation;
+  spec: Summary, Readiness, Open items; maturity: Evidence, Gaps,
+  Recommendation; notice: Details. Outside text per SR-10.
 
-**Format:** Markdown with YAML frontmatter. The frontmatter is what the
-engine and extension read; the body is the human-readable context.
+**Action comments** (workflow, in a fixed order): first line
+`<!-- factory-action: <id> rev <n> <action> -->`, second line the label, for
+example `Option A: Redis`, `Approve`, `Defer`, `Ask the advisor first`. For
+`changes` and `research`: `<label>: reply with /changes <note>` (or
+`/research <note>`).
+
+**Owner actions.** 👍 (`+1`) on an action comment, or a comment whose first
+line is a command (SR-18): `/choose <option>`, `/approve`, `/reject`,
+`/defer`, `/restore`, `/dismiss`, `/advisor`, `/step <n>`, `/changes <note>`,
+`/research <note>`, `/confirm <code>`. 🚀 (`rocket`) on a confirm comment
+confirms. Other reactions are ignored. On a managed PR, only `/changes <note>`
+is read (FR-9).
+
+**Engine comments** (fixed texts; never start with `/`, SR-17):
+`Confirm: <action> <target>. React 🚀 or reply /confirm <code> within 15 minutes.`;
+`Recorded: <action>.`; `Not recorded: <reason>.` (reasons: changed since,
+two actions chosen, confirm expired, comment edited, not a command, not the
+owner); `Stale: revision <n> replaces this.` (edit of an old action
+comment); on PRs, `Factory evidence for <feature>:` followed by the FR-9
+fields.
+
+**Record** (config repo `factory/state`, `inbox/<id>.yaml`, one commit per
+change, message starting with the id):
 
 ```yaml
----
-schema: inbox-item/1.0
+schema: inbox-record/3.0
 id: D-0007
-inbox: decision                 # decision | testing | hygiene
+kind: decision            # decision | testing | hygiene | spec | maturity | notice
 title: Choose session store for login
-category: Architecture          # decision inbox only: Product | Architecture | Interfaces | Assumptions | Security
-priority: high                  # critical | high | medium | low  (as filed)
-effective_priority: high        # what the queue sorts by; lowered on defer
-blocking: true                  # keeps its value through deferral
-status: open                    # open | approved | rejected | changes_requested | research_requested | deferred
-feature: F-012                  # optional
-created_by: orchestrator        # agent role
+category: Architecture    # decision only
+priority: high            # as filed
+effective_priority: high
+blocking: true
+status: open              # open | approved | chosen | rejected | changes_requested | research_requested | deferred | dismissed | closed
+repo: owner/app           # the repo the item concerns, or "project"
+feature: F-012            # optional
+created_by: orchestrator
 created_at: 2026-11-08T21:00:00Z
-options:                        # decision inbox only
-  - id: A
-    label: Redis
-  - id: B
-    label: Postgres table
+issue: 42                 # number in the config repo
+options: [{id: A, label: Redis}, {id: B, label: Postgres table}]   # decision only
 recommendation: A
-links:                          # files, logs, diffs, transcripts
-  - kind: file
-    ref: docs/features/F-012-login.md
-history:                        # appended on every status change, never edited
+links: [{kind: file, ref: docs/features/F-012-login.md}]
+advisor_reason: ...       # optional, as v1.1
+advice: [...]             # optional, as v1.1
+revisions:                # one per revision posted
+  - rev: 1
+    body_sha256: <hex>
+    action_comments: [{id: 1001, action: choose:A, sha256: <hex>}]
+engine_comments: [1005, 1006]      # never read as commands (SR-17)
+history:                           # appended, never edited
   - at: 2026-11-08T21:00:00Z
-    by: orchestrator
+    by: engine
     action: filed
----
+  - at: 2026-11-08T21:30:00Z
+    by: owner
+    action: chosen                 # chosen | approved | rejected | changes_requested | research_requested | deferred | restored | dismissed | advisor_requested | step_chosen
+    option: A
+    rev: 1
+    source: reaction               # reaction | command
+    actor_id: 1000001              # example; the real id is in the engine config
+    comment_id: 1001
+    reaction_id: 77
+    ref: https://github.com/<owner>/<config-repo>/issues/42#issuecomment-1001
+    confirmed_by: {source: reaction, comment_id: 1007, reaction_id: 78}   # risky actions only
 ```
 
-Body sections by inbox (headings are fixed so the extension can render them):
+Engine history actions: `filed`, `revised`, `confirm_requested`,
+`auto_merged` (FR-10, with PR and merge commit), `closed`, `migrated` (FR-16,
+with the old file path and commit).
 
-| Inbox | Required body sections |
-|---|---|
-| decision | Context, Options (with pros and cons per option), Project impact, Recommendation, Cost of delay |
-| testing | Expected, Actual, Logs, Root cause, Recovery attempts, Recommended next step |
-| hygiene | File, Reason, Current content, Proposed content, Diff, Benefits, Risks, Recommendation |
+**PR records** (config repo `factory/state`, `prs/<owner>/<repo>/<n>.yaml`):
+`evidence_comment_id`, `feature`, `head` at evidence time, and history
+entries `evidence_posted`, `changes_requested` (with the comment id and
+actor id), `merged_on_github` (merge commit, merged by), `closed_on_github`.
+- F-012's approved H-0128 (manifest `phone` block) is withdrawn: the inbox
+  is always on issues, so there is nothing to turn on. v19's H-0124
+  (manifest `github` block) and H-0123 (`main` ruleset) stand unchanged.
 
-**Owner actions** append to `history` with `by: owner` and one of
-`approved`, `rejected`, `changes_requested`, `research_requested`,
-`deferred`, `restored`, plus an optional `note`. Each action is one commit
-whose message starts with the item id. From ADR 0015 (H-0047, owner, 2026-11-10) the
-commit must be signed with one of the owner's SSH signing keys as listed on
-GitHub; the engine ignores an owner action whose commit is not, and files a
-Security alert for it.
+**Command grammar** (F-011 SR-18): only the comment's first line, case-sensitive, matching
+`^/(choose [A-Z0-9]{1,3}|approve|reject|defer|restore|dismiss|advisor|step [0-9]{1,2}|confirm [A-Z0-9]{4}|changes .+|research .+)$`.
+The engine never reads its own comments as commands (F-011 SR-17).
 
-**Advisor (v1.1, F-006).** Optional, decision inbox only:
-
-```yaml
-advisor_reason: Cross-cuts the budget and sandbox decisions   # set only by the orchestrator, when filing
-advice:                                                       # written only by the engine
-  - call: A-0003
-    path: .factory/advice/A-0003.md
-    sha256: <hex>
-    status: done            # running | done | failed
-```
-
-With `advisor_reason` present, the extension offers the owner action
-`advisor_requested` ("Ask the advisor first"). That action starts one
-advisor call; the item stays `open`. The engine writes the advice to
-`.factory/advice/<call>.md`, a path no role may write, and appends an
-`advice` entry; the extension shows the file as plain text under an
-**Advisor** heading it renders itself, and warns when the hash doesn't
-match. The engine ignores, and files a Security item for, an
-`advisor_reason` written by any role other than the orchestrator, or an
-`advisor_requested` entry in a commit an agent session made (F-006 SR-3).
-Call ids are `A-0001`, numbered per repo.
+**Advisor (from v1.1, F-006).** `advisor_reason` is set only by the orchestrator when filing; `advice` entries are written only by the engine, with the advice file at `.factory/advice/<call>.md` on `factory/state` and its sha256; the issue shows it under an **Advisor** heading, rendered as untrusted text (F-011 SR-10).
 
 ---
 
-## Agent report — v1.3
+## Agent report — v1.4
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0041);
-  v1.3 Gate 1 fields approved (H-0096, owner, decision card, 2026-11-12)
+  v1.3 Gate 1 fields approved (H-0096, owner, decision card, 2026-11-12);
+  v1.4 endpoint rungs approved (H-0136, owner, decision card, 2026-11-13)
 - Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8);
   v1.2 adds the context-hygiene body and `proposed_items`, requested by the
   owner 2026-11-10 (PR #17)
@@ -171,6 +206,17 @@ referenced by path or URL.
 `usage` (`input_tokens`, `output_tokens`, `cost_usd`, `duration_s`), and
 `transcript_ref` (where the run's transcript is kept, outside Git). The
 engine fills them; agents do not.
+
+**Endpoint rungs (v1.4, F-013).** `model` is either a Claude model id or
+`<endpoint>/<model>` for a run on a configured model endpoint, for example
+`lan/qwen3.8-27b`. The endpoint is named, never its address. For an
+endpoint run, `usage.cost_usd` follows the endpoint's billing mode (F-013
+FR-13: 0 for `local` and `subscription`), and optional `usage.plan_share`
+(0 to 1) records a `subscription` run's share of its plan limits. Optional
+`fallback` (`{ endpoint, reason, waited_s, prompt_tokens }`) records a run
+that was meant for an endpoint but ran on the role's Claude rung (F-013
+FR-7). Tuning metrics and Calibration result group rungs by the full
+`model` string. Additive.
 
 **Role-specific `body`:**
 
@@ -666,16 +712,18 @@ section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.4
+## Project manifest — v1.6
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014);
-  v1.3 approved (H-0080); v1.4 approved (H-0087)
+  v1.3 approved (H-0080); v1.4 approved (H-0087); v1.5 approved (H-0135);
+  v1.6 approved (F-013 OQ-11, owner, decision card, 2026-11-13)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
   adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
   `complexity` and `settings.agents` (F-002 A-6, A-8); v1.3 adds `enabled`,
   `owner` and `allowed_repo_owners` (ADR 0012, F-007 OQ-2; owner, decision
   card, 2026-11-11); v1.4 adds `limits` (F-007 SR-18, H-0087; owner,
-  decision card, 2026-11-11)
+  decision card, 2026-11-11); v1.5 adds `settings.endpoints` (F-013 SR-8,
+  H-0135; owner, decision card, 2026-11-13)
 - Used by: engine (resolves effective config), owner (edits it), VS Code extension (later)
 - Compatibility: adding an optional key is non-breaking; renaming or removing one is breaking.
 
@@ -691,7 +739,31 @@ the preset used only for initial calibration) and
 ladder; the engine refuses a rung that doesn't exist in the pinned factory
 version or is below the role's floor). Both change only through hygiene
 items (F-002). The manifest is the only record of repo and project maturity
-levels. `schema` stays `factory-project/1.0`: v1.1 to v1.4 only add optional keys.
+levels. `schema` stays `factory-project/1.0`: v1.1 to v1.6 only add optional keys.
+
+From v1.5, optional `settings.endpoints`: a list of model endpoint names
+(Model endpoints file v1.0) this project's code may be sent to; default
+empty, so a project uses no endpoint until it lists one (F-013 SR-8). Names
+match `^[a-z0-9-]{1,32}$` and are unique. A name the PC's endpoints file
+doesn't define makes that endpoint's rungs unavailable for the project, not
+an error.
+
+From v1.6, `settings.agents.<role>` may also hold the role's endpoint
+assignment (F-013 OQ-11): `model` (`<endpoint>/<model>`) with `fallback` (a
+Claude model id, required with an endpoint `model`), or, for the security
+reviewer and validation judge only, `advisory` (`<endpoint>/<model>`, an
+advisory first pass while the role itself stays on Claude). The endpoint
+must be in `settings.endpoints`, and an endpoint `model` is refused for a
+role whose policy isn't read-only (F-013 SR-9). It changes only through a
+hygiene item. Example:
+
+```yaml
+settings:
+  endpoints: [lan]
+  agents:
+    web-reader: { model: lan/qwen3.8-27b, fallback: claude-haiku-5-5 }
+    security-reviewer: { advisory: lan/qwen3.8-27b }
+```
 
 From v1.4, optional `limits`: the same keys as the master factory's
 `engine/config/limits.yaml` (H-0087). For each key the engine uses the lower
@@ -727,6 +799,60 @@ validation-judge) may never be excluded; overriding one requires a linked,
 approved Security decision and may only add rules. The two support roles,
 `project-evaluator` and `context-hygiene`, are not protected: a project may
 exclude either with a reason (owner, 2026-11-10).
+
+---
+
+## Model endpoints file — v1.0
+
+- Status: Approved (H-0135, owner, decision card, 2026-11-13)
+- Owner decision: F-013 (configurable model endpoints), ADR 0019
+- Used by: engine (reads it, generates the LiteLLM configuration, pins
+  addresses), owner (edits it)
+- Compatibility: adding an optional key is non-breaking; renaming or
+  removing one, or tightening a rule, is breaking.
+
+**Location:** `factory-endpoints.local.yaml` in the owner's clone of the
+master factory repo, next to `factory-projects.local.yaml`. Git-ignored and
+never committed (CI fails if it is tracked). The engine refuses it unless
+only the owner can write it, as for the paths file (H-0081). A missing file
+means no endpoints.
+
+```yaml
+endpoints:
+  lan:                               # name: ^[a-z0-9-]{1,32}$, not "anthropic"
+    base_url: http://<host>:8080     # absolute http(s) URL, no userinfo, query or fragment
+    model: qwen3.8-27b               # the model id the endpoint serves
+    api: anthropic                   # anthropic | openai
+    api_key_ref: lan                 # optional; key read from the OS credential store as endpoint-key/<ref>
+    max_sessions: 1                  # 1..16, default 1
+    billing: local                   # local | per_token | subscription
+    deadline: { margin_s: 60 }       # optional, 10..3600, default 60
+    allow_loopback: false            # default false
+  hosted:
+    base_url: https://<provider host>
+    model: <model id>
+    api: openai
+    api_key_ref: hosted
+    billing: per_token
+    prices: { input_per_mtok: 0.5, output_per_mtok: 1.5 }   # per_token only
+  plan:
+    base_url: https://<provider host>
+    model: <model id>
+    api: anthropic
+    api_key_ref: plan
+    billing: subscription
+    plan:                            # subscription only
+      limits:
+        - { kind: requests, count: 200, window: 5h }   # requests | input_tokens | output_tokens; 5h | day | week | month
+      reserve_pct: 10                # 0..90, default 10
+```
+
+Unknown keys are refused. The engine resolves each `base_url` host on the
+PC and classes the endpoint private or public by its addresses (F-013
+FR-4): a public endpoint needs `https` and `api_key_ref` (SR-12), `local`
+billing needs a private endpoint (SR-15), and a name resolving to both
+classes is refused. Keys and addresses never appear in logs, reports or an
+agent's environment (SR-2).
 
 ---
 

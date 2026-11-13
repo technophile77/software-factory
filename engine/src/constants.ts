@@ -105,6 +105,8 @@ export const MAX_RESUMES = 3;
 
 export const STATE_BRANCH = "factory/state";
 export const PATHS_FILE = "factory-projects.local.yaml";
+/** F-013: the owner's machine-local list of model endpoints, beside the paths file. */
+export const ENDPOINTS_FILE = "factory-endpoints.local.yaml";
 export const MANIFEST_FILE = "factory-project.yaml";
 export const ENGINE_JSON = "engine.json";
 export const CREDENTIAL_SERVICE = "software-factory-engine";

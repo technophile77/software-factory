@@ -109,20 +109,23 @@ Two smaller problems:
      its own world; the one shared world (interview-tools limits) is built
      lazily by whichever of its tests runs first, so it works in any shard.
    - **Not done:** speeding up each test. The cost is the engine's own git
-     calls, which is engine design, not CI configuration. Turning off
-     Microsoft Defender scanning on the Windows runners would likely help
-     too, but it is a Security decision and is left out; see follow-ups.
+     calls, which is engine design, not CI configuration.
 8. **Recommendation:** approve.
 
 ## Possible follow-ups (not part of this change)
 
-- **H-0131 (Security decision):** exclude the test temp folders from
-  Microsoft Defender's real-time scan on the Windows runners. Runners are
-  single-use VMs that GitHub deletes after the job, and the folders hold only
-  fixtures the tests write. Worth measuring before deciding.
-- **H-0132:** build fixture repos once per worker and copy them, instead of
-  running about 20 git commands per test to create them (about 15% of a
-  test's time in the profile).
+- **H-0131: dropped.** It would have excluded the test temp folders from
+  Microsoft Defender on the Windows runners, but GitHub's runner image
+  already turns real-time monitoring off and excludes `C:\` and `D:\`
+  (`images/windows/scripts/build/Configure-WindowsDefender.ps1` in
+  actions/runner-images). The owner spotted this.
+- **H-0132 (approved by the owner 2026-11-13, applied in its own PR):**
+  build each project's fixture repo with one `git fast-import` run instead
+  of about 14 git commands (`engine/test/acceptance/support/fast-import.ts`).
+  Copying prebuilt repos wasn't possible, since each test's manifest holds a
+  random client id. Measured: 8 f009-document tests went from 50.2 s to
+  46.1 s, about 8% per test, less than the 15% first estimated, because the
+  engine's own git calls dominate.
 
 ## Later changes (owner decisions of 2026-11-13)
 
