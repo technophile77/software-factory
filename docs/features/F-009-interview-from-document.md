@@ -3,7 +3,7 @@
 - **Id:** F-009
 - **Status:** Approved (readiness gate passed 2026-11-12); in development
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 13
+- **Spec version:** 14 (draft, wording for F-005 v10)
 
 ## 1. Objective and business purpose
 The owner often has a finished spec or a working document before a feature
@@ -34,7 +34,8 @@ and no assumption reaches a spec without the owner's approval.
 2. For a document, the owner names a file: a path on their computer, or a
    path in the repo the skill runs in (such as `docs/design.md`), read from
    that working copy as it is, uncommitted edits included (owner,
-   2026-11-12). The client script, not Claude,
+   2026-11-12). The client (since F-005 v10, the engine's
+   MCP mode), not Claude,
    reads it, checks type and size, and sends it with a short request text
    (a title, or the owner's one-line note). Claude never reads or shows the
    document.
@@ -68,7 +69,7 @@ and no assumption reaches a spec without the owner's approval.
 | Id | Requirement |
 |---|---|
 | FR-1 | `feature.start` accepts an optional `document`: `{ name, media_type, text, provenance }`. `media_type` is `text/markdown` or `text/plain` (OQ-2); `text` is at most 256 KiB as UTF-8 (OQ-3); `provenance` is `owner` or `reference` (OQ-1). `request` stays required. The document can't be added or replaced after the start (OQ-4). |
-| FR-2 | The client script reads the document from a path the owner gives, refuses anything but the accepted types (OQ-2) and anything over the size limit (OQ-3), and sends it on stdin JSON as today; the path never goes on a command line. |
+| FR-2 | The client (the engine's MCP mode, F-005 v10) reads the document from a path the owner gives as a tool argument, refuses anything but the accepted types (OQ-2) and anything over the size limit (OQ-3), and sends it to the engine with `feature.start`; the path never goes through a shell or onto a command line. A relative path is read from the session's project directory. |
 | FR-3 | The engine runs the gitleaks scan on the document before storing it, and refuses the start on a hit without keeping the text. |
 | FR-4 | The engine commits the document byte for byte to the feature branch at `docs/features/F-nnn-source.<ext>` and records its SHA-256 in the transcript. The analyst may read it but never edit it (Role policy write deny). |
 | FR-5 | The analyst's first turn frames the document like the request (boundary and length), labelled as owner-supplied data, never instructions. |
@@ -81,7 +82,7 @@ and no assumption reaches a spec without the owner's approval.
 | Id | Given / When / Then | Covers |
 |---|---|---|
 | AC-1 | Given a Markdown document within limits, when the owner starts from it, then the feature branch holds the file byte for byte and the transcript holds its hash. | FR-1, FR-2, FR-4 |
-| AC-2 | Given a document of an unaccepted type or over the size limit, when the owner starts from it, then the script refuses before connecting and nothing reaches the engine. | FR-2 |
+| AC-2 | Given a document of an unaccepted type or over the size limit, when the owner starts from it, then the client refuses before connecting and nothing reaches the engine. | FR-2 |
 | AC-3 | Given a document containing a test secret, when the owner starts from it, then the engine refuses the start and no commit, transcript entry or analyst session exists. | FR-3 |
 | AC-4 | Given a document that covers every template section without contradiction, when the interview runs, then the only items are the source confirmation and any assumptions. | FR-6, FR-8 |
 | AC-5 | Given a document that states two different limits for the same thing, then the analyst files one conflict question quoting both, and the spec holds neither until the owner answers. | FR-7 |
@@ -92,9 +93,9 @@ and no assumption reaches a spec without the owner's approval.
 | AC-10 | Given a document with an HTML comment, a raw HTML tag, a zero-width character, a bidi control, a titled or unused link reference definition, or an empty link or image, when the owner starts from it, then the engine refuses it, names each line, and stores nothing. | SR-8 |
 
 ## 5. Constraints
-- The client script uses only the Python standard library (F-005 FR-1), so
-  it can't parse Word or PDF without new dependencies (OQ-2).
-- Channel message size: the script caps stdin at 1 MiB today; the engine
+- The client adds no parser dependencies, so it can't read Word or PDF
+  (OQ-2).
+- Channel message size: the client caps a request at 1 MiB; the engine
   caps worktree files at 1 MiB and commits at 5 MiB (F-007 limits).
 - The analyst's context window bounds how long a document it can use well.
 
@@ -119,9 +120,9 @@ None yet. Each will be proposed to the owner.
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
 | SR-1 | The document is data: framed with a fresh boundary, never followed as instructions by the analyst, the skill or the advisor. | Analyst; owner 2026-11-12 (thread) | Approved |
-| SR-2 | Claude in the skill never reads, shows or summarizes the document; only the script reads the file. | Analyst; owner 2026-11-12 (thread) | Approved |
+| SR-2 | Claude in the skill never reads, shows or summarizes the document; only the client (the engine's MCP mode) reads the file. | Analyst; owner 2026-11-12 (thread) | Approved |
 | SR-3 | Secrets scan before anything is stored or sent to a model. | Analyst; owner 2026-11-12 (thread) | Approved |
-| SR-4 | The script reads only a regular file the owner named, refuses symlinks and devices, and opens it read-only. | Analyst; owner 2026-11-12 (thread) | Approved |
+| SR-4 | The client reads only a regular file the owner named, refuses symlinks and devices, and opens it read-only. | Analyst; owner 2026-11-12 (thread) | Approved |
 | SR-5 | The stored document is write-denied to every agent role. | Analyst; owner 2026-11-12 (thread) | Approved |
 | SR-6 | The client refuses UNC and device paths, opens without following symlinks, checks the open handle is a regular file, and reads at most the limit + 1 bytes. | G1 #1; owner 2026-11-12 (thread) | Approved |
 | SR-7 | Every spec line drawn from the document carries a quote of its source. The engine's readiness check refuses unless each quote is in the stored document word for word, and the engine, not the analyst, builds the source-confirmation list from those quotes. | G1 #2; owner 2026-11-12 (thread) | Approved |
@@ -148,7 +149,7 @@ Approved by the owner 2026-11-12 (PR #29 merged; decision card, as drafted):
   denies `docs/features/*-source.md` and `*-source.txt`. The onboarding
   manifest template gets the same entries during development.
 - **H-0108** `agents/requirements-analyst/AGENT.md`: how to work from a
-  document. The `spec-interview` skill and client script change during
+  document. The `spec-interview` skill and client change during
   development under this spec.
 
 ## 11. Readiness gate
@@ -187,3 +188,4 @@ Passed 2026-11-12 (orchestrator check on spec v6):
 | OQ-2 | Which formats in this increment? (a) Markdown and plain text only. (b) Also .docx and PDF, which need a parser, its S4.1 security review and CVE tracking. Recommended: (a); convert other formats before handing them over. | Product, Security | Decided: (a) (owner, thread, 2026-11-12) |
 | OQ-3 | Size limit for a document. Recommended: 256 KiB of text, well under the 1 MiB file limit and inside the analyst's context with room to work. | Product | Decided: 256 KiB (owner, thread, 2026-11-12) |
 | OQ-4 | Can the owner add or replace the document after the interview starts? Recommended: not in this increment; start a new feature. | Product | Decided: not in this increment (owner, thread, 2026-11-12) |
+| 14 | 2026-11-13 | Wording for F-005 v10 (ADR 0025): "client script" becomes the client, now the engine's MCP mode (section 2, FR-2, AC-2, constraints, SR-2, SR-4, H-0108); FR-2 names the tool argument and the project directory for relative paths. No requirement changed | — (draft, with F-005 v10) |
