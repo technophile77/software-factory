@@ -219,7 +219,7 @@ export class SessionGroup {
    * and kept across groups, so a resumed run finds its SDK session (FR-14);
    * the caller removes it when the run ends.
    */
-  async startAgent(policy: RolePolicy, worktree: string | null, o: { sessionVolume?: boolean | "run" } = {}): Promise<AgentContainer> {
+  async startAgent(policy: RolePolicy, worktree: string | null, o: { sessionVolume?: boolean | "run"; reportDir?: { source: string; target: string } } = {}): Promise<AgentContainer> {
     if (!this.proxy) throw new DockerError("the group isn't open");
     const limits = Object.prototype.hasOwnProperty.call(this.c.agentLimits, policy.role) ? this.c.agentLimits[policy.role] : undefined;
     if (!limits) throw new DockerError(`no container limits for the ${policy.role} role`);
@@ -230,6 +230,11 @@ export class SessionGroup {
     if (worktree) {
       const writes = policy.write.allow.some((g) => !g.startsWith(".factory/"));
       mounts.push({ type: "bind", source: worktree, target: WORKSPACE, readOnly: !writes });
+      // F-008: a report-only role keeps its worktree read-only; only an engine-owned folder for its one report is writable.
+      if (o.reportDir) {
+        if (writes || !o.reportDir.target.startsWith(`${WORKSPACE}/.factory/`)) throw new DockerError("a report folder is only for a read-only role, under .factory/");
+        mounts.push({ type: "bind", source: o.reportDir.source, target: o.reportDir.target, readOnly: false });
+      }
     }
     let volume: string | undefined;
     if (o.sessionVolume === "run") {

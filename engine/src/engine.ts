@@ -4,8 +4,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { SessionRefused, runAnalystSession } from "./agent/analyst";
 import { AgentRuntime, TurnQueue, populateWorktree, prepareWorktree, sweepLeftovers } from "./agent/runtime";
+import { runReviewerSessions, reviewerPolicy } from "./agent/reviewer";
 import { SessionGroup, runVolume } from "./agent/sandbox";
-import type { SessionOutcome } from "./agent/session";
+import { WORKSPACE, type SessionOutcome } from "./agent/session";
 import { commitWorktree } from "./agent/worktree-commit";
 import { DockerError } from "./docker/cli";
 import { baseImageId, ensureAgentImage, skillsPluginDir } from "./docker/image";
@@ -19,9 +20,9 @@ import { listenPipe } from "./channel/windows";
 import { Clock, iso, systemClock } from "./clock";
 import { AuthorizationError, authorizeProject, billingMismatch, modelCredentialFor } from "./config/authorize";
 import { AgentSources, Instructions, MASTER_SOURCE_PATHS, resolveAgentSources } from "./config/agent-sources";
-import { TreeSnapshot, resolveFactoryVersion } from "./config/factory-source";
+import { TreeSnapshot, readFileAt, resolveFactoryVersion } from "./config/factory-source";
 import { Models, MODELS_FILE, readDefaultModels } from "./config/models";
-import { LIMITS_FILE, Limits, LimitsError, agentLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
+import { LIMITS_FILE, Limits, LimitsError, agentLimits, gate1Limits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
 import { Manifest, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin } from "./config/pins";
@@ -37,7 +38,13 @@ import { FileLogger, Logger } from "./log";
 import { OsApi, realOsApi } from "./os/ffi";
 import { Children, osParent } from "./proc";
 import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryTokenName } from "./secrets";
-import { SecurityAlert, fileSecurityItem } from "./state/inbox";
+import { SecurityAlert, fileDecisionItem, fileSecurityItem } from "./state/inbox";
+import { READINESS_STAGE, analystGate1Turn, correctionTurn, gate1Resolution, records, reviewerTurn } from "./gate1/flow";
+import { findingRef, plain, renderReport } from "./gate1/render";
+import { GATE1_STAGE, Gate1Report, REVIEWER_ROLE, readReportFile, validateReport } from "./gate1/report";
+import { StandardsError, loadStandards } from "./gate1/standards";
+import { readinessChecks, specPathPattern } from "./interview/readiness";
+import type { RolePolicy } from "./policy/role-policy";
 import { EngineRecord, RunRecord } from "./state/record";
 import { ResumePlan, RunBook, RunFacts, RunUsage, agentReport, transcriptSummary } from "./state/runs";
 import { Change, SecretFound, StateRepo } from "./state/state-repo";
@@ -697,7 +704,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     jobs.set(f.id, job);
     job.done = runAnalyst(rt, p, f, job, plan)
       .catch((e) => log.warn(`${f.id}: the analyst run stopped: ${engineWords(e)}`))
-      .finally(() => jobs.delete(f.id));
+      .finally(() => {
+        jobs.delete(f.id);
+        // F-008 FR-1: a spec that passed the interview checks goes on to Gate 1 once the analyst's work is committed.
+        if (f.stage() === GATE1_STAGE) afterInterview(p, f);
+      });
   }
 
   async function shared<T>(cache: Map<string, Promise<T>>, key: string, make: () => Promise<T>): Promise<T> {
@@ -763,9 +774,28 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const sourceDoc = f.state.document && docText !== null ? frameDocument(f.id, f.state.document, docText) : null;
       let r: Awaited<ReturnType<typeof runAnalystSession>>;
       for (;;) {
+        const gate1 = f.state.gate1.pending && f.stage() === INTERVIEW_STAGE && f.state.lastSpecReady
+          ? analystGate1Turn(f.id, f.state.lastSpecReady.spec_path, f.state.gate1.findings)
+          : null;
         const first = resumeId
           ? "The engine restarted. Continue where you left off; owner replies, if any, follow as further turns."
-          : [intro, frameRequest(f.id, f.state.request), ...(sourceDoc ? [sourceDoc] : []), ...(summary ? [summary] : [])].join("\n\n");
+          : gate1
+            ? [intro, ...(sourceDoc ? [sourceDoc] : []), transcriptSummary(f.state), gate1].join("\n\n")
+            : [intro, frameRequest(f.id, f.state.request), ...(sourceDoc ? [sourceDoc] : []), ...(summary ? [summary] : [])].join("\n\n");
+        if (gate1) {
+          // F-008 SR-9: the findings were scanned when recorded; the input built from them is scanned again before it leaves the engine.
+          const content = Buffer.from(first, "utf8");
+          const scan = await scanner.scan([{ sha: sha256Hex(content), content }]);
+          if (!scan.clean) {
+            await alert(p, `secret:${crypto.randomBytes(8).toString("hex")}`, {
+              title: "Gate 1 findings not sent: the secrets scan found a secret", feature: f.id,
+              context: `The engine didn't start the analyst with ${f.id}'s Gate 1 findings because gitleaks flagged them (F-008 SR-9).`,
+              impact: "The analyst's run is stopped.", confirm: "Rotate the secret if it was real", hold: "It was a false positive: no action", recommendation: "A",
+            });
+            await endRun(p, f, runId, "failed", "the secrets scan found a secret in its Gate 1 input", facts);
+            return;
+          }
+        }
         const turns = new TurnQueue(f, first);
         job.turns = turns;
         if (shuttingDown || dead) turns.close();
@@ -868,6 +898,333 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       log.warn(`${p.name}: the report for run ${runId} wasn't committed (${(e as Error).message}).`);
     }
     await noteAnalyst(f, "stopped", `The analyst's run stopped: ${why}.`);
+  }
+
+  // -- Security Gate 1 (F-008) ---------------------------------------------------
+
+  /** One Gate 1 job per feature at a time (FR-1); it shares the analyst's job slot, so the two never overlap. */
+  const gate1Words = (e: unknown) => (e instanceof ConfigError || e instanceof DockerError || e instanceof SessionRefused || e instanceof StandardsError ? (e as Error).message.slice(0, 300) : "an internal error");
+
+  async function noteGate1(f: FeatureInterview, status: "stopped" | "waiting" | "blocked", reason: string): Promise<void> {
+    if (dead || !f.chainIntact) return;
+    await f.exclusive(() => f.append([{ type: "gate1_session", status, reason }], `gate 1 ${status}`)).catch(() => undefined);
+  }
+
+  async function nextGate1Report(p: Project, fid: string): Promise<number> {
+    const existing = await p.state_repo!.list(`runs/${fid}/${GATE1_STAGE}`).catch(() => []);
+    return existing.filter((e) => /\/security-reviewer-\d+\.json$/.test(e.path)).length + 1;
+  }
+
+  /**
+   * What a feature at `security_gate_1` needs next (FR-1, FR-9): the FR-9
+   * check when it comes back from the findings interview, nothing while it
+   * waits on the owner, else a reviewer run.
+   */
+  function afterInterview(p: Project, f: FeatureInterview, resume?: ResumePlan): void {
+    const rt = o.agents;
+    if (!rt || dead || shuttingDown || jobs.has(f.id) || !f.chainIntact || p.state !== "running" || ambiguous.has(f.id)) return;
+    if (f.stage() !== GATE1_STAGE) return;
+    const g = f.state.gate1;
+    if (g.blocked && !resume) return;
+    const job: Job = { turns: null, done: Promise.resolve() };
+    jobs.set(f.id, job);
+    job.done = (g.pending && !resume ? resolveGate1(p, f) : runGate1(rt, p, f, resume))
+      .catch((e) => log.warn(`${f.id}: Gate 1 stopped: ${gate1Words(e)}`))
+      .finally(() => {
+        jobs.delete(f.id);
+        // A report that sent findings back starts the analyst once this job's slot is free.
+        if (!dead && !shuttingDown && f.stage() === INTERVIEW_STAGE && f.state.gate1.pending) launchAnalyst(p, f);
+      });
+  }
+
+  /** The spec as the branch holds it, read from git as a regular file (SR-3, F-007 SR-12's path rule). */
+  async function branchSpec(p: Project, f: FeatureInterview): Promise<{ spec: string; path: string; version: number | null; commit: string }> {
+    const ready = f.state.lastSpecReady;
+    if (!ready || !specPathPattern(f.id).test(ready.spec_path)) throw new SessionRefused("the feature has no spec that passed the interview checks");
+    const commit = await git.revParse(p.real!, `refs/heads/${f.state.branch}`);
+    if (!commit) throw new SessionRefused(`the branch ${f.state.branch} is gone`);
+    const buf = await readFileAt(git, p.real!, commit, ready.spec_path, 1024 * 1024, "The spec");
+    const spec = buf.toString("utf8");
+    // The analyst can still edit the spec after interview_spec_ready in the same session, so the committed spec must pass the checks too.
+    const failed = readinessChecks({ spec, specVersion: ready.spec_version, state: f.state, chainIntact: f.chainIntact && !f.remoteRefused }).filter((c) => !c.passed);
+    if (failed.length) throw new SessionRefused(`the spec committed on ${f.state.branch} no longer passes the interview checks (${failed.map((c) => c.name).join(", ")})`);
+    return { spec, path: ready.spec_path, version: ready.spec_version, commit };
+  }
+
+  /** FR-9 and FR-13 after the findings interview: readiness, or the owner's call, or the gap named. */
+  async function resolveGate1(p: Project, f: FeatureInterview): Promise<void> {
+    const { spec, path: specPath } = await branchSpec(p, f);
+    const r = gate1Resolution(spec, f.state);
+    if (r.check.passed) {
+      await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: true, evidence: r.check.evidence }, { type: "stage", stage: READINESS_STAGE }], "gate 1: findings resolved"));
+      log.info(`${f.id}: Gate 1 findings resolved; the feature is at ${READINESS_STAGE}.`);
+      return;
+    }
+    const filed: Array<{ n: number; item: string }> = [];
+    for (const n of r.rejected.filter((x) => !f.state.gate1.riskFiled.includes(x))) {
+      const finding = f.state.gate1.findings.find((x) => x.n === n)!;
+      const item = await fileDecisionItem(p.state_repo!, clock, {
+        title: `${findingRef(n)} for ${f.id}: accept the risk or send it back`, feature: f.id,
+        context: `Security Gate 1 found a gap in ${f.id}'s spec (${specPath}) and suggested a requirement. After the interview, no requirement in the spec takes it up, which usually means you said no (F-008 FR-13). The reviewer's words, shown as plain text: ${plain(finding.criterion)}, ${plain(finding.severity)}: ${plain(finding.explanation)} Suggested requirement: ${plain(finding.fix)}`,
+        impact: `${f.id} stays at Security Gate 1 until this is decided.`,
+        options: [
+          { id: "A", label: "Accept the risk and leave it out of the spec", detail: "The finding is recorded as an accepted risk." },
+          { id: "B", label: "Send it back to the interview", detail: "The analyst asks about it again." },
+        ],
+        recommendation: "B",
+        costOfDelay: `${f.id} can't reach the readiness gate.`,
+      });
+      filed.push({ n, item });
+    }
+    const blocked = filed.length || r.waiting.length;
+    await f.exclusive(() => f.append([
+      blocked
+        ? { type: "gate1_blocked", reason: `Waiting on the owner's Security items: ${[...filed.map((x) => x.item), ...r.waiting.map((n) => f.state.gate1.findings.find((x) => x.n === n)?.item ?? findingRef(n))].join(", ")}.`, risk: filed.map((x) => x.n) }
+        : { type: "gate1_resolved", passed: false, evidence: r.check.evidence },
+    ], blocked ? "gate 1: waiting on the owner" : "gate 1: findings not resolved"));
+    log.warn(`${f.id}: Gate 1 findings not resolved: ${r.check.evidence}`);
+  }
+
+  /**
+   * One Gate 1 run, start to end (FR-1 to FR-8, FR-10, FR-11, SR-11): the
+   * checks before any session, the reviewer's sessions, the report's check,
+   * then the rendering on the feature branch and the report, items, findings
+   * and stage on factory/state in one transcript commit.
+   */
+  async function runGate1(rt: AgentRuntime, p: Project, f: FeatureInterview, resume?: ResumePlan): Promise<void> {
+    const m = p.manifest!;
+    const sources = p.sources!;
+    const limits = p.limits!;
+    const g1 = gate1Limits(limits, m.billingMode);
+    const model = p.models!["security-reviewer"];
+    const instructions = sources.instructions.get("security-reviewer");
+    const notReady = !g1 || !model
+      ? `this factory version (${m.factoryVersion}) has no security-reviewer entry in ${!model ? MODELS_FILE : LIMITS_FILE}`
+      : !instructions ? "the security-reviewer role has no AGENT.md at factory.version or in the project's overrides" : null;
+    if (notReady) {
+      // AC-10: no session, and the owner is told why.
+      log.warn(`${f.id}: no Gate 1 session started: ${notReady}.`);
+      // Not a block: a later factory version or override fixes it, and the next engine start tries again.
+      await noteGate1(f, "waiting", `No Gate 1 session started: ${notReady}.`);
+      return;
+    }
+    if (!resume && f.state.gate1.runs >= g1!.runsPerFeature) {
+      // SR-11: a fourth run needs the owner.
+      const why = `${f.id} has had ${f.state.gate1.runs} Gate 1 runs, the most allowed (F-008 SR-11)`;
+      // The transcript records the block before the owner is told, so the item never names a state the record lacks.
+      if (!f.state.gate1.blocked) await f.exclusive(() => f.append([{ type: "gate1_blocked", reason: why }], "gate 1 run limit"));
+      await alert(p, `gate1cap:${f.id}:${f.state.gate1.runs}`, {
+        title: `Gate 1 for ${f.id} reached its run limit`, feature: f.id,
+        context: `${why}. Another run would cost another reviewer session.`,
+        impact: `${f.id} stays at Security Gate 1.`,
+        confirm: "Look at the Gate 1 reports and the engine log, then decide how to proceed", hold: "Keep the feature where it is", recommendation: "A",
+      });
+      return;
+    }
+    const { spec, path: specPath, version: specVersion, commit } = await branchSpec(p, f);
+    const n = await nextGate1Report(p, f.id);
+    const reportName = `security-reviewer-${n}.json`;
+    const reportRel = `.factory/runs/${f.id}/${GATE1_STAGE}/${reportName}`;
+    const wtDir = path.join(path.dirname(worktreeDir(p, f.id)), `${f.id}-gate1`);
+    const known = resume?.run;
+    const wt = await prepareWorktree(git, p.real!, known?.worktree ?? wtDir, f.state.branch, known?.git_dir, commit);
+    await populateWorktree(git, p.real!, commit, wt.path, wt.gitDir);
+    const run = known ?? runs.start({ project: p.real!, feature: f.id, role: REVIEWER_ROLE, stage: GATE1_STAGE, worktree: wt.path });
+    const runId = run.id;
+    runs.update(runId, { git_dir: wt.gitDir, last_commit: commit });
+    if (!known) await f.exclusive(() => f.append([{ type: "gate1_run", run: runId, commit }], "gate 1 started"));
+    const reportDir = path.join(home, "gate1", sha256Hex(p.real!).slice(0, 16), runId);
+    let resumeId = resume?.mode === "session" ? resume.sessionId : undefined;
+    const facts: RunFacts = { model };
+    try {
+      const credential = modelCredentialFor(env, modelCredential);
+      if (!credential) throw new SessionRefused("no model credential is stored or set");
+      const loaded = await loadStandards({
+        git, masterRepo: o.masterRepo, masterCommit: sources.masterCommit, configRepo: p.real!, configCommit: m.commit, manifest: m.raw, additionsBytes: g1!.additionsBytes,
+      });
+      if (loaded.additionsRefused) {
+        await alert(p, `additions:${m.commit}:${loaded.additionsRefused}`, {
+          title: "Project security additions were not used at Gate 1", feature: f.id,
+          context: `The project's standards.security file was refused: ${loaded.additionsRefused}. Gate 1 runs on the factory's security standards alone (F-008 SR-10).`,
+          impact: "Gate 1 checks only the factory's criteria until the additions file is fixed on main.",
+          confirm: "Fix the additions file on main", hold: "Find out who changed it", recommendation: "A",
+        });
+      }
+      const policy = reviewerPolicy(m.raw, undefined, reportRel);
+      const sdk = await rt.sdk();
+      const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
+      const image = await shared(images, `${ident.project}\0${ident.masterCommit}\0${ident.skillsDigest}`, () => ensureAgentImage(rt.docker, rt.dockerDir, path.join(home, "images"), ident, sources));
+      proxyImage ??= baseImageId(rt.docker);
+      proxyImage.catch(() => (proxyImage = null));
+      const proxyImageId = await proxyImage;
+      runArtifacts.set(runId, [
+        { kind: "image", ref: image.tag },
+        ...(sources.skills.get(REVIEWER_ROLE) ?? []).map((s) => ({ kind: "skill", ref: `${s.name} (${s.from}: ${s.path})` })),
+        { kind: "model", ref: `${REVIEWER_ROLE}: ${model}` },
+      ]);
+      if (resumeId) {
+        const v = await rt.docker.run(["volume", "inspect", runVolume(runId)], { okCodes: [1] });
+        if (v.code !== 0) resumeId = undefined;
+      }
+      // The report folder is engine-owned and starts empty, so nothing in it predates this run (SR-8).
+      fs.rmSync(reportDir, { recursive: true, force: true });
+      ensureOwnerDir(reportDir);
+      // The mount point inside the read-only worktree; an empty folder is no change to the branch.
+      fs.mkdirSync(path.join(wt.path, ...path.posix.dirname(reportRel).split("/")), { recursive: true });
+      const group = new SessionGroup({
+        docker: rt.docker, runId, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt.proxyScript,
+        agentLimits: roleContainerLimits(limits), proxyLimits: containerLimits(limits.proxy), maxPageBytes: maxPageBytes(limits),
+        credential, log, ...(rt.platform ? { platform: rt.platform } : {}), ...(rt.sleep ? { sleep: rt.sleep } : {}),
+      });
+      let valid: Gate1Report | null = null;
+      const first = resumeId
+        ? `The engine restarted. Finish your Gate 1 report at /workspace/${reportRel}.`
+        : reviewerTurn({ feature: f.id, specPath, specVersion, commit, reportPath: reportRel, standards: loaded.standards, transcript: transcriptSummary(f.state) });
+      const result = await runReviewerSessions({
+        sdk, docker: rt.docker, group, policy, worktree: wt.path,
+        reportDir: { source: reportDir, target: `${WORKSPACE}/${path.posix.dirname(reportRel)}` },
+        instructions: instructions!.text, caps: g1!.caps, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), model: model!, first,
+        ...(resumeId ? { resume: resumeId } : {}),
+        ...(known?.used ? { used: known.used } : {}),
+        onUsed: (u) => void (dead || runs.update(runId, { used: u })),
+        billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
+        check: async () => {
+          const read = readReportFile(reportDir, reportName, g1!.reportBytes);
+          const errors = "missing" in read ? [`there is no report at /workspace/${reportRel}`]
+            : "refused" in read ? [read.refused]
+            : (() => {
+                const v = validateReport(read.text, { feature: f.id, commit, standards: loaded.standards, spec, maxBytes: g1!.reportBytes });
+                if (v.ok) valid = v.report;
+                return v.ok ? [] : v.errors;
+              })();
+          if (!errors.length) return null;
+          log.warn(`${f.id}: Gate 1 report refused: ${errors.slice(0, 5).join("; ")}`);
+          return correctionTurn(reportRel, errors);
+        },
+        verify: async (pol) => {
+          // SR-12: the report folder may hold the named report and nothing else.
+          const extra = fs.existsSync(reportDir) ? fs.readdirSync(reportDir).filter((x) => x !== reportName) : [];
+          if (extra.length) return { status: "rejected" as const, breaches: extra.slice(0, 20).map((x) => ({ path: `${path.posix.dirname(reportRel)}/${x}`, reason: "not_allowed" as const })) };
+          return commitWorktree({
+          git, gitDir: wt.gitDir, worktree: wt.path, branch: f.state.branch, base: commit, policy: { ...pol, write: { allow: [], deny: [] } }, scanner, tmpDir,
+          message: `${f.id}: Gate 1 reviewer session (run ${runId})`, limits: worktreeLimits(limits),
+          });
+        },
+        onBreach: async (breaches) => {
+          await alert(p, `breach:${runId}:${crypto.randomBytes(4).toString("hex")}`, {
+            title: "Security reviewer changed files outside its report", feature: f.id,
+            context: `The engine rejected run ${runId}: ${breaches.slice(0, 20).map((b) => `${b.path || "(history)"} (${b.reason})`).join(", ")} (F-008 AC-4). Nothing was committed.`,
+            impact: "The Gate 1 run is stopped.", confirm: "Look at the reviewer's instructions and run Gate 1 again", hold: "Keep the feature stopped", recommendation: "B",
+          });
+        },
+        onSessionId: (id) => void (dead || runs.update(runId, { session_id: id })),
+        log,
+      });
+      if (dead) return;
+      facts.usage = usage(result.outcome);
+      if (shuttingDown && result.invalid) return;
+      if (result.invalid || !valid) {
+        await populateWorktree(git, p.real!, commit, wt.path, wt.gitDir).catch(() => undefined);
+        await endGate1(p, f, runId, n, "failed", result.invalid ?? "its report couldn't be read", facts, commit);
+        return;
+      }
+      await acceptGate1(p, f, { runId, n, commit, wt, report: valid, specPath, specVersion, facts, limits });
+    } catch (e) {
+      if (dead) return;
+      if (e instanceof SecretFound) {
+        // SR-9: reviewer text with a secret in it goes nowhere.
+        await alert(p, `secret:${crypto.randomBytes(8).toString("hex")}`, {
+          title: "Gate 1 report refused: the secrets scan found a secret", feature: f.id,
+          context: `The engine didn't record run ${runId}'s Gate 1 report, its rendering or its items because gitleaks flagged them (F-008 SR-9).`,
+          impact: `${f.id} stays at Security Gate 1.`, confirm: "Rotate the secret if it was real, then run Gate 1 again", hold: "It was a false positive: no action", recommendation: "A",
+        });
+        await endGate1(p, f, runId, n, "failed", "the secrets scan found a secret in its report", facts, commit);
+        return;
+      }
+      const why = gate1Words(e);
+      if (record.run(runId)?.status === "running") runs.interrupt(runId, why);
+      log.warn(`${f.id}: no Gate 1 session started: ${e instanceof DockerError ? e.message : why}`);
+      await noteGate1(f, "waiting", `No Gate 1 session started: ${why}. The run resumes at the next engine start.`);
+    } finally {
+      fs.rmSync(reportDir, { recursive: true, force: true });
+    }
+  }
+
+  /** A valid report: rendering on the branch, then report, items, findings and stage in one factory/state commit. */
+  async function acceptGate1(p: Project, f: FeatureInterview, a: {
+    runId: string; n: number; commit: string; wt: { path: string; gitDir: string }; report: Gate1Report;
+    specPath: string; specVersion: number | null; facts: RunFacts; limits: Limits;
+  }): Promise<void> {
+    // SR-9: the reviewer's own text is scanned raw, before anything built from it is written. Escaped or
+    // quoted copies can hide a token from the scanner's patterns.
+    const strings: string[] = [];
+    const collect = (v: unknown): void => {
+      if (typeof v === "string") strings.push(v);
+      else if (Array.isArray(v)) v.forEach(collect);
+      else if (v && typeof v === "object") Object.values(v).forEach(collect);
+    };
+    collect(a.report);
+    const raw = Buffer.from(strings.join("\n"), "utf8");
+    const scan = await scanner.scan([{ sha: sha256Hex(raw), content: raw }]);
+    if (!scan.clean) throw new SecretFound([], []);
+    const rendered = `docs/features/${f.id}-security-gate1.md`;
+    fs.writeFileSync(path.join(a.wt.path, ...rendered.split("/")), renderReport({
+      feature: f.id, title: f.state.title, specVersion: a.specVersion, date: iso(clock.now()).slice(0, 10), runId: a.runId, report: a.report,
+    }) + "\n");
+    const enginePolicy: RolePolicy = { role: "engine", tools: [], read: { allow: [], deny: [] }, write: { allow: [rendered], deny: [] }, commands: [], network: [], mayRequest: [] };
+    const c = await commitWorktree({
+      git, gitDir: a.wt.gitDir, worktree: a.wt.path, branch: f.state.branch, base: a.commit, policy: enginePolicy, scanner, tmpDir,
+      message: `${f.id}: Security Gate 1 report (run ${a.runId})`, limits: worktreeLimits(a.limits),
+    });
+    if (c.status !== "committed") throw new Error(`the Gate 1 rendering wasn't committed (${c.status})`);
+    runs.update(a.runId, { last_commit: c.commit });
+    const items = new Map<number, string>();
+    const findings = a.report.findings;
+    for (const [i, fd] of findings.entries()) {
+      if (!fd.needs_owner) continue;
+      items.set(i + 1, await fileDecisionItem(p.state_repo!, clock, {
+        title: `${findingRef(i + 1)} for ${f.id}: the owner's choice`, feature: f.id,
+        context: `Security Gate 1 on ${f.id} (${a.specPath}) found a choice only you can make. The reviewer's words, shown as plain text: ${plain(fd.criterion)}, ${plain(fd.severity)}, at ${plain(fd.location)}: ${plain(fd.explanation)} What the options decide: ${plain(fd.fix)}`,
+        impact: `${f.id} waits at Security Gate 1 until this is decided.`,
+        options: fd.options!.map((op) => ({ id: op.id, label: op.label.replace(/\s+/g, " "), shown: plain(op.label) })),
+        recommendation: fd.recommendation!,
+        costOfDelay: `${f.id} can't reach the readiness gate.`,
+      }));
+    }
+    const recs = records(findings, items);
+    const toAnalyst = recs.some((r) => !r.needs_owner);
+    const choices = [...items.values()];
+    const report = agentReport({
+      feature: f.id, stage: GATE1_STAGE, role: REVIEWER_ROLE, n: a.n, commit: a.commit, outcome: choices.length ? "blocked" : "complete",
+      summary: a.report.summary, itemsFiled: choices,
+      body: { gate: 1, findings: a.report.findings, checklist: a.report.checklist, permissions_added: a.report.permissions_added, abuse_cases: a.report.abuse_cases, not_applicable: a.report.not_applicable },
+      facts: a.facts, artifacts: [...(runArtifacts.get(a.runId) ?? []), { kind: "report", ref: rendered }],
+    });
+    const next = findings.length === 0 ? READINESS_STAGE : toAnalyst ? INTERVIEW_STAGE : GATE1_STAGE;
+    await f.exclusive(() => f.append([
+      { type: "gate1_report", run: a.runId, report: a.n, commit: a.commit, rendered: c.commit, findings: recs },
+      ...(choices.length && !toAnalyst ? [{ type: "gate1_blocked", reason: `Waiting on the owner's Security items: ${choices.join(", ")}.` }] : []),
+      ...(next !== GATE1_STAGE ? [{ type: "stage", stage: next }] : []),
+    ], `gate 1: ${findings.length} finding${findings.length === 1 ? "" : "s"}`, [report]));
+    runs.finish(a.runId, "complete");
+    await o.agents?.docker.run(["volume", "rm", "--force", runVolume(a.runId)], { okCodes: [1] }).catch(() => undefined);
+    log.info(`${f.id}: Gate 1 run ${a.runId} filed ${findings.length} finding(s); the feature is at ${next}.`);
+  }
+
+  async function endGate1(p: Project, f: FeatureInterview, runId: string, n: number, status: "failed", why: string, facts: RunFacts, commit: string): Promise<void> {
+    await o.agents?.docker.run(["volume", "rm", "--force", runVolume(runId)], { okCodes: [1] }).catch(() => log.warn(`volume ${runVolume(runId)} wasn't removed`));
+    try {
+      await p.state_repo!.commit([agentReport({
+        feature: f.id, stage: GATE1_STAGE, role: REVIEWER_ROLE, n, commit, outcome: "failed", summary: `Run ${runId} stopped: ${why}.`,
+        body: { gate: 1, findings: [] }, facts, artifacts: runArtifacts.get(runId) ?? [],
+      })], `${f.id}: Gate 1 run ${runId} stopped`);
+      await pushState(p);
+    } catch (e) {
+      log.warn(`${p.name}: the report for Gate 1 run ${runId} wasn't committed (${(e as Error).message}).`);
+    }
+    await noteGate1(f, "stopped", `The Gate 1 run stopped: ${why}.`);
+    // Last, so a run shown as ended already has its report and its transcript note (FR-10).
+    runs.finish(runId, status, why);
   }
 
   let done!: () => void;
@@ -1039,7 +1396,22 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   for (const r of runs.interrupted()) {
     const p = projects.find((x) => x.real === r.project && x.state === "running");
     const f = p?.features.get(r.feature);
-    if (!p || !f || ambiguous.has(f.id) || r.role !== "requirements-analyst") continue;
+    if (!p || !f || ambiguous.has(f.id)) continue;
+    if (r.role === REVIEWER_ROLE) {
+      // F-008 FR-10: a Gate 1 run resumes as an analyst run does.
+      const plan = runs.resume(r.id);
+      if (plan.mode === "failed") {
+        log.warn(`Run ${r.id} (${f.id}, Gate 1) failed: ${plan.run.reason}.`);
+        // FR-10: the failure is also recorded in the agent report and the transcript.
+        if (f.stage() === GATE1_STAGE) {
+          await endGate1(p, f, r.id, await nextGate1Report(p, f.id), "failed", plan.run.reason ?? "it was interrupted too often", { model: p.models?.["security-reviewer"] ?? "" }, r.last_commit ?? "")
+            .catch((e) => log.warn(`${f.id}: Gate 1 run ${r.id}'s failure wasn't recorded (${engineWords(e)}).`));
+        }
+      } else if (f.stage() === GATE1_STAGE) afterInterview(p, f, plan);
+      else runs.finish(r.id, "failed", "the feature left Security Gate 1");
+      continue;
+    }
+    if (r.role !== "requirements-analyst") continue;
     await reportInterrupted(p, f, r);
     const plan = runs.resume(r.id, f.state);
     if (plan.mode === "failed") {
@@ -1050,6 +1422,19 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (o.agents) launchAnalyst(p, f, plan);
     else if (o.resumeAnalyst && r.worktree) {
       o.resumeAnalyst({ feature: f.id, worktree: r.worktree, tools: handle.interviewTools(f.id, r.worktree), plan });
+    }
+  }
+  // F-008 FR-1: features parked at Gate 1 start it; one sent back with findings gets its analyst, once.
+  for (const p of projects) {
+    if (p.state !== "running") continue;
+    for (const f of p.features.values()) {
+      if (ambiguous.has(f.id) || jobs.has(f.id)) continue;
+      if (f.stage() === GATE1_STAGE) afterInterview(p, f);
+      else if (f.stage() === INTERVIEW_STAGE && f.state.gate1.pending && f.state.gate1.reportAt) {
+        const since = f.state.gate1.reportAt;
+        const tried = record.runs().some((r) => r.feature === f.id && r.project === p.real && r.role === "requirements-analyst" && r.started_at >= since);
+        if (!tried) launchAnalyst(p, f);
+      }
     }
   }
   return handle;

@@ -3,7 +3,7 @@ import * as path from "node:path";
 import YAML from "yaml";
 import { describe, expect, it } from "vitest";
 import {
-  LIMITS_FILE, Limits, LimitsError, agentLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, parseLimits,
+  LIMITS_FILE, Limits, LimitsError, agentLimits, containerLimits, gate1Limits, manifestLimits, maxPageBytes, mergeLimits, parseLimits,
   readDefaultLimits, roleContainerLimits, sessionCaps, worktreeLimits,
 } from "../src/config/limits";
 import { Git } from "../src/git";
@@ -25,6 +25,8 @@ describe("engine/config/limits.yaml (H-0087)", () => {
       fetch_page: { max_download_mib: 2, max_chars: 50000 },
       research_result: { summary_chars: 2000, max_sources: 8 },
       worktree_commit: { max_files: 200, max_total_mib: 5, max_file_mib: 1 },
+      security_reviewer: { turns: 100, output_tokens: 200000, dollars: 5, wall_time_minutes: 60, cpus: 1, memory_mib: 1024, pids: 128, tmp_mib: 256 },
+      security_gate_1: { runs_per_feature: 3, report_kib: 256, additions_kib: 64 },
     });
   });
 });
@@ -111,6 +113,7 @@ describe("consumers", () => {
     expect(roleContainerLimits(l)).toEqual({
       "requirements-analyst": { cpus: 2, memoryBytes: 2048 * MiB, pids: 256, tmpBytes: 512 * MiB },
       "web-reader": { cpus: 1, memoryBytes: 1024 * MiB, pids: 128, tmpBytes: 256 * MiB },
+      "security-reviewer": { cpus: 1, memoryBytes: 1024 * MiB, pids: 128, tmpBytes: 256 * MiB },
     });
     expect(containerLimits(l.proxy)).toEqual({ cpus: 0.5, memoryBytes: 256 * MiB, pids: 64, tmpBytes: 16 * MiB });
   });
@@ -127,5 +130,34 @@ describe("consumers", () => {
     expect(worktreeLimits(l)).toEqual({ maxFiles: 200, maxTotalBytes: 5 * MiB, maxFileBytes: MiB });
     const lowered = mergeLimits(l, { worktree_commit: { max_file_mib: 0.3 } }).limits;
     expect(worktreeLimits(lowered).maxFileBytes).toBe(Math.floor(0.3 * MiB));
+  });
+});
+
+describe("F-008 Gate 1 limits (H-0095)", () => {
+  it("AC-10: a factory version without the Gate 1 sections still parses, and then has no Gate 1 limits", () => {
+    const d = YAML.parse(SHIPPED) as Record<string, unknown>;
+    delete d.security_reviewer;
+    delete d.security_gate_1;
+    const l = parseLimits(d, LIMITS_FILE, true);
+    expect(gate1Limits(l, "tokens")).toBeNull();
+    expect(Object.keys(roleContainerLimits(l))).toEqual(["requirements-analyst", "web-reader"]);
+    // A project can't raise what isn't there, and lowering it is a no-op.
+    expect(mergeLimits(l, { security_reviewer: { turns: 1 } })).toEqual({ limits: l, above: [] });
+  });
+
+  it("caps, run limit and file sizes from the shipped values; a project may only lower them", () => {
+    expect(gate1Limits(defaults(), "tokens")).toEqual({
+      caps: { maxTurns: 100, maxOutputTokens: 200000, maxBudgetUsd: 5, wallTimeMs: 3600_000 }, runsPerFeature: 3, reportBytes: 256 * 1024, additionsBytes: 64 * 1024,
+    });
+    expect(gate1Limits(defaults(), "subscription")!.caps.maxBudgetUsd).toBeUndefined();
+    const { limits, above } = mergeLimits(defaults(), { security_gate_1: { runs_per_feature: 1, report_kib: 512 } });
+    expect(limits.security_gate_1!.runs_per_feature).toBe(1);
+    expect(above).toEqual(["security_gate_1.report_kib"]);
+  });
+
+  it("refuses an unknown key in a Gate 1 section", () => {
+    const d = YAML.parse(SHIPPED) as Record<string, Record<string, unknown>>;
+    d.security_gate_1!.extra = 1;
+    expect(() => parseLimits(d, LIMITS_FILE, true)).toThrow(/unknown key 'security_gate_1.extra'/);
   });
 });

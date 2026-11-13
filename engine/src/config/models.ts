@@ -5,10 +5,12 @@ import { ConfigError } from "./paths-file";
 /** Spec v32: the model for each agent role until F-002 wires rungs, a master default like the limits. */
 export const MODELS_FILE = "engine/config/models.yaml";
 
-/** The roles the engine runs in F-007; each needs a model, and the file may name no other. */
+/** The roles the engine runs in F-007; each needs a model. */
 export const MODEL_ROLES = ["requirements-analyst", "web-reader"] as const;
+/** F-008: a factory version from before it has no entry, and then Gate 1 doesn't run (AC-10). */
+export const OPTIONAL_MODEL_ROLES = ["security-reviewer"] as const;
 export type ModelRole = (typeof MODEL_ROLES)[number];
-export type Models = Record<ModelRole, string>;
+export type Models = Record<ModelRole, string> & Partial<Record<(typeof OPTIONAL_MODEL_ROLES)[number], string>>;
 
 const MAX_FILE = 16 * 1024;
 // A model id goes into the SDK options as is, so nothing that could read as more than one token.
@@ -20,8 +22,8 @@ export class ModelsError extends ConfigError {
 
 /**
  * Reads the models from the master commit `factory.version` names, never a
- * working tree. Missing, unreadable, an unknown role, a missing role or an
- * empty model id refuses the project. There is no per-project override yet.
+ * working tree. Missing, unreadable, an unknown role, a missing required role
+ * or an empty model id refuses the project. There is no per-project override yet.
  */
 export async function readDefaultModels(tree: TreeSnapshot): Promise<Models> {
   const e = tree.entry(MODELS_FILE);
@@ -38,10 +40,16 @@ export async function readDefaultModels(tree: TreeSnapshot): Promise<Models> {
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) throw new ModelsError(`${MODELS_FILE} must map each role to a model id.`);
   const map = doc as Record<string, unknown>;
   for (const k of Object.keys(map)) {
-    if (!(MODEL_ROLES as readonly string[]).includes(k)) throw new ModelsError(`${MODELS_FILE}: '${k.slice(0, 64)}' is not a role the engine runs.`);
+    if (!(MODEL_ROLES as readonly string[]).includes(k) && !(OPTIONAL_MODEL_ROLES as readonly string[]).includes(k)) throw new ModelsError(`${MODELS_FILE}: '${k.slice(0, 64)}' is not a role the engine runs.`);
   }
   const out = {} as Models;
   for (const role of MODEL_ROLES) {
+    const v = map[role];
+    if (typeof v !== "string" || !MODEL_RE.test(v)) throw new ModelsError(`${MODELS_FILE}: '${role}' needs a model id.`);
+    out[role] = v;
+  }
+  for (const role of OPTIONAL_MODEL_ROLES) {
+    if (!Object.prototype.hasOwnProperty.call(map, role)) continue;
     const v = map[role];
     if (typeof v !== "string" || !MODEL_RE.test(v)) throw new ModelsError(`${MODELS_FILE}: '${role}' needs a model id.`);
     out[role] = v;

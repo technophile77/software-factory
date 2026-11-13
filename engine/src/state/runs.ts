@@ -41,7 +41,7 @@ export class RunBook {
     return run;
   }
 
-  update(id: string, patch: Partial<Pick<RunRecord, "session_id" | "last_commit" | "git_dir">>): RunRecord {
+  update(id: string, patch: Partial<Pick<RunRecord, "session_id" | "last_commit" | "git_dir" | "used">>): RunRecord {
     const run = this.must(id);
     const next = { ...run, ...patch };
     this.record.putRun(next);
