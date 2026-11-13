@@ -4,7 +4,7 @@
 - **Status:** In review (interview open)
 - **Requested by / date:** Alex, 2026-11-13 (chose "Fewer engine git calls"
   from the CI speed thread's options)
-- **Spec version:** 2
+- **Spec version:** 3
 
 ## 1. Objective and business purpose
 The engine starts a new `git` process for almost every read and write it
@@ -43,13 +43,13 @@ Where the time goes today (profile of the full acceptance suite on
 | FR-3 | **factory/state head held in memory.** The engine keeps the factory/state commit it last wrote or read, and updates it on every commit, fetch and fast-forward it makes (A-1). A commit whose compare-and-swap fails reloads the head and fails as today. |
 | FR-4 | **Master repo facts read once.** The master repo's root commits and origin URL, used by the project path check (SR-13), are read once per engine start instead of once per project path check. |
 | FR-5 | **One config read before a network step.** `remoteUrl` takes `remote.origin.url` from the same `config --list` the Gate 2 L7 check already runs, instead of a second `remote get-url`. The L7 check itself is unchanged and still runs before every push and fetch. |
-| FR-6 | **Fewer processes per state commit** (OQ-2). |
+| FR-6 | **State commits unchanged.** factory/state commits keep using git's own commands as today; reworking them is a later feature, decided after F-014's results are measured (OQ-2, owner 2026-11-13). |
 | FR-7 | **Counted, not guessed.** The `Git` class counts the processes it starts, by subcommand. The acceptance harness reports the total per test, and a test fails if a named hot path (engine start of one project, one state commit, one manifest read) starts more processes than its budget in AC-2. |
 
 ## 4. Acceptance criteria
 | Id | Given / When / Then | Covers |
 |---|---|---|
-| AC-1 | Given the full acceptance suite, when it runs on the F-014 branch, then it starts at least 35% fewer git processes in total than on `main` at 2e77d39 (51,904), and every test that passes on `main` passes. | FR-1–FR-6 |
+| AC-1 | Given the full acceptance suite, when it runs on the F-014 branch, then it starts at least 35% fewer git processes in total than on `main` at 2e77d39 (51,904), and every test that passes on `main` passes. | FR-1–FR-5 |
 | AC-2 | Given one project with a valid manifest, when the engine starts, then the count from FR-7 is at or under the budget written in the test (set from the measured value after the build, and reviewed at Gate 2 and validation). | FR-7 |
 | AC-3 | Given a reader process that is killed mid-read, or that writes a malformed header, when the engine reads a ref or file, then the read returns the same answer as a plain `git` call and the next read starts a new reader. | FR-2 |
 | AC-4 | Given a path in a config repo's `main` that is a symbolic link, a submodule or a tree, when the engine reads it as a file, then it refuses it with the same error as on `main` at 2e77d39. | FR-1, SR-1 |
@@ -112,7 +112,7 @@ None. `Git` gains methods internal to the engine; no contract in
 | Id | Category | Question | Status |
 |---|---|---|---|
 | OQ-1 | Architecture | Keep one `cat-file --batch` reader per repo, closed when idle (FR-1)? | Answered 2026-11-13: yes, closed after 2 s idle |
-| OQ-2 | Product | Rework state commits in this feature (FR-6), or leave them for later? | Open |
+| OQ-2 | Product | Rework state commits in this feature (FR-6), or leave them for later? | Answered 2026-11-13: leave for later |
 
 ## 12. Readiness gate
 - [x] Clear objective
@@ -120,10 +120,11 @@ None. `Git` gains methods internal to the engine; no contract in
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [ ] Assumptions explicit (A-1 pending)
-- [ ] Blocking decisions resolved (OQ-2 open)
+- [x] Blocking decisions resolved
 
 ## 13. Change log
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-13 | Draft from the git profile of the acceptance suite | — |
 | 2 | 2026-11-13 | OQ-1: one reader per repo, closed after 2 s idle | Alex (card) |
+| 3 | 2026-11-13 | OQ-2: state commits left for a later feature (FR-6) | Alex (card) |
