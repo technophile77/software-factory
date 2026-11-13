@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 (split from F-011 OQ-3: "the phone
   notification needs to be tied to some way to do approvals on my phone also";
   "I want a confirmation on risky actions like a merge, not just one click")
-- **Spec version:** 6
+- **Spec version:** 7
 
 ## 1. Objective and business purpose
 The factory stalls whenever an item is waiting for the owner and the owner is
@@ -143,12 +143,12 @@ owner already uses for the interview device approval (ADR 0014).
 | SR-5 | Item content goes only to the private config repo, never to a public repo or a third-party service (owner rule, 2026-11-12: sensitive info never in a public repo). This replaces F-011's draft rule that phone alerts carry only counts: the phone has to show enough to decide, and the config repo is as private as the rest of the project. | Analyst | Proposed |
 | SR-6 | Residual risk, to state to the owner: anyone holding the owner's GitHub session or token can comment as the owner, so a stolen phone with GitHub signed in, or the engine's token used by something else, could approve items. The confirm tap doesn't stop that; it guards against a mis-tap, not a stolen account. GitHub's own sign-in and 2FA are the control. Agents can't: they run in containers without tokens (ADR 0015). | Analyst | Stated to the owner and accepted 2026-11-13 (OQ-2) |
 | SR-7 | No secrets or tokens in issue bodies, comments or logs (S3.1); the item's text passes the secrets scan before it is rendered. | Analyst (S3.1) | Proposed |
-| SR-8 | The engine stores each action comment's id and text hash, and the issue body's hash, when posted; a tap on an edited action or confirm comment, or on an issue whose body was edited by anyone but the engine, records nothing. | Gate 1 #1 (S2.1, S6.2) | Proposed |
-| SR-9 | Turning phone notifications on also checks that the owner is the config repo's only collaborator; otherwise it refuses and says why. | Gate 1 #2 (S8.1, owner rule 2026-11-12) | Proposed |
-| SR-10 | Fields that can carry outside text are rendered in fenced code blocks, with @mentions and remote images stripped, under an engine-written line naming their author. | Gate 1 #3 (S6.1, S9.3) | Proposed |
-| SR-11 | A CI test fails if engine code calls GitHub's create-reaction endpoint (REST or GraphQL `addReaction`); the engine only reads reactions. | Gate 1 #4 (S2.1, LLM06) | Proposed |
-| SR-12 | The config repo workflow has `permissions: issues: write` only, actions pinned by SHA, and runs only on `repository_dispatch` from the engine, executing nothing from the payload. | Gate 1 #5 (S4, S8.2) | Proposed |
-| SR-13 | A phone history entry also records the reacting user id, reaction id and time, so it stands if the issue is deleted. | Gate 1 #6 (S3.3) | Proposed |
+| SR-8 | The engine stores each action comment's id and text hash, and the issue body's hash, when posted; a tap on an edited action or confirm comment, or on an issue whose body was edited by anyone but the engine, records nothing. | Gate 1 #1 (S2.1, S6.2) | Accepted (owner, 2026-11-13, decision card) |
+| SR-9 | Turning phone notifications on also checks that the owner is the config repo's only collaborator; otherwise it refuses and says why. | Gate 1 #2 (S8.1, owner rule 2026-11-12) | Accepted (owner, 2026-11-13, decision card) |
+| SR-10 | Fields that can carry outside text are rendered in fenced code blocks, with @mentions and remote images stripped, under an engine-written line naming their author. | Gate 1 #3 (S6.1, S9.3) | Accepted (owner, 2026-11-13, decision card) |
+| SR-11 | A CI test fails if engine code calls GitHub's create-reaction endpoint (REST or GraphQL `addReaction`); the engine only reads reactions. | Gate 1 #4 (S2.1, LLM06) | Accepted (owner, 2026-11-13, decision card) |
+| SR-12 | The config repo workflow has `permissions: issues: write` only, actions pinned by SHA, and runs only on `repository_dispatch` from the engine, executing nothing from the payload. | Gate 1 #5 (S4, S8.2) | Accepted (owner, 2026-11-13, decision card) |
+| SR-13 | A phone history entry also records the reacting user id, reaction id and time, so it stands if the issue is deleted. | Gate 1 #6 (S3.3) | Accepted (owner, 2026-11-13, decision card) |
 
 ## 10. Interface requirements
 Hygiene items named here; none filed until the open questions are answered.
@@ -184,6 +184,7 @@ Hygiene items named here; none filed until the open questions are answered.
 | 4 | 2026-11-13 | OQ-2 decided: a tap from the owner's GitHub account proves a phone action (ADR 0018); SR-6 risk accepted | Owner, 2026-11-13 (decision card) |
 | 5 | 2026-11-13 | OQ-4 decided: no quiet hours in this feature (FR-12, AC-9 removed) | Owner, 2026-11-13 (decision card) |
 | 6 | 2026-11-13 | Security Gate 1: 6 findings, none blocking; SR-8 to SR-13 proposed | — |
+| 7 | 2026-11-13 | SR-8 to SR-13 approved | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
