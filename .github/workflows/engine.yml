@@ -115,9 +115,15 @@ jobs:
           cache: npm
           cache-dependency-path: engine/package-lock.json
       - run: npm ci --ignore-scripts
-      - run: npm run ${{ matrix.scope == 'platform' && 'test:platform' || 'test' }} -- --maxWorkers=${{ matrix.workers }}
+      # Matrix values reach the command through env vars, not template
+      # expansion: the matrix comes from fromJSON, so zizmor can't prove the
+      # values are constant. Bash so the same line works on Windows.
+      - run: npm run "$TEST_SCRIPT" -- --maxWorkers="$TEST_WORKERS"
+        shell: bash
         env:
           FACTORY_TEST_SHARD: ${{ matrix.shard }}
+          TEST_SCRIPT: ${{ matrix.scope == 'platform' && 'test:platform' || 'test' }}
+          TEST_WORKERS: ${{ matrix.workers }}
 
   # SR-19 (H-0088): known CVEs in both lockfiles and in the agent image.
   supply-chain:
