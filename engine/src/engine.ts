@@ -36,7 +36,7 @@ import { FeatureInterview } from "./interview/feature";
 import { InterviewTools, ResearchConfig, createInterviewTools } from "./interview/tools";
 import { FileLogger, Logger } from "./log";
 import { OsApi, realOsApi } from "./os/ffi";
-import { Children, osParent } from "./proc";
+import { Children, osParent, osStartedAt } from "./proc";
 import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryTokenName } from "./secrets";
 import { SecurityAlert, fileDecisionItem, fileSecurityItem } from "./state/inbox";
 import { READINESS_STAGE, analystGate1Turn, correctionTurn, gate1Resolution, records, reviewerTurn } from "./gate1/flow";
@@ -181,7 +181,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const log = o.logger ?? new FileLogger(path.join(home, "logs"), clock);
   const osApi = o.os ?? realOsApi();
   const env = o.env ?? process.env;
-  const children = new Children(o.parentOf ?? osParent(osApi));
+  const children = o.parentOf ? new Children(o.parentOf) : new Children(osParent(osApi), osStartedAt(osApi));
   const gitPath = o.gitPath ?? findOnPath("git");
   if (!gitPath) throw new StartError("git isn't on PATH.");
   const git = new Git({ gitPath, homeDir: path.join(home, "git"), children, env });

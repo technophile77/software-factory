@@ -52,6 +52,8 @@ export interface WindowsApi {
   processUserSid(pid: number): string;
   /** A live process's parent pid from a Toolhelp snapshot, or null if it isn't running. */
   parentPid?(pid: number): number | null;
+  /** A process's creation time (GetProcessTimes, 100 ns units), or null if it can't be opened. */
+  startedAt?(pid: number): number | null;
   /** Bytes waiting; throws once the client has gone. Never blocks. */
   pipeAvailable(h: Handle): number;
   readPipe(h: Handle, n: number): Buffer;
@@ -85,7 +87,7 @@ export const FUNCTIONS = {
     "kernel32.dll": [
       "CreateNamedPipeW", "ConnectNamedPipe", "DisconnectNamedPipe", "GetNamedPipeClientProcessId", "PeekNamedPipe",
       "SetNamedPipeHandleState", "ReadFile", "WriteFile", "CloseHandle", "OpenProcess", "GetCurrentProcess", "LocalFree",
-      "CreateToolhelp32Snapshot", "Process32FirstW", "Process32NextW",
+      "CreateToolhelp32Snapshot", "Process32FirstW", "Process32NextW", "GetProcessTimes",
     ],
     "advapi32.dll": [
       "OpenProcessToken", "GetTokenInformation", "ConvertSidToStringSidW", "GetSecurityInfo", "GetNamedSecurityInfoW",
@@ -238,6 +240,7 @@ function windowsApi(): WindowsApi {
   const LocalFree = k("void * __stdcall LocalFree(void *p)");
   const CreateToolhelp32Snapshot = k("factory_HANDLE __stdcall CreateToolhelp32Snapshot(uint32 flags, uint32 pid)");
   const Process32FirstW = k("int32 __stdcall Process32FirstW(factory_HANDLE snap, _Inout_ factory_PROCESSENTRY32W *pe)");
+  const GetProcessTimes = k("int32 __stdcall GetProcessTimes(factory_HANDLE p, _Out_ uint64 *created, _Out_ uint64 *exited, _Out_ uint64 *kernel, _Out_ uint64 *user)");
   const Process32NextW = k("int32 __stdcall Process32NextW(factory_HANDLE snap, _Inout_ factory_PROCESSENTRY32W *pe)");
   const OpenProcessToken = a("int32 __stdcall OpenProcessToken(factory_HANDLE p, uint32 access, _Out_ factory_HANDLE *token)");
   const GetTokenInformation = a("int32 __stdcall GetTokenInformation(factory_HANDLE token, int32 cls, void *buf, uint32 len, _Out_ uint32 *ret)");
@@ -418,6 +421,18 @@ function windowsApi(): WindowsApi {
           CloseHandle(p);
         }
       });
+    },
+    startedAt(pid) {
+      if (!Number.isInteger(pid) || pid <= 0) return null;
+      const p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+      if (invalid(p)) return null;
+      try {
+        const created = [0n];
+        if (!GetProcessTimes(p, created, [0n], [0n], [0n])) return null;
+        return Number(created[0]);
+      } finally {
+        CloseHandle(p);
+      }
     },
     pipeAvailable(h) {
       return guard("PeekNamedPipe", () => {

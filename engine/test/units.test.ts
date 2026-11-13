@@ -18,7 +18,7 @@ import { frameTurn } from "../src/interview/frame";
 import { FileLogger, MemoryLogger } from "../src/log";
 import { CredentialApi, FfiError, FUNCTIONS, Handle, OsApi, WindowsApi, realOsApi } from "../src/os/ffi";
 import { isOwnerOnlyPipe, isOwnerWritableOnly, ownerOnlyPipeSddl, parseSddl, withSelfSid } from "../src/os/sddl";
-import { Children, osParent } from "../src/proc";
+import { Children, osParent, osStartedAt } from "../src/proc";
 import { MemoryCredentialStore, OsCredentialStore, SecretError, factoryTokenName } from "../src/secrets";
 import { EngineRecord } from "../src/state/record";
 import { RunBook, transcriptSummary } from "../src/state/runs";
@@ -107,11 +107,36 @@ describe("secrets (SR-20, OQ-7)", () => {
     }
   });
 
+  it("a recorded parent pid that one of our children took over after the parent exited isn't ancestry", () => {
+    // The client (pid 900) was started by a process that has exited; Windows gave its pid, 700, to a git reader of ours.
+    const parents: Record<number, number> = { 900: 700, 700: process.pid };
+    const started: Record<number, number> = { 900: 100, 700: 500 };
+    const kids = new Children((p) => parents[p] ?? null, (p) => started[p] ?? null);
+    kids.add(700);
+    expect(kids.startedByEngine(900)).toBe(false);
+    // A real child of ours, started before its own child, still counts, as does an unknown start time.
+    started[700] = 50;
+    expect(kids.startedByEngine(900)).toBe(true);
+    expect(new Children((p) => parents[p] ?? null, () => null).startedByEngine(900)).toBe(true);
+    // Only Windows looks at start times, and a failed lookup gives no answer instead of an error.
+    expect(osStartedAt({ platform: "linux", windows: () => ({}) })).toBeUndefined();
+    const failing = osStartedAt({ platform: "win32", windows: () => ({ startedAt: () => { throw new Error("x"); } }) })!;
+    expect(failing(900)).toBeNull();
+  });
+
   it.runIf(process.platform === "darwin" || process.platform === "win32")("the real parent lookup reports this process's parent", () => {
     const os = realOsApi();
     const api = process.platform === "win32" ? os.windows() : os.unix();
     expect(api.parentPid!(process.pid)).toBe(process.ppid);
     expect(api.parentPid!(2 ** 31 - 2)).toBeNull();
+    if (process.platform === "win32") {
+      const win = os.windows();
+      const mine = win.startedAt!(process.pid);
+      const parent = win.startedAt!(process.ppid);
+      expect(mine).toBeGreaterThan(0);
+      expect(parent).toBeLessThanOrEqual(mine!);
+      expect(win.startedAt!(2 ** 31 - 2)).toBeNull();
+    }
   });
 
   it("the FFI module declares a fixed list of functions per OS", () => {

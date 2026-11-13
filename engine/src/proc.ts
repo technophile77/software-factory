@@ -11,7 +11,17 @@ import * as path from "node:path";
 export class Children {
   private readonly live = new Set<number>();
 
-  constructor(private readonly parentOf: (pid: number) => number | null = linuxParent) {}
+  /**
+   * `startedAt` gives a process's start time on one clock, or null if unknown.
+   * Windows reuses pids at once and records a parent's pid without ever
+   * clearing it, so a client whose recorded parent has exited can name a pid
+   * that now belongs to one of our children; a parent started after its child
+   * is that reused pid, not the parent.
+   */
+  constructor(
+    private readonly parentOf: (pid: number) => number | null = linuxParent,
+    private readonly startedAt?: (pid: number) => number | null,
+  ) {}
 
   add(pid: number): void {
     this.live.add(pid);
@@ -27,11 +37,35 @@ export class Children {
     for (let i = 0; i < 64 && cur > 1; i++) {
       const parent = this.parentOf(cur);
       if (parent === null) return false;
-      if (parent === enginePid || this.live.has(parent)) return true;
+      if (parent === enginePid || this.live.has(parent)) return !this.reused(parent, cur);
       cur = parent;
     }
     return false;
   }
+
+  /** True only when both start times are known and `parent` started after `child`. */
+  private reused(parent: number, child: number): boolean {
+    if (!this.startedAt) return false;
+    const p = this.startedAt(parent);
+    const c = this.startedAt(child);
+    return p !== null && c !== null && p > c;
+  }
+}
+
+/**
+ * A process's start time, to tell a reused pid from a parent (see `Children`).
+ * Only Windows reuses pids soon enough to matter; elsewhere it is left out.
+ * A failed lookup gives null, which keeps the plain ancestry answer.
+ */
+export function osStartedAt(os: { platform: NodeJS.Platform; windows(): { startedAt?(pid: number): number | null } }): ((pid: number) => number | null) | undefined {
+  if (os.platform !== "win32") return undefined;
+  return (pid) => {
+    try {
+      return os.windows().startedAt?.(pid) ?? null;
+    } catch {
+      return null;
+    }
+  };
 }
 
 /**

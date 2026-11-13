@@ -560,9 +560,20 @@ export class World {
   async ok(method: string, params?: unknown): Promise<any> {
     const r = await this.rpc(method, params);
     if (r.error || r.result === undefined) {
-      throw new Error(`${method} failed: ${JSON.stringify(r.error ?? r)}`);
+      throw new Error(`${method} failed: ${JSON.stringify(r.error ?? r)}${r.error?.message === "connection closed" ? this.channelLog() : ""}`);
     }
     return r.result;
+  }
+
+  /** A connection the engine closes without an answer is usually a refusal; its reason is only in the log. */
+  private channelLog(): string {
+    let lines: string[] = [];
+    try {
+      lines = listFiles(this.logDir).flatMap((f) => readFileSync(f, "utf8").split("\n")).filter((l) => /channel/i.test(l));
+    } catch {
+      // no log yet
+    }
+    return lines.length ? `\nchannel log lines:\n${lines.slice(-10).join("\n")}` : "\n(no channel lines in the engine log)";
   }
 
   async startFeature(request = "Let people export their data as CSV"): Promise<string> {
