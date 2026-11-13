@@ -122,3 +122,29 @@ increments 1 to 3. The main daily cost is Docker Desktop, which the PC
 already runs. Claude Code's isolated worktree adds nothing the engine's own
 worktrees don't already give. If the owner wants containers gone, C keeps the
 most important protection: agents can't act as him on GitHub.
+
+## 6. H-0202 draft: requirement wording until Beta (awaiting owner approval)
+
+Each requirement keeps its id and its original text, which takes effect
+again at Beta. Until then, the text below applies. Each spec gets one line
+under its requirement table: "Until Beta, ADR 0026 replaces the container
+wording of the rows marked † with the H-0202 text in proposal 0031."
+
+| Spec | Id | Until Beta |
+|---|---|---|
+| F-007 | FR-8 | The analyst and the web reader run as Agent SDK sessions on the owner's PC, each in its own engine worktree, under the Role policy contract's "until Beta" rule (ADR 0026). They get no owner credentials in their environment. Their model traffic goes through the engine's proxy. If the worktree or proxy can't be set up, no session starts. |
+| F-007 | AC-16 | Given a running analyst session, the model credential appears nowhere in its environment, its arguments or its worktree. |
+| F-007 | SR-6 | Suspended until Beta. The session's model traffic goes only to the proxy, but nothing at the OS limits other network use (accepted risk, ADR 0026). |
+| F-007 | SR-9 | Unchanged except "container" reads "session": the session gets the proxy as its API base URL and a dummy key. |
+| F-007 | SR-18 | Session caps unchanged. The container limits on CPU, memory, pids and temp size are suspended until Beta (accepted risk 4, ADR 0026). |
+| F-008 | FR-2 | The reviewer runs as an Agent SDK session on the owner's PC under the project's `security-reviewer` role policy and the "until Beta" rule. The tool gate allows its one write, its named report. The end-of-session check rejects any other worktree change. |
+| F-008 | AC-3 | Given a Gate 1 session, its tools are only `Read`, `Grep`, `Glob`, `Write` and `Skill`, and its model traffic goes to the proxy. |
+| F-008 | SR-6 | Same caps and billing check as the analyst (F-007 SR-18 as above). |
+| F-008 | SR-8 | "After the container is gone" reads "after the session has ended". The rest is unchanged. |
+| F-010 | FR-4, AC-5, SR-2 | The triager runs as a session on the owner's PC with one tool, `submit_triage`, and no file tools, so it reads only its input. No network and no write still hold, through the tool list rather than the container. |
+| F-010 | SR-25 | Confirmation writes only its test (tool gate and end-of-session check) and fetches nothing named in an issue. "No network" is not enforced for the test it runs until Beta (accepted risk 2, ADR 0026). |
+| F-010 | A-2 | "In the agent container" reads "on the owner's PC". |
+
+Not covered here: F-013 (waits on where LiteLLM runs), F-015 and F-016
+(drafts, owned by their threads), F-006 FR-7 and SR-9 (a future shell,
+unchanged until it is proposed).
