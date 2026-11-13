@@ -14,6 +14,7 @@ import { Git } from "./git";
 import { HttpGitHub } from "./github";
 import { FileLogger } from "./log";
 import { realOsApi } from "./os/ffi";
+import { serveMcp } from "./mcp/server";
 import { Children } from "./proc";
 import { OsCredentialStore, SecretError, isSecretName } from "./secrets";
 
@@ -26,6 +27,8 @@ const USAGE = `factory-engine <command>
   secret set <name>
           Stores a secret in the OS credential store, read from stdin.
           Names: model-credential, factory-token/<project name>.
+  mcp     Serves the spec interview's tools to Claude Code over stdio (ADR 0025).
+          Started by the software-factory plugin, not by hand.
 `;
 
 function flags(args: string[]): Record<string, string> {
@@ -98,6 +101,14 @@ async function readSecret(): Promise<string> {
 
 async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
+  if (cmd === "mcp") {
+    if (rest.length) {
+      process.stderr.write(USAGE);
+      return 2;
+    }
+    await serveMcp(realOsApi());
+    return 0;
+  }
   if (cmd === "secret") {
     const [sub, name] = rest;
     if (sub !== "set" || !name || !isSecretName(name)) {
