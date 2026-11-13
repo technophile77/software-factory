@@ -4,7 +4,7 @@
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account)
-- **Spec version:** 14
+- **Spec version:** 15
 
 ## 1. Objective and business purpose
 Everything the factory needs the owner to approve reaches the owner in one
@@ -139,12 +139,12 @@ sessions, or by the owner) can be listed too (OQ-6).
 | SR-3 | The engine's token has no Administration permission, so it can't change or remove the `main` ruleset. | Analyst (S8) | Proposed; admin rights on a separate token used only for advisories (OQ-7) |
 | SR-4 | The `main` ruleset has no bypass actors in owner-token mode, so required CI applies to every merge. | Analyst (S8) | Proposed |
 | SR-5 | The engine merges only in FR-11 (hygiene diff identical to the approved one); it has no other merge code path. | Analyst (LLM06) | Proposed; enforced in CI by FR-14 |
-| SR-8 | Cards and confirmation dialogs for PRs show, in a fixed engine-written line above any PR text, the PR author and whether it comes from a fork or an account without write access. PR text is rendered per F-001 SR-1. | Gate 1 #2 (S6.1, S1.2) | Proposed |
-| SR-9 | The engine merges under FR-11 only on a hygiene approval in a commit signed per ADR 0015. If signing for hygiene items is removed, FR-11 is withdrawn in the same change. | Gate 1 #3 (S2.1, S6.2) | Proposed |
-| SR-10 | The extension uses the owner's VS Code GitHub session (`repo` scope, the narrowest VS Code offers) only for the PR-read and merge endpoints, and only for repos in the project manifest; any other repo is refused. | Gate 1 #4 (S8.2, S8.5) | Proposed |
-| SR-11 | FR-11's comparison is byte for byte on `git diff --binary` from merge base to head, plus file list and modes; any difference or failure to compute files a Pull request item instead. | Gate 1 #5 (S5.1, S1.1) | Proposed |
-| SR-12 | Both tokens are fine-grained with an expiry of at most 90 days; the engine files a Notice 7 days before expiry and uses no expired token. | Gate 1 #6 (S8.2) | Proposed |
-| SR-13 | The `approved_merge` entry records repo, PR number, head commit, merge commit and time, and no credential. | Gate 1 #7 (S9.6, S3.3) | Proposed |
+| SR-8 | Cards and confirmation dialogs for PRs show, in a fixed engine-written line above any PR text, the PR author and whether it comes from a fork or an account without write access. PR text is rendered per F-001 SR-1. | Gate 1 #2 (S6.1, S1.2) | Accepted (owner, 2026-11-13, decision card) |
+| SR-9 | The engine merges under FR-11 only on a hygiene approval in a commit signed per ADR 0015. If signing for hygiene items is removed, FR-11 is withdrawn in the same change. | Gate 1 #3 (S2.1, S6.2) | Accepted (owner, 2026-11-13, decision card) |
+| SR-10 | The extension uses the owner's VS Code GitHub session (`repo` scope, the narrowest VS Code offers) only for the PR-read and merge endpoints, and only for repos in the project manifest; any other repo is refused. | Gate 1 #4 (S8.2, S8.5) | Accepted (owner, 2026-11-13, decision card) |
+| SR-11 | FR-11's comparison is byte for byte on `git diff --binary` from merge base to head, plus file list and modes; any difference or failure to compute files a Pull request item instead. | Gate 1 #5 (S5.1, S1.1) | Accepted (owner, 2026-11-13, decision card) |
+| SR-12 | Both tokens are fine-grained with an expiry of at most 90 days; the engine files a Notice 7 days before expiry and uses no expired token. | Gate 1 #6 (S8.2) | Accepted (owner, 2026-11-13, decision card) |
+| SR-13 | The `approved_merge` entry records repo, PR number, head commit, merge commit and time, and no credential. | Gate 1 #7 (S9.6, S3.3) | Accepted (owner, 2026-11-13, decision card) |
 | SR-6 | Tokens never appear in items, logs, commits or the Actions log (S3.1). | Analyst (S3.1) | Proposed |
 | SR-7 | Residual risk, stated to the owner (OQ-9): GitHub can't tell the owner's click from anything else using the owner's credentials. The engine's token (the owner's) can merge, so an engine bug, a leaked token, or a program running as the owner could merge a PR with green CI without a click. Agents can't: they run in containers without tokens (ADR 0015). | Analyst | Stated to the owner 2026-11-13; FR-14 guards against a code change adding a merge, not against a leaked token or another program |
 
@@ -256,6 +256,7 @@ github:
 | 12 | 2026-11-13 | Security Gate 1 filed (F-011-security-gate1.md); SR-8 to SR-13 proposed; #1 (standards text) awaits the owner | — |
 | 13 | 2026-11-13 | Gate 1 #1 decided: S9.6 and S9.2 amended for ADR 0017 (in H-0122) | Owner, 2026-11-13 (decision card) |
 | 14 | 2026-11-13 | Section 10: drafts of H-0120, H-0123, H-0124 and the rest of H-0122 for owner approval | — |
+| 15 | 2026-11-13 | SR-8 to SR-13 approved | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
