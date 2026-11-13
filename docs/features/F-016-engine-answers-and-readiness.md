@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until I
   can start onboarding some of my existing projects?"; chose to build engine
   increment 3 next, decision card)
-- **Spec version:** 3
+- **Spec version:** 4
 
 This is the rest of the engine's increment 3 ("Requirements to ready", F-007
 section 13). F-008 built Security Gate 1 and said that reading inbox answers
@@ -125,7 +125,7 @@ signs the spec off, and the feature is handed to development
 ## 7. Dependencies
 - F-011 v29 (issue store, action reader, records, workflow template,
   migration script), built in the same PR (H-0161 to H-0163).
-- F-011 A-2 spike (GitHub Mobile push), before build.
+- F-011 A-2 spike (GitHub Mobile push): done 2026-11-13, the owner got the push for an issue opened by `github-actions[bot]` in the trial config repo.
 - F-008 (Gate 1 flow and FR-9), F-007 (interview, chain, runs).
 - F-015 (increment 4) takes features from `build_and_test_prep`, and builds
   F-011's PR parts (FR-9 evidence comment, `/changes` on PRs, FR-10 hygiene
@@ -188,10 +188,11 @@ Drafts, for the owner's approval:
 | 1 | 2026-11-13 | Draft from F-007 section 13, F-008 and F-011 v29, before the owner's answers | — |
 | 2 | 2026-11-13 | Security Gate 1: SR-6 to SR-10 proposed | — |
 | 3 | 2026-11-13 | OQ-1 decided (c): structural code checks, then an orchestrator session judges checks 1 to 4 only if they pass (FR-7, FR-11, AC-13, AC-14, SR-11, H-0184 drafted) | Owner, 2026-11-13 (decision card) |
+| 4 | 2026-11-13 | OQ-2 decided (a): the analyst writes the owner's Gate 1 choice into section 9; F-011 A-2 confirmed by the Mobile push spike (owner got the push) | Owner, 2026-11-13 (decision cards) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
 |---|---|---|---|
 | OQ-1 | Who judges readiness checks 1 to 4 (clear objective, behavior, testable ACs, constraints)? (a) Engine code: structural checks (each section present and filled, every FR covered by an AC, every AC in Given/When/Then form); the owner's spec sign-off is the human judgment of clarity. No tokens. (b) An orchestrator agent session reads the spec and judges each check; needs a model and limits (H-0184) and costs one session per gate. (c) Code first, then the agent only if code passes. Recommended: (a). | Architecture | Decided (owner, 2026-11-13, decision card): (c), code first, then the agent only if code passes |
-| OQ-2 | After the owner chooses an option on a Gate 1 choice item, how does it reach the spec? (a) The feature goes back to the analyst, who records the choice as an Approved SR citing the finding and item; the engine checks the row matches the recorded choice. (b) The decided item alone resolves the finding; the spec doesn't mention it. Recommended: (a), so the spec stays the single source a developer reads. | Product | Open |
+| OQ-2 | After the owner chooses an option on a Gate 1 choice item, how does it reach the spec? (a) The feature goes back to the analyst, who records the choice as an Approved SR citing the finding and item; the engine checks the row matches the recorded choice. (b) The decided item alone resolves the finding; the spec doesn't mention it. Recommended: (a), so the spec stays the single source a developer reads. | Product | Decided (owner, 2026-11-13, decision card): (a) |
 | OQ-3 | "Pinned owner keys changed" and "New project path" items (F-007 SR-5) today need `factory-engine confirm` plus a device sign-in as the previously pinned owner. Should a confirmed Approve on the inbox issue replace that? (a) Yes: the action counts only from the **previously pinned** owner id, read from the API, and is confirmed with 🚀 (ADR 0022); the CLI command stays as a second way. Risk, stated: anyone holding your GitHub session or token could confirm a change to the owner keys from any device; today the confirm also needs someone at your PC. Both prove the same GitHub account. (b) No: keep the CLI command and device sign-in only; the issue just tells you to run it, and closes when the engine sees the confirm. Recommended: (a), since both check the same account and you favor usability; your PC is trusted either way. | Security | Open |
