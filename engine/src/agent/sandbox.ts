@@ -162,7 +162,9 @@ export class ProxyClient {
 /**
  * One run's containers (FR-8, ADR 0015): an internal network with no route
  * out, an outside network only the proxy joins, the proxy sidecar, and an
- * agent container per session. Every container is checked with
+ * agent container per session. When the run grants model endpoints, the
+ * LiteLLM router lives on a third, internal network shared with the proxy
+ * alone, so no agent can reach it except through the gateway (F-013 M1). Every container is checked with
  * `docker inspect` after it starts and stopped on any mismatch (SR-14).
  * Nothing is shared with another run or project (SR-16).
  */
@@ -171,6 +173,9 @@ export class SessionGroup {
   readonly outside: string;
   readonly proxyName: string;
   readonly routerName: string;
+  /** The internal network only the proxy and the router join (F-013 M1); agents are never on it. */
+  readonly routerNet: string;
+  private routerSubnets: string[] = [];
   private routerCred: string | null = null;
   private routerDir: string | null = null;
   private routerGranted = false;
@@ -188,6 +193,7 @@ export class SessionGroup {
     this.outside = dockerName(id, "out");
     this.proxyName = dockerName(id, "proxy");
     this.routerName = dockerName(id, "router");
+    this.routerNet = dockerName(id, "rtr");
   }
 
   /** True once the gateway stopped a request of this group's sessions at its FR-12 deadline (it answered 504). */
@@ -237,13 +243,24 @@ export class SessionGroup {
     const internalSubnet = this.subnets.find((s) => s.includes("."));
     if (!internalSubnet) throw new DockerError("the internal network has no IPv4 subnet");
     const outsideSubnets = networkSubnets(await this.inspect("network", this.outside));
+    // M1: the router sits on a network of its own, shared with the proxy only, so no agent has a route to it.
+    let routerSubnet: string | undefined;
+    if (this.c.router) {
+      await this.c.docker.run(internalNetworkArgs(this.routerNet, this.labels()));
+      const badRouter = networkMismatches(this.routerNet, await this.inspect("network", this.routerNet), true);
+      if (badRouter.length) throw new DockerError(`network ${this.routerNet}: ${badRouter.join(", ")}`);
+      this.routerSubnets = networkSubnets(await this.inspect("network", this.routerNet));
+      routerSubnet = this.routerSubnets.find((s) => s.includes("."));
+      if (!routerSubnet) throw new DockerError("the router network has no IPv4 subnet");
+    }
 
     const spec: ContainerSpec = {
       name: this.proxyName,
       imageId: this.c.proxyImageId,
       user: AGENT_USER,
-      networks: [this.internal, this.outside],
+      networks: [this.internal, this.outside, ...(this.c.router ? [this.routerNet] : [])],
       alias: PROXY_ALIAS,
+      ...(this.c.router ? { aliasAlso: [this.routerNet] } : {}),
       mounts: [{ type: "bind", source: this.c.proxyScript, target: PROXY_SCRIPT, readOnly: true }],
       limits: this.c.proxyLimits,
       envNames: [],
@@ -266,9 +283,9 @@ export class SessionGroup {
         credential: this.c.credential,
         dummyKey: DUMMY_KEY,
         internalSubnet,
-        blockedSubnets: [...this.subnets, ...outsideSubnets],
+        blockedSubnets: [...this.subnets, ...outsideSubnets, ...this.routerSubnets],
         maxPageBytes: this.c.maxPageBytes,
-        ...(router ? { router: { address: router.address, port: ROUTER_PORT, masterKey: router.masterKey } } : {}),
+        ...(router && routerSubnet ? { routerSubnet, router: { address: router.address, port: ROUTER_PORT, masterKey: router.masterKey } } : {}),
       });
       if (router && this.c.router) {
         this.proxy.send({ t: "endpoints", list: this.c.router.pins });
@@ -304,7 +321,7 @@ export class SessionGroup {
         name,
         imageId: r.image.id,
         user: r.image.user,
-        networks: [this.internal],
+        networks: [this.routerNet],
         alias: ROUTER_ALIAS,
         mounts: [{ type: "bind", source: file, target: ROUTER_CONFIG_TARGET, readOnly: true }],
         limits: r.limits,
@@ -317,8 +334,8 @@ export class SessionGroup {
       await this.c.docker.run(runArgs(spec), { env });
       await this.verify(spec);
       const doc = await this.inspect("container", name);
-      const address = routerAddress(doc, this.internal);
-      if (!address) throw new DockerError("the router has no address on the internal network");
+      const address = routerAddress(doc, this.routerNet);
+      if (!address) throw new DockerError("the router has no address on its network");
       return { address, masterKey };
     } catch (e) {
       await this.closeRouter();
@@ -468,6 +485,6 @@ export class SessionGroup {
     await d.run(["rm", "--force", this.proxyName], { okCodes: [1] }).catch(() => undefined);
     for (const v of this.volumes) await d.run(["volume", "rm", "--force", v], { okCodes: [1] }).catch(() => this.c.log.warn(`volume ${v} wasn't removed`));
     this.volumes.clear();
-    for (const n of [this.internal, this.outside]) await d.run(["network", "rm", n], { okCodes: [1] }).catch(() => this.c.log.warn(`network ${n} wasn't removed`));
+    for (const n of [this.internal, this.outside, ...(this.c.router ? [this.routerNet] : [])]) await d.run(["network", "rm", n], { okCodes: [1] }).catch(() => this.c.log.warn(`network ${n} wasn't removed`));
   }
 }

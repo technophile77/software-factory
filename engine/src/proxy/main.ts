@@ -1,5 +1,6 @@
 // Entry point of the sidecar proxy (bundled to dist/proxy.js). One JSON
 // message per line on stdin from the engine, one per line on stdout back.
+import * as net from "node:net";
 import * as os from "node:os";
 import * as readline from "node:readline";
 import { EgressProxy, GrantDeadline, PinnedEndpoint, ProxyLog, Refused, RouterTarget } from "./server";
@@ -16,8 +17,14 @@ export interface ProxyStart {
   blockedSubnets: string[];
   maxPageBytes: number;
   /**
+   * The router's own network, shared with the proxy only (F-013 M1). The proxy
+   * also listens there so the router can use it as its egress proxy; required
+   * whenever `router` is given.
+   */
+  routerSubnet?: string;
+  /**
    * The LiteLLM container (F-013): endpoint grants are forwarded to it. Its
-   * address must be on `internalSubnet`, or the proxy refuses to start.
+   * address must be on `routerSubnet`, or the proxy refuses to start.
    */
   router?: RouterTarget;
 }
@@ -37,7 +44,7 @@ export type FromProxy =
   | ProxyLog;
 
 /**
- * Whether `addr` lies in `subnet` (CIDR). The router must be on the internal
+ * Whether `addr` lies in `subnet` (CIDR). The router must be on its own
  * network, so a bad `start` can't point the gateway at some other host.
  *
  * @example
@@ -84,13 +91,21 @@ function main(): void {
         send({ t: "error", reason: "no address on the internal network" });
         process.exit(2);
       }
-      if (m.router && !(inSubnet(m.router.address, m.internalSubnet) && Number.isInteger(m.router.port) && m.router.port > 0 && m.router.port < 65536 && typeof m.router.masterKey === "string" && m.router.masterKey !== "")) {
-        send({ t: "error", reason: "the router isn't on the internal network" });
+      const routerAddress = m.router && m.routerSubnet ? addressOn(m.routerSubnet) : null;
+      if (m.router && !(m.routerSubnet !== undefined && routerAddress !== null && inSubnet(m.router.address, m.routerSubnet) && Number.isInteger(m.router.port) && m.router.port > 0 && m.router.port < 65536 && typeof m.router.masterKey === "string" && m.router.masterKey !== "")) {
+        send({ t: "error", reason: "the router isn't on its network" });
         process.exit(2);
       }
       proxy = new EgressProxy({ credential: m.credential, dummyKey: m.dummyKey, blockedSubnets: m.blockedSubnets, maxPageBytes: m.maxPageBytes, log: send, router: m.router });
-      proxy.server.listen(PROXY_PORT, address!, () => send({ t: "ready", address: address!, port: PROXY_PORT }));
-      proxy.server.on("error", () => process.exit(3));
+      const started = proxy;
+      started.server.listen(PROXY_PORT, address!, () => send({ t: "ready", address: address!, port: PROXY_PORT }));
+      started.server.on("error", () => process.exit(3));
+      if (routerAddress) {
+        // The router's way out. Agents have no interface on this network, so only the router can reach this listener.
+        const routerSide = net.createServer((sock) => started.server.emit("connection", sock));
+        routerSide.listen(PROXY_PORT, routerAddress);
+        routerSide.on("error", () => process.exit(3));
+      }
       return;
     }
     if (!proxy) return send({ t: "error", reason: "not started" });

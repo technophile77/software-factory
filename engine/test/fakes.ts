@@ -24,7 +24,7 @@ export function inspectFor(args: string[], running = true): Record<string, unkno
       SecurityOpt: [get("--security-opt")], NanoCpus: Math.round(Number(get("--cpus")) * 1e9), Memory: Number(get("--memory").slice(0, -1)),
       PidsLimit: Number(get("--pids-limit")), Tmpfs: tmpfs, NetworkMode: nets[0], LogConfig: { Type: get("--log-driver") }, Binds: null,
     },
-    NetworkSettings: { Networks: Object.fromEntries(nets.map((n) => [n, { IPAddress: "172.30.0.9" }])) },
+    NetworkSettings: { Networks: Object.fromEntries(nets.map((n) => [n, { IPAddress: n.endsWith("-rtr") ? "172.32.0.9" : "172.30.0.9" }])) },
     Mounts: mounts,
   };
 }
@@ -114,8 +114,9 @@ export class FakeDocker {
   }
   answer(args: string[]): string {
     if (args[0] === "network" && args[1] === "inspect") {
-      const internal = args[2]!.endsWith("-int");
-      return JSON.stringify([{ Name: args[2], Internal: internal, Driver: "bridge", IPAM: { Config: [{ Subnet: internal ? "172.30.0.0/16" : "172.31.0.0/16" }] } }]);
+      const router = args[2]!.endsWith("-rtr");
+      const internal = args[2]!.endsWith("-int") || router;
+      return JSON.stringify([{ Name: args[2], Internal: internal, Driver: "bridge", IPAM: { Config: [{ Subnet: router ? "172.32.0.0/16" : internal ? "172.30.0.0/16" : "172.31.0.0/16" }] } }]);
     }
     if (args[0] === "container" && args[1] === "inspect") {
       const a = this.started.get(args[2]!);

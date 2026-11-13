@@ -22,12 +22,21 @@ SKIP = {"scripts/tests/test_check_placeholders.py", "scripts/tests/test_check_en
 
 # H-0137 (F-013 AC-1): no tracked file carries an owner's endpoint address.
 # Paths here document address ranges or use made-up addresses as test
-# fixtures; a trailing "/" allows everything under that directory. Each entry
-# was checked against the tree when it was added.
+# fixtures; a trailing "/" would allow everything under a directory, so the
+# engine entries name the files that need it instead: a new file holding an
+# address fails CI until a reviewer adds it here. Each entry was checked
+# against the tree when it was added.
 ADDRESS_ALLOWED = (
-    "engine/src/proxy/",  # blocked-range CIDR tables and subnet doc examples (docker bridge addresses)
-    "engine/src/config/endpoint-address.ts",  # private-range tables and classification doc examples, like engine/src/proxy/
-    "engine/test/",  # fixtures that prove the proxy refuses private ranges
+    "engine/src/proxy/main.ts",  # subnet doc example (docker bridge addresses)
+    "engine/src/proxy/rules.ts",  # blocked-range CIDR tables
+    "engine/src/config/endpoint-address.ts",  # private-range tables and classification doc examples
+    "engine/test/acceptance/containers-real.test.ts",  # docker bridge addresses the real-container checks expect
+    "engine/test/agent.test.ts",  # fake docker subnets
+    "engine/test/endpoint-address.test.ts",  # classifier cases, including the refused ranges
+    "engine/test/endpoints.test.ts",  # endpoint file fixtures with made-up LAN addresses
+    "engine/test/fakes.ts",  # fake docker's network subnets and container addresses
+    "engine/test/litellm.test.ts",  # router config fixtures with made-up LAN addresses
+    "engine/test/proxy.test.ts",  # fixtures that prove the proxy refuses private ranges
     "docs/features/F-007-test-plan.md",  # AC-15 lists the refused addresses
     "docs/features/F-007-test-report.md",  # reports the same AC-15 run
     "docs/features/F-007-security-gate1.md",  # finding 3 names a private address the web reader must refuse

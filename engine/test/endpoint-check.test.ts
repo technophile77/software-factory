@@ -1,7 +1,7 @@
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { httpProbe, identityOf, timingOf } from "../src/agent/endpoint-check";
+import { httpProbe, identityOf, makeHttpProbe, timingOf } from "../src/agent/endpoint-check";
 import type { PinnedEndpoint } from "../src/config/endpoint-address";
 import { type Endpoint, validateEndpoints } from "../src/config/endpoints";
 
@@ -92,6 +92,24 @@ describe("httpProbe (F-013 FR-6)", () => {
     const out = await httpProbe(endpoint(), pin, null);
     expect(out).toEqual({ ok: false, reason: "it couldn't be reached (GET /v1/models)" });
     expect(JSON.stringify(out)).not.toContain("127.0.0.1");
+  });
+
+  it("L5: the tool call has an overall limit that a trickle of bytes doesn't restart", async () => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        if (req.url === "/v1/models") return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(MODELS));
+        res.writeHead(200, { "content-type": "application/json" });
+        const drip = setInterval(() => res.write(" "), 30);
+        res.on("close", () => clearInterval(drip));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    servers.push(server);
+    const pin: PinnedEndpoint = { name: "lan", class: "private", scheme: "http", host: "llm.example", address: "127.0.0.1", port: (server.address() as AddressInfo).port, basePath: "" };
+    const began = Date.now();
+    expect(await makeHttpProbe(300)(endpoint(), pin, null)).toEqual({ ok: false, reason: "it didn't answer in time (tool call)" });
+    expect(Date.now() - began).toBeLessThan(5000);
   });
 
   it("follows no redirect: a 302 is a failure, and the key goes nowhere else (SR-13)", async () => {

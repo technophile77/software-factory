@@ -9,9 +9,11 @@ import { LITELLM_IMAGE_DIGEST, LITELLM_IMAGE_REF, LITELLM_SIGNATURE_ENV, litellm
 import { inspectMismatches, runArgs } from "../src/docker/plan";
 import type { ContainerSpec } from "../src/docker/plan";
 import { MemoryLogger } from "../src/log";
+import { effectiveRole } from "../src/policy/role-policy";
 import type { PinnedEndpoint } from "../src/proxy/server";
 import { FakeDocker, inspectFor } from "./fakes";
 import { tmpdir } from "./helpers";
+import { policyDoc } from "./policy-fixture";
 
 const IMG = `sha256:${"a".repeat(64)}`;
 const LIMITS = { cpus: 1.5, memoryBytes: 2 * 1024 ** 3, pids: 256, tmpBytes: 64 * 1024 ** 2 };
@@ -140,7 +142,7 @@ function group(d: FakeDocker, over: { workDir: string; readyTimeoutMs?: number; 
   const { e, p } = endpointsFixture();
   return new SessionGroup({
     docker: d as unknown as DockerCli, runId: "R-0a1b2c", project: "demo", agentImageId: IMG, proxyImageId: `sha256:${"b".repeat(64)}`,
-    proxyScript: "/opt/engine/dist/proxy.js", agentLimits: {}, proxyLimits: { ...LIMITS, cpus: 0.5 }, maxPageBytes: 1 << 20,
+    proxyScript: "/opt/engine/dist/proxy.js", agentLimits: { "requirements-analyst": LIMITS }, proxyLimits: { ...LIMITS, cpus: 0.5 }, maxPageBytes: 1 << 20,
     credential: { kind: "api_key", value: CLAUDE_CRED }, log: over.log ?? new MemoryLogger(), platform: "linux", sleep: async () => undefined,
     router: {
       image: { id: `sha256:${"c".repeat(64)}`, user: "65532:65532" }, limits: LIMITS, endpoints: [e], pins: [p],
@@ -150,7 +152,7 @@ function group(d: FakeDocker, over: { workDir: string; readyTimeoutMs?: number; 
 }
 
 describe("session group router (F-013 FR-5, SR-16)", () => {
-  it("starts a locked-down router on the internal network, hands the proxy its address and a router grant, and cleans up on close", async () => {
+  it("starts a locked-down router on its own internal network, hands the proxy its address and a router grant, and cleans up on close", async () => {
     const d = new FakeDocker();
     const dir = tmpdir();
     const g = group(d, { workDir: dir });
@@ -162,7 +164,7 @@ describe("session group router (F-013 FR-5, SR-16)", () => {
     expect(args).toContain("--read-only");
     expect(val("--cap-drop")).toBe("ALL");
     expect(val("--security-opt")).toBe("no-new-privileges:true");
-    expect(args.flatMap((a, i) => (args[i - 1] === "--network" ? [a] : []))).toEqual(["name=factory-r-0a1b2c-int,alias=factory-router"]);
+    expect(args.flatMap((a, i) => (args[i - 1] === "--network" ? [a] : []))).toEqual(["name=factory-r-0a1b2c-rtr,alias=factory-router"]);
     expect(args.flatMap((a, i) => (args[i - 1] === "--tmpfs" ? [a.split(":")[0]] : []))).toEqual(["/tmp", "/app/.cache"]);
     const mount = args[args.indexOf("--mount") + 1]!;
     expect(mount).toMatch(/target=\/app\/config\.yaml,readonly$/);
@@ -177,7 +179,9 @@ describe("session group router (F-013 FR-5, SR-16)", () => {
 
     const proxy = d.spawned[0]!.child.sent();
     const start = proxy.find((m) => m.t === "start")!;
-    expect(start.router).toEqual({ address: "172.30.0.9", port: 4000, masterKey: call.env!.LITELLM_MASTER_KEY });
+    expect(start.router).toEqual({ address: "172.32.0.9", port: 4000, masterKey: call.env!.LITELLM_MASTER_KEY });
+    expect(start.routerSubnet).toBe("172.32.0.0/16");
+    expect(start.blockedSubnets).toContain("172.32.0.0/16");
     expect(start.router.masterKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const grant = proxy.find((m) => m.t === "grant")!;
     expect(grant).toMatchObject({ kind: "router", role: "router", allow: [] });
@@ -190,6 +194,39 @@ describe("session group router (F-013 FR-5, SR-16)", () => {
     expect(d.calls.some((c) => c.args[0] === "rm" && c.args.includes("factory-r-0a1b2c-router"))).toBe(true);
     expect(d.spawned[0]!.child.sent().filter((m) => m.t === "revoke").map((m) => m.cred)).toEqual([grant.cred]);
     expect(fs.readdirSync(dir)).toHaveLength(0);
+  });
+
+  it("M1: the router is on a network shared only with the proxy; no agent container is on it", async () => {
+    const d = new FakeDocker();
+    const g = group(d, { workDir: tmpdir() });
+    await g.open();
+    const create = d.calls.filter((c) => c.args[0] === "network" && c.args[1] === "create").map((c) => c.args);
+    expect(create.map((a) => a.at(-1))).toEqual(["factory-r-0a1b2c-int", "factory-r-0a1b2c-out", "factory-r-0a1b2c-rtr"]);
+    expect(create[2]).toContain("--internal");
+    const nets = (args: string[]) => args.flatMap((a, i) => (args[i - 1] === "--network" ? [a] : []));
+    const proxyNets = nets(d.spawned[0]!.args);
+    expect(proxyNets).toEqual(["name=factory-r-0a1b2c-int,alias=factory-proxy", "factory-r-0a1b2c-out", "name=factory-r-0a1b2c-rtr,alias=factory-proxy"]);
+    await g.startAgent(effectiveRole(policyDoc(), "requirements-analyst"), null, { upstream: "lan" });
+    const agentRun = d.calls.find((c) => c.args[0] === "run" && c.args.some((a) => a.includes("requirements-analyst")))!;
+    expect(nets(agentRun.args)).toEqual(["factory-r-0a1b2c-int"]);
+    await g.close();
+  });
+
+  it("M1: refuses to start when the router network isn't internal", async () => {
+    const d = new FakeDocker();
+    const real = d.answer.bind(d);
+    d.answer = (args) => (args[0] === "network" && args[1] === "inspect" && args[2]!.endsWith("-rtr") ? real(args).replace('"Internal":true', '"Internal":false') : real(args));
+    const g = group(d, { workDir: tmpdir() });
+    await expect(g.open()).rejects.toThrow(/-rtr: not internal/);
+    expect(d.calls.some((c) => c.args[0] === "run" && c.args.includes("factory-r-0a1b2c-router"))).toBe(false);
+  });
+
+  it("M1: close removes the router network with the others", async () => {
+    const d = new FakeDocker();
+    const g = group(d, { workDir: tmpdir() });
+    await g.open();
+    await g.close();
+    expect(d.calls.map((c) => c.args.join(" "))).toContain("network rm factory-r-0a1b2c-rtr");
   });
 
   it("keeps the config file free of keys", async () => {
@@ -247,7 +284,7 @@ describe("session group router (F-013 FR-5, SR-16)", () => {
 
 describe("router container spec (SR-14)", () => {
   const spec: ContainerSpec = {
-    name: "factory-r-router", imageId: IMG, user: "65532:65532", networks: ["factory-r-int"], alias: "factory-router", mounts: [], limits: LIMITS,
+    name: "factory-r-router", imageId: IMG, user: "65532:65532", networks: ["factory-r-rtr"], alias: "factory-router", mounts: [], limits: LIMITS,
     envNames: ["LITELLM_MASTER_KEY"], interactive: false, command: ["--port", "4000"], labels: { "factory.run": "r" }, extraTmpfs: ["/app/.cache"],
   };
 

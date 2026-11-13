@@ -30,8 +30,10 @@ export interface ModelIdentity {
  */
 export type EndpointProbe = (e: Endpoint, pin: PinnedEndpoint, key: string | null) => Promise<ProbeResult>;
 
-const MODELS_TIMEOUT_MS = 15_000;
-const TOOL_TIMEOUT_MS = 60_000;
+/** The whole model-list request, not just its idle time: a server dripping bytes can't hold the start (Gate 2 L5). */
+const MODELS_TIMEOUT_MS = 20_000;
+/** Default for the whole tool-call request; a large local model can take minutes to its first token. */
+export const TOOL_TIMEOUT_MS = 120_000;
 const MAX_REPLY = 1 << 20;
 const TOOL_NAME = "get_status";
 
@@ -69,6 +71,9 @@ function request(pin: PinnedEndpoint, method: "GET" | "POST", path: string, head
     });
     req.on("timeout", () => req.destroy(new Error("timed out")));
     req.on("error", reject);
+    // `timeout` above is an idle limit that every byte restarts; this one is the request's own.
+    const overall = setTimeout(() => req.destroy(new Error("timed out")), timeoutMs);
+    req.on("close", () => clearTimeout(overall));
     req.end(body ?? undefined);
   });
 }
@@ -180,10 +185,14 @@ const failure = (e: unknown): string => {
  * only; its tool call is checked through LiteLLM at first use. Reasons never
  * hold an address or a key (SR-2).
  *
+ * Each request has an overall time limit: 20 seconds for the model list and
+ * `toolTimeoutMs` (default 120 seconds) for the tool call.
+ *
  * @example
  * await httpProbe(endpoint, pin, null); // { ok: true, toolChecked: true }
+ * await makeHttpProbe(300_000)(endpoint, pin, null); // allows a slow model five minutes for the tool call
  */
-export const httpProbe: EndpointProbe = async (e, pin, key) => {
+export const makeHttpProbe = (toolTimeoutMs: number = TOOL_TIMEOUT_MS): EndpointProbe => async (e, pin, key) => {
   const headers = authHeaders(e, key);
   let models: Reply;
   try {
@@ -204,7 +213,7 @@ export const httpProbe: EndpointProbe = async (e, pin, key) => {
   let reply: Reply;
   const began = Date.now();
   try {
-    reply = await request(pin, "POST", "/v1/messages", { ...headers, "content-type": "application/json", "anthropic-version": "2023-06-01" }, body, TOOL_TIMEOUT_MS);
+    reply = await request(pin, "POST", "/v1/messages", { ...headers, "content-type": "application/json", "anthropic-version": "2023-06-01" }, body, toolTimeoutMs);
   } catch (err) {
     return { ok: false, reason: `${failure(err)} (tool call)` };
   }
@@ -213,3 +222,6 @@ export const httpProbe: EndpointProbe = async (e, pin, key) => {
   const timing = timingOf(reply.body, Date.now() - began);
   return { ok: true, toolChecked: true, ...(identity ? { identity } : {}), ...(timing ? { timing } : {}) };
 };
+
+/** The FR-6 check with the default time limits. */
+export const httpProbe: EndpointProbe = makeHttpProbe();

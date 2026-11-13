@@ -68,7 +68,11 @@ class Addresses(unittest.TestCase):
         text = "BLOCKED = 192.168.0.0/16 and http://box.local:8080 and fd00::1\n"
         self.assertTrue(cp.check_addresses(DOC, text))
         self.assertEqual(cp.check_addresses("engine/src/proxy/rules.ts", text), [])
-        self.assertEqual(cp.check_addresses("engine/test/acceptance/x.test.ts", text), [])
+        self.assertEqual(cp.check_addresses("engine/test/proxy.test.ts", text), [])
+        # Files are listed one by one (Gate 2 L8): a new file beside an allowed one is checked.
+        self.assertTrue(cp.check_addresses("engine/test/acceptance/x.test.ts", text))
+        self.assertTrue(cp.check_addresses("engine/src/proxy/new-file.ts", text))
+        self.assertTrue(cp.check_addresses("engine/test/new.test.ts", text))
         self.assertTrue(cp.check_addresses("engine/src/other.ts", text))
         self.assertTrue(cp.check_addresses("engine/testing/x.ts", text))
 
@@ -118,7 +122,7 @@ class WholeRepo(unittest.TestCase):
     def test_allow_listed_and_filename_mentions_pass(self):
         r = self.run_in({
             "engine/src/proxy/rules.ts": '"192.168.0.0/16", "fc00::/7"\n',
-            "engine/test/a.test.ts": 'url("http://10.0.0.1:80")\n',
+            "engine/test/proxy.test.ts": 'url("http://10.0.0.1:80")\n',
             "docs/a.md": "Put endpoints in factory-endpoints.local.yaml, not factory-projects.local.yaml.\n",
         })
         self.assertEqual(r.returncode, 0, r.stdout)

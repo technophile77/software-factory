@@ -5,7 +5,7 @@ import { htmlToText, pageText, stripInvisible } from "../src/agent/page-text";
 import { addressOn } from "../src/proxy/main";
 import { blockedAddress, hostAllowed, normalHost, parseCidr, toBits } from "../src/proxy/rules";
 import { inSubnet } from "../src/proxy/main";
-import { ALLOWED_BETAS, ENDPOINT_BODY_FIELDS, EgressProxy, PinnedEndpoint, ProxyDeps, ProxyLog, Resolved, refusedBody, requestDeadlineMs, sanitizeEndpointBody } from "../src/proxy/server";
+import { ALLOWED_BETAS, ENDPOINT_BODY_FIELDS, EgressProxy, PinnedEndpoint, ProxyDeps, ProxyLog, Resolved, refusedBody, requestDeadlineMs, routerReplyHeaders, sanitizeEndpointBody } from "../src/proxy/server";
 
 describe("SR-8 address rules", () => {
   it("refuses loopback, private, CGNAT, link-local, unique-local, multicast, unspecified and mapped forms", () => {
@@ -119,15 +119,25 @@ async function harness(o: { dns?: Record<string, string[]>; kind?: "api_key" | "
         seen.bodies.push(b);
         // The gateway's paths are fixed, so a marker in the body picks the reply there.
         const key = `${req.url}${b}`;
-        if (key.includes("/redirect") || key.includes("ROUTER-REDIRECT")) return void res.writeHead(302, { location: "http://elsewhere.test/" }).end();
-        if (key.includes("/chunked-big") || key.includes("ROUTER-CHUNKED-BIG")) {
+        if (key.includes("?redirect") || key.includes("ROUTER-REDIRECT")) return void res.writeHead(302, { location: "http://elsewhere.test/" }).end();
+        if (key.includes("?chunked-big") || key.includes("ROUTER-CHUNKED-BIG")) {
           res.writeHead(200, { "content-type": "text/plain" });
           res.write("a".repeat(600));
           setTimeout(() => res.end("b".repeat(600)), 20);
           return;
         }
         if (key.includes("ROUTER-SLOW")) return; // never answers: the gateway's deadline must end it
-        if (key.includes("/declared-big") || key.includes("ROUTER-DECLARED-BIG")) return void res.writeHead(200, { "content-length": "5000" }).end("x".repeat(5000));
+        if (key.includes("?declared-big") || key.includes("ROUTER-DECLARED-BIG")) return void res.writeHead(200, { "content-length": "5000" }).end("x".repeat(5000));
+        // Replies as LiteLLM gives them, with the headers and error text that name the endpoint (M2).
+        if (key.includes("ROUTER-LEAKY")) {
+          res.writeHead(200, { "content-type": "application/json", "x-litellm-model-api-base": "http://llm.local:8080", "x-litellm-version": "1.109.1", "llm_provider-server": "llama.cpp",
+            "request-id": "req_123", "retry-after": "7", "anthropic-ratelimit-requests-remaining": "9", location: "http://llm.local:8080/x", "x-note": "talks to llm.local" });
+          return void res.end('{"ok":true}');
+        }
+        if (key.includes("ROUTER-ERROR")) {
+          res.writeHead(429, { "content-type": "application/json", "retry-after": "3", "x-litellm-model-api-base": "http://llm.local:8080" });
+          return void res.end('{"error":{"message":"Connection error calling http://llm.local:8080/v1/chat/completions"}}');
+        }
         res.writeHead(200, { "content-type": "application/json" });
         res.end('{"ok":true}');
       });
@@ -505,7 +515,7 @@ describe("router egress (F-013 FR-5)", () => {
     expect(status).toBe(200);
     sock.destroy();
     expect(h.dialled).toEqual([{ address: "93.184.216.40", port: 443 }]);
-    expect(h.logs).toContainEqual({ t: "log", kind: "connect", session: "router", role: "router", host: "api.cloud.test", port: 443 });
+    expect(h.logs).toContainEqual({ t: "log", kind: "connect", session: "router", role: "router", host: "cloud", port: 443 });
   });
 
   it("CONNECT to anything else is refused: other hosts and ports, IP literals, the private endpoint, no credential", async () => {
@@ -544,20 +554,20 @@ describe("router egress (F-013 FR-5)", () => {
 
   it("SR-13: turns a redirect from a private endpoint into 502", async () => {
     const h = await endpointHarness();
-    const r = await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/redirect");
+    const r = await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/v1/models?redirect");
     expect(r.status).toBe(502);
     expect(r.body).not.toContain("elsewhere.test");
   });
 
   it("cuts a reply that grows past the cap, and refuses one that declares it", async () => {
     const h = await endpointHarness({ maxApiBody: 1000 });
-    const streamed = await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/chunked-big");
+    const streamed = await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/v1/models?chunked-big");
     expect(streamed.cut).toBe(true);
     expect(streamed.body.length).toBeLessThanOrEqual(1000);
-    const declared = await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/declared-big");
+    const declared = await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/v1/models?declared-big");
     expect(declared.status).toBe(502);
     expect(declared.body).not.toContain("xxxx");
-    const big = await forward(h.port, ROUTER_CRED, "POST", "http://llm.local:8080/v1", "y".repeat(2000));
+    const big = await forward(h.port, ROUTER_CRED, "POST", "http://llm.local:8080/v1/messages", "y".repeat(2000));
     expect(big.status).toBe(413);
   });
 
@@ -566,6 +576,91 @@ describe("router egress (F-013 FR-5)", () => {
     h.proxy.revoke(ROUTER_CRED);
     expect((await connect(h.port, "api.cloud.test:443", ROUTER_CRED)).status).toBe(407);
     expect((await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/")).status).toBe(407);
+  });
+});
+
+describe("Gate 2 M2: what the agent sees of the router's replies", () => {
+  const marked = (m: string) => JSON.stringify({ ...MESSAGES, messages: [{ role: "user", content: m }] });
+  const rawPost = (port: number, body: string): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> =>
+    new Promise((resolve, reject) => {
+      const req = http.request({ host: "127.0.0.1", port, method: "POST", path: `/gw/${AGENT}/v1/messages`, headers: { "x-api-key": DUMMY, "content-type": "application/json" } }, (res) => {
+        let b = "";
+        res.on("data", (d) => (b += d));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: b }));
+      });
+      req.on("error", reject);
+      req.end(body);
+    });
+
+  it("passes only allow-listed headers: no x-litellm-*, llm_provider-*, location, or anything naming the host", async () => {
+    const h = await endpointHarness();
+    const r = await rawPost(h.port, marked("ROUTER-LEAKY"));
+    expect(r.status).toBe(200);
+    expect(r.body).toBe('{"ok":true}');
+    expect(r.headers["content-type"]).toBe("application/json");
+    expect(r.headers["request-id"]).toBe("req_123");
+    expect(r.headers["retry-after"]).toBe("7");
+    expect(r.headers["anthropic-ratelimit-requests-remaining"]).toBe("9");
+    expect(Object.keys(r.headers).filter((k) => /litellm|llm_provider|location|x-note/.test(k))).toEqual([]);
+    expect(JSON.stringify(r.headers)).not.toContain("llm.local");
+  });
+
+  it("replaces an error body from the router with a generic message, keeping the status and retry hint", async () => {
+    const h = await endpointHarness();
+    const r = await rawPost(h.port, marked("ROUTER-ERROR"));
+    expect(r.status).toBe(429);
+    expect(r.body).toBe("the model endpoint returned an error\n");
+    expect(r.headers["content-type"]).toBe("text/plain");
+    expect(r.headers["retry-after"]).toBe("3");
+    expect(r.headers["x-litellm-model-api-base"]).toBeUndefined();
+    expect(JSON.stringify(r)).not.toContain("llm.local");
+    expect(h.logs).toContainEqual(expect.objectContaining({ kind: "gateway", status: 429 }));
+  });
+
+  it("hides a header value that holds the endpoint's host or address even under an allowed name", () => {
+    const headers = { "request-id": "see llm.local", "retry-after": "5", "content-type": "text/plain", "anthropic-ratelimit-x": "192.168.1.50 busy" };
+    expect(routerReplyHeaders(headers, ["llm.local", "192.168.1.50"])).toEqual({ "retry-after": "5", "content-type": "text/plain" });
+  });
+});
+
+describe("Gate 2 L1: logs name the endpoint, never its host or address (SR-2)", () => {
+  it("no log entry from endpoint traffic holds the pinned host or address", async () => {
+    const h = await endpointHarness();
+    const marked = (m: string) => JSON.stringify({ ...MESSAGES, messages: [{ role: "user", content: m }] });
+    await post(h.port, `/gw/${AGENT}/v1/messages`, { "x-api-key": DUMMY }, marked("plain"));
+    await post(h.port, `/gw/${AGENT}/v1/messages`, { "x-api-key": DUMMY }, marked("ROUTER-REDIRECT"));
+    await post(h.port, `/gw/${AGENT}/v1/messages`, { "x-api-key": DUMMY }, JSON.stringify({ ...MESSAGES, api_base: "x" }));
+    (await connect(h.port, "api.cloud.test:443", ROUTER_CRED)).sock.destroy();
+    await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/v1/models");
+    await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/admin");
+    await forward(h.port, ROUTER_CRED, "GET", "http://other.local:8080/v1/models");
+    await connect(h.port, "evil.cloud.test:443", ROUTER_CRED);
+    const all = JSON.stringify(h.logs);
+    for (const secret of ["llm.local", "other.local", "api.cloud.test", "evil.cloud.test", "192.168.1.50", "93.184.216.40", ROUTER.address]) expect(all, secret).not.toContain(secret);
+    expect(h.logs).toContainEqual({ t: "log", kind: "connect", session: "router", role: "router", host: "cloud", port: 443 });
+    expect(h.logs.filter((l) => l.kind === "gateway" && l.host === "local").length).toBeGreaterThan(0);
+    expect(h.logs.filter((l) => l.kind === "refused" && l.host === "(not a pinned endpoint)").length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("Gate 2 L2: the router's plain-HTTP grant allows only the paths an endpoint needs", () => {
+  it("allows the listed paths with GET or POST, and the endpoint's base path variants", async () => {
+    const h = await endpointHarness();
+    for (const p of ["/v1/models", "/v1/messages", "/v1/messages/count_tokens", "/v1/chat/completions"]) {
+      expect((await forward(h.port, ROUTER_CRED, p === "/v1/models" ? "GET" : "POST", `http://llm.local:8080${p}`, p === "/v1/models" ? "" : "{}")).status, p).toBe(200);
+    }
+    h.proxy.setEndpoints([PUBLIC_EP, { ...PRIVATE_EP, basePath: "/api" }]);
+    for (const p of ["/api/v1/messages", "/api/chat/completions", "/api/models", "/v1/messages"]) {
+      expect((await forward(h.port, ROUTER_CRED, "POST", `http://llm.local:8080${p}`, "{}")).status, p).toBe(200);
+    }
+  });
+
+  it("refuses and logs any other path, by name only", async () => {
+    const h = await endpointHarness();
+    const paths = ["/", "/admin", "/v1", "/v1/models/extra", "/v1/completions", "/slots", "/props", "/api/v1/messages", "/v1/chat/completions/x"];
+    for (const p of paths) expect((await forward(h.port, ROUTER_CRED, "GET", `http://llm.local:8080${p}`)).status, p).toBe(403);
+    expect(h.priv.paths).toHaveLength(0);
+    expect(h.logs.filter((l) => l.kind === "refused" && l.reason === "not a path the endpoint needs" && l.host === "local")).toHaveLength(paths.length);
   });
 });
 

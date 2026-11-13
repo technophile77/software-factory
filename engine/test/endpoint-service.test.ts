@@ -35,7 +35,7 @@ interface Rig {
   opts: EndpointServiceOptions;
 }
 
-async function rig(config: EndpointServiceOptions["config"], o: { probe?: EndpointProbe; lookup?: EndpointServiceOptions["lookup"]; planFile?: string; clock?: FakeClock; keys?: Record<string, string>; identityFile?: string; onModelChanged?: (endpoint: string) => void } = {}): Promise<Rig> {
+async function rig(config: EndpointServiceOptions["config"], o: { probe?: EndpointProbe; lookup?: EndpointServiceOptions["lookup"]; planFile?: string; clock?: FakeClock; keys?: Record<string, string>; identityFile?: string; onModelChanged?: (endpoint: string) => void; probeTimeoutMs?: number } = {}): Promise<Rig> {
   const dir = tmpdir();
   const probed: Rig["probed"] = [];
   const clock = o.clock ?? new FakeClock();
@@ -47,6 +47,7 @@ async function rig(config: EndpointServiceOptions["config"], o: { probe?: Endpoi
     planFile: o.planFile ?? path.join(dir, "plans.json"), workDir: path.join(dir, "router"),
     image: async () => IMAGE,
     slotWaitMs: 10 * 60_000,
+    ...(o.probeTimeoutMs !== undefined ? { probeTimeoutMs: o.probeTimeoutMs } : {}),
     ...(o.identityFile ? { identityFile: o.identityFile } : {}),
     ...(o.onModelChanged ? { onModelChanged: o.onModelChanged } : {}),
   };
@@ -66,6 +67,31 @@ describe("EndpointService at engine start (FR-6, AC-2, AC-3, AC-6)", () => {
     expect(r.svc.statuses()).toEqual([{ name: "lan", model: "qwen3", available: false, reason: "it doesn't list the configured model" }]);
     expect(r.svc.unavailable(RUNG)).toContain("it doesn't list the configured model");
     expect(r.log.text()).toContain("Model endpoint lan is unavailable: it doesn't list the configured model");
+  });
+
+  it("L5: an endpoint whose check never ends is marked 'probe timed out' and doesn't hold the start or the others", async () => {
+    const probe: EndpointProbe = async (e) => (e.name === "slow" ? new Promise(() => undefined) : { ok: true, toolChecked: true });
+    const began = Date.now();
+    const r = await rig({ endpoints: endpoints({ slow: {}, lan: {} }) }, { probe, probeTimeoutMs: 50 });
+    expect(Date.now() - began).toBeLessThan(5000);
+    expect(r.svc.statuses()).toEqual([
+      { name: "lan", model: "qwen3", available: true },
+      { name: "slow", model: "qwen3", available: false, reason: "probe timed out" },
+    ]);
+    expect(r.log.text()).toContain("Model endpoint slow is unavailable: probe timed out");
+  });
+
+  it("L5: endpoints are checked concurrently, not one after another", async () => {
+    let running = 0;
+    let peak = 0;
+    const probe: EndpointProbe = async () => {
+      peak = Math.max(peak, ++running);
+      await new Promise((res) => setTimeout(res, 30));
+      running--;
+      return { ok: true, toolChecked: true };
+    };
+    await rig({ endpoints: endpoints({ a: {}, b: {}, lan: {} }) }, { probe });
+    expect(peak).toBe(3);
   });
 
   it("AC-3: a public endpoint over http is unavailable, and the reason doesn't name its host", async () => {

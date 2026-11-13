@@ -100,6 +100,8 @@ export interface RouteRequest {
   promptTokens: number;
 }
 
+const DEFAULT_PROBE_TIMEOUT_MS = 150_000;
+
 export interface EndpointServiceOptions {
   /** The parsed endpoints file, or why it couldn't be used (then no endpoint is available, AC-2). */
   config: { endpoints: Endpoint[] } | { problem: string };
@@ -119,6 +121,13 @@ export interface EndpointServiceOptions {
   routerLimits?: ContainerLimits;
   /** Defaults to 10 minutes (FR-7). */
   slotWaitMs?: number;
+  /**
+   * The most time, in milliseconds, one endpoint's start-time check may take
+   * (address, key and probe together) before it is marked "unavailable: probe
+   * timed out" and the engine goes on. Defaults to 150 seconds, the real probe's
+   * own limits (20 s for the model list, 120 s for the tool call) plus a margin.
+   */
+  probeTimeoutMs?: number;
   /** Called with the endpoint's name when its model changed (SR-11), so whoever keeps the advisory match-rate history can reset it. */
   onModelChanged?: (endpoint: string) => void;
 }
@@ -183,12 +192,13 @@ export class EndpointService {
     if (s.problem) o.log.warn(`No model endpoint is available: ${s.problem}`);
     // AC-16: the pinned image is checked now, not at first use, so a wrong one shows in the status from the start.
     const imageProblem = s.endpoints.length > 0 && o.image ? await s.checkImage(o.image) : null;
-    for (const e of s.endpoints) {
-      const reason = imageProblem ?? (await s.check(e));
+    // Concurrent, each under its own hard limit, so one slow or hostile endpoint can't hold the engine's start (Gate 2 L5).
+    await Promise.all(s.endpoints.map(async (e) => {
+      const reason = imageProblem ?? (await s.checkWithin(e, o.probeTimeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS));
       s.status.set(e.name, { name: e.name, model: e.model, available: reason === null, ...(reason ? { reason } : {}) });
       if (reason) o.log.warn(`Model endpoint ${e.name} is unavailable: ${reason}.`);
       else o.log.info(`Model endpoint ${e.name} is available.`);
-    }
+    }));
     return s;
   }
 
@@ -297,6 +307,19 @@ export class EndpointService {
   }
 
   /** One check of an endpoint at engine start: null when usable, else the plain reason (AC-3, AC-6). */
+  /** {@link check}, or "probe timed out" if it isn't done after `limitMs`; a late answer is ignored. */
+  private async checkWithin(e: Endpoint, limitMs: number): Promise<string | null> {
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<string>((resolve) => {
+      timer = setTimeout(() => resolve("probe timed out"), limitMs);
+    });
+    try {
+      return await Promise.race([this.check(e), late]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private async check(e: Endpoint): Promise<string | null> {
     if (this.problem) return `the endpoints file was refused: ${this.problem}`;
     try {

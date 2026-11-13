@@ -22,6 +22,8 @@ export interface ContainerSpec {
   networks: string[];
   /** Another name on the first network, for the proxy only. */
   alias?: string;
+  /** Further networks (each one of `networks`) where `alias` also applies: the proxy is "factory-proxy" to the router too (F-013 M1). */
+  aliasAlso?: string[];
   mounts: MountSpec[];
   limits: ContainerLimits;
   /** Variable names only: values reach docker through its own environment, never an argument (SR-1). */
@@ -66,6 +68,7 @@ function checkSpec(s: ContainerSpec): void {
   if (!/^[1-9][0-9]{0,9}:[1-9][0-9]{0,9}$/.test(s.user)) throw new DockerError("the user must be a non-root uid:gid");
   if (s.networks.length === 0 || s.networks.some((n) => !DOCKER_NAME_RE.test(n))) throw new DockerError("bad network");
   if (s.alias !== undefined && !/^[a-z][a-z0-9-]{0,62}$/.test(s.alias)) throw new DockerError("bad alias");
+  if ((s.aliasAlso ?? []).some((n) => !s.networks.includes(n))) throw new DockerError("bad alias network");
   for (const m of s.mounts) {
     if (!TARGET_RE.test(m.target) || m.target.includes("..")) throw new DockerError("bad mount target");
     if (m.type === "bind") checkSource(m.source);
@@ -101,7 +104,7 @@ export function runArgs(s: ContainerSpec): string[] {
     "--pids-limit", String(s.limits.pids), "--tmpfs", `/tmp:${TMP_OPTIONS(s.limits.tmpBytes)}`,
     "--log-driver", "none", "--restart", "no"];
   for (const t of s.extraTmpfs ?? []) a.push("--tmpfs", `${t}:${TMP_OPTIONS(s.limits.tmpBytes)}`);
-  s.networks.forEach((n, i) => a.push("--network", i === 0 && s.alias ? `name=${n},alias=${s.alias}` : n));
+  s.networks.forEach((n, i) => a.push("--network", s.alias && (i === 0 || s.aliasAlso?.includes(n)) ? `name=${n},alias=${s.alias}` : n));
   for (const m of s.mounts) {
     const src = m.type === "bind" ? `type=bind,source=${m.source}` : `type=volume,source=${m.name}`;
     a.push("--mount", `${src},target=${m.target}${m.readOnly ? ",readonly" : ""}`);

@@ -184,6 +184,63 @@ export interface ProxyOptions {
 const HOP = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "host"]);
 
 /**
+ * The router reply headers the gateway passes to the agent (F-013 Gate 2 M2).
+ * LiteLLM adds `x-litellm-*` headers and `llm_provider-*` copies of the
+ * endpoint's own headers, some holding the endpoint's `api_base`; an allow list
+ * keeps all of them from the agent (SR-2). What stays is what Claude Code uses:
+ * the body's type and length, its retry hints (`retry-after*`, `x-should-retry`),
+ * the request id it logs, and Anthropic-style rate-limit headers.
+ */
+const ROUTER_REPLY_HEADERS: ReadonlySet<string> = new Set(["content-type", "content-length", "cache-control", "request-id", "retry-after", "retry-after-ms", "x-should-retry"]);
+const ROUTER_REPLY_PREFIXES = ["anthropic-ratelimit-"];
+
+/** What the agent is told in place of any error body from the router: it can quote the endpoint's address. */
+export const ROUTER_ERROR_TEXT = "the model endpoint returned an error";
+
+/** Logged in place of a host or address the router asked for that is no pinned endpoint's (SR-2). */
+const NOT_AN_ENDPOINT = "(not a pinned endpoint)";
+
+/**
+ * The request paths the router may use at an endpoint (F-013 Gate 2 L2): the
+ * ones SR-1 lists plus OpenAI chat completions, which LiteLLM calls for
+ * `api: openai` endpoints. Paths below the endpoint's own base path are
+ * allowed too, since LiteLLM appends its route to the `api_base` it is given.
+ */
+export const ENDPOINT_PATHS: readonly string[] = ["/v1/models", "/v1/messages", "/v1/messages/count_tokens", "/v1/chat/completions"];
+const BASE_RELATIVE_PATHS: readonly string[] = [...ENDPOINT_PATHS, "/models", "/chat/completions"];
+
+/**
+ * Whether the router may request `pathname` from an endpoint with this base path.
+ *
+ * @param pathname the request path without its query.
+ * @param basePath the endpoint's base URL path ("" or "/v1", no trailing slash).
+ * @example
+ * routerPathAllowed("/api/v1/messages", "/api"); // true
+ * routerPathAllowed("/admin", "/api"); // false
+ */
+export function routerPathAllowed(pathname: string, basePath: string): boolean {
+  if (ENDPOINT_PATHS.includes(pathname)) return true;
+  return basePath !== "" && BASE_RELATIVE_PATHS.some((s) => pathname === `${basePath}${s}`);
+}
+
+/**
+ * The reply headers from the router that may reach the agent: the allow list
+ * above, minus any whose value holds a URL or one of `hide` (the endpoint's
+ * host and address), however the router came to put it there.
+ */
+export function routerReplyHeaders(headers: http.IncomingHttpHeaders, hide: readonly string[]): http.OutgoingHttpHeaders {
+  const out: http.OutgoingHttpHeaders = {};
+  const secret = hide.filter((h) => h !== "").map((h) => h.toLowerCase());
+  for (const [k, v] of Object.entries(headers)) {
+    if (v === undefined || !(ROUTER_REPLY_HEADERS.has(k) || ROUTER_REPLY_PREFIXES.some((p) => k.startsWith(p)))) continue;
+    const text = [v].flat().join(",").toLowerCase();
+    if (text.includes("://") || secret.some((h) => text.includes(h))) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
  * The `anthropic-beta` values the gateway passes on (Security Gate 2, M1;
  * owner decision of 2026-11-11, card 23:12Z: allow-list the header). A beta
  * can switch on a feature that runs on Anthropic's side, outside the
@@ -451,8 +508,8 @@ export class EgressProxy {
       // changed answer can't move it, and nothing else is reachable (FR-5).
       const port = Number(m[2]);
       const ep = [...this.endpoints.values()].find((e) => e.class === "public" && e.scheme === "https" && sameHost(e.host) === sameHost(host) && e.port === port);
-      if (!ep) return deny(403, "not a pinned public endpoint", g, host);
-      return this.tunnel(sock, head, found[0], g, ep.address, ep.port, ep.host, deny);
+      if (!ep) return deny(403, "not a pinned public endpoint", g, NOT_AN_ENDPOINT);
+      return this.tunnel(sock, head, found[0], g, ep.address, ep.port, ep.name, deny);
     }
     if (m[2] !== "443") return deny(403, "only port 443", g, host);
     if (!hostAllowed(g.allow, host)) return deny(403, "host not on the role's allow list", g, host);
@@ -586,8 +643,14 @@ export class EgressProxy {
    * client: a redirect is refused and never followed (SR-13), and the body
    * is cut at the size cap (SR-16) by closing the connection, so the client
    * sees a failed reply rather than a silently short one.
+   *
+   * `host` is what the log entries name: the endpoint's name, never its host
+   * or address (SR-2). With `scrub` (the gateway's relay of the router's reply
+   * to the agent, M2) only allow-listed headers pass, minus any holding a URL
+   * or one of `scrub.hide`, and a non-2xx body is replaced by a fixed message
+   * with the status kept; the original status is in the log entry.
    */
-  private relayCapped(req: http.IncomingMessage, res: http.ServerResponse, ur: http.IncomingMessage, g: Grant, host: string, path: string): void {
+  private relayCapped(req: http.IncomingMessage, res: http.ServerResponse, ur: http.IncomingMessage, g: Grant, host: string, path: string, scrub?: { hide: string[] }): void {
     const status = ur.statusCode ?? 502;
     this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host, path, status });
     if (status >= 300 && status < 400) {
@@ -598,8 +661,18 @@ export class EgressProxy {
       ur.destroy();
       return this.refuseRequest(req, res, 502, "the endpoint's reply is too large", g, host);
     }
+    if (scrub && (status < 200 || status >= 300)) {
+      const kept = routerReplyHeaders(ur.headers, scrub.hide);
+      delete kept["content-length"];
+      ur.destroy();
+      res.writeHead(status, { ...kept, "content-type": "text/plain", connection: "close" });
+      res.end(`${ROUTER_ERROR_TEXT}
+`);
+      return;
+    }
     const out: http.OutgoingHttpHeaders = {};
-    for (const [k, v] of Object.entries(ur.headers)) if (v !== undefined && !HOP.has(k)) out[k] = v;
+    if (scrub) Object.assign(out, routerReplyHeaders(ur.headers, scrub.hide));
+    else for (const [k, v] of Object.entries(ur.headers)) if (v !== undefined && !HOP.has(k)) out[k] = v;
     res.writeHead(status, out);
     let size = 0;
     ur.on("data", (d: Buffer) => {
@@ -623,10 +696,10 @@ export class EgressProxy {
     const ep = this.endpoints.get(g.upstream!);
     const router = this.o.router;
     if (!ep) return this.refuseRequest(req, res, 502, "the granted endpoint isn't configured", g, g.upstream);
-    if (!router) return this.refuseRequest(req, res, 502, "no model router", g, ep.host);
+    if (!router) return this.refuseRequest(req, res, 502, "no model router", g, ep.name);
     const clean = sanitizeEndpointBody(body, ep.name);
     if (clean.dropped.length > 0) {
-      this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host: ep.host, path: p, reason: `dropped fields: ${clean.dropped.slice(0, 20).map(safeToken).join(", ")}` });
+      this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host: ep.name, path: p, reason: `dropped fields: ${clean.dropped.slice(0, 20).map(safeToken).join(", ")}` });
     }
     // Built from nothing, not copied from the agent: its headers carry the
     // dummy key, and the Claude credential never goes near the router (AC-4).
@@ -640,7 +713,7 @@ export class EgressProxy {
       const v = req.headers[k];
       if (typeof v === "string") headers[k] = v;
     }
-    const betas = this.allowedBetas(req, g, p, ep.host);
+    const betas = this.allowedBetas(req, g, p, ep.name);
     if (betas.length > 0) headers["anthropic-beta"] = betas.join(",");
     const up = this.deps.httpRequest(router.address, router.port, { method: "POST", path: target, headers });
     // FR-12: the whole request, reply included, is held to its own deadline; the engine learns of it from the log entry and runs the role on Claude.
@@ -649,7 +722,7 @@ export class EgressProxy {
     if (g.deadline) {
       timer = setTimeout(() => {
         expired = true;
-        this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host: ep.host, path: p, status: 504, reason: "deadline" });
+        this.o.log({ t: "log", kind: "gateway", session: g.session, role: g.role, host: ep.name, path: p, status: 504, reason: "deadline" });
         up.destroy();
         if (res.headersSent) res.destroy();
         else {
@@ -661,10 +734,10 @@ export class EgressProxy {
       res.on("close", () => clearTimeout(timer));
     }
     up.on("response", (ur) => {
-      if (!expired) this.relayCapped(req, res, ur, g, ep.host, p);
+      if (!expired) this.relayCapped(req, res, ur, g, ep.name, p, { hide: [ep.host, ep.address, router.address] });
     });
     up.on("error", () => {
-      if (!expired) this.refuseRequest(req, res, 502, "the model router is unreachable", g, ep.host);
+      if (!expired) this.refuseRequest(req, res, 502, "the model router is unreachable", g, ep.name);
     });
     up.on("timeout", () => up.destroy(new Error("timeout")));
     up.end(clean.body);
@@ -679,7 +752,8 @@ export class EgressProxy {
     const found = this.grantFrom(req.headers["proxy-authorization"]);
     if (!found) return this.refuseRequest(req, res, 407, "no or unknown proxy credential", undefined, "");
     const g = found[1];
-    const refuse = (status: number, reason: string, host = "") => this.refuseRequest(req, res, status, reason, g, host);
+    // The router chooses the host, so a refused one is never named in the log (SR-2); a matched endpoint is named.
+    const refuse = (status: number, reason: string, name = NOT_AN_ENDPOINT) => this.refuseRequest(req, res, status, reason, g, name);
     if (g.kind !== "router") return refuse(403, "plain HTTP forwarding is for the model router only");
     if (req.method !== "GET" && req.method !== "POST") return refuse(405, "only GET and POST");
     let u: URL;
@@ -689,13 +763,14 @@ export class EgressProxy {
       return refuse(400, "not a URL");
     }
     const host = sameHost(u.hostname);
-    if (u.protocol !== "http:" || u.username || u.password) return refuse(403, "only plain http without credentials", host);
+    if (u.protocol !== "http:" || u.username || u.password) return refuse(403, "only plain http without credentials");
     const port = u.port === "" ? 80 : Number(u.port);
     const ep = [...this.endpoints.values()].find((e) => e.class === "private" && e.scheme === "http" && sameHost(e.host) === host && e.port === port);
-    if (!ep) return refuse(403, "not a pinned private endpoint", host);
+    if (!ep) return refuse(403, "not a pinned private endpoint");
+    if (!routerPathAllowed(u.pathname, ep.basePath)) return refuse(403, "not a path the endpoint needs", ep.name);
     const body = await this.readBody(req);
-    if (body === null) return refuse(413, "request too large", host);
-    if (this.grants.get(found[0]) !== g) return refuse(407, "credential revoked", host);
+    if (body === null) return refuse(413, "request too large", ep.name);
+    if (this.grants.get(found[0]) !== g) return refuse(407, "credential revoked", ep.name);
     const headers: http.OutgoingHttpHeaders = {};
     for (const [k, v] of Object.entries(req.headers)) {
       if (v === undefined || HOP.has(k) || k === "content-length" || k.startsWith("x-forwarded")) continue;
@@ -705,8 +780,8 @@ export class EgressProxy {
     if (body.length > 0 || req.method === "POST") headers["content-length"] = String(body.length);
     const path = `${u.pathname}${u.search}`;
     const up = this.deps.httpRequest(ep.address, ep.port, { method: req.method, path, headers });
-    up.on("response", (ur) => this.relayCapped(req, res, ur, g, ep.host, u.pathname.slice(0, 200)));
-    up.on("error", () => this.refuseRequest(req, res, 502, "the endpoint is unreachable", g, ep.host));
+    up.on("response", (ur) => this.relayCapped(req, res, ur, g, ep.name, u.pathname.slice(0, 200)));
+    up.on("error", () => this.refuseRequest(req, res, 502, "the endpoint is unreachable", g, ep.name));
     up.on("timeout", () => up.destroy(new Error("timeout")));
     up.end(body);
   }
