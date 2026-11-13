@@ -9,7 +9,7 @@
     "build": "esbuild src/cli.ts --bundle --platform=node --format=cjs --target=node22 --external:koffi --external:@anthropic-ai/claude-agent-sdk --outfile=dist/engine.js && esbuild src/proxy/main.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/proxy.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p test/acceptance",
     "test": "vitest run",
-    "test:platform": "vitest run test/agent.test.ts test/channel.test.ts test/claude-real.test.ts test/engine.test.ts test/policy.test.ts test/sdk-binding.test.ts test/units.test.ts test/worktree-populate.test.ts test/acceptance/channel.test.ts test/acceptance/fixtures.selfcheck.test.ts test/acceptance/git-safety.test.ts test/acceptance/pinning.test.ts test/acceptance/secrets.test.ts test/acceptance/settings-isolation.test.ts test/acceptance/startup.test.ts test/acceptance/transcript.test.ts",
+    "test:platform": "vitest run test/agent.test.ts test/channel.test.ts test/claude-real.test.ts test/engine.test.ts test/mcp-pipe.test.ts test/policy.test.ts test/sdk-binding.test.ts test/units.test.ts test/worktree-populate.test.ts test/acceptance/channel.test.ts test/acceptance/fixtures.selfcheck.test.ts test/acceptance/git-safety.test.ts test/acceptance/pinning.test.ts test/acceptance/secrets.test.ts test/acceptance/settings-isolation.test.ts test/acceptance/startup.test.ts test/acceptance/transcript.test.ts",
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
