@@ -1,10 +1,10 @@
 # Feature: One inbox for all approvals
 
 - **Id:** F-011
-- **Status:** Draft
+- **Status:** Approved (owner, 2026-11-13; readiness gate passed)
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account)
-- **Spec version:** 18
+- **Spec version:** 19
 
 ## 1. Objective and business purpose
 Everything the factory needs the owner to approve reaches the owner in one
@@ -232,12 +232,15 @@ github:
   confirmation.
 
 ## 11. Readiness gate
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+- [x] Clear objective
+- [x] Expected behavior defined
+- [x] Acceptance criteria testable
+- [x] Constraints documented
+- [x] Assumptions explicit (A-1 approved)
+- [x] Blocking decisions resolved (OQ-1 to OQ-10 decided or withdrawn; SR-1 to SR-13 and H-0120 to H-0124 approved)
+
+Follow-up outside this spec: F-010's advisory path must use the separate
+admin token (OQ-7); F-010 needs a matching amendment before its build.
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -260,6 +263,7 @@ github:
 | 16 | 2026-11-13 | FR-15: confirmation also on Security decision approval and spec sign-off | Owner, 2026-11-13 (decision card) |
 | 17 | 2026-11-13 | SR-1 to SR-7 approved | Owner, 2026-11-13 (decision card) |
 | 18 | 2026-11-13 | H-0120, H-0122 (rest), H-0123, H-0124 approved; H-0122 applied | Owner, 2026-11-13 (decision card) |
+| 19 | 2026-11-13 | Readiness gate passed; status Approved | Owner, 2026-11-13 (decision cards) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
