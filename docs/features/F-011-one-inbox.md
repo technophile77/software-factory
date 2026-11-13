@@ -4,7 +4,7 @@
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account)
-- **Spec version:** 17
+- **Spec version:** 18
 
 ## 1. Objective and business purpose
 Everything the factory needs the owner to approve reaches the owner in one
@@ -149,14 +149,15 @@ sessions, or by the owner) can be listed too (OQ-6).
 | SR-7 | Residual risk, stated to the owner (OQ-9): GitHub can't tell the owner's click from anything else using the owner's credentials. The engine's token (the owner's) can merge, so an engine bug, a leaked token, or a program running as the owner could merge a PR with green CI without a click. Agents can't: they run in containers without tokens (ADR 0015). | Analyst | Accepted (owner, 2026-11-13, decision card); FR-14 guards against a code change adding a merge, not against a leaked token or another program  |
 
 ## 10. Interface requirements
-Drafts below await the owner's approval; nothing is applied to
-`interface-contracts.md` or other change-controlled files until then, and
-each is applied as its own commit with its id.
+All items below approved by the owner, 2026-11-13 (decision card). H-0122
+is applied in this PR. H-0120, H-0123 and H-0124 change contracts, the
+onboarding skill and its tests, so they are applied in the F-011 build, each
+as its own commit with its id, as F-010 did (H-0110 to H-0114).
 
 - **H-0121:** withdrawn (was a signed PR approval record; not needed after
   OQ-2). Free for reuse.
 
-### H-0120 (draft, Interfaces): Inbox item v2.0
+### H-0120 (approved, owner, 2026-11-13, decision card, Interfaces): Inbox item v2.0
 Changes to the Inbox item v1.1 contract:
 
 - **Location:** `.factory/inbox/<inbox>/<id>.md`, where `<inbox>` is
@@ -190,17 +191,16 @@ Changes to the Inbox item v1.1 contract:
 - Breaking (major): new action values and id prefixes. The F-001 extension
   must be updated before items of the new kinds are filed.
 
-### H-0122 (applied in this PR, owner-approved): ADR 0017 and standards
+### H-0122 (approved and applied in this PR): ADR 0017, standards, workflow docs
 ADR 0017 added and ADR 0006 marked superseded (OQ-2); S9.2 and S9.6 in
-`security-standards.md` amended (Gate 1 #1). Still to draft for approval:
-`development-workflow.md` stage 9 note "The owner merges. Nobody else
+`security-standards.md` amended (Gate 1 #1). Also applied: `development-workflow.md` stage 9 note "The owner merges. Nobody else
 does." becomes "The owner approves the merge in the inbox (F-011); the
 extension merges on that confirmed click. Nobody else merges, except the
 engine for a hygiene PR identical to an approved hygiene change (FR-11)."
 `decision-management.md` gains a section listing the item kinds and their
 actions, matching H-0120.
 
-### H-0123 (draft, Hygiene): `main` ruleset in owner-token mode
+### H-0123 (approved, owner, 2026-11-13, decision card, Hygiene): `main` ruleset in owner-token mode
 Onboarding (F-003 FR-2 check, FR-10 apply) uses these settings instead of
 "owner review required":
 
@@ -214,7 +214,7 @@ Onboarding (F-003 FR-2 check, FR-10 apply) uses these settings instead of
   them (repo admin), or confirms and onboarding applies them with the
   owner's `gh` login (F-003 SR-7).
 
-### H-0124 (draft, Interfaces): Project manifest v1.6 `github` block
+### H-0124 (approved, owner, 2026-11-13, decision card, Interfaces): Project manifest v1.6 `github` block
 (v1.5 is F-010's H-0110.) New optional top-level key:
 
 ```yaml
@@ -259,6 +259,7 @@ github:
 | 15 | 2026-11-13 | SR-8 to SR-13 approved | Owner, 2026-11-13 (decision card) |
 | 16 | 2026-11-13 | FR-15: confirmation also on Security decision approval and spec sign-off | Owner, 2026-11-13 (decision card) |
 | 17 | 2026-11-13 | SR-1 to SR-7 approved | Owner, 2026-11-13 (decision card) |
+| 18 | 2026-11-13 | H-0120, H-0122 (rest), H-0123, H-0124 approved; H-0122 applied | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
