@@ -14,10 +14,32 @@ export type Models = Record<ModelRole, string> & Partial<Record<(typeof OPTIONAL
 
 const MAX_FILE = 16 * 1024;
 // A model id goes into the SDK options as is, so nothing that could read as more than one token.
-const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/;
+export const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/;
+/** F-013 FR-2: endpoint names, shared by the endpoints file, the manifest list and rung ids. */
+export const ENDPOINT_NAME_RE = /^[a-z0-9-]{1,32}$/;
 
 export class ModelsError extends ConfigError {
   override name = "ModelsError";
+}
+
+/**
+ * Splits a rung id into its endpoint and model (F-013 FR-1). Only a prefix that
+ * is a valid endpoint name and not `anthropic` counts as an endpoint, so plain
+ * Claude ids (which never contain such a prefix before a `/`) are unchanged.
+ * The caller checks the endpoint exists; this function does not.
+ *
+ * @example
+ * parseRungModel("lan/qwen3.8-27b"); // { endpoint: "lan", model: "qwen3.8-27b" }
+ * parseRungModel("claude-sonnet-4-5"); // { endpoint: null, model: "claude-sonnet-4-5" }
+ */
+export function parseRungModel(id: string): { endpoint: string | null; model: string } {
+  const slash = id.indexOf("/");
+  if (slash > 0) {
+    const prefix = id.slice(0, slash);
+    const rest = id.slice(slash + 1);
+    if (prefix !== "anthropic" && ENDPOINT_NAME_RE.test(prefix) && rest) return { endpoint: prefix, model: rest };
+  }
+  return { endpoint: null, model: id };
 }
 
 /**

@@ -1,0 +1,1 @@
+{"id":"msg_01NativeStub","type":"message","role":"assistant","model":"native","content":[{"type":"text","text":"Checking."},{"type":"tool_use","id":"toolu_01NativeStub","name":"get_status","input":{"service":"api","verbose":true}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":21,"output_tokens":18}}
