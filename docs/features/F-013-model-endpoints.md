@@ -1,22 +1,24 @@
 # Feature: Configurable model endpoints
 
 - **Id:** F-013
-- **Status:** Draft (v9 rescope; OQ-6 and OQ-7 open, Security Gate 1 delta done, changed items need re-approval)
+- **Status:** Draft (v10 rescope; OQ-6 and OQ-7 open, Security Gate 1 delta done, changed items need re-approval)
 - **Requested by / date:** Alex, 2026-11-13 ("I want to also incorporate a
   local llm api"; "this model would be a good candidate for the security
   agent, judge, or any low end agent"; "I'd rather allow a number of
   endpoints that can be specified, and allow them to be configurable, with
   local as an option that indicates it has unlimited usage"; "endpoints
   should include standard options like the model to use and an api key")
-- **Spec version:** 9
+- **Spec version:** 10
 
 ## 1. Objective and business purpose
 The factory runs every agent on Claude today. The owner wants to add other
 model APIs as well: their own LLM server on the LAN first, and any other
 API endpoint they choose later. Each endpoint is configured with the usual
-options (base URL, model, API key, limits). An endpoint marked `local` has
-unlimited usage: it costs nothing per token and counts against no budget,
-though it is still limited by its speed and the sessions it can take.
+options (base URL, model, API key, limits) and a billing mode (owner,
+2026-11-13): `local` (unlimited usage: nothing per token and no budget,
+though still limited by speed and sessions), `per_token` (priced per token,
+counted against the project budget), or `subscription` (a flat plan with
+usage limits, counted as a share of those limits).
 
 The factory already decides each role's model by evidence (F-002): the
 cheapest rung that passes calibration, approved by the owner. Each
@@ -31,8 +33,8 @@ master repo.
    file next to `factory-projects.local.yaml` (git-ignored, writable only
    by the owner, like H-0081's paths file). Each endpoint has a name, base
    URL, model, API format, optional API key (as the name of an entry in
-   the OS credential store), session cap, and either `local: true` or
-   per-token prices. The engine checks each at start (FR-6) and shows any
+   the OS credential store), session cap, and billing mode with its
+   prices or plan limits. The engine checks each at start (FR-6) and shows any
    problem as a plain message in the engine status.
 2. **Each endpoint is a rung.** A configured endpoint is a candidate rung,
    named `<endpoint>/<model>` (for example `lan/qwen3.8-27b`). The master
@@ -56,16 +58,17 @@ master repo.
    request passes its size-scaled deadline, runs on the role's Claude rung
    instead, noted in the run review (OQ-5, FR-12).
 7. **Usage and reports.** Each agent report records the rung with its
-   endpoint. A `local` endpoint's cost is $0 and counts against no budget;
-   tokens and time are still recorded. Any other endpoint's cost is its
-   tokens times its configured prices, and counts against the project's
-   budget like Claude spend (ADR 0012).
+   endpoint. By billing mode: `local` costs $0 and counts against no
+   budget; `per_token` costs its tokens times its prices and counts against
+   the project budget like Claude spend (ADR 0012); `subscription` counts
+   as the share of its plan limits used, and the engine stops sending to it
+   before the limits run out. Tokens and time are recorded for all three.
 
 ## 3. Functional requirements
 | Id | Requirement |
 |---|---|
 | FR-1 | A rung (and, before F-002, a `models.yaml` entry) can name `<endpoint>/<model>`. The master repo holds no endpoint address, host, port or key. |
-| FR-2 | `factory-endpoints.local.yaml` in the master clone, git-ignored, lists named endpoints. Each has: `base_url`, `model`, `api` (`anthropic`; see OQ-6), optional `api_key_ref` (a credential store entry name), `max_sessions` (default 1), `local` (bool, default false), `prices` (input and output per million tokens; required unless `local`), optional `deadline` overrides (FR-12), and `allow_loopback` (default false). The file is refused unless only the owner can write it (as H-0081). |
+| FR-2 | `factory-endpoints.local.yaml` in the master clone, git-ignored, lists named endpoints. Each has: `base_url`, `model`, `api` (`anthropic`; see OQ-6), optional `api_key_ref` (a credential store entry name), `max_sessions` (default 1), `billing` (`local`, `per_token` or `subscription`; required), `prices` (input and output per million tokens; required for `per_token`), `plan` (for `subscription`: one or more limits, each a count of requests, input tokens or output tokens per window of 5 hours, a day, a week or a month, plus an optional `reserve_pct`, default 10), optional `deadline` overrides (FR-12), and `allow_loopback` (default false). The file is refused unless only the owner can write it (as H-0081). |
 | FR-3 | API keys come only from the OS credential store, never from the file, an argument or an environment variable; they reach the gateway on stdin as the Claude credential does today. The Claude credential is never sent to another endpoint, and an endpoint's key never to another endpoint. |
 | FR-4 | Before each session, the engine resolves the endpoint's host on the PC (so `.local` mDNS names work) and pins the address it checked. A **private** endpoint (every address in RFC 1918, RFC 4193 or link-local; loopback only with `allow_loopback`) may use plain HTTP and no key (SR-5). A **public** endpoint (every address public) must use HTTPS with certificate checks and an API key (SR-12). A name resolving to a mix of private and public addresses is refused. |
 | FR-5 | The gateway forwards an endpoint session's `/v1/messages` and `/v1/messages/count_tokens` requests, with the body checks it applies today, to that session's pinned endpoint only. The grant names the endpoint; an agent cannot choose it. |
@@ -76,7 +79,7 @@ master repo.
 | FR-10 | Gate roles (security reviewer, validation judge) stay on their Claude rung (F-002 A-3 unchanged). An endpoint enabled for a gate role runs first as an advisory pass on the same inputs; its findings or verdict go to the Claude reviewer as data, which still decides. The run review records, per run, how many of the Claude reviewer's findings the advisory pass also found and at what severity, plus its verdict match (OQ-1). |
 | FR-11 | The advisory pass never blocks or delays a gate beyond the 10-minute slot wait: if it is unavailable, the Claude reviewer runs without it. |
 | FR-12 | Request deadlines scale with size (owner, 2026-11-13). Each request's deadline is a fixed margin plus its prompt tokens divided by the endpoint's measured prompt-processing rate plus its `max_tokens` divided by its measured generation rate. Rates come from the server's per-request timings where it reports them (`llama-server` does), otherwise from measured wall time, kept per endpoint and model as a rolling median and seeded by a timing check at start. The run review reports rates by prompt-size band (under 8k, 8k to 32k, 32k to 128k, over 128k tokens). |
-| FR-13 | Usage: a `local` endpoint's cost is $0 in `tokens` mode and 0% of plan in `subscription` mode, and is not counted against the project budget (ADR 0012). Any other endpoint's cost is tokens times its `prices`, in dollars, counted against the budget in both modes. |
+| FR-13 | Usage by billing mode. `local`: cost $0 (0% of plan in the project's `subscription` budget mode), not counted against the project budget (ADR 0012). `per_token`: tokens times `prices`, in dollars, counted against the project budget in both budget modes. `subscription`: the engine counts each limit's use per window across all projects on the PC; a task's cost is the largest share of any limit it used (as F-002 A-1 measures Claude plans); it is not charged in dollars. When any limit would pass `100 - reserve_pct` percent in its window, new sessions for that endpoint run on the role's Claude rung instead (FR-7), so the owner keeps the reserve for their own use. |
 
 ## 4. Acceptance criteria
 | Id | Given / When / Then | Covers |
@@ -92,7 +95,8 @@ master repo.
 | AC-9 | Given the endpoint times out, then the session runs on the role's Claude rung and the run review records the fallback with role, endpoint and reason. | FR-7 |
 | AC-10 | Given a gate role with an advisory endpoint enabled, when the gate runs, then the Claude reviewer receives the advisory findings as data and its own report decides the gate; the run review records the match rate. Given that endpoint is down, the gate still completes on Claude alone. | FR-10, FR-11 |
 | AC-11 | Given measured rates of 200 prompt and 10 generation tokens per second and a 60-second margin, when a request has a 100,000-token prompt and `max_tokens` 4,000, then its deadline is 60 + 500 + 400 = 960 seconds; a request still running after that falls back per FR-7. | FR-12 |
-| AC-12 | Given a non-local endpoint priced at $1 / $2 per million tokens, when a run uses 1M input and 0.5M output tokens on it, then its cost is $2 and the project budget is charged $2. | FR-13 |
+| AC-12 | Given a `per_token` endpoint priced at $1 / $2 per million tokens, when a run uses 1M input and 0.5M output tokens on it, then its cost is $2 and the project budget is charged $2. | FR-13 |
+| AC-14 | Given a `subscription` endpoint with a limit of 100 requests per 5 hours and `reserve_pct` 10, when 90 requests have been made in the current window, then the next session for that endpoint runs on the role's Claude rung and the run review says the plan limit was reached; a run that used 9 of those requests is recorded at 9% of plan. | FR-13 |
 | AC-13 | Given a project whose manifest doesn't list an endpoint, when a role's rung names that endpoint, then the role runs on its Claude rung and the run review says why. | SR-8 |
 
 ## 5. Constraints
@@ -158,8 +162,8 @@ master repo.
 | SR-11 | The engine records each endpoint model's name, parameter count, byte size and quant type (whatever the endpoint reports) at each check; any change counts as a new model, resets its calibration results and advisory match rate, and tells the owner. Residual: a swap keeping all of these the same is not detectable without a digest. | Gate 1 #4 (S4.1, S4.3) | Accepted (owner, 2026-11-13, decision card) |
 | SR-12 | Public endpoints must use HTTPS with certificate and host-name checks (TLS 1.2 or later) and an API key from the credential store; an `http://` URL or a missing key makes the endpoint unavailable (OWASP ASVS 5.0 V12, secure communication; NIST SP 800-53 SC-8, SC-23). | v9 delta #1 | Proposed |
 | SR-13 | An endpoint's key is sent only to that endpoint, only in its auth header, and never on a redirect; the gateway follows no redirects from an endpoint (S8.2; CWE-522). | v9 delta #2 | Proposed |
-| SR-14 | A non-local endpoint's spend counts against the project budget and its run-cost estimate, so a mispriced or misbehaving endpoint can't spend unbounded money (ADR 0012; OWASP LLM10, unbounded consumption). Prices are required for non-local endpoints. | v9 delta #3 | Proposed |
-| SR-15 | Marking an endpoint `local` (unlimited) is allowed only for a private endpoint; a public endpoint is always metered. | v9 delta #4 | Proposed |
+| SR-14 | Every endpoint that costs money is bounded: `per_token` spend counts against the project budget and its run-cost estimate (prices required), and `subscription` use stops at its plan limits less the reserve; so a mispriced, misconfigured or looping agent can't run up an unbounded bill or exhaust the owner's plan (ADR 0012; OWASP LLM10, unbounded consumption). | v9 delta #3 | Proposed |
+| SR-15 | Billing mode `local` (unlimited, uncounted) is allowed only for a private endpoint; a public endpoint must be `per_token` or `subscription`. | v9 delta #4 | Proposed |
 
 ## 10. Interface requirements
 H-0135 to H-0138 were approved on 2026-11-13 for the one-server design. v9
@@ -169,9 +173,12 @@ only the file name.
 - **H-0135 (Interfaces, changed in v9):** new contract *Model endpoints
   file v1.0* (`factory-endpoints.local.yaml`):
   `endpoints.<name>.base_url`, `.model`, `.api` (`anthropic`), optional
-  `.api_key_ref`, `.max_sessions` (default 1), `.local` (default false),
-  `.prices.input_per_mtok` and `.prices.output_per_mtok` (required unless
-  `local`), optional `.deadline.margin_s`, and `.allow_loopback` (default
+  `.api_key_ref`, `.max_sessions` (default 1), `.billing` (`local`,
+  `per_token` or `subscription`), `.prices.input_per_mtok` and
+  `.prices.output_per_mtok` (for `per_token`), `.plan.limits[]` (each
+  `{ kind: requests | input_tokens | output_tokens, count, window: 5h | day
+  | week | month }`) and `.plan.reserve_pct` (default 10) (for
+  `subscription`), optional `.deadline.margin_s`, and `.allow_loopback` (default
   false). Endpoint names: lower-case letters, digits and `-`, up to 32
   characters, not `anthropic`. Also Project manifest minor bump:
   `settings.endpoints` (list of endpoint names, default empty; SR-8).
@@ -192,7 +199,7 @@ Re-checked 2026-11-13 against spec v9.
 
 - [x] Clear objective
 - [x] Expected behavior defined
-- [x] Acceptance criteria testable (AC-1 to AC-13)
+- [x] Acceptance criteria testable (AC-1 to AC-14)
 - [x] Constraints documented (first endpoint measured 2026-11-13)
 - [x] Assumptions explicit (A-1, A-2)
 - [ ] Blocking decisions resolved: OQ-6 and OQ-7 open; SR-1, SR-3, SR-8 and SR-12 to SR-15 need approval; H-0135, H-0136, H-0138 need re-approval
@@ -209,6 +216,7 @@ Re-checked 2026-11-13 against spec v9.
 | 7 | 2026-11-13 | SR-1 to SR-4 and SR-6 to SR-11 approved; A-1 and A-2 approved (A-1 checked in a spike before build) | Owner, 2026-11-13 (decision card) |
 | 8 | 2026-11-13 | H-0135 to H-0138 approved; ADR 0019 applied; readiness gate passed | Owner, 2026-11-13 (decision card) |
 | 9 | 2026-11-13 | Owner: any number of configurable endpoints, each with model and API key; `local` means unlimited usage. Rescoped from one local server: renamed, FR-2/4/13, AC-3/12/13, SR-12 to SR-15 and OQ-6/OQ-7 added; SR-1/3/5/8 rescoped; ADR 0019 generalized; Security Gate 1 delta; first endpoint's tool call and speed measured | Owner, 2026-11-13 (thread) for the rescope; changed items pending |
+| 10 | 2026-11-13 | Owner: endpoints get a billing mode: `local`, `per_token` or `subscription` (plan limits with a reserve). FR-2, FR-13, SR-14, SR-15, H-0135 updated; AC-14 added | Owner, 2026-11-13 (thread) for the change; items pending |
 
 ## 13. Open questions
 | Id | Question | Category | Status |

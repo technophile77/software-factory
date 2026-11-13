@@ -29,7 +29,8 @@ go to the proxy's credential gateway, which forwards them to
 - **Maintenance:** the gateway's body checks apply to every upstream; each
   endpoint uses the same `/v1/messages` and `/v1/messages/count_tokens`
   paths (Anthropic format, F-013 OQ-6).
-- **Cost:** metered endpoints count against project budgets; `local`
+- **Cost:** `per_token` endpoints count against project budgets, `subscription`
+  endpoints stop at their plan limits, and `local`
   endpoints don't (F-013 FR-13).
 
 ## Decision
