@@ -4,7 +4,7 @@
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account)
-- **Spec version:** 4
+- **Spec version:** 5
 
 ## 1. Objective and business purpose
 Everything the factory needs the owner to approve reaches the owner in one
@@ -61,7 +61,7 @@ sessions, or by the owner) can be listed too (OQ-6).
 | FR-9 | In owner-token mode, `main` in every managed repo has a ruleset that requires a pull request and the level's CI checks, with no required review and no bypass actors (H-0123). |
 | FR-10 | Two GitHub modes per project (manifest, H-0124): `owner_token` (default; the engine opens PRs with the owner's fine-grained token; FR-7 to FR-9 apply) and `machine_account` (ADR 0006; the inbox approval submits a real GitHub approving review using the owner's VS Code GitHub sign-in, and the required-review rule stays). |
 | FR-11 | Hygiene approval covers the change once: when the engine applies an approved hygiene change through a PR whose diff equals the approved diff exactly, the engine merges that PR without a second click (OQ-4). Any difference files a Pull request item instead. |
-| FR-12 | The owner is told of new blocking items outside the Factory view (OQ-3). |
+| FR-12 | The owner is told of new blocking items by the VS Code badge and notification, by an OS notification from the engine when VS Code is closed, and on the phone through the channel OQ-10 picks (OQ-3). A phone notification carries only the repo name, the item kind and the count of open blocking items, never item text. |
 | FR-14 | A CI test in this repo fails if engine code calls GitHub's merge API anywhere except the FR-11 hygiene path (OQ-9). |
 | FR-13 | Onboarding (F-003) prepares the owner-token mode: the ruleset (pull request and required checks, no required review, no bypass actors) and the token scopes, applied only after the owner confirms. |
 
@@ -134,6 +134,7 @@ sessions, or by the owner) can be listed too (OQ-6).
 | SR-3 | The engine's token has no Administration permission, so it can't change or remove the `main` ruleset. | Analyst (S8) | Proposed; conflicts with F-010 OQ-8, see OQ-7 |
 | SR-4 | The `main` ruleset has no bypass actors in owner-token mode, so required CI applies to every merge. | Analyst (S8) | Proposed |
 | SR-5 | The engine merges only in FR-11 (hygiene diff identical to the approved one); it has no other merge code path. | Analyst (LLM06) | Proposed; enforced in CI by FR-14 |
+| SR-8 | Phone notifications leave the machine through a third party, so they carry no item titles, bodies, file names or links (S3.1, S9). Credentials for the channel live in the engine config, never in Git. | Analyst (S3.1, S9) | Proposed |
 | SR-6 | Tokens never appear in items, logs, commits or the Actions log (S3.1). | Analyst (S3.1) | Proposed |
 | SR-7 | Residual risk, stated to the owner (OQ-9): GitHub can't tell the owner's click from anything else using the owner's credentials. The engine's token (the owner's) can merge, so an engine bug, a leaked token, or a program running as the owner could merge a PR with green CI without a click. Agents can't: they run in containers without tokens (ADR 0015). | Analyst | Stated to the owner 2026-11-13; FR-14 guards against a code change adding a merge, not against a leaked token or another program |
 
@@ -172,16 +173,18 @@ Hygiene items named here; none filed until the open questions are answered.
 | 2 | 2026-11-13 | OQ-2 decided: the owner's click is the approval, no signing; extension merges with the owner's GitHub sign-in; CI-only ruleset. OQ-5, OQ-8 withdrawn; OQ-9 added | Owner, 2026-11-13 (thread) |
 | 3 | 2026-11-13 | OQ-9 decided (b): CI test against merge calls outside the hygiene path (FR-14, AC-15) | Owner, 2026-11-13 (decision card) |
 | 4 | 2026-11-13 | OQ-1 decided (a): items labeled by kind, decisions keep the five categories | Owner, 2026-11-13 (decision card) |
+| 5 | 2026-11-13 | OQ-3 decided (c): VS Code, OS and phone notifications (FR-12, SR-8); OQ-10 added for the phone channel | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
 |---|---|---|---|
 | OQ-1 | How is each item labeled? (a) Decisions keep the five categories; every other item shows its kind (Hygiene, Testing, Spec sign-off, Pull request, Maturity, Notice). (b) Every item is forced into one of the five categories. Recommended: (a). CLAUDE.md allows only five decision categories, and a hygiene change or a PR isn't a decision of any of them. | Product | Decided (owner, 2026-11-13, decision card): (a) |
 | OQ-2 | How does an inbox approval become a merge without a GitHub review or bypass? (a) Signed approval record plus required check. (b) The extension merges with the owner's VS Code GitHub sign-in; `main` requires only CI. (c) Machine account (ADR 0006). **Decided (owner, 2026-11-13): the owner's click is the only thing needed for approval, no signing step; (b), with (c) kept as `machine_account` mode.** | Architecture, Security | Decided (owner, 2026-11-13, thread) |
-| OQ-3 | How is the owner told of new blocking items? (a) VS Code badge and a VS Code notification only. (b) (a) plus an OS notification from the engine when VS Code is closed. (c) (b) plus a phone notification (for example an email or a GitHub notification). Recommended: (b). | Product | Open |
+| OQ-3 | How is the owner told of new blocking items? (a) VS Code badge and a VS Code notification only. (b) (a) plus an OS notification from the engine when VS Code is closed. (c) (b) plus a phone notification (for example an email or a GitHub notification). Recommended: (b). | Product | Decided (owner, 2026-11-13, decision card): (c); channel is OQ-10 |
 | OQ-4 | Should an approved hygiene change need a second click for its PR? (a) No: the engine merges the PR itself if its diff equals the approved diff exactly (FR-11, SR-5). (b) Yes, always. Recommended: (a); it is the same change, and the exact comparison is done by code. | Product | Open |
 | OQ-5 | Does an approval survive a merge of `main` into the PR? **Withdrawn:** with OQ-2 the merge happens on the click, so there is no stored approval to keep. | Security | Withdrawn (moot after OQ-2) |
 | OQ-6 | Which PRs appear as Pull request items? (a) Only PRs the engine opened. (b) Every open PR into `main` of a managed repo, including ones by Claude Code sessions or the owner. Recommended: (b), so this repo's own PRs stop needing a bypass; the check works the same for any author. | Product | Open |
 | OQ-7 | F-010 OQ-8 gave the factory token admin and advisory rights. With the owner's own token, admin would let the engine (or a leaked token) edit or remove the `main` ruleset, including its required CI. (a) Two tokens of the owner's: the everyday token (Contents, Pull requests, Issues read and write; no Administration) and a separate admin token used only by the advisory code path. (b) One token with admin, accepting that risk. Recommended: (a). | Security | Open |
 | OQ-8 | How strong must the owner's approval be? **Withdrawn:** decided by OQ-2 (the click alone). | Security | Withdrawn (moot after OQ-2) |
 | OQ-9 | SR-7: anything using the owner's credentials can merge without a click, and GitHub can't tell. Add a lightweight safeguard? (a) None; rely on the engine having no merge code path except FR-11. (b) A CI test in this repo that fails if engine code calls GitHub's merge API outside the FR-11 path, so a later change can't add one silently. Recommended: (b); it costs one test and no owner steps. It does not stop a leaked token or another program. | Security | Decided (owner, 2026-11-13, decision card): (b) |
+| OQ-10 | Which phone channel? (a) Email through an SMTP account of the owner's. (b) A push service such as ntfy (free app; self-hostable) on a random private topic. (c) A GitHub issue mention in a private repo, which the GitHub phone app notifies. Recommended: (b). | Product | Open |
