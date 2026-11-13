@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Deterministic checks for the onboard-repo skill (F-003).
 
-Standard library only (FR-12), so the skill works when copied into any repo
-and adds no external component to review (S4.1). The script reads files and
-runs local `git` only; it never runs the target repo's code (SR-2) and never
-touches the network.
+Runs with the Python that setup_tools.py prints: the standard library plus
+the hash-pinned PyYAML, zizmor and gitleaks of ADR 0020 (FR-12). It reads
+files and runs local `git`, zizmor and gitleaks only; it never runs the
+target repo's code (SR-2) and never touches the network.
 
 Subcommands:
   assess            inspect a repo and write the assessment (JSON + Markdown)
@@ -17,9 +17,12 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import fnmatch
+import functools
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -58,245 +61,124 @@ def min_level(*levels):
 
 
 # ---------------------------------------------------------------------------
-# Minimal YAML reader for factory files (manifests, maturity records).
-# It accepts the subset the factory writes and rejects everything else,
-# so an unreadable file is an error, never a silent pass (SR-8).
+# YAML (ADR 0020). Factory files are read with PyYAML's safe loader, narrowed
+# to what the factory writes: one document, plain-text keys without
+# duplicates, no anchors, aliases, tags or directives, and only null,
+# true/false and integers resolved from plain scalars (so `1.0` and dates stay
+# text). Anything else is an error, never a silent pass (SR-8).
 # ---------------------------------------------------------------------------
+
+try:
+    import yaml
+except ImportError:  # outside the environment setup_tools.py builds
+    yaml = None
+
 
 class YamlError(CheckError):
     pass
 
 
-def _strip_comment(text):
-    out, quote = [], None
-    for i, ch in enumerate(text):
-        if quote:
-            if ch == quote:
-                quote = None
-        elif ch in "'\"" and (not text[:i].strip() or text[:i].rstrip()[-1] in ":[{,-"):
-            quote = ch
-        elif ch == "#" and (i == 0 or text[i - 1] in " \t"):
-            break
-        out.append(ch)
-    return "".join(out).rstrip()
+def require_tools():
+    if yaml is None:
+        raise CheckError("PyYAML is missing: run the checker with the Python that setup_tools.py prints (ADR 0020)")
 
 
-def _split_flow(inner, lineno):
-    parts, depth, quote, cur = [], 0, None, []
-    for ch in inner:
-        if quote:
-            if ch == quote:
-                quote = None
-        elif ch in "'\"":
-            quote = ch
-        elif ch in "[{":
-            depth += 1
-        elif ch in "]}":
-            depth -= 1
-        elif ch == "," and depth == 0:
-            parts.append("".join(cur).strip())
-            cur = []
-            continue
-        cur.append(ch)
-    if quote or depth:
-        raise YamlError(f"line {lineno}: unbalanced flow collection")
-    if "".join(cur).strip():
-        parts.append("".join(cur).strip())
-    return parts
+if yaml is not None:
+    class _FactoryLoader(yaml.SafeLoader):
+        def compose_document(self):
+            event = self.peek_event()
+            if getattr(event, "version", None) or getattr(event, "tags", None):
+                raise YamlError(f"line {event.start_mark.line + 1}: directives are not supported")
+            return super().compose_document()
+
+        def compose_node(self, parent, index):
+            event = self.peek_event()
+            if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None) is not None \
+                    or getattr(event, "tag", None) is not None:
+                raise YamlError(f"line {event.start_mark.line + 1}: anchors, aliases, tags and directives are not supported")
+            return super().compose_node(parent, index)
+
+        def construct_mapping(self, node, deep=False):
+            result = {}
+            for key_node, value_node in node.value:
+                if not isinstance(key_node, yaml.ScalarNode):
+                    raise YamlError(f"line {key_node.start_mark.line + 1}: keys must be plain text")
+                key = key_node.value
+                if key in result:
+                    raise YamlError(f"line {key_node.start_mark.line + 1}: duplicate key {key!r}")
+                result[key] = self.construct_object(value_node, deep=deep)
+            return result
+
+    _FactoryLoader.yaml_implicit_resolvers = {}
+    for _tag, _rx, _first in (
+        ("null", r"^(?:~|null|)$", ["~", "n", ""]),
+        ("bool", r"^(?:true|True|false|False)$", list("tTfF")),
+        ("int", r"^-?[0-9]+$", list("-0123456789")),
+    ):
+        _FactoryLoader.add_implicit_resolver(f"tag:yaml.org,2002:{_tag}", re.compile(_rx), _first)
+    # Plain decimal only: no octal, hex or digit separators.
+    _FactoryLoader.add_constructor("tag:yaml.org,2002:int", lambda loader, node: int(loader.construct_scalar(node)))
 
 
-def _scalar(text, lineno):
-    t = text.strip()
-    if t == "" or t in ("~", "null"):
-        return None
-    if t[0] in "&*!" or t.startswith(("? ", "%")):
-        raise YamlError(f"line {lineno}: anchors, aliases, tags and directives are not supported")
-    if t.startswith("["):
-        if not t.endswith("]"):
-            raise YamlError(f"line {lineno}: unterminated flow sequence")
-        return [_scalar(p, lineno) for p in _split_flow(t[1:-1], lineno)]
-    if t.startswith("{"):
-        if not t.endswith("}"):
-            raise YamlError(f"line {lineno}: unterminated flow mapping")
-        result = {}
-        for p in _split_flow(t[1:-1], lineno):
-            k, sep, v = p.partition(":")
-            if not sep:
-                raise YamlError(f"line {lineno}: flow mapping entry without ':'")
-            result[_scalar(k, lineno)] = _scalar(v, lineno)
-        return result
-    if t[0] == '"':
-        if len(t) < 2 or not t.endswith('"'):
-            raise YamlError(f"line {lineno}: unterminated string")
-        try:
-            return json.loads(t)
-        except json.JSONDecodeError as e:
-            raise YamlError(f"line {lineno}: bad double-quoted string") from e
-    if t[0] == "'":
-        if len(t) < 2 or not t.endswith("'"):
-            raise YamlError(f"line {lineno}: unterminated string")
-        return t[1:-1].replace("''", "'")
-    if t in ("true", "True"):
-        return True
-    if t in ("false", "False"):
-        return False
-    if re.fullmatch(r"-?\d+", t):
-        return int(t)
-    return t
-
-
-def _key_value(text, lineno):
-    if text.startswith(("'", '"')):
-        q = text[0]
-        end = text.find(q, 1)
-        if end < 0 or text[end + 1:end + 2] != ":":
-            raise YamlError(f"line {lineno}: bad quoted key")
-        return text[1:end], text[end + 2:]
-    m = re.match(r"([^\s:#][^:]*?):(?:\s|$)(.*)$", text)
-    if not m:
-        return None
-    return m.group(1), m.group(2)
+def _yaml_error(e):
+    mark = getattr(e, "problem_mark", None) or getattr(e, "context_mark", None)
+    where = f"line {mark.line + 1}: " if mark is not None else ""
+    return YamlError(f"{where}{getattr(e, 'problem', None) or 'could not parse'}")
 
 
 def parse_yaml(source):
-    raw = source.splitlines()
-    lines = []  # (indent, text, lineno, raw_line)
-    started = False
-    for n, line in enumerate(raw, 1):
-        if "\t" in line[: len(line) - len(line.lstrip())]:
-            raise YamlError(f"line {n}: tab in indentation")
-        stripped = line.strip()
-        if stripped == "---":
-            if started or any(_strip_comment(l[1]).strip() for l in lines):
-                raise YamlError(f"line {n}: only one document is supported")
-            started = True
-            continue
-        lines.append((len(line) - len(line.lstrip(" ")), line, n))
-    pos = [0]
+    require_tools()
+    try:
+        return yaml.load(source, Loader=_FactoryLoader)
+    except YamlError:
+        raise
+    except yaml.YAMLError as e:
+        raise _yaml_error(e) from None
+    except (RecursionError, ValueError) as e:
+        raise YamlError(f"could not parse: {type(e).__name__}") from None
 
-    def significant(i):
-        while i < len(lines):
-            text = _strip_comment(lines[i][1]).strip()
-            if text:
-                return i
-            i += 1
-        return i
 
-    def block_scalar(indent_parent, style):
-        collected, i = [], pos[0]
-        block_indent = None
-        while i < len(lines):
-            ind, line, _ = lines[i]
-            if line.strip() == "":
-                collected.append("")
-                i += 1
+UNREADABLE = object()
+
+
+def load_workflow(text):
+    """A workflow is the repo's own YAML and may use anchors, which GitHub
+    accepts, so it gets the plain safe loader. Aliases are shared objects, so
+    walking the result with a visited set (workflow_strings) stays linear."""
+    require_tools()
+    try:
+        return yaml.load(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
+    except (yaml.YAMLError, RecursionError, ValueError):
+        return UNREADABLE
+
+
+def workflow_strings(doc, limit=200_000):
+    """Every key and string value in a loaded workflow; comments are already gone."""
+    out, stack, seen = [], [doc], set()
+    while stack and len(out) < limit:
+        node = stack.pop()
+        if isinstance(node, (dict, list)):
+            if id(node) in seen:
                 continue
-            if ind <= indent_parent:
-                break
-            if block_indent is None:
-                block_indent = ind
-            if ind < block_indent:
-                break
-            collected.append(line[block_indent:])
-            i += 1
-        pos[0] = i
-        while collected and collected[-1] == "":
-            collected.pop()
-        joiner = "\n" if style == "|" else " "
-        return joiner.join(collected) + ("\n" if style == "|" and collected else "")
+            seen.add(id(node))
+            items = list(node.items()) if isinstance(node, dict) else [(None, v) for v in node]
+            for k, v in items:
+                if isinstance(k, str):
+                    out.append(k)
+                stack.append(v)
+        elif isinstance(node, str):
+            out.append(node)
+    return out
 
-    def value_after(rest, indent, lineno):
-        rest = _strip_comment(rest).strip()
-        if rest in ("|", ">", "|-", ">-"):
-            return block_scalar(indent, rest[0])
-        if rest == "":
-            i = significant(pos[0])
-            if i < len(lines) and lines[i][0] > indent:
-                pos[0] = i
-                return parse_block(lines[i][0])
-            if i < len(lines) and lines[i][0] == indent and _strip_comment(lines[i][1]).strip().startswith("- "):
-                pos[0] = i
-                return parse_block(indent)
-            return None
-        return _scalar(rest, lineno)
 
-    def parse_block(indent):
-        i = significant(pos[0])
-        if i >= len(lines):
-            return None
-        first = _strip_comment(lines[i][1]).strip()
-        if first == "-" or first.startswith("- "):
-            return parse_seq(indent)
-        return parse_map(indent)
-
-    def parse_map(indent):
-        result = {}
-        while True:
-            i = significant(pos[0])
-            if i >= len(lines):
-                break
-            ind, line, n = lines[i]
-            if ind < indent:
-                break
-            if ind > indent:
-                raise YamlError(f"line {n}: unexpected indentation")
-            text = _strip_comment(line).strip()
-            if text.startswith("- "):
-                break
-            kv = _key_value(text, n)
-            if kv is None:
-                raise YamlError(f"line {n}: expected 'key: value'")
-            key, rest = kv
-            if key in result:
-                raise YamlError(f"line {n}: duplicate key {key!r}")
-            pos[0] = i + 1
-            result[key] = value_after(rest, indent, n)
-        return result
-
-    def parse_seq(indent):
-        result = []
-        while True:
-            i = significant(pos[0])
-            if i >= len(lines):
-                break
-            ind, line, n = lines[i]
-            text = _strip_comment(line).strip()
-            if ind != indent or not (text == "-" or text.startswith("- ")):
-                if ind > indent:
-                    raise YamlError(f"line {n}: unexpected indentation")
-                break
-            item = text[1:].strip()
-            pos[0] = i + 1
-            if item == "":
-                result.append(value_after("", indent, n))
-                continue
-            kv = _key_value(item, n) if not item.startswith(("[", "{")) else None
-            if kv is None:
-                result.append(_scalar(item, n))
-                continue
-            # "- key: value" opens a mapping whose keys sit two columns in.
-            child_indent = indent + (len(text) - len(item)) + (ind - indent)
-            key, rest = kv
-            mapping = {key: value_after(rest, child_indent, n)}
-            j = significant(pos[0])
-            if j < len(lines) and lines[j][0] == child_indent and not _strip_comment(lines[j][1]).strip().startswith("- "):
-                more = parse_map(child_indent)
-                for k in more:
-                    if k in mapping:
-                        raise YamlError(f"line {n}: duplicate key {k!r}")
-                mapping.update(more)
-            result.append(mapping)
-        return result
-
-    i = significant(0)
-    if i >= len(lines):
-        return None
-    pos[0] = i
-    data = parse_block(lines[i][0])
-    rest = significant(pos[0])
-    if rest < len(lines):
-        raise YamlError(f"line {lines[rest][2]}: could not parse")
-    return data
+def workflow_crons(doc):
+    if not isinstance(doc, dict):
+        return []
+    on = doc.get("on", doc.get(True))  # YAML 1.1 reads a bare `on` key as true
+    schedule = on.get("schedule") if isinstance(on, dict) else None
+    if not isinstance(schedule, list):
+        return []
+    return [s["cron"] for s in schedule if isinstance(s, dict) and isinstance(s.get("cron"), str)]
 
 
 # ---------------------------------------------------------------------------
@@ -446,19 +328,6 @@ TOOL_CANDIDATES = {
     },
 }
 
-SECRET_RULES = [
-    ("aws-access-key", re.compile(r"\b(AKIA|ASIA)[0-9A-Z]{16}\b")),
-    ("github-token", re.compile(r"\b(gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{60,})\b")),
-    ("private-key", re.compile(r"-----BEGIN (RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY( BLOCK)?-----")),
-    ("slack-token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b")),
-    ("google-api-key", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b")),
-    ("stripe-live-key", re.compile(r"\b[sr]k_live_[0-9A-Za-z]{20,}\b")),
-    ("npm-token", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b")),
-    ("gitlab-token", re.compile(r"\bglpat-[A-Za-z0-9_\-]{20,}\b")),
-    ("ai-api-key", re.compile(r"\bsk-(ant-|proj-)?[A-Za-z0-9_\-]{32,}\b")),
-]
-# Only in .env-style files, where any non-empty value is likely real.
-ENV_SECRET = re.compile(r"^\s*(export\s+)?[A-Z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|PRIVATE_KEY)[A-Z0-9_]*\s*=\s*['\"]?[^\s'\"#$]{6,}")
 
 
 def detect_stacks(repo):
@@ -492,77 +361,263 @@ def _search(texts, patterns):
 
 
 # ---------------------------------------------------------------------------
-# Workflows are read line by line, not parsed: a crafted file can't break
-# the reader, and anything unreadable is a gap (SR-8).
+# External tools (ADR 0020), from the environment setup_tools.py builds. They
+# take nothing from the assessed repo but its files (SR-9): no config, no
+# ignore comments or files, no network, fixed arguments, a timeout, and a
+# minimal environment. An exit code other than "clean" or "findings" fails
+# closed.
 # ---------------------------------------------------------------------------
 
-def scan_workflow(text):
-    info = {"top_permissions": None, "jobs": {}, "uses": [], "schedule": False, "on_push_or_pr": False,
-            "crons": []}
-    lines = text.splitlines()
-    in_jobs = False
-    current_job = None
-    job_indent = None
-    in_on = False
-    for n, raw in enumerate(lines, 1):
-        line = _strip_comment(raw)
-        if not line.strip():
-            continue
-        indent = len(line) - len(line.lstrip(" "))
-        s = line.strip()
-        if re.search(r"\bpull_request_target\b", s):
-            info["pr_target"] = info.get("pr_target") or n
-        if re.search(r"permissions['\"]?\s*:\s*['\"]?write-all", s):
-            info["write_all"] = info.get("write_all") or n
-        for m in re.finditer(r"['\"]?\buses['\"]?\s*:\s*['\"]?([^'\"\s,}\]]+)", s):
-            info["uses"].append((n, m.group(1)))
-        for m in re.finditer(r"['\"]?\bcron['\"]?\s*:\s*['\"]([^'\"]+)['\"]", s):
-            info["crons"].append(m.group(1))
-        if indent == 0:
-            in_jobs = s.startswith("jobs:")
-            in_on = s.startswith(("on:", '"on":', "'on':", "true:"))
-            if s.startswith("permissions:"):
-                info["top_permissions"] = n
-            if in_on and re.search(r"\b(push|pull_request)\b", s):
-                info["on_push_or_pr"] = True
-            current_job = None
-            continue
-        if in_on and re.match(r"(push|pull_request|pull_request_target)\b", s):
-            info["on_push_or_pr"] = True
-        if in_on and s.startswith("schedule"):
-            info["schedule"] = True
-        if in_jobs:
-            if job_indent is None:
-                job_indent = indent
-            if indent == job_indent and s.endswith(":"):
-                current_job = s[:-1].strip("'\"")
-                info["jobs"][current_job] = {"line": n, "permissions": None, "text": []}
-                continue
-            if current_job:
-                job = info["jobs"][current_job]
-                job["text"].append(s)
-                if indent == job_indent + 2 and s.startswith("permissions:"):
-                    job["permissions"] = n
-        m = re.match(r"-?\s*cron:\s*([^'\"].*)$", s)
-        if m:
-            info["crons"].append(m.group(1).strip())
+HERE = os.path.dirname(os.path.abspath(__file__))
+ZIZMOR_TIMEOUT = 120
+GITLEAKS_TIMEOUT = 600
+GITLEAKS_RULES = "[extend]\nuseDefault = true\n"  # the pinned binary's own rules, as in the engine
+HISTORY_MAX_BLOBS = 20_000
+HISTORY_MAX_BYTES = 200_000_000
+# zizmor audits whose finding falls under a rule other than S6.1/S8.3.
+ZIZMOR_RULES = {
+    "excessive-permissions": "S8.3", "undocumented-permissions": "S8.3",
+    "unpinned-uses": "S4.3", "unpinned-images": "S4.3", "impostor-commit": "S4.3", "ref-confusion": "S4.3",
+    "stale-action-refs": "S4.3", "ref-version-mismatch": "S4.3", "known-vulnerable-actions": "S4.4",
+    "hardcoded-container-credentials": "S3.1", "secrets-outside-env": "S3.2", "overprovisioned-secrets": "S3.2",
+    "secrets-inherit": "S3.2",
+}
 
-    return info
+
+def _setup_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("sf_setup_tools", os.path.join(HERE, "setup_tools.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@functools.lru_cache(maxsize=None)
+def tool_paths():
+    """The tools of the environment this interpreter runs in, gitleaks re-checked
+    against its pin once per checker run (F-007 Gate 2: a same-user process
+    could swap it between runs)."""
+    require_tools()
+    st = _setup_module()
+    paths = st.env_paths(sys.prefix)
+    with open(st.GITLEAKS_PINS, encoding="utf-8") as f:
+        pins = json.load(f)
+    try:
+        st.check_zizmor(paths["zizmor"])
+        st.check_gitleaks(paths["gitleaks"], pins["platforms"][st.platform_key()], pins["version"])
+    except (st.SetupError, OSError, KeyError, subprocess.TimeoutExpired) as e:
+        raise CheckError(f"checker tools are not ready, run setup_tools.py again: {e}") from None
+    return paths
+
+
+def _tool_env():
+    keep = ("PATH", "SYSTEMROOT", "TEMP", "TMP", "TMPDIR", "HOME", "USERPROFILE")
+    return {k: os.environ[k] for k in keep if k in os.environ}
+
+
+def run_zizmor(binary, path, cwd):
+    """Findings for one workflow or action file, or None if zizmor couldn't read it."""
+    try:
+        proc = subprocess.run(
+            [binary, "--offline", "--no-config", "--no-ignores", "--persona", "pedantic", "--min-severity", "low",
+             "--format", "json", "--no-progress", "--color", "never", path],
+            capture_output=True, timeout=ZIZMOR_TIMEOUT, env=_tool_env(), cwd=cwd, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    # 0 is clean; 11 to 14 are findings at informational to high severity.
+    if proc.returncode not in (0, 11, 12, 13, 14):
+        return None
+    try:
+        findings = json.loads(proc.stdout)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return findings if isinstance(findings, list) else None
+
+
+def zizmor_gaps(rel, findings):
+    gaps, counts = [], {}
+    for f in findings:
+        try:
+            ident = f["ident"]
+            severity = f["determinations"]["severity"].lower()
+            line = f["locations"][0]["concrete"]["location"]["start_point"]["row"] + 1
+            desc = f["desc"]
+        except (KeyError, IndexError, TypeError, AttributeError):
+            continue
+        if severity not in SEVERITY_BLOCKS or not re.fullmatch(r"[a-z0-9-]+", str(ident)):
+            continue
+        counts[ident] = counts.get(ident, 0) + 1
+        url = f.get("url") if isinstance(f.get("url"), str) and f["url"].startswith("https://docs.zizmor.sh/") else None
+        gaps.append(gap(f"workflow:{ident}:{rel}:{counts[ident]}", f"{rel}: {desc}", ZIZMOR_RULES.get(ident, "S6.1; S8.3"),
+                        "security", SEVERITY_BLOCKS[severity],
+                        f"Fix the zizmor `{ident}` finding" + (f" ({url})." if url else "."), "onboarding-pr",
+                        [ev(rel, line, f"zizmor {ident}")], severity))
+    return gaps
+
+
+def _git_lines(root, *args, data=None, timeout=300):
+    try:
+        proc = subprocess.run(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C", root, *args],
+                              input=data, capture_output=True, timeout=timeout, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def _blob_id(data, fmt):
+    h = hashlib.sha256() if fmt == "sha256" else hashlib.sha1()
+    h.update(b"blob %d\0" % len(data))
+    h.update(data)
+    return h.hexdigest()
+
+
+def _scannable(data):
+    return data is not None and len(data) <= MAX_SCAN_BYTES and b"\0" not in data[:8192]
+
+
+def _history_blobs(root, skip):
+    """Blobs anywhere in the repo's history that aren't in the working tree:
+    (id, a path it had), and whether the caps cut the list short. Only
+    rev-list and cat-file, which run no diff drivers, textconv or filters."""
+    listing = _git_lines(root, "rev-list", "--objects", "--all")
+    if listing is None:
+        return [], False
+    paths = {}
+    for line in listing.decode("utf-8", "replace").splitlines():
+        oid, _, path = line.partition(" ")
+        if path and oid not in skip:
+            paths.setdefault(oid, path)
+    if not paths:
+        return [], False
+    check = _git_lines(root, "cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)",
+                       data="\n".join(paths).encode() + b"\n")
+    wanted, partial, total = [], False, 0
+    for line in (check or b"").decode().splitlines():
+        parts = line.split()
+        if len(parts) != 3 or parts[1] != "blob":
+            continue
+        size = int(parts[2])
+        if size > MAX_SCAN_BYTES:
+            continue
+        if len(wanted) >= HISTORY_MAX_BLOBS or total + size > HISTORY_MAX_BYTES:
+            partial = True
+            break
+        wanted.append((parts[0], paths[parts[0]]))
+        total += size
+    return wanted, partial
+
+
+def _read_blobs(root, ids):
+    out = _git_lines(root, "cat-file", "--batch", data="\n".join(ids).encode() + b"\n")
+    blobs, pos = {}, 0
+    while out and pos < len(out):
+        nl = out.index(b"\n", pos)
+        header = out[pos:nl].split()
+        if len(header) != 3:
+            break
+        size = int(header[2])
+        blobs[header[0].decode()] = out[nl + 1:nl + 1 + size]
+        pos = nl + 1 + size + 1
+    return blobs
+
+
+def scan_secrets(repo, gitleaks):
+    """gitleaks over the working tree, the repo's history and its file names,
+    the way F-007 Gate 1 component review 5 approved it: `dir` mode over a fresh
+    0700 folder of files named by content hash, so no path allowlist,
+    `.gitleaks.toml` or `.gitleaksignore` in the repo can match or apply.
+
+    Returns (current, history, names, skipped, partial): findings as
+    (path, line, rule) for files now in the repo, (path, line, rule, blob id)
+    for content found only in history, and the paths whose names look like a
+    secret."""
+    staging = tempfile.mkdtemp(prefix="sf-secrets-")
+    try:
+        blobs_dir, ignore_dir = os.path.join(staging, "blobs"), os.path.join(staging, "ignore")
+        os.mkdir(blobs_dir, 0o700)
+        os.mkdir(ignore_dir, 0o700)
+        rules = os.path.join(staging, "rules.toml")
+        with open(rules, "w", encoding="utf-8") as f:
+            f.write(GITLEAKS_RULES)
+        fmt = ((_git_lines(repo.root, "rev-parse", "--show-object-format") or b"sha1").decode().strip()) or "sha1"
+        current, history_paths, skipped, seen = {}, {}, [], set()
+        for rel in repo.files:
+            try:
+                full = repo.path(rel)
+                data = None
+                if os.path.getsize(full) <= MAX_SCAN_BYTES:
+                    with open(full, "rb") as f:
+                        data = f.read()
+            except (OSError, CheckError):
+                data = None
+            seen.add(_blob_id(data, fmt) if data is not None else None)
+            if not _scannable(data):
+                skipped.append(rel)
+                continue
+            name = "w-" + hashlib.sha256(data).hexdigest()
+            current.setdefault(name, []).append(rel)
+            with open(os.path.join(blobs_dir, name), "wb") as f:
+                f.write(data)
+        partial = False
+        if run_git(repo.root, "rev-parse", "--git-dir") is not None:
+            wanted, partial = _history_blobs(repo.root, seen)
+            path_of = dict(wanted)
+            for oid, blob in _read_blobs(repo.root, list(path_of)).items():
+                if _scannable(blob):
+                    name = "h-" + oid
+                    history_paths[name] = path_of[oid]
+                    with open(os.path.join(blobs_dir, name), "wb") as f:
+                        f.write(blob)
+        names = sorted(set(repo.files) | set(repo.symlinks) | set(history_paths.values()))
+        with open(os.path.join(blobs_dir, "p-names"), "w", encoding="utf-8") as f:
+            f.write("\n".join(names) + "\n")
+        try:
+            proc = subprocess.run(
+                [gitleaks, "dir", blobs_dir, "--config", rules, "--gitleaks-ignore-path", ignore_dir,
+                 "--ignore-gitleaks-allow", "--max-archive-depth", "0", "--redact", "--report-format", "json",
+                 "--report-path", "-", "--exit-code", "99", "--no-banner", "--no-color", "--log-level", "error",
+                 "--timeout", str(GITLEAKS_TIMEOUT)],
+                capture_output=True, timeout=GITLEAKS_TIMEOUT + 30, env=_tool_env(), cwd=ignore_dir, check=False)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise CheckError(f"secret scan failed: {type(e).__name__}") from None
+        if proc.returncode not in (0, 99):
+            raise CheckError(f"secret scan failed with exit code {proc.returncode}")
+        try:
+            report = json.loads(proc.stdout) if proc.stdout.strip() else []
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise CheckError("secret scan report is not JSON") from None
+        found_current, found_history, found_names = [], [], set()
+        for item in report if isinstance(report, list) else []:
+            if not isinstance(item, dict):
+                continue
+            name = os.path.basename(str(item.get("File", "")))
+            line, rule = item.get("StartLine"), str(item.get("RuleID", "secret"))
+            if not isinstance(line, int) or not re.fullmatch(r"[A-Za-z0-9_.-]+", rule):
+                continue
+            if name == "p-names":
+                if 1 <= line <= len(names):
+                    found_names.add(names[line - 1])
+            elif name in current:
+                found_current.extend((rel, line, rule) for rel in current[name])
+            elif name in history_paths:
+                found_history.append((history_paths[name], line, rule, name[2:]))
+        return sorted(found_current), sorted(found_history), found_names, skipped, partial
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def commit_of_blob(root, oid):
+    """The latest commit that added or removed a blob. --find-object only
+    compares object ids, so no diff driver or textconv runs."""
+    out = _git_lines(root, "log", "--all", "-1", "--format=%H", "--no-ext-diff", "--no-textconv", f"--find-object={oid}")
+    value = (out or b"").decode().strip()
+    return value if re.fullmatch(r"[0-9a-f]{40,64}", value) else None
 
 
 def weekly_or_more(cron):
     fields = cron.split()
     # Day of month and month must be open; any day-of-week then runs at least weekly.
     return len(fields) == 5 and fields[2] == "*" and fields[3] == "*"
-
-
-def action_pinned(ref):
-    if ref.startswith("./"):
-        return True
-    if ref.startswith("docker://"):
-        return "@sha256:" in ref
-    _, _, version = ref.partition("@")
-    return bool(re.fullmatch(r"[0-9a-f]{40}", version))
 
 
 # ---------------------------------------------------------------------------
@@ -645,73 +700,64 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
     rust_sources = [f for f in own if f.endswith(".rs")]
     test_corpus = [(f, text_of(f) or "") for f in test_files[:400] + rust_sources[:200]]
 
-    # Workflows
+    # Workflows and composite actions: zizmor's audits (ADR 0020). Each file
+    # is checked on its own so one unreadable file is its own gap (SR-8).
+    tools = tool_paths()
     workflows = [f for f in repo.files if re.match(r"\.github/workflows/[^/]+\.ya?ml$", f)]
+    actions = [f for f in repo.own_files if re.search(r"(^|/)action\.ya?ml$", f)]
     wf_infos = {}
     code_of = {}
-    for wf in workflows:
-        text = text_of(wf)
-        if text is not None:
-            code_of[wf] = "\n".join(_strip_comment(l) for l in text.splitlines())
-        if text is None:
-            gaps.append(gap(f"workflow-unreadable:{wf}", f"Workflow {wf} could not be read", "S5.1 (F-003 SR-8)", "security",
-                            SEVERITY_BLOCKS["medium"], "Make the workflow a readable text file under 1 MB so it can be checked.",
-                            "onboarding-pr", [ev(wf)], "medium"))
-            continue
-        info = scan_workflow(text)
-        wf_infos[wf] = info
-        missing = [j for j, d in info["jobs"].items() if d["permissions"] is None]
-        if info["top_permissions"] is None and (missing or not info["jobs"]):
-            missing = missing or ["(no jobs found)"]
-            gaps.append(gap(f"workflow-permissions:{wf}", f"Workflow {wf} does not declare permissions", "S8.3", "security",
-                            SEVERITY_BLOCKS["medium"],
-                            "Add `permissions: contents: read` at the top and grant more only to the jobs that need it.",
-                            "onboarding-pr", [ev(wf, 1, "jobs without permissions: " + ", ".join(missing))], "medium"))
-        unpinned = {}
-        for n, ref in info["uses"]:
-            if not action_pinned(ref):
-                unpinned.setdefault(ref.partition("@")[0], []).append(ev(wf, n, ref))
-        for name, evidence in unpinned.items():
-            owner = name.split("/", 1)[0]
-            sev = "low" if owner in ("actions", "github") else "medium"
-            gaps.append(gap(f"action-unpinned:{wf}:{name}", f"Action {name} is not pinned to a commit SHA",
-                            "S4.3", "security", SEVERITY_BLOCKS[sev],
-                            "Pin to the full 40-character commit SHA of the release, with the tag in a comment.",
-                            "onboarding-pr", evidence, sev))
-        if info.get("write_all"):
-            gaps.append(gap(f"workflow-write-all:{wf}", f"Workflow {wf} grants write-all permissions", "S8.3", "security",
-                            SEVERITY_BLOCKS["medium"], "Grant only the scopes each job needs.", "onboarding-pr",
-                            [ev(wf, info["write_all"])], "medium"))
-        if info.get("pr_target"):
-            gaps.append(gap(f"workflow-pr-target:{wf}", f"Workflow {wf} runs on pull_request_target", "S8.3; S6.1", "security",
-                            SEVERITY_BLOCKS["high"],
-                            "Use pull_request, or make sure the job never checks out or runs code from the PR.",
-                            "onboarding-pr", [ev(wf, info["pr_target"])], "high"))
+    with tempfile.TemporaryDirectory(prefix="sf-zizmor-") as zizmor_cwd:
+        for wf in workflows + actions:
+            text = text_of(wf)
+            doc = load_workflow(text) if text is not None else UNREADABLE
+            findings = run_zizmor(tools["zizmor"], repo.path(wf), zizmor_cwd) if doc is not UNREADABLE else None
+            if findings is None:
+                gaps.append(gap(f"workflow-unreadable:{wf}", f"Workflow {wf} could not be read", "S5.1 (F-003 SR-8)", "security",
+                                SEVERITY_BLOCKS["medium"],
+                                "Make it a valid workflow or action file under 1 MB so it can be checked.",
+                                "onboarding-pr", [ev(wf)], "medium"))
+                continue
+            gaps.extend(zizmor_gaps(wf, findings))
+            if wf in workflows:
+                code_of[wf] = "\n".join(workflow_strings(doc))
+                wf_infos[wf] = {"crons": workflow_crons(doc)}
 
-    # Secrets: report file, line and type only, never the value (SR-3).
+    # Secrets with gitleaks, in the working tree and in history: report file,
+    # line and rule only, never the value (SR-3).
+    found_current, found_history, secret_names, skipped_files, partial = scan_secrets(repo, tools["gitleaks"])
+    skipped = len(skipped_files)
     secret_counts = {}
-    skipped = 0
-    skipped_files = []
+
+    def secret_gap(prefix, rel, line, rule, title, fix, detail):
+        key = (prefix, rel, rule)
+        secret_counts[key] = secret_counts.get(key, 0) + 1
+        gaps.append(gap(f"{prefix}:{rule}:{rel}:{secret_counts[key]}", title, "S3.1", "security", SEVERITY_BLOCKS["critical"],
+                        fix, "decision", [ev(rel, line, detail)], "critical"))
+
+    for rel, line, rule in found_current:
+        secret_gap("secret", rel, line, rule, f"Possible {rule} committed in {rel}",
+                   "Revoke and rotate the credential, then remove it from the file and from Git history.", rule)
+    for rel, line, rule, oid in found_history:
+        commit = commit_of_blob(repo.root, oid)
+        secret_gap("secret-history", rel, line, rule, f"Possible {rule} in Git history ({rel})",
+                   "Revoke and rotate the credential; it stays readable in every clone until history is rewritten.",
+                   f"{rule}; only in history" + (f", commit {commit}" if commit else ""))
+    for k, _ in enumerate(sorted(secret_names), 1):
+        gaps.append(gap(f"secret-name:{k}", "A file name looks like a secret", "S3.1", "security", SEVERITY_BLOCKS["critical"],
+                        "Revoke and rotate the credential and rename the file; the name is redacted everywhere here.",
+                        "decision", [ev(REDACTED_NAME, detail="file name")], "critical"))
     for rel in repo.files:
-        try:
-            text = text_of(rel) if rel in texts_cache else repo.read(rel)
-        except (OSError, CheckError):
-            text = None
-        if text is None:
-            skipped += 1
-            skipped_files.append(rel)
-            continue
-        is_env = bool(re.search(r"(^|/)\.env(\.[^/]*)?$", rel)) and not rel.endswith((".example", ".sample", ".template"))
-        for n, line in enumerate(text.splitlines(), 1):
-            rules = SECRET_RULES + ([("env-secret", ENV_SECRET)] if is_env else [])
-            for kind, rx in rules:
-                if rx.search(line):
-                    key = (rel, kind)
-                    secret_counts[key] = secret_counts.get(key, 0) + 1
-                    gaps.append(gap(f"secret:{kind}:{rel}:{secret_counts[key]}", f"Possible {kind} committed in {rel}",
-                                    "S3.1", "security", SEVERITY_BLOCKS["critical"],
-                                    "Revoke and rotate the credential, then remove it from the file and from Git history.",
-                                    "decision", [ev(rel, n, kind)], "critical"))
+        if re.search(r"(^|/)\.env(\.[^/]*)?$", rel) and not rel.endswith((".example", ".sample", ".template")):
+            gaps.append(gap(f"env-file:{rel}", f"Environment file {rel} is committed", "S3.1", "security",
+                            SEVERITY_BLOCKS["high"],
+                            "Remove it from the repo and from Git history, rotate what it held, and commit an example file instead.",
+                            "decision", [ev(rel)], "high"))
+    if partial:
+        gaps.append(gap("secret-history-partial", "Git history was only partly scanned for secrets", "S3.1", "security", None,
+                        "The history is larger than the checker scans; run gitleaks over the full history in CI.",
+                        "onboarding-pr", [ev(detail=f"limits: {HISTORY_MAX_BLOBS} blobs, {HISTORY_MAX_BYTES // 1_000_000} MB")],
+                        "low"))
     in_repo = [f for f in repo.files + repo.symlinks if f == ".factory" or f.startswith(".factory/")]
     if in_repo:
         gaps.append(gap("factory:dir-in-repo", "`.factory/` is part of the repo's own files", "ADR 0009; S1.4", "security",
@@ -845,7 +891,6 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
                         "rapid-prototype", "Sign in to `gh` and re-run, or check it in the repo's settings.", "owner-step",
                         [ev(detail="no GitHub data given")]))
 
-    gaps = redact(gaps)
     gaps.sort(key=lambda g: (LEVELS.index(g["blocks_level"]) if g["blocks_level"] else 99, g["id"]))
     ids = {g["id"] for g in gaps}
     if len(ids) != len(gaps):
@@ -870,6 +915,7 @@ def assess(root, github_protection=None, previous=None, level=None, now=None):
         "recommended_work": recommended_work(gaps),
         "baseline_request": baseline_request(os.path.basename(repo.root), test_files, dict(test_corpus), level),
     }
+    result = redact(result, secret_names)
     if level:
         result["blocking_now"] = [g["id"] for g in gaps if g["blocks_level"] and LEVELS.index(g["blocks_level"]) <= LEVELS.index(level)]
     if previous is not None:
@@ -900,15 +946,21 @@ def single_line(value):
     return value
 
 
-def redact(value):
+REDACTED_NAME = "[redacted file name]"
+
+
+def redact(value, names):
+    """Takes every file name gitleaks flagged out of the result (SR-3)."""
+    if not names:
+        return value
     if isinstance(value, str):
-        for kind, rx in SECRET_RULES:
-            value = rx.sub(f"[redacted {kind}]", value)
+        for name in sorted(names, key=len, reverse=True):
+            value = value.replace(name, REDACTED_NAME)
         return value
     if isinstance(value, list):
-        return [redact(v) for v in value]
+        return [redact(v, names) for v in value]
     if isinstance(value, dict):
-        return {redact(k): redact(v) for k, v in value.items()}
+        return {redact(k, names): redact(v, names) for k, v in value.items()}
     return value
 
 

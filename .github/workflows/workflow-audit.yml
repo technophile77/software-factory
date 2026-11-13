@@ -1,0 +1,29 @@
+name: workflow-audit
+# zizmor over the factory repo's own workflows (ADR 0020, H-0147): script
+# injection, unsafe triggers, leaked credentials, unpinned actions. Same pinned
+# wheel and flags as the job onboarded repos get from the onboard-repo template.
+on:
+  pull_request:
+    paths: [".github/**"]
+  push:
+    branches: [main]
+    paths: [".github/**"]
+  # Weekly, so a new zizmor audit result on an unchanged workflow is still seen.
+  schedule:
+    - cron: "0 6 * * 1"
+permissions:
+  contents: read
+jobs:
+  zizmor:
+    runs-on: ubuntu-24.04
+    env:
+      ZIZMOR_REQUIREMENT: "zizmor==1.32.0 --hash=sha256:84a6acb975accc13408786a2bd274b572537ca19c933ebbc13e78f3988562071"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: |
+          python3 -m venv "$RUNNER_TEMP/zizmor"
+          echo "$ZIZMOR_REQUIREMENT" > "$RUNNER_TEMP/zizmor.txt"
+          "$RUNNER_TEMP/zizmor/bin/pip" install --require-hashes --only-binary :all: --no-deps -r "$RUNNER_TEMP/zizmor.txt"
+      - run: '"$RUNNER_TEMP/zizmor/bin/zizmor" --offline --no-config --no-ignores --min-severity medium --format github .github/'
