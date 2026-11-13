@@ -45,7 +45,7 @@ import { FeatureInterview } from "./interview/feature";
 import { InterviewTools, ResearchConfig, createInterviewTools } from "./interview/tools";
 import { FileLogger, Logger } from "./log";
 import { OsApi, realOsApi } from "./os/ffi";
-import { Children, osParent } from "./proc";
+import { Children, osParent, osStartOrder } from "./proc";
 import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryTokenName } from "./secrets";
 import { SecurityAlert, fileDecisionItem, fileSecurityItem } from "./state/inbox";
 import { READINESS_STAGE, analystGate1Turn, correctionTurn, gate1Resolution, records, reviewerTurn } from "./gate1/flow";
@@ -201,7 +201,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const log = o.logger ?? new FileLogger(path.join(home, "logs"), clock);
   const osApi = o.os ?? realOsApi();
   const env = o.env ?? process.env;
-  const children = new Children(o.parentOf ?? osParent(osApi));
+  const children = o.parentOf ? new Children(o.parentOf) : new Children(osParent(osApi), osStartOrder(osApi));
   const gitPath = o.gitPath ?? findOnPath("git");
   if (!gitPath) throw new StartError("git isn't on PATH.");
   const git = new Git({ gitPath, homeDir: path.join(home, "git"), children, env });
@@ -1470,11 +1470,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         p.sessions?.closeAll();
         await p.listener?.close().catch(() => undefined);
       }
+      await git.closeReaders();
       done();
     },
     async sync() {
       for (const p of projects) {
         if (p.state !== "running" || dead) continue;
+        p.state_repo?.forgetHead();
         await checkRemote(p);
         await checkLocal(p);
       }
@@ -1508,6 +1510,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           await p.listener?.close().catch(() => undefined);
           if (p.state_repo) fs.rmSync(path.join(p.state_repo.factoryDir, ENGINE_JSON), { force: true });
         }
+        await git.closeReaders();
         log.info(`engine stopped at ${iso(clock.now())}`);
         done();
       })();
