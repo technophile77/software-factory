@@ -206,16 +206,54 @@ the record, SR-2).
 ## 10. Interface requirements
 Drafts, not yet approved. Each is applied only after the owner approves it.
 
-- **H-0161 (Hygiene):** engine issue store and action reader (FR-1 to FR-11,
-  FR-15, FR-16); `fileSecurityItem` and `fileDecisionItem` file issues.
-- **H-0162 (Hygiene):** config repo workflow template, revising F-012's
-  approved H-0126 to also assign the owner and to run for every item.
-- **H-0163 (Hygiene):** the `githubIssues.queries` block (FR-12) and its
-  onboarding step.
-- **H-0164 (Hygiene):** retire the extension package (FR-17), note on ADR
-  0003 that the VS Code UI is GitHub's extension, and update
-  `development-workflow.md` stage 9 and `decision-management.md` item
-  kinds for issues.
+- **H-0161 (Hygiene):** the engine's issue store and action reader, built in
+  the F-011 build (FR-1 to FR-11, FR-15, FR-16): `engine/src/state/inbox.ts`
+  `fileSecurityItem` and `fileDecisionItem` file issues through H-0162
+  instead of writing `.factory/inbox/`; new modules render templates, poll
+  issues, parse actions (SR-18), write records (H-0165), and migrate files
+  (SR-20). Each lands as its own commit with the id.
+- **H-0162 (Hygiene):** `templates/config-repo/.github/workflows/factory-inbox.yml`,
+  revising F-012's approved H-0126: `on: repository_dispatch` type
+  `factory-inbox` only; `permissions: issues: write` only; actions pinned by
+  commit SHA (SR-12); it opens the issue from the payload's rendered title,
+  body and labels, assigns `${{ vars.FACTORY_OWNER_LOGIN }}` (per OQ-13),
+  and posts the action comments in order; it runs nothing from the payload
+  and makes no other call. Onboarding installs it in the config repo.
+- **H-0163 (Hygiene):** `templates/vscode/factory-inbox-queries.json`, offered
+  by onboarding for the owner's VS Code **user** settings:
+
+  ```json
+  {
+    "githubIssues.queries": [
+      { "label": "Factory: blocking", "query": "is:open label:factory-inbox label:blocking assignee:${user}" },
+      { "label": "Factory: critical", "query": "is:open label:factory-inbox label:priority:critical assignee:${user}" },
+      { "label": "Factory: high", "query": "is:open label:factory-inbox label:priority:high assignee:${user}" },
+      { "label": "Factory: medium", "query": "is:open label:factory-inbox label:priority:medium assignee:${user}" },
+      { "label": "Factory: low", "query": "is:open label:factory-inbox label:priority:low assignee:${user}" }
+    ],
+    "githubPullRequests.queries": [
+      { "label": "Factory PRs to merge", "query": "is:open is:pr user:${user} base:main -is:draft" }
+    ]
+  }
+  ```
+
+  Onboarding merges these with any queries the owner already has, adds
+  `org:<org>` to the PR query only if the project's repos sit in an
+  organization (user settings only, never committed), and names the
+  extension `GitHub.vscode-pull-request-github` (SR-21).
+- **H-0164 (Hygiene):** retire our extension: remove `extension/`, `.github/workflows/extension.yml`, and the
+  extension from `codeql.yml`'s scope, after H-0161 has migrated the items (FR-16, FR-17). Doc edits:
+  ADR 0003 header gains "Amended by ADR 0022: the VS Code UI for the inbox
+  is Microsoft's GitHub Pull Requests extension; the engine stays a separate
+  process."; ADR 0002 and ADR 0011 headers gain "Superseded by ADR 0022 for
+  inbox items"; ADR 0009 header gains "Amended by ADR 0022: `factory/state`
+  holds inbox records, not items"; `development-workflow.md` stage 9 note
+  becomes "The owner merges in GitHub's PR view (F-011, ADR 0022). Nobody
+  else merges, except the engine for a hygiene PR identical to an approved
+  hygiene change (F-011 FR-10)."; `decision-management.md`'s item kinds
+  section is rewritten to list the six kinds, their labels and actions as
+  in Inbox item v3.0; `architecture.md` replaces the inbox file store with
+  the config repo issues.
 - **H-0165 (Interfaces):** Inbox item v3.0, below. It replaces v1.1 and the
   approved but unapplied v2.0 (v19 H-0120), v2.1 and Phone issue v1.0 (F-012
   H-0125). On approval it replaces the Inbox item entry in
