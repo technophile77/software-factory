@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 (split from F-011 OQ-3: "the phone
   notification needs to be tied to some way to do approvals on my phone also";
   "I want a confirmation on risky actions like a merge, not just one click")
-- **Spec version:** 3
+- **Spec version:** 4
 
 ## 1. Objective and business purpose
 The factory stalls whenever an item is waiting for the owner and the owner is
@@ -139,11 +139,11 @@ owner already uses for the interview device approval (ADR 0014).
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
 | SR-1 | External service (S9.1): GitHub only. Workflow, as `github-actions[bot]`, in the config repo: create issue, add label, create comment. Engine, with the owner's token: list issue comments, list reactions on them, create comment, update issue body, close issue, read PR state. No other call. | Analyst (S9.1) | Proposed |
-| SR-2 | The owner is proven by GitHub: a comment counts only if its author's user id is the owner's. It is recorded with the comment URL instead of an SSH signature, which a phone can't make. This amends ADR 0015 decision 3 for phone actions (OQ-2). | Analyst (S8, ADR 0015) | Proposed, needs OQ-2 |
+| SR-2 | The owner is proven by GitHub: a reaction counts only if its user id is the owner's. It is recorded with the action comment URL instead of an SSH signature, which a phone can't make (ADR 0018, amending ADR 0015 decision 3 for phone actions). | Analyst (S8, ADR 0015) | Accepted (owner, 2026-11-13, OQ-2) |
 | SR-3 | Risky actions need a second, explicit tap on a comment that names the exact action and target, bound to the item revision, with a 15-minute expiry (owner, 2026-11-13; OWASP LLM Top 10 2025, LLM06: human approval for high-impact actions). | Owner, analyst | Proposed |
 | SR-4 | Actions are read by code from reactions and fixed action names; comment text is never given to an agent as instructions (S9.3). Request changes and Ask notes goes to agents as data, as other owner notes do. | Analyst (S9.3) | Proposed |
 | SR-5 | Item content goes only to the private config repo, never to a public repo or a third-party service (owner rule, 2026-11-12: sensitive info never in a public repo). This replaces F-011's draft rule that phone alerts carry only counts: the phone has to show enough to decide, and the config repo is as private as the rest of the project. | Analyst | Proposed |
-| SR-6 | Residual risk, to state to the owner: anyone holding the owner's GitHub session or token can comment as the owner, so a stolen phone with GitHub signed in, or the engine's token used by something else, could approve items. The confirm tap doesn't stop that; it guards against a mis-tap, not a stolen account. GitHub's own sign-in and 2FA are the control. Agents can't: they run in containers without tokens (ADR 0015). | Analyst | To state with OQ-2 |
+| SR-6 | Residual risk, to state to the owner: anyone holding the owner's GitHub session or token can comment as the owner, so a stolen phone with GitHub signed in, or the engine's token used by something else, could approve items. The confirm tap doesn't stop that; it guards against a mis-tap, not a stolen account. GitHub's own sign-in and 2FA are the control. Agents can't: they run in containers without tokens (ADR 0015). | Analyst | Stated to the owner and accepted 2026-11-13 (OQ-2) |
 | SR-7 | No secrets or tokens in issue bodies, comments or logs (S3.1); the item's text passes the secrets scan before it is rendered. | Analyst (S3.1) | Proposed |
 
 ## 10. Interface requirements
@@ -161,8 +161,8 @@ Hygiene items named here; none filed until the open questions are answered.
 - **H-0128 (Interfaces): Project manifest `phone` block** (`enabled`,
   `quiet_hours`); owner login and id stay in the config repo and engine
   config.
-- **H-0129 (Architecture):** ADR amending ADR 0015 decision 3 for phone
-  actions, if OQ-2 is decided that way.
+- **H-0129 (Architecture):** ADR 0018 (in this PR), amending ADR 0015
+  decision 3 for phone actions, and its row in `docs/adr/README.md`.
 
 ## 11. Readiness gate
 - [ ] Clear objective
@@ -178,11 +178,12 @@ Hygiene items named here; none filed until the open questions are answered.
 | 1 | 2026-11-13 | Draft with open questions OQ-1 to OQ-4; includes the owner's confirmation rule for risky actions | — |
 | 2 | 2026-11-13 | Owner: phone actions are taps, not typing. OQ-1 decided (a): GitHub issue, 👍 on an action comment, 🚀 to confirm risky actions; risky list follows F-011 FR-15; H-0127 folded into F-011 H-0120 | Owner, 2026-11-13 (thread, decision card) |
 | 3 | 2026-11-13 | OQ-3 decided with F-011 FR-15: the confirm list adds Security decisions and Spec sign-off | Owner, 2026-11-13 (decision card, F-011 thread) |
+| 4 | 2026-11-13 | OQ-2 decided: a tap from the owner's GitHub account proves a phone action (ADR 0018); SR-6 risk accepted | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
 |---|---|---|---|
 | OQ-1 | How does the phone get notified and act? The owner asked for taps, not typing. (a) GitHub issue per item in the private config repo, push from GitHub Mobile, tap 👍 on an action comment and 🚀 to confirm risky ones, merge PRs in GitHub Mobile. (b) ntfy notification buttons; item text and a secret pass through ntfy. (c) A phone web page from the engine over Tailscale. | Architecture | Decided (owner, 2026-11-13, decision card): (a) |
-| OQ-2 | ADR 0015 says an owner action counts only if signed with the owner's SSH key, which a phone can't do. Accept a GitHub comment from the owner's account (checked by user id, URL recorded) as proof for phone actions? (a) Yes, amend ADR 0015 for phone actions (SR-2), accepting SR-6. (b) No: phone actions are recorded as pending and need a signed confirm in VS Code. Recommended: (a); (b) means nothing finishes from the phone. | Security | Open |
+| OQ-2 | ADR 0015 says an owner action counts only if signed with the owner's SSH key, which a phone can't do. Accept a tap from the owner's GitHub account as proof for phone actions, accepting SR-6? | Security | Decided (owner, 2026-11-13, decision card): yes; ADR 0018 |
 | OQ-3 | Which actions count as risky and need the confirm step? | Product | Decided (owner, 2026-11-13, F-011 FR-15 card): Approve and merge; Approve on Hygiene, Maturity, Security decision and Spec sign-off items |
 | OQ-4 | Quiet hours (FR-12): needed now, or later? Recommended: now, it's small. | Product | Open |

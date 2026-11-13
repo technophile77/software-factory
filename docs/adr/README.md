@@ -25,3 +25,4 @@ in order, using `template.md`.
 | [0014](0014-owner-approval-github-device-flow.md) | Owner approval of interview sessions through GitHub on the owner's phone | Accepted |
 | [0015](0015-agent-containers-signed-owner-actions.md) | Container per agent session, path matching, signed owner actions | Accepted |
 | [0016](0016-python-coverage-tool.md) | coverage.py measures coverage for the factory's Python code | Accepted |
+| [0018](0018-phone-actions-proven-by-github.md) | Owner actions from the phone are proven by the owner's GitHub account | Accepted |
