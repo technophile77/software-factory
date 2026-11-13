@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
-- **Spec version:** 4
+- **Spec version:** 5
 
 This is engine increment 4, "Build to PR" (F-007 section 13). It is a draft
 written before the owner interview, from the baseline spec, the ADRs and the
@@ -71,7 +71,7 @@ Draft. Each will be refined by section 12.
 | FR-4 | Agent edits are committed by the engine after each edit (ADR 0012), with the secrets scan before each commit; the end-of-session write check applies (F-007 FR-9). |
 | FR-5 | When both agents report done, the engine merges `dev` and `test` into the feature branch. A merge conflict between them is handled per ADR 0013. |
 | FR-6 | Tests run against the merged commit (OQ-5). The run produces a run report per `testing-strategy.md`: commit tested, counts, criteria-to-test map, failures with expected and actual and logs, anything not run and why. Unexplained skips make the run incomplete. |
-| FR-7 | Stage 6 applies the failure table in `testing-strategy.md` exactly: rerun counts by cause, at most 3 fix cycles per role, 2 developer/test-engineer disagreements on one test go to the Decision inbox, 4 hours of stage 6 agent time escalates. Every escalation is a Testing item with the fields of spec section 5. (OQ-4 decides who classifies.) |
+| FR-7 | Stage 6 applies the failure table in `testing-strategy.md` exactly: rerun counts by cause, at most 3 fix cycles per role, 2 developer/test-engineer disagreements on one test go to the Decision inbox, 4 hours of stage 6 agent time escalates. Every escalation is a Testing item with the fields of spec section 5. Engine code does the mechanical work: runs and reruns, counts fix cycles, files items, and in stage 9 pushes, opens the PR and reads CI (OQ-4). An orchestrator agent session, read-only with no shell, runs only when a test run fails: it names each failure's cause from the table and writes the evidence for the review note and any Testing item; the engine then applies the table to that cause. |
 | FR-8 | Stage 7 runs Semgrep CE from the image pinned in ADR 0024 on the feature diff, then the security reviewer (Gate 2) with the findings as evidence, reusing the F-008 report checks. Blocking per `security-standards.md` at the repo's maturity level. |
 | FR-9 | Stage 8 runs the validation judge with the spec, diff, run report and both gate reports. Its verdict is applied per `development-workflow.md` § Going backwards and the allowances in its `AGENT.md`. |
 | FR-10 | Stage 9: with items 1 to 11 met, the engine pushes the feature branch and opens a draft PR with the owner's token. It reads the required checks on the PR head; green marks the PR ready with its title and description updated and posts the F-011 FR-9 comment; red is a stage 6 failure. |
@@ -157,7 +157,7 @@ Asked one at a time on decision cards. None is assumed.
 | OQ-1 | One feature for all of stages 5 to 9, built in milestones, or split into two features (build and test first, then gates and PR)? | Product | Decided: one feature, built and merged in milestones (owner, decision card, 2026-11-13) |
 | OQ-2 | Where feature work lives once it leaves the config repo: specs, transcripts and agent reports stay in the config repo and only code moves to the code repo; or everything moves to the code repo per ADR 0005/0009 as written; or code moves and a copy of the approved spec goes into the PR. | Architecture | Decided: only code and tests go to the code repo; spec, transcript, reports and records stay in the private config repo; agents get the spec read-only; the PR links it. Amends ADR 0005/0009 (ADR 0026) (owner, decision card, 2026-11-13) |
 | OQ-3 | Can one feature change more than one code repo (one PR per repo), or is it one repo per feature for now? | Product | Decided: one repo per feature; a request needing several repos becomes linked features, one per repo, and a dependent feature waits for the other's PR to merge (owner, decision card, 2026-11-13) |
-| OQ-4 | Who runs stages 6 and 9: engine code only, engine code plus an orchestrator agent session just to classify failures, or an orchestrator agent session for the whole stage. | Architecture | Open |
+| OQ-4 | Who runs stages 6 and 9: engine code only, engine code plus an orchestrator agent session just to classify failures, or an orchestrator agent session for the whole stage. | Architecture | Decided: engine code, plus a read-only orchestrator agent session only to classify failures (FR-7) (owner, decision card, 2026-11-13) |
 | OQ-5 | Who runs the tests: the engine runs a test command the manifest declares and reads its JUnit XML, or the test engineer agent runs them and reports. | Architecture | Open |
 | OQ-6 | Where each project's build toolchain comes from for the agent containers: a Dockerfile in the config repo built on the factory image, the code repo's dev container definition, or a fixed set of factory toolchain images. | Architecture, Security | Open |
 | OQ-7 | Who commits appear to come from in code repos: the engine's own identity (today) or the owner's name with his GitHub noreply address. | Product | Open |
@@ -169,3 +169,4 @@ Asked one at a time on decision cards. None is assumed.
 | 2 | 2026-11-13 | OQ-1: one feature for stages 5 to 9 and the move to code repos, built and merged in milestones (code-repo move with developer and test engineer; stage 6 review; Gate 2 and judge; PR and CI) | Owner, 2026-11-13 (decision card) |
 | 3 | 2026-11-13 | OQ-2: only code and tests go to code repos; spec, transcript, reports and records stay in the private config repo (FR-2); ADR 0026 to record the amendment to ADR 0005 and 0009 | Owner, 2026-11-13 (decision card) |
 | 4 | 2026-11-13 | OQ-3: one code repo per feature; multi-repo requests become linked features (FR-16) | Owner, 2026-11-13 (decision card) |
+| 5 | 2026-11-13 | OQ-4: stages 6 and 9 are engine code; a read-only orchestrator agent session runs only to classify test failures (FR-7) | Owner, 2026-11-13 (decision card) |
