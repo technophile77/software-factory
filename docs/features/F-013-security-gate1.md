@@ -1,6 +1,6 @@
 # F-013 Security Gate 1 (requirements review)
 
-- **Feature:** F-013 Local model provider, spec v4
+- **Feature:** F-013 Local model provider, spec v4 (now `F-013-model-endpoints.md`; delta review for v9 below)
 - **Reviewer role:** security-reviewer, against `docs/security-standards.md`
 - **Date:** 2026-11-13
 - **Maturity level:** Rapid prototype (the factory repo's level). Only
@@ -44,3 +44,28 @@ the engine's credential gateway.
 OWASP Top 10 for LLM Applications 2025: LLM01 prompt injection (#3, SR-6);
 LLM02 sensitive information disclosure (#1); LLM03 supply chain (#4, SR-7);
 LLM06 excessive agency (#2).
+
+## Delta review, spec v9 (configurable endpoints)
+
+- **Date:** 2026-11-13
+- **Scope:** what changed from v8: any number of owner-configured endpoints,
+  public as well as private, each with model, key, limits and `local`
+  (unlimited usage). Earlier findings #1 to #4 still apply and are carried
+  into the spec (SR-8 widened to a list).
+- **Result:** 5 findings: 0 Critical, 2 High, 2 Medium, 1 Low. Nothing
+  blocks at Rapid prototype. The High ones would block at a stricter level,
+  so they are proposed as requirements now (SR-12, SR-13).
+
+| # | Criterion | Severity | Blocks? | Finding | Recommendation |
+|---|---|---|---|---|---|
+| 1 | S8.2, S3.2 | High | No | The owner's acceptance of plain HTTP and no key (SR-5) was for a server on the LAN. A public endpoint over plain HTTP would send project code and an API key across the internet in clear. | SR-12: public endpoints need HTTPS with certificate and host-name checks and a key; otherwise unavailable. SR-5 limited to private endpoints. (OWASP ASVS 5.0 V12; NIST SP 800-53 SC-8, SC-23.) |
+| 2 | S8.2, S3.1 | High | No | With several endpoints and keys, a key could leak to the wrong host: through a redirect, a shared header, or a misrouted session. | SR-13: each key goes only to its endpoint, only in its auth header; the gateway follows no redirects from an endpoint. AC-4 checks it. (CWE-522.) |
+| 3 | S8.1 | Medium | No | A metered endpoint has no spend limit in v8, which assumed $0. A wrong price or a looping agent could run up a bill. | SR-14: non-local spend counts against the project budget and run estimate (ADR 0012); prices are required for non-local endpoints. (OWASP LLM10.) |
+| 4 | S2.3, S8.1 | Medium | No | `local: true` turns off budget counting. On a public, metered endpoint that would hide real spend. | SR-15: `local` is allowed only for a private endpoint. |
+| 5 | S9.1, S9.4, S8.5 | Low | No | A public third-party endpoint is a new external service that receives project code, and its operator may keep or train on it. A manifest list alone doesn't record what was agreed to. | OQ-7 for the owner; recommended: a Security decision per project naming the endpoint, operator and retention terms. |
+
+**Threat model changes (S9.7):** Spoofing of a public endpoint is covered by
+TLS host checks (#1); information disclosure to third parties by the
+per-project list and OQ-7 (#5); key misuse by #2; denial of wallet by #3
+and #4. The DNS-rebinding case, a public name resolving to a LAN address,
+is refused by FR-4 and SR-3.
