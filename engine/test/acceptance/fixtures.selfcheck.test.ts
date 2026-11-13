@@ -6,6 +6,7 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { drive, FakeClock } from "./support/clock";
+import { fastImportStream } from "./support/fast-import";
 import { LEAK_MARKER } from "./support/fake-tools";
 import { BASE_PATH, git, World } from "./support/world";
 
@@ -38,6 +39,36 @@ describe("Fixture self-checks (no engine needed)", () => {
     expect(manifest).not.toMatch(/<[a-z][^>]*>/i);
     expect(git(p.clone, "rev-parse", "--verify", "refs/remotes/origin/factory/state").trim()).toMatch(/^[0-9a-f]{40}$/);
     expect(readFileSync(w.projectsFile, "utf8")).toContain(JSON.stringify(p.configRepo));
+  });
+
+  it("[FX-8] H-0132: the fast-import fixture has the shape the old git commands made: main with its files and feature branches, an unrelated factory/state, a clean clone", async () => {
+    w = await World.create([{ existingFeatures: ["F-001"] }]);
+    const p = w.project();
+    for (const repo of [p.bare, p.clone]) {
+      const files = git(repo, "ls-tree", "-r", "--name-only", "refs/heads/main").split("\n").filter(Boolean).sort();
+      expect(files).toEqual([".gitignore", "README.md", "docs/features/.keep", "docs/features/F-001-existing.md", "factory-project.yaml"]);
+    }
+    const mainSha = git(p.bare, "rev-parse", "refs/heads/main").trim();
+    expect(git(p.bare, "rev-parse", "refs/heads/feature/F-001-existing").trim()).toBe(mainSha);
+    expect(git(p.bare, "rev-list", "--count", "refs/heads/main").trim()).toBe("1");
+    expect(git(p.bare, "rev-list", "--count", "refs/heads/factory/state").trim()).toBe("1");
+    expect(git(p.bare, "ls-tree", "-r", "--name-only", "refs/heads/factory/state").trim()).toBe("README.md");
+    expect(git(p.bare, "show", "refs/heads/factory/state:README.md")).toBe("factory state\n");
+    expect(git(p.bare, "log", "-1", "--format=%an <%ae>|%s", "refs/heads/main").trim()).toBe("Fixture <fixture@example.invalid>|initial");
+    expect(git(p.bare, "symbolic-ref", "HEAD").trim()).toBe("refs/heads/main");
+    // The owner's clone: on main, nothing to commit, the owner's identity, origin on the fake GitHub.
+    expect(git(p.clone, "symbolic-ref", "HEAD").trim()).toBe("refs/heads/main");
+    expect(git(p.clone, "status", "--porcelain").trim()).toBe("");
+    expect(git(p.clone, "config", "user.name").trim()).toBe("Owner");
+    expect(git(p.clone, "config", "user.email").trim()).toBe("owner@example.invalid");
+    expect(git(p.clone, "remote", "get-url", "origin").trim()).toBe(w.gh.gitUrl(p.repoOwner, p.repo));
+    expect(readFileSync(join(p.clone, "factory-project.yaml"), "utf8")).toBe(w.manifestText(p, { existingFeatures: ["F-001"] }));
+  });
+
+  it("[FX-9] H-0132: the fast-import stream refuses a path it can't express, rather than writing a different tree", () => {
+    for (const path of ['a"b.md', "a\nb.md", "/abs.md"]) {
+      expect(() => fastImportStream([{ ref: "refs/heads/main", message: "m", files: { [path]: "x" }, time: 0 }]), path).toThrow(/can't go in a fast-import stream/);
+    }
   });
 
   // Tells a fixture problem (the file's owner or ACL) from an engine one when
