@@ -1,6 +1,7 @@
 import YAML from "yaml";
 import { MANIFEST_FILE } from "../constants";
 import { Git } from "../git";
+import { ENDPOINT_NAME_RE } from "./models";
 import { ConfigError } from "./paths-file";
 
 export interface RepoOwner {
@@ -17,6 +18,8 @@ export interface Manifest {
   allowed_repo_owners: RepoOwner[];
   repos: Array<{ name: string; url: string; owner: string; repo: string }>;
   billingMode: "subscription" | "tokens";
+  /** SR-8: the model endpoints (by name) this project's code may be sent to; whether each exists is checked at run time. */
+  endpoints: string[];
   /** The master factory tag the project uses (spec v30: skills, AGENT.md and limit defaults come from its commit). */
   factoryVersion: string;
   /** The parsed document, from which a session's Role policy is resolved when it starts. */
@@ -98,6 +101,16 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
   const budget = isObj(doc.settings) && isObj(doc.settings.budget) ? doc.settings.budget : undefined;
   const mode = budget?.mode;
   if (mode !== "subscription" && mode !== "tokens") bad("settings.budget.mode must be subscription or tokens (ADR 0012)");
+  const endpoints: string[] = [];
+  const listed = isObj(doc.settings) ? doc.settings.endpoints : undefined;
+  if (listed !== undefined) {
+    if (!Array.isArray(listed)) bad("settings.endpoints must be a list of endpoint names");
+    for (const [i, n] of (listed as unknown[]).entries()) {
+      if (typeof n !== "string" || !ENDPOINT_NAME_RE.test(n) || n === "anthropic") bad(`settings.endpoints[${i}] must be an endpoint name (lower-case letters, digits, '-')`);
+      if (endpoints.includes(n as string)) bad(`settings.endpoints lists '${n as string}' twice`);
+      endpoints.push(n as string);
+    }
+  }
   return {
     name: doc.name as string,
     commit,
@@ -106,6 +119,7 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
     allowed_repo_owners: allowed,
     repos,
     billingMode: mode as "subscription" | "tokens",
+    endpoints,
     factoryVersion: (doc.factory as { version: string }).version,
     raw: doc,
   };

@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { htmlToText, pageText, stripInvisible } from "../src/agent/page-text";
 import { addressOn } from "../src/proxy/main";
 import { blockedAddress, hostAllowed, normalHost, parseCidr, toBits } from "../src/proxy/rules";
-import { ALLOWED_BETAS, EgressProxy, ProxyDeps, ProxyLog, Resolved, refusedBody } from "../src/proxy/server";
+import { inSubnet } from "../src/proxy/main";
+import { ALLOWED_BETAS, ENDPOINT_BODY_FIELDS, EgressProxy, PinnedEndpoint, ProxyDeps, ProxyLog, Resolved, refusedBody, sanitizeEndpointBody } from "../src/proxy/server";
 
 describe("SR-8 address rules", () => {
   it("refuses loopback, private, CGNAT, link-local, unique-local, multicast, unspecified and mapped forms", () => {
@@ -74,10 +75,16 @@ interface Harness {
   port: number;
   logs: ProxyLog[];
   upstream: { headers: http.IncomingHttpHeaders[]; paths: string[]; bodies: string[] };
+  /** What the fake LiteLLM router and the fake private endpoint received, and where the proxy dialled. */
+  router: { headers: http.IncomingHttpHeaders[]; paths: string[]; bodies: string[] };
+  priv: { headers: http.IncomingHttpHeaders[]; paths: string[]; bodies: string[] };
+  dialled: Array<{ address: string; port: number }>;
 }
 
+const ROUTER = { address: "172.19.0.9", port: 4000, masterKey: "master-key-for-this-run" };
+
 /** The proxy with DNS and the outside replaced: names resolve from a table and every connection lands on a local server. */
-async function harness(o: { dns?: Record<string, string[]>; kind?: "api_key" | "subscription"; pages?: Record<string, { status: number; headers?: Record<string, string>; body?: string }> } = {}): Promise<Harness> {
+async function harness(o: { dns?: Record<string, string[]>; kind?: "api_key" | "subscription"; maxApiBody?: number; pages?: Record<string, { status: number; headers?: Record<string, string>; body?: string }> } = {}): Promise<Harness> {
   const dns = o.dns ?? { "example.org": ["93.184.216.34"], "api.anthropic.com": ["160.79.104.10"], "evil.test": ["127.0.0.1"], "mixed.test": ["93.184.216.35", "10.0.0.1"] };
   const upstream = { headers: [] as http.IncomingHttpHeaders[], paths: [] as string[], bodies: [] as string[] };
   const echo = net.createServer((s) => s.pipe(s));
@@ -101,22 +108,59 @@ async function harness(o: { dns?: Record<string, string[]>; kind?: "api_key" | "
     res.end(page.body ?? "");
   });
   const webPort = await listen(web);
+  // The fake router and private endpoint share one behaviour: the request path picks the reply.
+  const fake = (seen: Harness["router"]) =>
+    http.createServer((req, res) => {
+      let b = "";
+      req.on("data", (d) => (b += d));
+      req.on("end", () => {
+        seen.headers.push(req.headers);
+        seen.paths.push(req.url ?? "");
+        seen.bodies.push(b);
+        // The gateway's paths are fixed, so a marker in the body picks the reply there.
+        const key = `${req.url}${b}`;
+        if (key.includes("/redirect") || key.includes("ROUTER-REDIRECT")) return void res.writeHead(302, { location: "http://elsewhere.test/" }).end();
+        if (key.includes("/chunked-big") || key.includes("ROUTER-CHUNKED-BIG")) {
+          res.writeHead(200, { "content-type": "text/plain" });
+          res.write("a".repeat(600));
+          setTimeout(() => res.end("b".repeat(600)), 20);
+          return;
+        }
+        if (key.includes("/declared-big") || key.includes("ROUTER-DECLARED-BIG")) return void res.writeHead(200, { "content-length": "5000" }).end("x".repeat(5000));
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end('{"ok":true}');
+      });
+    });
+  const router: Harness["router"] = { headers: [], paths: [], bodies: [] };
+  const priv: Harness["priv"] = { headers: [], paths: [], bodies: [] };
+  const routerServer = fake(router);
+  const privServer = fake(priv);
+  const routerPort = await listen(routerServer);
+  const privPort = await listen(privServer);
+  const dialled: Harness["dialled"] = [];
   const deps: ProxyDeps = {
     lookup: async (h): Promise<Resolved[]> => {
       const a = dns[h];
       if (!a) throw new Error("NXDOMAIN");
       return a.map((address) => ({ address, family: net.isIP(address) }));
     },
-    connect: () => net.connect(echoPort, "127.0.0.1"),
+    connect: (address, port) => {
+      dialled.push({ address, port });
+      return net.connect(echoPort, "127.0.0.1");
+    },
     request: (_addr, host, r) => http.request({ host: "127.0.0.1", port: webPort, method: r.method, path: r.path, headers: { ...r.headers, host }, agent: false }),
+    httpRequest: (address, port, r) => {
+      dialled.push({ address, port });
+      return http.request({ host: "127.0.0.1", port: address === ROUTER.address ? routerPort : privPort, method: r.method, path: r.path, headers: r.headers, agent: false });
+    },
   };
   const logs: ProxyLog[] = [];
-  const proxy = new EgressProxy({ credential: { kind: o.kind ?? "api_key", value: REAL_KEY }, dummyKey: DUMMY, blockedSubnets: ["172.18.0.0/16"], maxPageBytes: 64, log: (l) => logs.push(l), deps });
+  const proxy = new EgressProxy({ credential: { kind: o.kind ?? "api_key", value: REAL_KEY }, dummyKey: DUMMY, blockedSubnets: ["172.18.0.0/16"], maxPageBytes: 64, log: (l) => logs.push(l), deps, router: ROUTER, maxApiBody: o.maxApiBody });
   const port = await listen(proxy.server);
-  closers.push(() => proxy.server.close(), () => echo.close(), () => web.close());
+  closers.push(() => proxy.server.close(), () => echo.close(), () => web.close(), () => routerServer.close(), () => privServer.close());
   proxy.grant(CRED, { session: "s1", role: "web-reader", allow: ["*"] });
   proxy.grant(OTHER, { session: "s2", role: "software-developer", allow: ["registry.npmjs.org"] });
-  return { proxy, port, logs, upstream };
+  return { proxy, port, logs, upstream, router, priv, dialled };
 }
 
 /** Sends a CONNECT and returns the status line, and the socket if the tunnel opened. */
@@ -289,6 +333,282 @@ describe("credential gateway (SR-9, AC-16)", () => {
     expect(last.reason).not.toContain("<");
     expect(h.upstream.paths).toHaveLength(3);
     expect(ALLOWED_BETAS.has("oauth-2025-04-20")).toBe(true);
+  });
+});
+
+const AGENT = "a".repeat(43);
+const ROUTER_CRED = "r".repeat(43);
+const PUBLIC_EP: PinnedEndpoint = { name: "cloud", class: "public", scheme: "https", host: "api.cloud.test", address: "93.184.216.40", port: 443, basePath: "/v1" };
+const PRIVATE_EP: PinnedEndpoint = { name: "local", class: "private", scheme: "http", host: "llm.local", address: "192.168.1.50", port: 8080, basePath: "" };
+
+/** The harness with both endpoints pinned, one agent grant per endpoint and the router's own grant. DNS says the public name is private, to show the pin wins. */
+async function endpointHarness(o: { maxApiBody?: number } = {}): Promise<Harness> {
+  const h = await harness({ ...o, dns: { "api.cloud.test": ["10.0.0.5"], "llm.local": ["192.168.1.50"], "api.anthropic.com": ["160.79.104.10"] } });
+  h.proxy.setEndpoints([PUBLIC_EP, PRIVATE_EP]);
+  h.proxy.grant(AGENT, { session: "s3", role: "software-developer", allow: ["registry.npmjs.org"], upstream: "local", kind: "agent" });
+  h.proxy.grant(ROUTER_CRED, { session: "router", role: "router", allow: [], kind: "router" });
+  return h;
+}
+
+interface Reply {
+  status: number;
+  body: string;
+  /** True when the proxy cut the connection before the reply ended. */
+  cut: boolean;
+}
+
+/** A request to the proxy in forward-proxy form, the way LiteLLM sends one. A cut connection is reported, not thrown. */
+function forward(port: number, cred: string, method: string, url: string, body = ""): Promise<Reply> {
+  return new Promise((resolve) => {
+    const auth = `Basic ${Buffer.from(`factory:${cred}`).toString("base64")}`;
+    const req = http.request({ host: "127.0.0.1", port, method, path: url, headers: { host: new URL(url).host, "proxy-authorization": auth, "x-custom": "kept", connection: "keep-alive" } }, (res) => {
+      let b = "";
+      let done = false;
+      const finish = (cut: boolean) => {
+        if (!done) {
+          done = true;
+          resolve({ status: res.statusCode ?? 0, body: b, cut });
+        }
+      };
+      res.on("data", (d) => (b += d));
+      res.on("end", () => finish(false));
+      res.on("aborted", () => finish(true));
+      res.on("error", () => finish(true));
+      res.on("close", () => finish(!res.complete));
+    });
+    req.on("error", () => resolve({ status: 0, body: "", cut: true }));
+    req.end(body);
+  });
+}
+
+const MESSAGES = { model: "claude-sonnet-4-5", max_tokens: 10, messages: [{ role: "user", content: "hi" }] };
+
+describe("endpoint gateway (F-013 FR-5, SR-13, SR-17, AC-4)", () => {
+  it("AC-4: sends to the router with the master key, the granted model, and never the Claude credential", async () => {
+    const h = await endpointHarness();
+    const body = JSON.stringify({ ...MESSAGES, api_base: "http://evil.test", api_key: "sk-evil", litellm_metadata: { x: 1 }, vertex_credentials: "{}", metadata: { user_id: "u1", api_base: "http://evil.test" } });
+    const r = await post(h.port, `/gw/${AGENT}/v1/messages?beta=true`, { "x-api-key": DUMMY, "anthropic-version": "2023-06-01", "anthropic-beta": "claude-code-20250219,evil-beta" }, body);
+    expect(r).toEqual({ status: 200, body: '{"ok":true}' });
+    expect(h.upstream.paths).toHaveLength(0);
+    expect(h.dialled).toEqual([{ address: ROUTER.address, port: ROUTER.port }]);
+    expect(h.router.paths).toEqual(["/v1/messages?beta=true"]);
+    const sent = h.router.headers[0]!;
+    expect(sent.authorization).toBe(`Bearer ${ROUTER.masterKey}`);
+    expect(sent["x-api-key"]).toBeUndefined();
+    expect(sent["anthropic-version"]).toBe("2023-06-01");
+    expect(sent["anthropic-beta"]).toBe("claude-code-20250219");
+    expect(JSON.stringify([h.router.headers, h.router.bodies])).not.toContain(REAL_KEY);
+    expect(JSON.stringify([h.router.headers, h.router.bodies])).not.toContain(DUMMY);
+    expect(JSON.parse(h.router.bodies[0]!)).toEqual({ model: "local", max_tokens: 10, messages: MESSAGES.messages, metadata: { user_id: "u1" } });
+    const dropped = h.logs.find((l) => l.reason?.startsWith("dropped fields"))!;
+    expect(dropped.reason).toBe("dropped fields: api_base, api_key, litellm_metadata, vertex_credentials, metadata.api_base");
+    expect(JSON.stringify(h.logs)).not.toContain("sk-evil");
+    expect(JSON.stringify(h.logs)).not.toContain(ROUTER.masterKey);
+  });
+
+  it("keeps the body checks, the path rules and the agent's own-credential rule", async () => {
+    const h = await endpointHarness();
+    const tool = JSON.stringify({ ...MESSAGES, tools: [{ type: "web_search_20250305", name: "web_search" }] });
+    expect((await post(h.port, `/gw/${AGENT}/v1/messages`, { "x-api-key": DUMMY }, tool)).status).toBe(403);
+    expect((await post(h.port, `/gw/${AGENT}/v1/messages`, { "x-api-key": "sk-ant-api03-theirs" }, JSON.stringify(MESSAGES))).status).toBe(403);
+    expect((await post(h.port, `/gw/${AGENT}/v1/files`, { "x-api-key": DUMMY }, JSON.stringify(MESSAGES))).status).toBe(403);
+    expect((await post(h.port, `/gw/${AGENT}/v1/messages/count_tokens`, { "x-api-key": DUMMY }, JSON.stringify(MESSAGES))).status).toBe(200);
+    expect(h.router.paths).toEqual(["/v1/messages/count_tokens"]);
+  });
+
+  it("refuses a grant whose endpoint isn't pinned, and a router grant at the gateway", async () => {
+    const h = await endpointHarness();
+    const GHOST = "g".repeat(43);
+    h.proxy.grant(GHOST, { session: "s4", role: "x", allow: [], upstream: "ghost" });
+    expect((await post(h.port, `/gw/${GHOST}/v1/messages`, { "x-api-key": DUMMY }, JSON.stringify(MESSAGES))).status).toBe(502);
+    expect((await post(h.port, `/gw/${ROUTER_CRED}/v1/messages`, { "x-api-key": DUMMY }, JSON.stringify(MESSAGES))).status).toBe(403);
+    expect(() => h.proxy.grant("q".repeat(43), { session: "s", role: "r", allow: [], kind: "router", upstream: "local" })).toThrow();
+    expect(h.router.paths).toHaveLength(0);
+  });
+
+  it("SR-13: a redirect from the router is refused, not followed", async () => {
+    const h = await endpointHarness();
+    const marked = (m: string) => JSON.stringify({ ...MESSAGES, messages: [{ role: "user", content: m }] });
+    const r = await post(h.port, `/gw/${AGENT}/v1/messages`, { "x-api-key": DUMMY }, marked("ROUTER-REDIRECT"));
+    expect(r.status).toBe(502);
+    expect(r.body).not.toContain("elsewhere.test");
+    expect(h.router.paths).toHaveLength(1);
+  });
+
+  it("cuts an oversize reply from the router, streamed or declared", async () => {
+    const h = await endpointHarness({ maxApiBody: 1000 });
+    const marked = (m: string) => JSON.stringify({ ...MESSAGES, messages: [{ role: "user", content: m }] });
+    const ok = await post(h.port, `/gw/${AGENT}/v1/messages`, { "x-api-key": DUMMY }, marked("plain"));
+    expect(ok.status).toBe(200);
+    const declared = await post(h.port, `/gw/${AGENT}/v1/messages`, { "x-api-key": DUMMY }, marked("ROUTER-DECLARED-BIG"));
+    expect(declared.status).toBe(502);
+    const streamed = await new Promise<{ got: number; cut: boolean }>((resolve) => {
+      const req = http.request({ host: "127.0.0.1", port: h.port, method: "POST", path: `/gw/${AGENT}/v1/messages`, headers: { "x-api-key": DUMMY, "content-type": "application/json" } }, (res) => {
+        let got = 0;
+        res.on("data", (d: Buffer) => (got += d.length));
+        res.on("close", () => resolve({ got, cut: !res.complete }));
+        res.on("error", () => undefined);
+      });
+      req.on("error", () => resolve({ got: 0, cut: true }));
+      req.end(marked("ROUTER-CHUNKED-BIG"));
+    });
+    expect(streamed.cut).toBe(true);
+    expect(streamed.got).toBeLessThanOrEqual(1000);
+  });
+
+  it("SR-4, AC-5: an agent can't CONNECT to a private endpoint, nor forward plain HTTP to one", async () => {
+    const h = await endpointHarness();
+    for (const cred of [AGENT, CRED]) {
+      expect((await connect(h.port, "llm.local:8080", cred)).status).toBe(403);
+      expect((await connect(h.port, "llm.local:443", cred)).status).toBe(403);
+    }
+    expect((await forward(h.port, AGENT, "GET", "http://llm.local:8080/v1/models")).status).toBe(403);
+    expect((await forward(h.port, CRED, "POST", "http://llm.local:8080/v1/messages")).status).toBe(403);
+    expect(h.priv.paths).toHaveLength(0);
+    expect(h.dialled).toHaveLength(0);
+  });
+});
+
+describe("router egress (F-013 FR-5)", () => {
+  it("CONNECT to a public endpoint dials the pinned address and ignores DNS", async () => {
+    const h = await endpointHarness();
+    const { status, sock } = await connect(h.port, "API.Cloud.test:443", ROUTER_CRED);
+    expect(status).toBe(200);
+    sock.destroy();
+    expect(h.dialled).toEqual([{ address: "93.184.216.40", port: 443 }]);
+    expect(h.logs).toContainEqual({ t: "log", kind: "connect", session: "router", role: "router", host: "api.cloud.test", port: 443 });
+  });
+
+  it("CONNECT to anything else is refused: other hosts and ports, IP literals, the private endpoint, no credential", async () => {
+    const h = await endpointHarness();
+    for (const t of ["example.org:443", "api.cloud.test:8443", "api.cloud.test:80", "93.184.216.40:443", "llm.local:8080", "llm.local:443", "127.0.0.1:443"]) {
+      expect((await connect(h.port, t, ROUTER_CRED)).status, t).toBe(403);
+    }
+    expect((await connect(h.port, "api.cloud.test:443")).status).toBe(407);
+    expect(h.dialled).toHaveLength(0);
+  });
+
+  it("forwards plain HTTP to a private endpoint at its pinned address with the Host header kept", async () => {
+    const h = await endpointHarness();
+    const r = await forward(h.port, ROUTER_CRED, "POST", "http://llm.local:8080/v1/chat/completions?x=1", '{"a":1}');
+    expect(r).toEqual({ status: 200, body: '{"ok":true}', cut: false });
+    expect(h.dialled).toEqual([{ address: "192.168.1.50", port: 8080 }]);
+    expect(h.priv.paths).toEqual(["/v1/chat/completions?x=1"]);
+    expect(h.priv.bodies).toEqual(['{"a":1}']);
+    expect(h.priv.headers[0]!.host).toBe("llm.local:8080");
+    expect(h.priv.headers[0]!["x-custom"]).toBe("kept");
+    expect(h.priv.headers[0]!["proxy-authorization"]).toBeUndefined();
+    expect((await forward(h.port, ROUTER_CRED, "GET", "http://LLM.local.:8080/v1/models")).status).toBe(200);
+  });
+
+  it("refuses plain HTTP to an unknown host or port, the public endpoint, other methods, https and userinfo", async () => {
+    const h = await endpointHarness();
+    for (const [m, u] of [["GET", "http://llm.local:9999/"], ["GET", "http://llm.local/"], ["GET", "http://other.local:8080/"], ["GET", "http://192.168.1.50:8080/"],
+      ["GET", "http://api.cloud.test:443/"], ["POST", "http://api.cloud.test/"], ["GET", "http://127.0.0.1:4000/"], ["GET", "http://u:p@llm.invalid:8080/"]] as const) {
+      expect((await forward(h.port, ROUTER_CRED, m, u)).status, u).toBe(403);
+    }
+    expect((await forward(h.port, ROUTER_CRED, "DELETE", "http://llm.local:8080/")).status).toBe(405);
+    expect((await forward(h.port, "z".repeat(43), "GET", "http://llm.local:8080/")).status).toBe(407);
+    expect(h.dialled).toHaveLength(0);
+    expect(h.logs.filter((l) => l.kind === "refused").length).toBeGreaterThanOrEqual(10);
+  });
+
+  it("SR-13: turns a redirect from a private endpoint into 502", async () => {
+    const h = await endpointHarness();
+    const r = await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/redirect");
+    expect(r.status).toBe(502);
+    expect(r.body).not.toContain("elsewhere.test");
+  });
+
+  it("cuts a reply that grows past the cap, and refuses one that declares it", async () => {
+    const h = await endpointHarness({ maxApiBody: 1000 });
+    const streamed = await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/chunked-big");
+    expect(streamed.cut).toBe(true);
+    expect(streamed.body.length).toBeLessThanOrEqual(1000);
+    const declared = await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/declared-big");
+    expect(declared.status).toBe(502);
+    expect(declared.body).not.toContain("xxxx");
+    const big = await forward(h.port, ROUTER_CRED, "POST", "http://llm.local:8080/v1", "y".repeat(2000));
+    expect(big.status).toBe(413);
+  });
+
+  it("revoking the router's grant stops it at once", async () => {
+    const h = await endpointHarness();
+    h.proxy.revoke(ROUTER_CRED);
+    expect((await connect(h.port, "api.cloud.test:443", ROUTER_CRED)).status).toBe(407);
+    expect((await forward(h.port, ROUTER_CRED, "GET", "http://llm.local:8080/")).status).toBe(407);
+  });
+});
+
+describe("endpoint pins and the router address", () => {
+  it("setEndpoints refuses a pin that contradicts its class or is malformed", async () => {
+    const h = await harness();
+    expect(() => h.proxy.setEndpoints([{ ...PUBLIC_EP, address: "192.168.1.5" }])).toThrow();
+    expect(() => h.proxy.setEndpoints([{ ...PRIVATE_EP, address: "93.184.216.34" }])).toThrow();
+    expect(() => h.proxy.setEndpoints([{ ...PRIVATE_EP, port: 0 }])).toThrow();
+    expect(() => h.proxy.setEndpoints([{ ...PRIVATE_EP, address: "llm.local" }])).toThrow();
+    expect(() => h.proxy.setEndpoints([PUBLIC_EP, PRIVATE_EP])).not.toThrow();
+  });
+
+  it("the router must sit on the internal subnet", () => {
+    expect(inSubnet("172.19.0.9", "172.19.0.0/16")).toBe(true);
+    expect(inSubnet("172.20.0.9", "172.19.0.0/16")).toBe(false);
+    expect(inSubnet("not-an-ip", "172.19.0.0/16")).toBe(false);
+  });
+});
+
+/** A small seeded generator, so a failing case can be replayed. */
+function rng(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+describe("SR-17 body filter (stochastic)", () => {
+  const JUNK = ["api_base", "base_url", "api_key", "api_version", "user_config", "custom_llm_provider", "aws_secret_access_key", "vertex_project", "azure_ad_token",
+    "litellm_params", "litellm_metadata", "fallbacks", "mock_response", "extra_headers", "x", "Model", "metadata2", "__proto__"];
+
+  it("forwards only allow-listed keys, only user_id in metadata, and always the granted model", async () => {
+    const h = await endpointHarness();
+    const rand = rng(20261113);
+    const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)]!;
+    const allowed = [...ENDPOINT_BODY_FIELDS];
+    for (let i = 0; i < 40; i++) {
+      const body: Record<string, unknown> = {};
+      for (const k of allowed) if (rand() < 0.6) body[k] = k === "metadata" ? {} : k === "tools" ? [] : `v${i}`;
+      for (let j = 0; j < 1 + Math.floor(rand() * 6); j++) Object.defineProperty(body, pick(JUNK), { value: `junk${i}-${j}`, enumerable: true, configurable: true, writable: true });
+      body.model = rand() < 0.8 ? `other-${i}` : undefined;
+      const meta: Record<string, unknown> = {};
+      for (let j = 0; j < Math.floor(rand() * 5); j++) Object.defineProperty(meta, rand() < 0.3 ? "user_id" : pick(JUNK), { value: `m${i}-${j}`, enumerable: true, configurable: true, writable: true });
+      body.metadata = meta;
+      const wire = JSON.stringify(body);
+      const before = h.router.bodies.length;
+      const r = await post(h.port, `/gw/${AGENT}/v1/messages`, { "x-api-key": DUMMY }, wire);
+      expect(r.status, wire).toBe(200);
+      const sent = JSON.parse(h.router.bodies[before]!) as Record<string, unknown>;
+      for (const k of Object.keys(sent)) expect(ENDPOINT_BODY_FIELDS.has(k), `${k} in ${wire}`).toBe(true);
+      expect(sent.model).toBe("local");
+      for (const k of Object.keys((sent.metadata ?? {}) as object)) expect(k).toBe("user_id");
+      for (const k of allowed) if (k !== "model" && k !== "metadata" && k in body && body[k] !== undefined) expect(sent[k]).toEqual(body[k]);
+    }
+  });
+
+  it("sanitizeEndpointBody never keeps a key outside the list, whatever the metadata is", () => {
+    const rand = rng(7);
+    for (let i = 0; i < 200; i++) {
+      const o: Record<string, unknown> = { model: "m" };
+      for (let j = 0; j < 5; j++) o[`${rand() < 0.5 ? "litellm_" : "k"}${Math.floor(rand() * 9)}`] = j;
+      o.metadata = [null, 5, "s", [1], { user_id: "u", evil: 1 }][Math.floor(rand() * 5)];
+      const { body } = sanitizeEndpointBody(Buffer.from(JSON.stringify(o)), "ep");
+      const sent = JSON.parse(body.toString("utf8")) as Record<string, unknown>;
+      expect(Object.keys(sent).every((k) => ENDPOINT_BODY_FIELDS.has(k))).toBe(true);
+      expect(sent.model).toBe("ep");
+      if (typeof sent.metadata === "object") expect(Object.keys(sent.metadata as object).every((k) => k === "user_id")).toBe(true);
+    }
   });
 });
 

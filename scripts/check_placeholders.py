@@ -7,14 +7,30 @@ own values. Run from the repo root; it reads tracked files only.
 2. In templates and test fixtures, owner keys hold a `<...>` placeholder, a
    value built by code, or one of the example values listed here.
 3. Nowhere is there an OAuth client id or an email address that could be real.
+4. The model endpoints file is never tracked, and no file outside the allow
+   list holds a private address or a `.local` host (H-0137, F-013 AC-1).
 """
 import re
 import subprocess
 import sys
 
 PATHS_FILE = "factory-projects.local.yaml"
+ENDPOINTS_FILE = "factory-endpoints.local.yaml"
+UNTRACKED_FILES = {PATHS_FILE, ENDPOINTS_FILE}
 # This check's own tests hold made-up bad values on purpose.
-SKIP = {"scripts/tests/test_check_placeholders.py"}
+SKIP = {"scripts/tests/test_check_placeholders.py", "scripts/tests/test_check_endpoint_addresses.py"}
+
+# H-0137 (F-013 AC-1): no tracked file carries an owner's endpoint address.
+# Paths here document address ranges or use made-up addresses as test
+# fixtures; a trailing "/" allows everything under that directory. Each entry
+# was checked against the tree when it was added.
+ADDRESS_ALLOWED = (
+    "engine/src/proxy/",  # blocked-range CIDR tables and subnet doc examples (docker bridge addresses)
+    "engine/test/",  # fixtures that prove the proxy refuses private ranges
+    "docs/features/F-007-test-plan.md",  # AC-15 lists the refused addresses
+    "docs/features/F-007-test-report.md",  # reports the same AC-15 run
+    "docs/features/F-007-security-gate1.md",  # finding 3 names a private address the web reader must refuse
+)
 
 # Literal example values the tests use. A new test value goes here, so a
 # reviewer sees it was made up rather than pasted from a real account.
@@ -29,6 +45,38 @@ CONSTANT = re.compile(r"\b(?:OWNER_ID|CLIENT_ID)\s*=\s*(\"[^\"]*\"|'[^']*'|[^;\s
 CLIENT_ID_SHAPE = re.compile(r"\bIv1\.[0-9a-f]{16}\b|\bOv23li[A-Za-z0-9]{14}\b")
 EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})\b")
 EMAIL_DOMAINS_OK = re.compile(r"^(?:.*\.)?(?:example\.(?:com|org|net)|[A-Za-z0-9.-]*\.(?:invalid|example)|github\.com)$", re.I)
+
+
+_OCTET = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+# RFC 1918: 10/8, 172.16/12, 192.168/16. Not part of a longer dotted number.
+PRIVATE_IPV4 = re.compile(
+    r"(?<![\w.])(?:10\.%s\.%s\.%s|172\.(?:1[6-9]|2\d|3[01])\.%s\.%s|192\.168\.%s\.%s)(?![\w]|\.\d)"
+    % ((_OCTET,) * 7)
+)
+# The ULA block is the prefixes fc and fd; the colon requirement keeps hex hashes out.
+ULA_IPV6 = re.compile(r"(?<![0-9A-Fa-f:.])f[cd][0-9a-f]{2}(?::[0-9a-f]{0,4}){1,7}(?![0-9a-f])", re.I)
+# A name ending in .local used as a host: after "://" or "@", or followed by a
+# port or a path. Bare dotted identifiers (`providers.local: true`) and file
+# names (`.local.yaml`, `.local.md`) are not hosts.
+_LOCAL_NAME = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9-]+)*\.local"
+LOCAL_HOST = re.compile(
+    r"(?:(?:://|@)%s(?![\w-]|\.\w))|(?:(?<![\w.-])%s(?::\d+|/))" % (_LOCAL_NAME, _LOCAL_NAME), re.I
+)
+
+
+def address_allowed(path):
+    return any(path.startswith(a) if a.endswith("/") else path == a for a in ADDRESS_ALLOWED)
+
+
+def check_addresses(path, text):
+    """Report lines of a tracked file that hold an owner endpoint address (H-0137)."""
+    if address_allowed(path):
+        return []
+    errors = []
+    for n, line in enumerate(text.splitlines(), 1):
+        if PRIVATE_IPV4.search(line) or ULA_IPV6.search(line) or LOCAL_HOST.search(line):
+            errors.append(f"{path}:{n}: private address or .local host; endpoint addresses belong in {ENDPOINTS_FILE} (F-013 AC-1)")
+    return errors
 
 
 def is_fixture(path):
@@ -93,8 +141,12 @@ def tracked_files():
 def main():
     errors = []
     for path in tracked_files():
-        if path.split("/")[-1] == PATHS_FILE:
+        name = path.split("/")[-1]
+        if name == PATHS_FILE:
             errors.append(f"{path}: the project paths file must never be tracked (SR-13)")
+            continue
+        if name == ENDPOINTS_FILE:
+            errors.append(f"{path}: the model endpoints file must never be tracked (F-013 AC-1)")
             continue
         if path in SKIP:
             continue
@@ -104,6 +156,7 @@ def main():
         except (UnicodeDecodeError, FileNotFoundError, IsADirectoryError):
             continue
         errors.extend(check_text(path, text))
+        errors.extend(check_addresses(path, text))
     for e in errors:
         print(e)
     return 1 if errors else 0
