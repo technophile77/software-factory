@@ -437,7 +437,8 @@ function windowsApi(): WindowsApi {
       if (invalid(p)) return null;
       try {
         const seq = [0n];
-        if (NtQueryInformationProcess(p, PROCESS_SEQUENCE_NUMBER, seq, 8, [0]) !== 0) return null;
+        const len = [0];
+        if (NtQueryInformationProcess(p, PROCESS_SEQUENCE_NUMBER, seq, 8, len) !== 0 || len[0] !== 8) return null;
         const n = Number(seq[0]);
         return Number.isSafeInteger(n) && n > 0 ? n : null;
       } catch {

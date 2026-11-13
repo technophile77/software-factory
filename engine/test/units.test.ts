@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as path from "node:path";
@@ -150,6 +150,32 @@ describe("secrets (SR-20, OQ-7)", () => {
       expect(mine).toBeGreaterThan(0);
       expect(parent).toBeLessThan(mine!);
       expect(win.startOrder!(2 ** 31 - 2)).toBeNull();
+    }
+  });
+
+  it.runIf(process.platform === "win32")("Windows ranks a child and a grandchild strictly after their parents (Gate 2 L10)", async () => {
+    const win = realOsApi().windows();
+    const script = "const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},20000)']);console.log(c.pid);setTimeout(()=>c.kill(),20000)";
+    const child = spawn(process.execPath, ["-e", script], { stdio: ["ignore", "pipe", "ignore"] });
+    let grandchild = 0;
+    try {
+      grandchild = await new Promise<number>((resolve, reject) => {
+        child.stdout!.once("data", (d: Buffer) => resolve(Number(d.toString().trim())));
+        child.once("error", reject);
+      });
+      const ranks = [process.pid, child.pid!, grandchild].map((p) => win.startOrder!(p));
+      for (const r of ranks) expect(Number.isSafeInteger(r)).toBe(true);
+      expect(ranks[0]!).toBeLessThan(ranks[1]!);
+      expect(ranks[1]!).toBeLessThan(ranks[2]!);
+    } finally {
+      if (grandchild) {
+        try {
+          process.kill(grandchild);
+        } catch {
+          // already gone
+        }
+      }
+      child.kill();
     }
   });
 

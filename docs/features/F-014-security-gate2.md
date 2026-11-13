@@ -139,3 +139,29 @@ Asked for by validation finding M5. Reviewed `git diff 70af2af 3a09929 -- engine
 - **Tests (S7.1).** The new unit test covers a reused pid held by a child and by a grandchild, unknown times, a listed pid that has gone, and a lookup that throws. On Windows it checks the real lookup against this process and its parent. Not tested: the `exit` removal in `runFixed` and the reader, and L8's clock step (Low, non-blocking).
 
 **Verdict for this change: PASS.** No Critical, High or Medium findings, and 2 Low (L8, L9), neither blocking at Rapid prototype. The change doesn't let an engine-started process do anything it couldn't do at `70af2af`: every new admission is a peer whose recorded parent has exited, or L8's clock step, which needs a privilege agents don't hold. Fail-closed behavior on lookup failure (SR-15) holds. L9 needs an owner decision to correct F-007's recorded residual risk.
+
+## Re-review of the L8 fix (HEAD `80727e2`)
+
+Reviewed `git diff 3a09929 80727e2 -- engine/`. The walk now ranks processes by `WindowsApi.startOrder`, the kernel's per-boot process sequence number (`NtQueryInformationProcess`, info class 92, `ProcessSequenceNumber`, opened with `PROCESS_QUERY_LIMITED_INFORMATION`). `ntdll.dll` joins the fixed FFI list with that one function, and `GetProcessTimes` is removed. Any failure gives null. `test/units.test.ts` passed 38, skipped 1 (Linux). Windows was not run here. CI on `80727e2` was still running when this was written.
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| L8 | **Closed** (reasoned; confirmed on Windows only by CI) | The sequence number comes from a counter the kernel increases for each process it creates, so the wall clock plays no part and setting it changes nothing. A parent exists before its child, including a parent named with `PROC_THREAD_ATTRIBUTE_PARENT_PROCESS`, so it always has the lower number. Both pids in a comparison belong to the current boot, so a counter reset at reboot can't reorder them. "Parent created later" again means only that the recorded parent pid now names a different process. |
+
+**New findings**
+
+| # | Criterion | Severity | Blocks? | Location (file:line at `80727e2`) | Finding | Suggested fix |
+|---|---|---|---|---|---|---|
+| L10 | S5.1, S4.5 | Low | No | `engine/src/os/ffi.ts:216-219` (`PROCESS_SEQUENCE_NUMBER = 92`), `:434-448` (`startOrder`) | **The info class is undocumented.** Its number comes from System Informer's phnt headers, not the Windows SDK, so a future Windows build could change or drop it. If the call is refused, the lookup gives null and the walk falls back to plain ancestry, which fails closed. The only unsafe case is a build where class 92 returns a different 8-byte value without an error. A value that doesn't follow creation order could then end the walk at a live engine parent and admit its child. The Windows test checks one pair (this process ranks above its parent), so it catches a missing or refused class, or a value that isn't positive. It wouldn't necessarily catch a different counter that also happens to increase. Likelihood is low, and nothing an agent does can cause it. | Make the Windows test stronger: start a child and a grandchild of the test and assert that the ranks strictly increase along the chain, and that two processes never share a rank. Optionally, also require the returned length (`ret`) to be 8. Record the class number's source next to the FFI list, as already done in the comment. |
+
+**Checked and fine**
+
+- **Access.** The rank is read with `PROCESS_QUERY_LIMITED_INFORMATION`, the same access as before and the least that can work. If this class needed more, the call would return an error status and the lookup would give null, which fails closed. The Windows-only test reads this process and its parent by pid with exactly this access, so CI shows whether it is enough for the owner's own processes.
+- **Width, precision and wrap.** The kernel's value is 64-bit (`ULONGLONG`), declared as a `uint64` out parameter with length 8. Anything that isn't a positive safe integer gives null. One boot won't create anywhere near 2⁵³ processes, so precision isn't lost, and the counter can't wrap within a boot.
+- **Failure handling (SR-15).** Any status other than 0 gives null, as do a thrown FFI error (the new `catch` in `startOrder`, plus `osStartOrder`'s), a process that can't be opened, and pid ≤ 0. The handle is closed in `finally`. As before, an unknown rank never admits a peer the plain walk would refuse.
+- **FFI list.** `lib()` refuses any library or function that isn't listed. `ntdll.dll` allows only `NtQueryInformationProcess`. Removing the now-unused `GetProcessTimes` shrinks the list. Linux and macOS are unchanged (no rank lookup).
+- **Test.** The Windows check now requires the parent to rank strictly below this process (`toBeLessThan`), where the start-time version allowed a tie.
+
+**L9.** It still stands, with one change of meaning. Part (b), "once the parent's pid is reused by a younger process", now means "created later in this boot". With L8 closed, that only happens when the real parent has exited. L9's suggested wording for F-007's residual risk still fits and still needs the owner's Security decision. Severity stays Low, non-blocking.
+
+**Verdict for the L8 fix: PASS.** L8 is closed. One new Low (L10) doesn't block at Rapid prototype. L9 is unchanged and open. Every new admission now needs the peer's recorded parent to have exited, which `70af2af` already admitted, so the change gives an engine-started process nothing new.
