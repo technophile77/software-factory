@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
-- **Spec version:** 1
+- **Spec version:** 2
 
 This is engine increment 4, "Build to PR" (F-007 section 13). It is a draft
 written before the owner interview, from the baseline spec, the ADRs and the
@@ -153,7 +153,7 @@ Asked one at a time on decision cards. None is assumed.
 
 | Id | Question | Category | Status |
 |---|---|---|---|
-| OQ-1 | One feature for all of stages 5 to 9, built in milestones, or split into two features (build and test first, then gates and PR)? | Product | Open |
+| OQ-1 | One feature for all of stages 5 to 9, built in milestones, or split into two features (build and test first, then gates and PR)? | Product | Decided: one feature, built and merged in milestones (owner, decision card, 2026-11-13) |
 | OQ-2 | Where feature work lives once it leaves the config repo: specs, transcripts and agent reports stay in the config repo and only code moves to the code repo; or everything moves to the code repo per ADR 0005/0009 as written; or code moves and a copy of the approved spec goes into the PR. | Architecture | Open |
 | OQ-3 | Can one feature change more than one code repo (one PR per repo), or is it one repo per feature for now? | Product | Open |
 | OQ-4 | Who runs stages 6 and 9: engine code only, engine code plus an orchestrator agent session just to classify failures, or an orchestrator agent session for the whole stage. | Architecture | Open |
@@ -165,3 +165,4 @@ Asked one at a time on decision cards. None is assumed.
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-13 | Draft from the baseline spec, ADRs and increments 1 to 3, before the owner interview | — |
+| 2 | 2026-11-13 | OQ-1: one feature for stages 5 to 9 and the move to code repos, built and merged in milestones (code-repo move with developer and test engineer; stage 6 review; Gate 2 and judge; PR and CI) | Owner, 2026-11-13 (decision card) |
