@@ -298,6 +298,11 @@ describe("Windows pipe listener through a fake WindowsApi", () => {
       readPipe: () => Buffer.concat(inbox.splice(0)),
       writePipe: (_h, d) => void written.push(d),
       closePipe: () => void closed++,
+      openPipeClient: () => {
+        throw new Error("the listener never opens a client end");
+      },
+      pipeServerPid: () => 0,
+      closeHandle: () => undefined,
     };
     return { api, connects, inbox, written, closed: () => closed };
   }

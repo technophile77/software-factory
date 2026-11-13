@@ -6,7 +6,9 @@ import * as readline from "node:readline";
 import { EgressProxy, GrantDeadline, PinnedEndpoint, ProxyLog, Refused, RouterTarget } from "./server";
 import { blockedAddress, parseCidr, toBits } from "./rules";
 
-export const PROXY_PORT = 3128;
+import { PROXY_PORT } from "./port";
+
+export { PROXY_PORT };
 
 export interface ProxyStart {
   t: "start";

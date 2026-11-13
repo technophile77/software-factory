@@ -1,7 +1,7 @@
 import YAML from "yaml";
 import type { Endpoint } from "../config/endpoints";
 import { DockerError } from "../docker/cli";
-import { PROXY_PORT } from "../proxy/main";
+import { PROXY_PORT } from "../proxy/port";
 
 /** Where the router listens inside its container. */
 export const ROUTER_PORT = 4000;

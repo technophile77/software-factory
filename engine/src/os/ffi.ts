@@ -62,6 +62,14 @@ export interface WindowsApi {
   readPipe(h: Handle, n: number): Buffer;
   writePipe(h: Handle, data: Buffer): void;
   closePipe(h: Handle): void;
+  /**
+   * The client end, for the MCP mode (F-005 SR-7): CreateFileW on a local
+   * pipe at identification level, so the server can't act as the owner.
+   */
+  openPipeClient(name: string): Handle;
+  pipeServerPid(h: Handle): number;
+  /** Closes a client handle (a server instance closes with closePipe). */
+  closeHandle(h: Handle): void;
 }
 
 /** Raw OS credential store calls. Names are built by secrets.ts, never here. */
@@ -91,6 +99,8 @@ export const FUNCTIONS = {
       "CreateNamedPipeW", "ConnectNamedPipe", "DisconnectNamedPipe", "GetNamedPipeClientProcessId", "PeekNamedPipe",
       "SetNamedPipeHandleState", "ReadFile", "WriteFile", "CloseHandle", "OpenProcess", "GetCurrentProcess", "LocalFree",
       "CreateToolhelp32Snapshot", "Process32FirstW", "Process32NextW",
+      // The MCP mode's client end of the channel pipe (F-005 v10, SR-7).
+      "CreateFileW", "GetNamedPipeServerProcessId",
     ],
     "ntdll.dll": ["NtQueryInformationProcess"],
     "advapi32.dll": [
@@ -221,6 +231,12 @@ const TOKEN_QUERY = 0x8;
 const TOKEN_USER_CLASS = 1;
 const ERROR_PIPE_CONNECTED = 535;
 const TH32CS_SNAPPROCESS = 0x2;
+const GENERIC_READ = 0x80000000;
+const GENERIC_WRITE = 0x40000000;
+const OPEN_EXISTING = 3;
+// Identification level stops a squatting server from impersonating the owner with the owner's own handle.
+const SECURITY_SQOS_PRESENT = 0x00100000;
+const SECURITY_IDENTIFICATION = 0x00010000;
 
 function windowsApi(): WindowsApi {
   const k = lib("win32", "kernel32.dll");
@@ -251,6 +267,8 @@ function windowsApi(): WindowsApi {
   const nt = lib("win32", "ntdll.dll");
   const NtQueryInformationProcess = nt("int32 __stdcall NtQueryInformationProcess(factory_HANDLE p, int32 cls, _Out_ uint64 *info, uint32 len, _Out_ uint32 *ret)");
   const Process32NextW = k("int32 __stdcall Process32NextW(factory_HANDLE snap, _Inout_ factory_PROCESSENTRY32W *pe)");
+  const CreateFileW = k("factory_HANDLE __stdcall CreateFileW(str16 name, uint32 access, uint32 share, void *sa, uint32 disposition, uint32 flags, factory_HANDLE template)");
+  const GetNamedPipeServerProcessId = k("int32 __stdcall GetNamedPipeServerProcessId(factory_HANDLE h, _Out_ uint32 *pid)");
   const OpenProcessToken = a("int32 __stdcall OpenProcessToken(factory_HANDLE p, uint32 access, _Out_ factory_HANDLE *token)");
   const GetTokenInformation = a("int32 __stdcall GetTokenInformation(factory_HANDLE token, int32 cls, void *buf, uint32 len, _Out_ uint32 *ret)");
   const ConvertSidToStringSidW = a("int32 __stdcall ConvertSidToStringSidW(void *sid, _Out_ void **str)");
@@ -475,6 +493,24 @@ function windowsApi(): WindowsApi {
       } finally {
         CloseHandle(h);
       }
+    },
+    openPipeClient(name) {
+      return guard("CreateFileW", () => {
+        if (!/^\\\\\.\\pipe\\/.test(name)) throw new FfiError("not a local pipe name");
+        const h = CreateFileW(name, (GENERIC_READ | GENERIC_WRITE) >>> 0, 0, null, OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, null);
+        if (invalid(h)) throw new FfiError("CreateFileW");
+        return h as Handle;
+      });
+    },
+    pipeServerPid(h) {
+      return guard("GetNamedPipeServerProcessId", () => {
+        const pid = [0];
+        if (!GetNamedPipeServerProcessId(h, pid) || !pid[0]) throw new FfiError("GetNamedPipeServerProcessId");
+        return pid[0];
+      });
+    },
+    closeHandle(h) {
+      CloseHandle(h);
     },
   };
 }

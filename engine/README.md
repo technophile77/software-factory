@@ -61,7 +61,8 @@ FACTORY_DOCKER_TESTS=1 npx vitest run --project unit test/docker-real.test.ts
 ```
 
 The dependencies are pinned exactly in `package.json` and the committed
-lockfile. At runtime: koffi 3.3.6, yaml 2.9.1, the Agent SDK 0.3.311 and zod 4.6.7.
+lockfile. At runtime: koffi 3.3.6, yaml 2.9.1, the Agent SDK 0.3.311, zod 4.6.7 and the
+MCP TypeScript SDK 1.32.2 (its stdio server only).
 
 ## Command line
 
@@ -69,6 +70,7 @@ lockfile. At runtime: koffi 3.3.6, yaml 2.9.1, the Agent SDK 0.3.311 and zod 4.6
 factory-engine start   [--master <master repo clone>] [--home <engine folder>] [--gitleaks <path>]
 factory-engine confirm --project <config repo path> [--master <path>] [--home <path>]
 factory-engine secret set <name>        # reads the value from stdin
+factory-engine mcp                      # started by Claude Code, not by hand
 ```
 
 - `start` runs the engine until `engine.shutdown`, SIGINT or SIGTERM.
@@ -77,6 +79,10 @@ factory-engine secret set <name>        # reads the value from stdin
   Then the previously pinned owner approves a GitHub device sign-in.
 - `secret set` stores `model-credential` or `factory-token/<project>` in the
   OS credential store, under the service `software-factory-engine` (SR-20).
+- `mcp` serves the spec interview's tools to Claude Code over stdio (F-005,
+  ADR 0025). The plugin's `.mcp.json` starts it with the `engine_path`
+  setting; it forwards each call to the running engine over the control
+  channel and never starts the engine itself.
 
 The gitleaks binary's absolute path comes from `--gitleaks` or from
 `gitleaks:` in `<engine home>/engine.yaml`. The engine refuses to run any
