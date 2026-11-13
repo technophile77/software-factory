@@ -1,14 +1,14 @@
 # Feature: Configurable model endpoints
 
 - **Id:** F-013
-- **Status:** Draft (v11; OQ-7 open, Security Gate 1 delta done, changed items need re-approval)
+- **Status:** Draft (v12; OQ-1 to OQ-7 decided, Security Gate 1 delta done, changed items need re-approval)
 - **Requested by / date:** Alex, 2026-11-13 ("I want to also incorporate a
   local llm api"; "this model would be a good candidate for the security
   agent, judge, or any low end agent"; "I'd rather allow a number of
   endpoints that can be specified, and allow them to be configurable, with
   local as an option that indicates it has unlimited usage"; "endpoints
   should include standard options like the model to use and an api key")
-- **Spec version:** 11
+- **Spec version:** 12
 
 ## 1. Objective and business purpose
 The factory runs every agent on Claude today. The owner wants to add other
@@ -161,7 +161,7 @@ master repo.
 | SR-5 | Private endpoints only: no API key and plain HTTP are allowed; the private-address check and per-session pin (SR-3) are the controls. Accepted risk, stated to the owner: such a server takes requests from anyone on the LAN, prompts holding repo content cross the LAN unencrypted (CWE-319), and a `.local` name can be answered by any device on the LAN (mDNS is unauthenticated). | Analyst (S8.2; OWASP ASVS 5.0 V12; NIST SP 800-53 SC-8) | Risk accepted (owner, 2026-11-13, decision card); scope narrowed in v9 to private endpoints |
 | SR-6 | Endpoint responses are untrusted input like any model output (S4.5, S6.1). The web reader, which reads external content, doesn't use an endpoint unless calibration includes injection tasks and the owner approves (OWASP Top 10 for LLM Applications 2025, LLM01). | Analyst | Accepted (owner, 2026-11-13, decision card) |
 | SR-7 | The model an endpoint serves is recorded with each calibration result (name and size from `/v1/models`), so results tie to the weights tested (S4.1; OWASP LLM03). | Analyst (S4.1) | Accepted (owner, 2026-11-13, decision card) |
-| SR-8 | A project uses only the endpoints its manifest lists (`settings.endpoints: [<name>, ...]`, default empty); onboarding asks, and the run review shows which endpoints ran. Adding a non-local endpoint that is public to a project's list is a Security decision naming the endpoint, its operator and its data-retention terms (OQ-7). | Gate 1 #1 (S3.2, S9.4); v9 delta #5 | Accepted (owner, 2026-11-13) as a yes/no flag; changed in v9 to a list, needs re-approval |
+| SR-8 | A project uses only the endpoints its manifest lists (`settings.endpoints: [<name>, ...]`, default empty); onboarding asks, and the run review shows which endpoints ran. The list is the only per-project control: evaluating an endpoint's terms, data handling and security is the user's responsibility, done independently under their own organization's guidelines, and outside the factory's scope (OQ-7). | Gate 1 #1 (S3.2, S9.4); OQ-7 | Accepted (owner, 2026-11-13) as a yes/no flag; changed in v9 to a list, needs re-approval |
 | SR-9 | An endpoint rung is allowed only for a role whose role policy is read-only on the worktree (writing only its `.factory/` report) with no network beyond the gateway; any other role needs its own Security decision first. | Gate 1 #2 (S6.2, S8.1, S4.5) | Accepted (owner, 2026-11-13, decision card) |
 | SR-10 | Advisory output reaches the Claude gate reviewer only as engine-validated structured data: findings (criterion id, severity, location, description capped at 500 characters) and a verdict word; anything else is dropped. The Claude prompt marks it as unverified hints, and the gate result comes only from the Claude reviewer's own report. | Gate 1 #3 (S6.1, S9.3) | Accepted (owner, 2026-11-13, decision card) |
 | SR-11 | The engine records each endpoint model's name, parameter count, byte size and quant type (whatever the endpoint reports) at each check; any change counts as a new model, resets its calibration results and advisory match rate, and tells the owner. Residual: a swap keeping all of these the same is not detectable without a digest. | Gate 1 #4 (S4.1, S4.3) | Accepted (owner, 2026-11-13, decision card) |
@@ -208,7 +208,7 @@ Re-checked 2026-11-13 against spec v9.
 - [x] Acceptance criteria testable (AC-1 to AC-17)
 - [x] Constraints documented (first endpoint measured 2026-11-13)
 - [x] Assumptions explicit (A-1, A-2)
-- [ ] Blocking decisions resolved: OQ-7 open; SR-1, SR-3, SR-8 and SR-12 to SR-16 need approval; H-0135, H-0136, H-0138 need re-approval
+- [ ] Blocking decisions resolved: OQ-1 to OQ-7 decided; SR-1, SR-3, SR-8 and SR-12 to SR-16 need approval; H-0135, H-0136, H-0138 need re-approval
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -224,6 +224,7 @@ Re-checked 2026-11-13 against spec v9.
 | 9 | 2026-11-13 | Owner: any number of configurable endpoints, each with model and API key; `local` means unlimited usage. Rescoped from one local server: renamed, FR-2/4/13, AC-3/12/13, SR-12 to SR-15 and OQ-6/OQ-7 added; SR-1/3/5/8 rescoped; ADR 0019 generalized; Security Gate 1 delta; first endpoint's tool call and speed measured | Owner, 2026-11-13 (thread) for the rescope; changed items pending |
 | 10 | 2026-11-13 | Owner: endpoints get a billing mode: `local`, `per_token` or `subscription` (plan limits with a reserve). FR-2, FR-13, SR-14, SR-15, H-0135 updated; AC-14 added | Owner, 2026-11-13 (thread) for the change; items pending |
 | 11 | 2026-11-13 | OQ-6 decided (b): OpenAI chat-completions endpoints through a translator in the gateway; FR-14, FR-15 (fixture, stochastic round-trip and fuzz tests), AC-15 to AC-17, SR-16 added | Owner, 2026-11-13 (thread) |
+| 12 | 2026-11-13 | OQ-7 decided (b): the project's endpoint list is the only control; evaluating an endpoint's terms and security is the user's, outside the factory. SR-8 reworded | Owner, 2026-11-13 (thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -234,4 +235,4 @@ Re-checked 2026-11-13 against spec v9.
 | OQ-4 | Which roles to calibrate first. (a) Gate roles (advisory) and low-end roles. | Product | Decided (owner, 2026-11-13, decision card): (a) |
 | OQ-5 | Busy or down. (a) 10-minute slot wait, then the role's Claude rung. | Product | Decided (owner, 2026-11-13, decision card): (a); request deadlines per FR-12 |
 | OQ-6 | Which API formats endpoints may speak (now decided). Claude Code only speaks Anthropic Messages. (a) Anthropic Messages only in this feature; an OpenAI-only endpoint fails FR-6 with a clear message. `llama-server` and a growing number of servers and providers serve both. (b) Also OpenAI chat-completions, through a translator in the gateway that converts requests, tool calls and streaming both ways. **Recommended: (a)**: the translator would be new parsing code in the security-critical gateway, and tool-call translation is easy to get subtly wrong; it can be its own feature if a needed endpoint lacks the Anthropic format. | Architecture | Decided (owner, 2026-11-13, in the thread: "both should be supported"): (b); risk stated on the card and accepted; FR-14, FR-15, SR-16 added |
-| OQ-7 | Sending code to a public, third-party endpoint. (a) Allowed per project only after a Security decision naming the endpoint, its operator and its data-retention and training terms; private endpoints need only the manifest list. (b) The manifest list alone for every endpoint. **Recommended: (a)**: a third party receiving a project's code is a new external service under S9.1 and widens access under S8.5, which the standards make the owner's Security decision. | Security | Open |
+| OQ-7 | Sending code to a public, third-party endpoint. (a) Allowed per project only after a Security decision naming the endpoint, its operator and its data-retention and training terms; private endpoints need only the manifest list. (b) The manifest list alone for every endpoint. **Recommended: (a)**: a third party receiving a project's code is a new external service under S9.1 and widens access under S8.5, which the standards make the owner's Security decision. | Security | Decided (owner, 2026-11-13, in the thread): (b); "evaluating these things is outside the scope of the project. the user should evaluate terms and security of the endpoint/model independently and within their own organization's guidelines" |
