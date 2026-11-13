@@ -128,3 +128,48 @@ describe("SR-7: Windows pipe client", () => {
     ch.close();
   });
 });
+
+// The real Win32 calls (CreateFileW, GetNamedPipeServerProcessId) against the
+// engine's own owner-only pipe, on the windows-latest CI shards (owner,
+// 2026-11-13: the two calls are approved after a real Windows run).
+describe.runIf(process.platform === "win32")("SR-7: the real Windows pipe, client against the engine's listener", () => {
+  async function engine() {
+    const { listenPipe } = await import("../src/channel/windows");
+    const { serve } = await import("../src/channel/framing");
+    const { Children } = await import("../src/proc");
+    const { MemoryLogger } = await import("../src/log");
+    const { realOsApi } = await import("../src/os/ffi");
+    const real = realOsApi();
+    const listener = await listenPipe({
+      os: real.windows(), children: new Children(() => null), log: new MemoryLogger(),
+      onConnection: (c) => serve(c, async (method) => ({ echo: method }), () => {}),
+    });
+    return { real, listener };
+  }
+
+  test("a call round-trips when the pipe's server is this process, running as the owner", async () => {
+    const { real, listener } = await engine();
+    try {
+      const ch = new Channel(await connect(listener.path, process.pid, real, 5000));
+      expect(await ch.call("engine.status", undefined, 10)).toEqual({ echo: "engine.status" });
+      ch.close();
+    } finally {
+      await listener.close();
+    }
+  }, 30_000);
+
+  test("a server pid other than engine.json's is refused", async () => {
+    const { real, listener } = await engine();
+    try {
+      expect((await refusal(connect(listener.path, process.pid + 4, real, 5000))).code).toBe("peer_not_engine");
+    } finally {
+      await listener.close();
+    }
+  }, 30_000);
+
+  test("a pipe that doesn't exist reads as an unreachable engine", async () => {
+    const { realOsApi } = await import("../src/os/ffi");
+    const e = await refusal(connect("\\\\.\\pipe\\software-factory-missing-0000", process.pid, realOsApi(), 5000));
+    expect(e.code).toBe("engine_unreachable");
+  });
+});
