@@ -27,4 +27,4 @@ in order, using `template.md`.
 | [0016](0016-python-coverage-tool.md) | coverage.py measures coverage for the factory's Python code | Accepted |
 | [0017](0017-owner-account-prs-inbox-merge.md) | PRs with the owner's own account; the inbox click is the approval | Accepted |
 | [0018](0018-phone-actions-proven-by-github.md) | Owner actions from the phone are proven by the owner's GitHub account | Accepted |
-| [0019](0019-model-endpoints-through-gateway.md) | Configured model endpoints are upstreams of the credential gateway | Proposed |
+| [0019](0019-model-endpoints-through-gateway.md) | Configured model endpoints are upstreams of the credential gateway | Accepted |

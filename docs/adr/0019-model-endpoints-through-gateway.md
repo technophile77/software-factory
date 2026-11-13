@@ -1,9 +1,9 @@
 # 0019. Configured model endpoints are upstreams of the credential gateway
 
-- **Status:** Proposed (the one-server version was approved 2026-11-13; this generalized version needs re-approval)
+- **Status:** Accepted
 - **Date:** 2026-11-13
 - **Decided by:** owner (thread "Add local LLM as model provider", decision card)
-- **Decision item:** F-013 OQ-2, H-0138
+- **Decision item:** F-013 OQ-2, OQ-8, H-0138, H-0139
 
 ## Problem
 F-013 lets agent roles run on model APIs other than Claude: the owner's LAN

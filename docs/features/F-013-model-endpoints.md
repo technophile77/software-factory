@@ -1,14 +1,14 @@
 # Feature: Configurable model endpoints
 
 - **Id:** F-013
-- **Status:** Draft (v14; OQ-1 to OQ-8 decided, Security Gate 1 delta done, changed items need re-approval)
+- **Status:** In review (readiness gate passed 2026-11-13; awaiting owner sign-off)
 - **Requested by / date:** Alex, 2026-11-13 ("I want to also incorporate a
   local llm api"; "this model would be a good candidate for the security
   agent, judge, or any low end agent"; "I'd rather allow a number of
   endpoints that can be specified, and allow them to be configurable, with
   local as an option that indicates it has unlimited usage"; "endpoints
   should include standard options like the model to use and an api key")
-- **Spec version:** 14
+- **Spec version:** 16
 
 ## 1. Objective and business purpose
 The factory runs every agent on Claude today. The owner wants to add other
@@ -160,35 +160,35 @@ master repo.
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | LiteLLM's Anthropic-format endpoint (`/v1/messages`) works with Claude Code, including streaming and tool use, for both an Anthropic-format and an OpenAI-format endpoint behind it. Checked in a spike before build with the owner's `llama-server` (which speaks both); a failed spike sends the spec back. | OQ-2, OQ-8 | Approved for the server itself (owner, 2026-11-13); widened in v13 to LiteLLM, needs re-approval |
+| A-1 | LiteLLM's Anthropic-format endpoint (`/v1/messages`) works with Claude Code, including streaming and tool use, for both an Anthropic-format and an OpenAI-format endpoint behind it. Checked in a spike before build with the owner's `llama-server` (which speaks both); a failed spike sends the spec back. | OQ-2, OQ-8 | Approved (owner, 2026-11-13, decision card) in its v13 form |
 | A-2 | An endpoint model's results count as F-002 calibration evidence the same way a Claude model's do: same tasks, same pass bar (F-002 A-2). | OQ-1 | Approved (owner, 2026-11-13, decision card) |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | External services (S9.1): the endpoints in the owner's file, each read-and-generate only (`GET /v1/models`, `POST /v1/messages`, `POST /v1/messages/count_tokens`). No other path. | Analyst (S9.1, S2.2) | Accepted (owner, 2026-11-13); widened in v9 from one server to the listed endpoints, needs re-approval |
+| SR-1 | External services (S9.1): the endpoints in the owner's file, each read-and-generate only (`GET /v1/models`, `POST /v1/messages`, `POST /v1/messages/count_tokens`). No other path. | Analyst (S9.1, S2.2) | Accepted (owner, 2026-11-13); widened in v9 from one server to the listed endpoints; re-approved (owner, 2026-11-13, decision card) |
 | SR-2 | Endpoint addresses and keys never appear in Git, logs, agent environment or reports (S3.1, S3.3); logs name the endpoint, not the host. | Analyst (S3.1) | Accepted (owner, 2026-11-13, decision card) |
-| SR-3 | Each endpoint's address is resolved on the PC, classed private or public, and pinned per session (FR-4). A private endpoint never resolves to a public address and a public one never to a private address, so a misconfigured or hijacked name can't send project content somewhere unexpected (S9.4; CWE-918). | Analyst | Accepted (owner, 2026-11-13); rescoped in v9 to both classes, needs re-approval |
+| SR-3 | Each endpoint's address is resolved on the PC, classed private or public, and pinned per session (FR-4). A private endpoint never resolves to a public address and a public one never to a private address, so a misconfigured or hijacked name can't send project content somewhere unexpected (S9.4; CWE-918). | Analyst | Accepted (owner, 2026-11-13); rescoped in v9 to both classes; re-approved (owner, 2026-11-13, decision card) |
 | SR-4 | Agents still cannot reach private addresses or endpoints directly (F-007 SR-8 unchanged); only the gateway reaches an endpoint, and only for a session the engine granted it (S8.1). | Analyst (S8.1) | Accepted (owner, 2026-11-13, decision card) |
-| SR-5 | Private endpoints only: no API key and plain HTTP are allowed; the private-address check and per-session pin (SR-3) are the controls. Accepted risk, stated to the owner: such a server takes requests from anyone on the LAN, prompts holding repo content cross the LAN unencrypted (CWE-319), and a `.local` name can be answered by any device on the LAN (mDNS is unauthenticated). | Analyst (S8.2; OWASP ASVS 5.0 V12; NIST SP 800-53 SC-8) | Risk accepted (owner, 2026-11-13, decision card); scope narrowed in v9 to private endpoints |
+| SR-5 | Private endpoints only: no API key and plain HTTP are allowed; the private-address check and per-session pin (SR-3) are the controls. Accepted risk, stated to the owner: such a server takes requests from anyone on the LAN, prompts holding repo content cross the LAN unencrypted (CWE-319), and a `.local` name can be answered by any device on the LAN (mDNS is unauthenticated). | Analyst (S8.2; OWASP ASVS 5.0 V12; NIST SP 800-53 SC-8) | Risk accepted (owner, 2026-11-13, decision card); scope narrowed to private endpoints, approved (owner, 2026-11-13, decision card) |
 | SR-6 | Endpoint responses are untrusted input like any model output (S4.5, S6.1). The web reader, which reads external content, doesn't use an endpoint unless calibration includes injection tasks and the owner approves (OWASP Top 10 for LLM Applications 2025, LLM01). | Analyst | Accepted (owner, 2026-11-13, decision card) |
 | SR-7 | The model an endpoint serves is recorded with each calibration result (name and size from `/v1/models`), so results tie to the weights tested (S4.1; OWASP LLM03). | Analyst (S4.1) | Accepted (owner, 2026-11-13, decision card) |
-| SR-8 | A project uses only the endpoints its manifest lists (`settings.endpoints: [<name>, ...]`, default empty); onboarding asks, and the run review shows which endpoints ran. The list is the only per-project control: evaluating an endpoint's terms, data handling and security is the user's responsibility, done independently under their own organization's guidelines, and outside the factory's scope (OQ-7). | Gate 1 #1 (S3.2, S9.4); OQ-7 | Accepted (owner, 2026-11-13) as a yes/no flag; changed in v9 to a list, needs re-approval |
+| SR-8 | A project uses only the endpoints its manifest lists (`settings.endpoints: [<name>, ...]`, default empty); onboarding asks, and the run review shows which endpoints ran. The list is the only per-project control: evaluating an endpoint's terms, data handling and security is the user's responsibility, done independently under their own organization's guidelines, and outside the factory's scope (OQ-7). | Gate 1 #1 (S3.2, S9.4); OQ-7 | Accepted (owner, 2026-11-13) as a yes/no flag; changed in v9 to a list; re-approved (owner, 2026-11-13, decision card) |
 | SR-9 | An endpoint rung is allowed only for a role whose role policy is read-only on the worktree (writing only its `.factory/` report) with no network beyond the gateway; any other role needs its own Security decision first. | Gate 1 #2 (S6.2, S8.1, S4.5) | Accepted (owner, 2026-11-13, decision card) |
 | SR-10 | Advisory output reaches the Claude gate reviewer only as engine-validated structured data: findings (criterion id, severity, location, description capped at 500 characters) and a verdict word; anything else is dropped. The Claude prompt marks it as unverified hints, and the gate result comes only from the Claude reviewer's own report. | Gate 1 #3 (S6.1, S9.3) | Accepted (owner, 2026-11-13, decision card) |
 | SR-11 | The engine records each endpoint model's name, parameter count, byte size and quant type (whatever the endpoint reports) at each check; any change counts as a new model, resets its calibration results and advisory match rate, and tells the owner. Residual: a swap keeping all of these the same is not detectable without a digest. | Gate 1 #4 (S4.1, S4.3) | Accepted (owner, 2026-11-13, decision card) |
-| SR-16 | LiteLLM is a new external component (S4.1): before it is approved for use, a security review covers its source and maintainers, known CVEs, install and start-up scripts, the permissions it needs and what it pulls in, recorded with H-0139. It is pinned by image digest (S4.3), scanned for CVEs in CI and before each upgrade (S4.4), with S4.6 deadlines. **Its container holds the endpoint keys**, so it runs as a non-root user on a read-only file system, with no inbound access except from the gateway, no outbound access except through the egress proxy grant (FR-5), its admin UI, database and telemetry off, and a per-run master key. Its replies are untrusted: the gateway keeps its body size caps and FR-12 deadlines on them (S4.5, S5.1). | v13 delta #6 (S4.1, S4.3 to S4.6, S8.1, S8.4) | Proposed |
-| SR-12 | Public endpoints must use HTTPS with certificate and host-name checks (TLS 1.2 or later) and an API key from the credential store; an `http://` URL or a missing key makes the endpoint unavailable (OWASP ASVS 5.0 V12, secure communication; NIST SP 800-53 SC-8, SC-23). | v9 delta #1 | Proposed |
-| SR-13 | An endpoint's key is sent only to that endpoint, only in its auth header, and never on a redirect; the gateway follows no redirects from an endpoint (S8.2; CWE-522). | v9 delta #2 | Proposed |
-| SR-14 | Every endpoint that costs money is bounded: `per_token` spend counts against the project budget and its run-cost estimate (prices required), and `subscription` use stops at its plan limits less the reserve; so a mispriced, misconfigured or looping agent can't run up an unbounded bill or exhaust the owner's plan (ADR 0012; OWASP LLM10, unbounded consumption). | v9 delta #3 | Proposed |
-| SR-15 | Billing mode `local` (unlimited, uncounted) is allowed only for a private endpoint; a public endpoint must be `per_token` or `subscription`. | v9 delta #4 | Proposed |
+| SR-16 | LiteLLM is a new external component (S4.1): before it is approved for use, a security review covers its source and maintainers, known CVEs, install and start-up scripts, the permissions it needs and what it pulls in, recorded with H-0139. It is pinned by image digest (S4.3), scanned for CVEs in CI and before each upgrade (S4.4), with S4.6 deadlines. **Its container holds the endpoint keys**, so it runs as a non-root user on a read-only file system, with no inbound access except from the gateway, no outbound access except through the egress proxy grant (FR-5), its admin UI, database and telemetry off, and a per-run master key. Its replies are untrusted: the gateway keeps its body size caps and FR-12 deadlines on them (S4.5, S5.1). | v13 delta #6 (S4.1, S4.3 to S4.6, S8.1, S8.4) | Accepted (owner, 2026-11-13, decision card) |
+| SR-12 | Public endpoints must use HTTPS with certificate and host-name checks (TLS 1.2 or later) and an API key from the credential store; an `http://` URL or a missing key makes the endpoint unavailable (OWASP ASVS 5.0 V12, secure communication; NIST SP 800-53 SC-8, SC-23). | v9 delta #1 | Accepted (owner, 2026-11-13, decision card) |
+| SR-13 | An endpoint's key is sent only to that endpoint, only in its auth header, and never on a redirect; the gateway follows no redirects from an endpoint (S8.2; CWE-522). | v9 delta #2 | Accepted (owner, 2026-11-13, decision card) |
+| SR-14 | Every endpoint that costs money is bounded: `per_token` spend counts against the project budget and its run-cost estimate (prices required), and `subscription` use stops at its plan limits less the reserve; so a mispriced, misconfigured or looping agent can't run up an unbounded bill or exhaust the owner's plan (ADR 0012; OWASP LLM10, unbounded consumption). | v9 delta #3 | Accepted (owner, 2026-11-13, decision card) |
+| SR-15 | Billing mode `local` (unlimited, uncounted) is allowed only for a private endpoint; a public endpoint must be `per_token` or `subscription`. | v9 delta #4 | Accepted (owner, 2026-11-13, decision card) |
 
 ## 10. Interface requirements
-H-0135 to H-0138 were approved on 2026-11-13 for the one-server design. v9
-changes H-0135, H-0136 and H-0138, which need re-approval; H-0137 changes
-only the file name.
+Approved by the owner 2026-11-13 (decision card), in their v13 form.
+H-0135 to H-0137 and H-0139 are applied at build (H-0139 once the SR-16
+review passes); H-0138 is applied in this PR as ADR 0019.
 
-- **H-0135 (Interfaces, changed in v9):** new contract *Model endpoints
+- **H-0135 (approved, Interfaces):** new contract *Model endpoints
   file v1.0* (`factory-endpoints.local.yaml`):
   `endpoints.<name>.base_url`, `.model`, `.api` (`anthropic` or `openai`, as LiteLLM names the provider), optional
   `.api_key_ref`, `.max_sessions` (default 1), `.billing` (`local`,
@@ -200,28 +200,33 @@ only the file name.
   false). Endpoint names: lower-case letters, digits and `-`, up to 32
   characters, not `anthropic`. Also Project manifest minor bump:
   `settings.endpoints` (list of endpoint names, default empty; SR-8).
-- **H-0136 (Interfaces, changed in v9):** Agent report minor bump: `model`
+- **H-0136 (approved, Interfaces):** Agent report minor bump: `model`
   may be `<endpoint>/<model>`; Tuning metrics and Calibration result group
-  rungs by it, and the Run review records fallbacks (FR-7) and advisory
-  match rates (FR-10). Additive.
+  rungs by it, and the Run review records fallbacks (FR-7), advisory match
+  rates (FR-10) and subscription plan usage (FR-13). Additive.
 - **H-0137 (approved, Hygiene; file name updated):** `.gitignore` adds
   `/factory-endpoints.local.yaml`; CI check for AC-1.
-- **H-0138 (Architecture, changed in v9):** [ADR
+- **H-0138 (approved, applied in this PR, Architecture):** [ADR
   0019](../adr/0019-model-endpoints-through-gateway.md), configured model
   endpoints as upstreams of the credential gateway.
-- **H-0139 (Architecture, new in v13):** adopt LiteLLM as the factory's
+- **H-0139 (approved, Architecture):** adopt LiteLLM as the factory's
   model router (OQ-8), pinned by image digest, after the S4.1 review in
   SR-16 passes; recorded in ADR 0019.
 
 ## 11. Readiness gate
-Re-checked 2026-11-13 against spec v9.
+Re-checked 2026-11-13 against spec v16.
 
 - [x] Clear objective
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable (AC-1 to AC-17)
 - [x] Constraints documented (first endpoint measured 2026-11-13)
 - [x] Assumptions explicit (A-1, A-2)
-- [ ] Blocking decisions resolved: OQ-1 to OQ-8 decided; SR-1, SR-3, SR-8 and SR-12 to SR-16 need approval; A-1 needs re-approval; H-0135, H-0136, H-0138 need re-approval and H-0139 approval
+- [x] Blocking decisions resolved: OQ-1 to OQ-8 decided; SR-5 risk accepted; SR-1 to SR-16 approved; A-1, A-2 approved (A-1 checked in a spike before build); H-0135 to H-0139 approved, H-0138 applied
+
+Before build: the SR-16 security review of LiteLLM, and the A-1 spike. A
+failed review or spike sends the spec back to the owner. F-002 is not built
+yet, so until it is, a role goes onto an endpoint rung only through
+`engine/config/models.yaml` and a hygiene item (§ 2 item 5).
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -240,6 +245,8 @@ Re-checked 2026-11-13 against spec v9.
 | 12 | 2026-11-13 | OQ-7 decided (b): the project's endpoint list is the only control; evaluating an endpoint's terms and security is the user's, outside the factory. SR-8 reworded | Owner, 2026-11-13 (thread) |
 | 13 | 2026-11-13 | OQ-8 decided (a): LiteLLM replaces the home-made translator and billing; § 1, § 2 item 4, FR-3, FR-5, FR-14, FR-15, AC-16, AC-17, A-1, SR-16 rewritten; H-0139 added | Owner, 2026-11-13 (thread, decision card) |
 | 14 | 2026-11-13 | FR-14 clarified (owner asked): billing modes and accounting stay; LiteLLM only enforces the limits it can express, the engine does the rest | Owner, 2026-11-13 (thread) |
+| 15 | 2026-11-13 | SR-12 to SR-16 approved; rescoped SR-1, SR-3, SR-5, SR-8 re-approved | Owner, 2026-11-13 (decision card) |
+| 16 | 2026-11-13 | H-0135 to H-0139 and widened A-1 approved; ADR 0019 Accepted; readiness gate passed | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
