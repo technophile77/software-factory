@@ -4,7 +4,7 @@
 - **Status:** Draft
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account)
-- **Spec version:** 2
+- **Spec version:** 3
 
 ## 1. Objective and business purpose
 Everything the factory needs the owner to approve reaches the owner in one
@@ -62,6 +62,7 @@ sessions, or by the owner) can be listed too (OQ-6).
 | FR-10 | Two GitHub modes per project (manifest, H-0124): `owner_token` (default; the engine opens PRs with the owner's fine-grained token; FR-7 to FR-9 apply) and `machine_account` (ADR 0006; the inbox approval submits a real GitHub approving review using the owner's VS Code GitHub sign-in, and the required-review rule stays). |
 | FR-11 | Hygiene approval covers the change once: when the engine applies an approved hygiene change through a PR whose diff equals the approved diff exactly, the engine merges that PR without a second click (OQ-4). Any difference files a Pull request item instead. |
 | FR-12 | The owner is told of new blocking items outside the Factory view (OQ-3). |
+| FR-14 | A CI test in this repo fails if engine code calls GitHub's merge API anywhere except the FR-11 hygiene path (OQ-9). |
 | FR-13 | Onboarding (F-003) prepares the owner-token mode: the ruleset (pull request and required checks, no required review, no bypass actors) and the token scopes, applied only after the owner confirms. |
 
 ## 4. Acceptance criteria
@@ -78,6 +79,7 @@ sessions, or by the owner) can be listed too (OQ-6).
 | AC-10 | Given a managed repo in owner-token mode, then its `main` ruleset requires a pull request and the level's checks, has no required review and an empty bypass list. | FR-9 |
 | AC-12 | Given `machine_account` mode, when the owner approves, then a GitHub review by the owner's account is submitted on the PR's head commit. | FR-10 |
 | AC-13 | Given an approved hygiene item applied as a PR with the identical diff, then the engine merges it with no Pull request item; given one changed line, then nothing is merged and a Pull request item is filed. | FR-11 |
+| AC-15 | Given engine code that calls GitHub's merge endpoint (REST `PUT .../pulls/{n}/merge` or the GraphQL `mergePullRequest` mutation) outside the FR-11 module, then the CI test fails and names the file and line. | FR-14 |
 | AC-14 | Given a new blocking item, then the owner is notified as OQ-3 decides within one engine poll. | FR-12 |
 
 ## 5. Constraints
@@ -131,9 +133,9 @@ sessions, or by the owner) can be listed too (OQ-6).
 | SR-2 | The merge uses the owner's VS Code GitHub sign-in, held by VS Code; it is never written to items, logs or the engine, and agents never see it (S3.1). | Analyst (S3.1) | Proposed |
 | SR-3 | The engine's token has no Administration permission, so it can't change or remove the `main` ruleset. | Analyst (S8) | Proposed; conflicts with F-010 OQ-8, see OQ-7 |
 | SR-4 | The `main` ruleset has no bypass actors in owner-token mode, so required CI applies to every merge. | Analyst (S8) | Proposed |
-| SR-5 | The engine merges only in FR-11 (hygiene diff identical to the approved one); it has no other merge code path. | Analyst (LLM06) | Proposed |
+| SR-5 | The engine merges only in FR-11 (hygiene diff identical to the approved one); it has no other merge code path. | Analyst (LLM06) | Proposed; enforced in CI by FR-14 |
 | SR-6 | Tokens never appear in items, logs, commits or the Actions log (S3.1). | Analyst (S3.1) | Proposed |
-| SR-7 | Residual risk, stated to the owner (OQ-9): GitHub can't tell the owner's click from anything else using the owner's credentials. The engine's token (the owner's) can merge, so an engine bug, a leaked token, or a program running as the owner could merge a PR with green CI without a click. Agents can't: they run in containers without tokens (ADR 0015). | Analyst | Open |
+| SR-7 | Residual risk, stated to the owner (OQ-9): GitHub can't tell the owner's click from anything else using the owner's credentials. The engine's token (the owner's) can merge, so an engine bug, a leaked token, or a program running as the owner could merge a PR with green CI without a click. Agents can't: they run in containers without tokens (ADR 0015). | Analyst | Stated to the owner 2026-11-13; FR-14 guards against a code change adding a merge, not against a leaked token or another program |
 
 ## 10. Interface requirements
 Hygiene items named here; none filed until the open questions are answered.
@@ -168,6 +170,7 @@ Hygiene items named here; none filed until the open questions are answered.
 |---|---|---|---|
 | 1 | 2026-11-13 | Draft with open questions OQ-1 to OQ-8 | — |
 | 2 | 2026-11-13 | OQ-2 decided: the owner's click is the approval, no signing; extension merges with the owner's GitHub sign-in; CI-only ruleset. OQ-5, OQ-8 withdrawn; OQ-9 added | Owner, 2026-11-13 (thread) |
+| 3 | 2026-11-13 | OQ-9 decided (b): CI test against merge calls outside the hygiene path (FR-14, AC-15) | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -180,4 +183,4 @@ Hygiene items named here; none filed until the open questions are answered.
 | OQ-6 | Which PRs appear as Pull request items? (a) Only PRs the engine opened. (b) Every open PR into `main` of a managed repo, including ones by Claude Code sessions or the owner. Recommended: (b), so this repo's own PRs stop needing a bypass; the check works the same for any author. | Product | Open |
 | OQ-7 | F-010 OQ-8 gave the factory token admin and advisory rights. With the owner's own token, admin would let the engine (or a leaked token) edit or remove the `main` ruleset, including its required CI. (a) Two tokens of the owner's: the everyday token (Contents, Pull requests, Issues read and write; no Administration) and a separate admin token used only by the advisory code path. (b) One token with admin, accepting that risk. Recommended: (a). | Security | Open |
 | OQ-8 | How strong must the owner's approval be? **Withdrawn:** decided by OQ-2 (the click alone). | Security | Withdrawn (moot after OQ-2) |
-| OQ-9 | SR-7: anything using the owner's credentials can merge without a click, and GitHub can't tell. Add a lightweight safeguard? (a) None; rely on the engine having no merge code path except FR-11. (b) A CI test in this repo that fails if engine code calls GitHub's merge API outside the FR-11 path, so a later change can't add one silently. Recommended: (b); it costs one test and no owner steps. It does not stop a leaked token or another program. | Security | Open |
+| OQ-9 | SR-7: anything using the owner's credentials can merge without a click, and GitHub can't tell. Add a lightweight safeguard? (a) None; rely on the engine having no merge code path except FR-11. (b) A CI test in this repo that fails if engine code calls GitHub's merge API outside the FR-11 path, so a later change can't add one silently. Recommended: (b); it costs one test and no owner steps. It does not stop a leaked token or another program. | Security | Decided (owner, 2026-11-13, decision card): (b) |
