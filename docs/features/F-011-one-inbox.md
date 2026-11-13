@@ -1,7 +1,7 @@
 # Feature: One inbox for all approvals, on GitHub issues
 
 - **Id:** F-011
-- **Status:** In review (revision for ADR 0022; v19 was Approved 2026-11-13)
+- **Status:** Approved (owner, 2026-11-13; spec v29 signed off; readiness gate passed)
 - **Requested by / date:** Alex, 2026-11-10 (one inbox rule), 2026-11-13 (PR
   approval and merge in the inbox, no machine account; phone approvals,
   F-012; "can't [a VS Code issues extension] be used in place of the
@@ -401,6 +401,7 @@ token (from v19).
 | 27 | 2026-11-13 | A-3 approved for the extension, web and Mobile | Owner, 2026-11-13 (decision card) |
 | 28 | 2026-11-13 | Migration is a one-time script deleted after use, not engine code (FR-16, AC-13, H-0161, H-0164) | Owner, 2026-11-13 (thread) |
 | 29 | 2026-11-13 | H-0161 to H-0165 approved; H-0165 and H-0164's doc edits applied; readiness gate passed | Owner, 2026-11-13 (decision card) |
+| 29 | 2026-11-13 | Spec v29 signed off; status Approved | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 OQ-1 to OQ-10 are decided or withdrawn as recorded in v19 (git history);
