@@ -124,18 +124,42 @@ describe("litellmPinProblem (SR-17, OQ-12 (a))", () => {
     }
   });
 
+  it("accepts a version off the 1.108.x line only with a non-empty owner exception", () => {
+    const off = { ...PIN, version: "1.106.4" };
+    expect(litellmPinProblem(off, NOW)).toMatch(/LTS line.*no owner exception/);
+    for (const exception of ["", "   "]) expect(litellmPinProblem({ ...off, exception }, NOW), JSON.stringify(exception)).toMatch(/LTS line/);
+    expect(litellmPinProblem({ ...off, exception: "OQ-12: owner pinned non-LTS 1.106.4, 2026-11-13" }, NOW)).toBeNull();
+  });
+
+  it("applies the 14-day rule and the digest rule to an excepted pin too", () => {
+    const off: LitellmPin = { ...PIN, version: "1.106.4", exception: "OQ-12" };
+    expect(litellmPinProblem({ ...off, publishedAt: new Date(NOW - 14 * DAY + 1).toISOString() }, NOW)).toMatch(/less than 14 days/);
+    expect(litellmPinProblem({ ...off, publishedAt: "yesterday" }, NOW)).toMatch(/isn't readable/);
+    expect(litellmPinProblem({ ...off, digest: "latest" }, NOW)).toMatch(/digest/);
+  });
+
   it("refuses a digest that isn't a sha256 image digest", () => {
     for (const digest of ["", "latest", `sha256:${"E".repeat(64)}`, `sha256:${"e".repeat(63)}`]) expect(litellmPinProblem({ ...PIN, digest }, NOW)).toMatch(/digest/);
   });
 });
 
 describe("the pinned LiteLLM image", () => {
-  it("has no release pinned yet (1.108.0 is under 14 days old), so the engine refuses to use it before any docker call", async () => {
-    expect(LITELLM_PIN).toBeNull();
+  it("is the owner's OQ-12 exception 1.106.4, by the index digest, and passes the pin rule from 8 Nov 2026 (14 days after publication)", () => {
+    expect(LITELLM_PIN).toEqual({
+      version: "1.106.4",
+      digest: "sha256:ee5cb38e33c8be6d6774f7db922396b6b04d1cd962e77521b6c892b8f1c70fd8",
+      publishedAt: "2026-10-25T09:39:15Z",
+      exception: "OQ-12: owner pinned non-LTS 1.106.4, 2026-11-13",
+    });
+    expect(litellmPinProblem(LITELLM_PIN!, Date.parse("2026-11-13T00:00:00Z"))).toBeNull();
+    expect(litellmPinProblem(LITELLM_PIN!, Date.parse("2026-11-08T09:39:14Z"))).toMatch(/less than 14 days/);
+  });
+
+  it("refuses to run with no release pinned, before any docker call", async () => {
     const d = new FakeDocker();
     let verified = false;
     const verify = async () => { verified = true; };
-    const err = await litellmImageId(d as unknown as DockerCli, { verify }).catch((e) => e);
+    const err = await litellmImageId(d as unknown as DockerCli, { verify, pin: null }).catch((e) => e);
     expect(err).toBeInstanceOf(NoLitellmPinError);
     expect(err.message).toBe("no approved LiteLLM release pinned yet (SR-17)");
     expect(d.calls).toHaveLength(0);

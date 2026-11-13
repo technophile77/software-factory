@@ -171,8 +171,8 @@ jobs:
       # F-013 SR-16 / FR-15: the LiteLLM image holds the endpoint keys, so it is
       # scanned like the agent image. It is pulled by the digest the engine
       # pins, read from the one-line LITELLM_PIN in the source so the two can't
-      # drift apart. While the pin is null (SR-17: no 1.108.x release is 14 days
-      # old yet) there is nothing to scan and both steps are skipped.
+      # drift apart. While the pin is null there is nothing to scan and both
+      # steps are skipped.
       - name: Pull the pinned LiteLLM image
         id: litellm
         run: |
@@ -188,12 +188,26 @@ jobs:
           docker pull "$repo@$digest"
           docker tag "$repo@$digest" factory-router:ci
           echo "pinned=true" >> "$GITHUB_OUTPUT"
-      # Same rule as the agent image: only a CVE with a fix fails the job.
+      # Same rule as the agent image (a CVE with a fix fails the job), except
+      # for an owner risk acceptance under S4.6: F-013 OQ-15 (owner,
+      # 2026-11-13) accepts the fixable CVEs in the LiteLLM 1.106.4 image until
+      # ACCEPTED_UNTIL. Until then they are listed but don't fail; from the
+      # next day the gate is strict again with no edit needed.
       - name: Scan the LiteLLM image
         if: steps.litellm.outputs.pinned == 'true'
+        env:
+          ACCEPTED_UNTIL: "2026-12-13"
         run: |
           rc=0
           "$RUNNER_TEMP/osv-scanner" scan image --config engine/osv-scanner.toml \
             --format json --output-file "$RUNNER_TEMP/router-scan.json" factory-router:ci || rc=$?
           test "$rc" -le 1
-          python3 -I scripts/osv_fixable.py "$RUNNER_TEMP/router-scan.json"
+          fix=0
+          python3 -I scripts/osv_fixable.py "$RUNNER_TEMP/router-scan.json" || fix=$?
+          if [ "$fix" -ne 0 ]; then
+            if [[ "$(date -u +%F)" > "$ACCEPTED_UNTIL" ]]; then
+              echo "::error::Fixable CVEs in the LiteLLM image; the owner's acceptance (F-013 OQ-15) ended $ACCEPTED_UNTIL."
+              exit "$fix"
+            fi
+            echo "::warning::Fixable CVEs in the LiteLLM image, accepted by the owner until $ACCEPTED_UNTIL (F-013 OQ-15, S4.6)."
+          fi
