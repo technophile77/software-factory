@@ -27,3 +27,4 @@ in order, using `template.md`.
 | [0016](0016-python-coverage-tool.md) | coverage.py measures coverage for the factory's Python code | Accepted |
 | [0017](0017-owner-account-prs-inbox-merge.md) | PRs with the owner's own account; the inbox click is the approval | Accepted |
 | [0018](0018-phone-actions-proven-by-github.md) | Owner actions from the phone are proven by the owner's GitHub account | Accepted |
+| [0020](0020-onboarding-checks-on-standard-tools.md) | The onboarding checker uses PyYAML, zizmor and gitleaks | Accepted |
