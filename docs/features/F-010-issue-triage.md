@@ -1,7 +1,7 @@
 # Feature: Triage GitHub issues into the factory
 
 - **Id:** F-010
-- **Status:** Approved (readiness gate passed 2026-11-12); v31 amendment for F-012 awaiting owner approval
+- **Status:** Approved (readiness gate passed 2026-11-12); v31 amendment approved 2026-11-13
 - **Requested by / date:** Alex, 2026-11-12
 - **Spec version:** 31
 
@@ -510,7 +510,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 28 | 2026-11-12 | H-0113 approved as drafted | Owner, 2026-11-12 (decision card) |
 | 29 | 2026-11-12 | H-0114 approved as drafted | Owner, 2026-11-12 (decision card) |
 | 30 | 2026-11-12 | Readiness gate passed; status Approved | Owner approvals as recorded above |
-| 31 | 2026-11-13 | FR-19, AC-27: skip F-012 phone issues (config repo, `github-actions[bot]`, label `factory-inbox`); the label alone never skips (SR-26) | — (awaiting owner) |
+| 31 | 2026-11-13 | FR-19, AC-27: skip F-012 phone issues (config repo, `github-actions[bot]`, label `factory-inbox`); the label alone never skips (SR-26) | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
