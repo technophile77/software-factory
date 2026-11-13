@@ -1,18 +1,23 @@
 name: keep-prs-mergeable
 # H-0115: merge main into open PRs after each push to main, and flag the ones
 # that conflict, so no agent has to do it by hand.
+# H-0150: when a flagged PR gets a push that fixes the conflict, take the
+# label off then, not on the next push to main.
 on:
   push:
     branches: [main]
   workflow_dispatch:
-# Two pushes to main in quick succession must not update the same PR at once.
-concurrency:
-  group: keep-prs-mergeable
-  cancel-in-progress: false
+  pull_request:
+    types: [synchronize]
 permissions:
   contents: read
 jobs:
   update-prs:
+    if: github.event_name != 'pull_request'
+    # Two pushes to main in quick succession must not update the same PR at once.
+    concurrency:
+      group: keep-prs-mergeable
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -33,3 +38,41 @@ jobs:
           # checks don't run on the updated head.
           UPDATE_TOKEN: ${{ secrets.FACTORY_UPDATE_TOKEN }}
           BASE_BRANCH: ${{ github.event.repository.default_branch }}
+
+  clear-conflict-label:
+    # Only labelled PRs from this repo: a fork's token is read-only, and
+    # update-prs never labels forks.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'merge-conflict')
+    # Only the latest push to a PR matters.
+    concurrency:
+      group: clear-conflict-label-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write   # read mergeable, remove the label
+    # No checkout: nothing from the PR is run, only the gh CLI on the runner.
+    steps:
+      - run: |
+          # GitHub works out mergeable in the background; null means not yet.
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            mergeable=$(gh api "repos/$REPO/pulls/$PR" --jq '.mergeable')
+            [ "$mergeable" != "null" ] && break
+            sleep 3
+          done
+          echo "#$PR mergeable: $mergeable"
+          [ "$mergeable" = "true" ] || exit 0
+          # 404: someone took the label off since the event fired.
+          if ! out=$(gh api -X DELETE "repos/$REPO/issues/$PR/labels/merge-conflict" --silent 2>&1); then
+            case "$out" in
+              *"HTTP 404"*) echo "label already removed" ;;
+              *) echo "$out"; exit 1 ;;
+            esac
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}

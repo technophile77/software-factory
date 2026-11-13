@@ -7,7 +7,8 @@ PR code is checked out or run here. It merges and never rebases (ADR 0013).
 
 A PR whose merge conflicts gets the `merge-conflict` label and, the first time,
 a comment. Resolving it is left to an agent or the owner. The label comes off
-on the first run that finds the PR current or updates it cleanly.
+on the first run that finds the PR current or updates it cleanly, or sooner,
+when the workflow's `clear-conflict-label` job sees a push that fixes it.
 
 Standard library only, so the job installs nothing.
 """
@@ -23,8 +24,8 @@ LABEL = "merge-conflict"
 COMMENT = (
     "This branch has merge conflicts with `{base}`, so it was not updated "
     "automatically. Merge `{base}` into it and resolve the conflicts "
-    "(ADR 0013: merge, don't rebase). This label comes off on the next push "
-    "to `{base}` after the branch merges cleanly."
+    "(ADR 0013: merge, don't rebase). This label comes off once you push "
+    "a fix and the branch merges cleanly."
 )
 
 
