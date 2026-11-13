@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until I
   can start onboarding some of my existing projects?"; chose to build engine
   increment 3 next, decision card)
-- **Spec version:** 5
+- **Spec version:** 6
 
 This is the rest of the engine's increment 3 ("Requirements to ready", F-007
 section 13). F-008 built Security Gate 1 and said that reading inbox answers
@@ -176,7 +176,7 @@ Drafts, for the owner's approval:
   | anything else | record only (SR-4) |
 - **H-0183 (Interfaces):** Engine control channel v1.5 (minor):
   `engine.status` features gain `waiting_on: [<item id>]`.
-- **H-0184 (Hygiene):** an `orchestrator` model in `engine/config/models.yaml`
+- **H-0184 (Hygiene), approved (owner, 2026-11-13, decision card: Sonnet 5.5, limits as drafted):** an `orchestrator` model in `engine/config/models.yaml`
   and `orchestrator` and `readiness_gate` sections in `engine/config/limits.yaml`
   (draft: model `claude-sonnet-5-5`; turns 40, output_tokens 60000, dollars 2,
   wall_time_minutes 20, cpus 1, memory_mib 1024, pids 128, tmp_mib 256;
@@ -201,6 +201,7 @@ Drafts, for the owner's approval:
 | 3 | 2026-11-13 | OQ-1 decided (c): structural code checks, then an orchestrator session judges checks 1 to 4 only if they pass (FR-7, FR-11, AC-13, AC-14, SR-11, H-0184 drafted) | Owner, 2026-11-13 (decision card) |
 | 4 | 2026-11-13 | OQ-2 decided (a): the analyst writes the owner's Gate 1 choice into section 9; F-011 A-2 confirmed by the Mobile push spike (owner got the push) | Owner, 2026-11-13 (decision cards) |
 | 5 | 2026-11-13 | OQ-3 decided (a): a confirmed inbox choice from the previously pinned owner id re-pins owner keys, CLI path kept (replaces F-007 SR-5's confirm-only path); H-0182 effect table drafted | Owner, 2026-11-13 (decision card) |
+| 6 | 2026-11-13 | H-0184 approved: orchestrator on `claude-sonnet-5-5`, limits as drafted | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
