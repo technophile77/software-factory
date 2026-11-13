@@ -1,10 +1,10 @@
 # Feature: Fewer engine git calls
 
 - **Id:** F-014
-- **Status:** In review (interview open)
+- **Status:** Approved; readiness gate passed 2026-11-13; in development
 - **Requested by / date:** Alex, 2026-11-13 (chose "Fewer engine git calls"
   from the CI speed thread's options)
-- **Spec version:** 4
+- **Spec version:** 5
 
 ## 1. Objective and business purpose
 The engine starts a new `git` process for almost every read and write it
@@ -99,14 +99,14 @@ Where the time goes today (profile of the full acceptance suite on
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | Every check that reads a mode today (regular file only, no symbolic links or submodules) still runs, on modes parsed from tree objects. | Analyst | Draft |
-| SR-2 | The reader runs with the same `overrideArgs` and environment as every engine git process (F-007 SR-11), and is only fed validated object ids and ref names. | Analyst | Draft |
-| SR-3 | The Gate 2 L7 config check still runs before every push and fetch; FR-5 only reuses its output. | Analyst | Draft |
-| SR-4 | Nothing cached outlives the engine process, and no cache crosses repos. | Analyst | Draft |
-| SR-5 | The tree parser refuses a tree with an entry name that is empty, `.`, `..`, or holds `/` or NUL, a duplicate name, an unknown mode, or an id of the wrong length; such a tree reads as unreadable. A test feeds each as a hand-built tree object. | Gate 1 #1 | Proposed |
-| SR-6 | Each reader reply's header must name the object the engine asked for, with an expected type and a size within the read's limit, or the reader is killed and FR-2's fallback runs. Bodies over the limit are never read into memory. | Gate 1 #2 | Proposed |
-| SR-7 | Every reader is registered with the engine's `Children`, each read has the same timeout as a git call today, and a timed-out reader is killed before the fallback runs. | Gate 1 #3 | Proposed |
-| SR-8 | Cached values only feed steps that git then checks: factory/state writes keep their compare-and-swap, and a failed swap clears the cache. | Gate 1 #4 | Proposed |
+| SR-1 | Every check that reads a mode today (regular file only, no symbolic links or submodules) still runs, on modes parsed from tree objects. | Analyst | Approved with the spec |
+| SR-2 | The reader runs with the same `overrideArgs` and environment as every engine git process (F-007 SR-11), and is only fed validated object ids and ref names. | Analyst | Approved with the spec |
+| SR-3 | The Gate 2 L7 config check still runs before every push and fetch; FR-5 only reuses its output. | Analyst | Approved with the spec |
+| SR-4 | Nothing cached outlives the engine process, and no cache crosses repos. | Analyst | Approved with the spec |
+| SR-5 | The tree parser refuses a tree with an entry name that is empty, `.`, `..`, or holds `/` or NUL, a duplicate name, an unknown mode, or an id of the wrong length; such a tree reads as unreadable. A test feeds each as a hand-built tree object. | Gate 1 #1 | Approved (owner, card, 2026-11-13) |
+| SR-6 | Each reader reply's header must name the object the engine asked for, with an expected type and a size within the read's limit, or the reader is killed and FR-2's fallback runs. Bodies over the limit are never read into memory. | Gate 1 #2 | Approved (owner, card, 2026-11-13) |
+| SR-7 | Every reader is registered with the engine's `Children`, each read has the same timeout as a git call today, and a timed-out reader is killed before the fallback runs. | Gate 1 #3 | Approved (owner, card, 2026-11-13) |
+| SR-8 | Cached values only feed steps that git then checks: factory/state writes keep their compare-and-swap, and a failed swap clears the cache. | Gate 1 #4 | Approved (owner, card, 2026-11-13) |
 
 ## 10. Interface requirements
 None. `Git` gains methods internal to the engine; no contract in
@@ -133,3 +133,4 @@ None. `Git` gains methods internal to the engine; no contract in
 | 2 | 2026-11-13 | OQ-1: one reader per repo, closed after 2 s idle | Alex (card) |
 | 3 | 2026-11-13 | OQ-2: state commits left for a later feature (FR-6) | Alex (card) |
 | 4 | 2026-11-13 | A-1 approved; Gate 1 proposes SR-5 to SR-8 | Alex (card, A-1) |
+| 5 | 2026-11-13 | SR-5 to SR-8 approved; readiness gate passed (six checks) | Alex (card) |
