@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 (split from F-011 OQ-3: "the phone
   notification needs to be tied to some way to do approvals on my phone also";
   "I want a confirmation on risky actions like a merge, not just one click")
-- **Spec version:** 9
+- **Spec version:** 10
 
 ## 1. Objective and business purpose
 The factory stalls whenever an item is waiting for the owner and the owner is
@@ -151,10 +151,10 @@ owner already uses for the interview device approval (ADR 0014).
 | SR-13 | A phone history entry also records the reacting user id, reaction id and time, so it stands if the issue is deleted. | Gate 1 #6 (S3.3) | Accepted (owner, 2026-11-13, decision card) |
 
 ## 10. Interface requirements
-Drafts for the owner's approval. H-0127 is withdrawn (folded into F-011's
-H-0120).
+Approved by the owner 2026-11-13 (decision card). H-0127 is withdrawn
+(folded into F-011's H-0120).
 
-### H-0125 (draft, Interfaces): Phone issue v1.0, and Inbox item v2.1
+### H-0125 (approved, owner, 2026-11-13, decision card, Interfaces): Phone issue v1.0, and Inbox item v2.1
 **Phone issue v1.0** (new contract; the engine renders, the config repo
 workflow posts):
 
@@ -195,7 +195,7 @@ GitHub user id) and `read_at` (SR-13). Such an entry needs no signature
 `merged_on_github` action closes a `pull_request` item when the engine sees
 the PR merged by the owner's account (FR-9).
 
-### H-0126 (draft, Hygiene): config repo workflow template
+### H-0126 (approved, owner, 2026-11-13, decision card, Hygiene): config repo workflow template
 - The master repo ships `templates/config-repo/.github/workflows/factory-inbox.yml`.
   F-003 onboarding copies it into the config repo when the owner turns
   phone notifications on, and checks the repo is private and owner-only.
@@ -207,7 +207,7 @@ the PR merged by the owner's account (FR-9).
 - The engine sends the dispatch with the owner's token; the payload holds
   only the rendered title, body, action labels and the item reference.
 
-### H-0128 (draft, Interfaces): Project manifest v1.7 `phone` block
+### H-0128 (approved, owner, 2026-11-13, decision card, Interfaces): Project manifest v1.7 `phone` block
 (v1.6 is F-011's H-0124.) New optional top-level key:
 
 ```yaml
@@ -228,12 +228,17 @@ ADR 0018 added, amending ADR 0015 decision 3 for phone actions; its row in
 `docs/adr/README.md`; ADR 0015's header notes the amendment.
 
 ## 11. Readiness gate
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+Checked 2026-11-13 against spec v10.
+
+- [x] Clear objective
+- [x] Expected behavior defined
+- [x] Acceptance criteria testable
+- [x] Constraints documented
+- [x] Assumptions explicit (A-1, A-2 approved; A-1 checked in a spike before build)
+- [x] Blocking decisions resolved (OQ-1 to OQ-4 decided; SR-1 to SR-13, H-0125, H-0126, H-0128 approved; H-0129 applied)
+
+Follow-up outside this spec: F-010 needs a matching amendment so triage
+skips `factory-inbox` issues (FR-13) before either feature's build.
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -247,6 +252,7 @@ ADR 0018 added, amending ADR 0015 decision 3 for phone actions; its row in
 | 7 | 2026-11-13 | SR-8 to SR-13 approved | Owner, 2026-11-13 (decision card) |
 | 8 | 2026-11-13 | A-1 and A-2 approved; A-1 checked in a spike before build, and a failed check sends the spec back to the owner | Owner, 2026-11-13 (decision card) |
 | 9 | 2026-11-13 | SR-1, SR-3, SR-4, SR-5, SR-7 approved; section 10: drafts of H-0125, H-0126, H-0128; H-0129 applied | Owner, 2026-11-13 (decision card) for the SRs |
+| 10 | 2026-11-13 | H-0125, H-0126, H-0128 approved; readiness gate passed | Owner, 2026-11-13 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
