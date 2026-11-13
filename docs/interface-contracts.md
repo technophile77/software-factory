@@ -681,10 +681,11 @@ section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.5
+## Project manifest — v1.6
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014);
-  v1.3 approved (H-0080); v1.4 approved (H-0087); v1.5 approved (H-0135)
+  v1.3 approved (H-0080); v1.4 approved (H-0087); v1.5 approved (H-0135);
+  v1.6 approved (F-013 OQ-11, owner, decision card, 2026-11-13)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
   adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
   `complexity` and `settings.agents` (F-002 A-6, A-8); v1.3 adds `enabled`,
@@ -707,7 +708,7 @@ the preset used only for initial calibration) and
 ladder; the engine refuses a rung that doesn't exist in the pinned factory
 version or is below the role's floor). Both change only through hygiene
 items (F-002). The manifest is the only record of repo and project maturity
-levels. `schema` stays `factory-project/1.0`: v1.1 to v1.5 only add optional keys.
+levels. `schema` stays `factory-project/1.0`: v1.1 to v1.6 only add optional keys.
 
 From v1.5, optional `settings.endpoints`: a list of model endpoint names
 (Model endpoints file v1.0) this project's code may be sent to; default
@@ -715,6 +716,23 @@ empty, so a project uses no endpoint until it lists one (F-013 SR-8). Names
 match `^[a-z0-9-]{1,32}$` and are unique. A name the PC's endpoints file
 doesn't define makes that endpoint's rungs unavailable for the project, not
 an error.
+
+From v1.6, `settings.agents.<role>` may also hold the role's endpoint
+assignment (F-013 OQ-11): `model` (`<endpoint>/<model>`) with `fallback` (a
+Claude model id, required with an endpoint `model`), or, for the security
+reviewer and validation judge only, `advisory` (`<endpoint>/<model>`, an
+advisory first pass while the role itself stays on Claude). The endpoint
+must be in `settings.endpoints`, and an endpoint `model` is refused for a
+role whose policy isn't read-only (F-013 SR-9). It changes only through a
+hygiene item. Example:
+
+```yaml
+settings:
+  endpoints: [lan]
+  agents:
+    web-reader: { model: lan/qwen3.8-27b, fallback: claude-haiku-5-5 }
+    security-reviewer: { advisory: lan/qwen3.8-27b }
+```
 
 From v1.4, optional `limits`: the same keys as the master factory's
 `engine/config/limits.yaml` (H-0087). For each key the engine uses the lower
