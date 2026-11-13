@@ -48,3 +48,27 @@ November. It wasn't tried.
    to write.
 4. Run the spike now on LiteLLM 1.109.1 as a one-off exception to the
    quarantine (no secrets, local only), to learn whether option 1 works.
+
+## Re-run on LiteLLM 1.109.1 (owner-approved quarantine exception, 2026-11-13)
+
+The owner picked OQ-10 (d) and approved, in the thread, running container
+`f013-litellm-spike109` from `litellm-non_root` 1.109.1 (index digest
+`sha256:e9e15fe1…6daba`), with the same lockdown and no secrets. It took
+about 8 minutes to start under the read-only file system. The container was
+removed afterwards.
+
+| Test | Anthropic route | OpenAI route |
+|---|---|---|
+| Claude Code, one-file task, with `model_info.supports_mid_conversation_system: false` | **Fail**: same HTTP 500 | **Fail**: same HTTP 500 |
+
+So LiteLLM's setting doesn't reach this case: it is documented for
+`developer` messages, and Claude Code's mid-conversation message has role
+`system`.
+
+**What does work:** the captured Claude Code request, with the later
+`system` message's text appended to the top-level `system` blocks and the
+message removed, sent straight to the owner's server: HTTP 200 in 133 s
+(15,604 prompt tokens), and the model answered with a correct `Write` tool
+call for the requested file. That is option 3 above, the gateway folding
+later system messages, and it doesn't depend on LiteLLM or the server's
+template.
