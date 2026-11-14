@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-14
 - **Decided by:** owner
-- **Decision item:** decision card in the thread "Evaluate a state machine library for the engine", 2026-11-14 07:57Z; [proposal 0033](../proposals/0033-feature-lifecycle-state-machine.md)
+- **Decision item:** decision cards in the thread "Evaluate a state machine library for the engine": jssm chosen 2026-11-14 07:57Z, this ADR approved as written 08:00Z; [proposal 0033](../proposals/0033-feature-lifecycle-state-machine.md)
 
 ## Problem
 
