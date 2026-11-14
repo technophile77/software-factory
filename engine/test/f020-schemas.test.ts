@@ -117,7 +117,7 @@ describe("F-020 hand-edited YAML schemas (FR-11, FR-12, AC-12)", () => {
   const contractEndpoints = () => {
     const doc = fs.readFileSync(path.join(repoRoot, "docs", "interface-contracts.md"), "utf8");
     const at = doc.indexOf("## Model endpoints file");
-    const block = /```yaml\n([\s\S]*?)```/.exec(doc.slice(at))![1]!;
+    const block = /```yaml\r?\n([\s\S]*?)```/.exec(doc.slice(at))![1]!;
     return YAML.parse(block.replace(/<[^>]+>/g, "x"));
   };
   const examples: Array<[string, unknown, ZodType]> = [
