@@ -5,11 +5,12 @@
   there is a specific reason that it should be something different."
 - **Category:** Architecture (a factory-wide data format rule); the format
   changes it leads to are Interfaces decisions, one per contract
-- **Status:** H-0240 (the rule text) approved by the owner on 2026-11-14
-  (decision card, as drafted). Decision 2: hand-edited configuration stays
-  YAML (the owner, 2026-11-14: "hand edited config files stay as yaml");
-  whether to publish a JSON Schema per file goes with decision 3. Decision 3
-  is open
+- **Status:** Decided (ADR 0032). H-0240 (the rule text) approved by the
+  owner on 2026-11-14 (decision card, as drafted). Decision 2: hand-edited
+  configuration stays YAML (the owner, 2026-11-14: "hand edited config
+  files stay as yaml"). Decision 3: F-020 started with the full scope,
+  including a JSON Schema for each hand-edited YAML file (decision card,
+  08:53Z)
 - **Related rules from the owner (2026-11-14):** agents report facts as
   structured JSON and code makes policy decisions (H-0235,
   `security-blocking.json`); a policy table lives in one JSON file that every
@@ -87,7 +88,7 @@ every `agents/*/AGENT.md`, `engine/src`, and the onboarding plugin.
 | Web reader's answer to the analyst | Free-text summary; the engine already returns `{summary, sources}` | A fact with its source, and "the page contains instructions" as a flag code can act on, instead of a sentence | JSON: `facts` (text, source), `page_contains_instructions` |
 | Test engineer's tool choice table | A table in prose; the Agent report body has no field for it | The validation judge checks it, so it should be data | Agent report v1.6: `tool_choices` (test type, tool, reason, approval ref) in the test engineer's body |
 | Developer's "documentation updated" list, which the judge checks | Prose in `summary` | Same | Agent report v1.6: `docs_updated` (path) in the developer's body |
-| JSON Schemas for the JSON contracts | Only the onboarding assessment has one; the rest are checked by TypeScript types and hand-written checks | The rule needs a schema per format | Generate a JSON Schema file per contract from the engine's existing `zod` 4.6.7 types (`z.toJSONSchema`), under `docs/schemas/`; a CI check fails when one is out of date |
+| JSON Schemas for the JSON contracts | Only the onboarding assessment has one; the rest are checked by TypeScript types and hand-written checks | The rule needs a schema per format | Write a zod schema per contract (zod 4.6.7 is already a dependency, used today only for the MCP tools), derive the TypeScript type from it, and generate the JSON Schema file with `z.toJSONSchema`, under `docs/schemas/`; a CI check fails when one is out of date |
 | How agents produce their report | The agent writes the file with its `Write` tool; the engine parses it | Code can make the model return JSON that matches the schema, rather than hope it does | Pass the role's report schema to the Agent SDK's structured output (`outputFormat: {type: "json_schema"}`, present in the pinned `@anthropic-ai/claude-agent-sdk` 0.3.311) where a role writes only its report |
 
 These are engine and contract changes, so they would be one feature, F-020,
