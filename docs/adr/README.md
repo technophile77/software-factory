@@ -39,3 +39,4 @@ in order, using `template.md`.
 | [0030](0030-rapid-prototype-advisory-ci-claude-merges.md) | At Rapid prototype, CI is advisory and Claude merges PRs once local tests pass | Accepted |
 | [0031](0031-stateful-parts-on-jssm.md) | The engine's stateful parts are modelled with jssm | Accepted |
 | [0032](0032-json-default-for-agent-data.md) | JSON is the default format for agent data | Accepted |
+| [0033](0033-answer-inbox-items-in-the-console.md) | Inbox items can be answered in the console too | Accepted |

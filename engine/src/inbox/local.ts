@@ -37,12 +37,21 @@ const AnswerFile = z.object({
 }).strict();
 export type ConsoleAnswer = z.infer<typeof AnswerFile>;
 
+/**
+ * Files live at `<engine home>/private/<project>/` and
+ * `<engine home>/answers/<project>/` (Inbox item contract, H-0246), where
+ * `<project>` is a fixed key for the project's config repo path.
+ */
 export class InboxLocal {
-  constructor(private readonly dir: string) {}
+  constructor(private readonly home: string, private readonly project: string) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(project)) throw new Error("the inbox's project key must be a plain name");
+  }
 
   private file(kind: "private" | "answers", name: string): string {
-    const d = path.join(this.dir, kind);
-    ensureOwnerDir(this.dir);
+    const top = path.join(this.home, kind);
+    const d = path.join(top, this.project);
+    ensureOwnerDir(this.home);
+    ensureOwnerDir(top);
     ensureOwnerDir(d);
     return path.join(d, name);
   }

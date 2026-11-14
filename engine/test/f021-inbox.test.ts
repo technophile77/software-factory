@@ -34,8 +34,9 @@ async function world(): Promise<W> {
   await state.ensureWorktree();
   const gh = new FakeIssues();
   const clock = new FakeClock();
-  const localDir = path.join(root, "engine-home", "inbox-local", "p1");
-  const local = new InboxLocal(localDir);
+  const home = path.join(root, "engine-home");
+  const local = new InboxLocal(home, "p1");
+  const localDir = home;
   const scrubbed: string[] = [];
   let seed = 0;
   const make = () => {
@@ -207,7 +208,7 @@ describe("F-021 console answers in the inbox store", () => {
     expect(JSON.stringify([...w.gh.issues.values()]) + JSON.stringify(w.gh.dispatches)).not.toContain("private-path");
     expect(stateHistory(w.repo)).not.toContain("private-path");
     // SR-6: a damaged file counts as missing.
-    fs.writeFileSync(path.join(w.localDir, "private", `${id}.rev2.json`), "{not json");
+    fs.writeFileSync(path.join(w.localDir, "private", "p1", `${id}.rev2.json`), "{not json");
     expect((await w.inbox.consoleShow(id))!.private).toBeNull();
   });
 
@@ -220,7 +221,7 @@ describe("F-021 console answers in the inbox store", () => {
     expect(await fresh.verify(pending!)).toBe(true);
     // The proof edited: no longer counts.
     const n = pending!.record.history.indexOf(pending!.entry);
-    const file = path.join(w.localDir, "answers", `${id}.${n}.json`);
+    const file = path.join(w.localDir, "answers", "p1", `${id}.${n}.json`);
     const doc = JSON.parse(fs.readFileSync(file, "utf8"));
     fs.writeFileSync(file, JSON.stringify({ ...doc, action: "choose:A" }));
     expect(await fresh.verify(pending!)).toBe(false);

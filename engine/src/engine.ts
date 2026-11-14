@@ -477,8 +477,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       stop(p, `factory/state couldn't be checked out at .factory (${(e as Error).message})`);
       continue;
     }
-    // F-021: private detail and console answer proofs stay in the engine folder, one folder per project path.
-    p.inbox = new Inbox({ state: p.state_repo, clock, log, notify, local: new InboxLocal(path.join(home, "inbox-local", sha256Hex(p.real!).slice(0, 16))), scrub: scrubPrivate });
+    // F-021: private detail and console answer proofs stay in the engine folder, keyed by the project's path (H-0246).
+    p.inbox = new Inbox({ state: p.state_repo, clock, log, notify, local: new InboxLocal(home, sha256Hex(p.real!).slice(0, 16)), scrub: scrubPrivate });
     await p.inbox.records().catch(() => []);
     try {
       p.manifest = await readManifest(git, p.real);

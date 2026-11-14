@@ -4,6 +4,7 @@
 - **Date:** 2026-11-13
 - **Decided by:** owner (decision card, option A)
 - **Decision item:** `docs/proposals/0026-inbox-on-github-issues.md`
+- **Amended by ADR 0033:** items can also be answered in the console.
 
 ## Problem
 Inbox items were files on `factory/state` (ADR 0002, 0009), shown by our

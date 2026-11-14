@@ -175,6 +175,12 @@ actor id), `merged_on_github` (merge commit, merged by), `closed_on_github`.
 `^/(choose [A-Z0-9]{1,3}|approve|reject|defer|restore|dismiss|advisor|step [0-9]{1,2}|confirm [A-Z0-9]{4}|changes .+|research .+)$`.
 The engine never reads its own comments as commands (F-011 SR-17).
 
+**Console answers (F-021 H-0246, a minor version on top of v4.0).**
+- Owner history entries may have `source: console`, with `console_answer` (sha256 of the local answer file's entry) and no `comment_id`, `reaction_id`, `actor_id` or `ref`; `signed_in: true|false` says whether the console session signed in. `confirmed_by` may be `{ source: console }`.
+- New engine comment: `Recorded from the console: <action>.`
+- New optional line at the end of the Context section: `More detail is on the PC that runs the factory: run factory-engine inbox <id> there.`
+- Private detail (`inbox-private/1.0`, `<engine home>/private/<project>/<id>.rev<n>.json`) and console answer proofs (`console-answer/1.0`, `<engine home>/answers/<project>/<id>.<n>.json`) live only in the engine folder, never on `factory/state`.
+
 **Advisor (from v1.1, F-006).** `advisor_reason` is set only by the orchestrator when filing; `advice` entries are written only by the engine, with the advice file at `.factory/advice/<call>.md` on `factory/state` and its sha256; the issue shows it under an **Advisor** heading, rendered as untrusted text (F-011 SR-10).
 
 ---
@@ -258,7 +264,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
 
 ---
 
-## Engine control channel — v1.5
+## Engine control channel — v1.6
 
 - Status: Approved
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
@@ -270,16 +276,16 @@ proposing role, and lists the new ids in its own report's `items_filed`.
   (F-006, the advisor) approved by the owner, 2026-11-10 (H-0063 and
   amendment H-0075: advisor fields stated exactly, call limits, budget flag,
   advice revision and hash; decision card, as drafted; renumbered from v1.2
-  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted); v1.4 capability list approved by the owner, 2026-11-12 (decision card); v1.5 (F-016 H-0183, `waiting_on`) approved by the owner, 2026-11-13 (decision card)
+  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted); v1.4 capability list approved by the owner, 2026-11-12 (decision card); v1.5 (F-016 H-0183, `waiting_on`) approved by the owner, 2026-11-13 (decision card); v1.6 (F-021 H-0245, inbox answers in the console) approved by the owner, 2026-11-14 (decision card)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
 
-Inbox actions do **not** go through this channel: the extension writes them
-to the item files (ADR 0002), and the engine watches the files. The channel
-is only for running the engine and, from v1.1, for the owner's answers to
-the requirements analyst's interview questions. Other approvals still go to
-the inbox.
+From v1.6 the owner can also answer inbox items through this channel
+(F-021, ADR 0033). Every item is still a GitHub issue, and the issue stays
+the record of what was asked; the first answer, from either path, is the
+one recorded. Console sessions follow the project's
+`settings.interview_sign_in` as interview sessions do.
 
 **Transport:** JSON-RPC 2.0 over a local named pipe (Windows) or Unix domain
 socket (macOS/Linux), path written to `.factory/engine.json` when the engine
@@ -306,7 +312,7 @@ it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 
 | Method | Params | Result |
 |---|---|---|
-| `engine.status` | none | `{ version, capabilities?, uptime_s, features: [{ id, stage, active_agents, waiting_on?, activity? }] }` (`capabilities` from v1.4; `waiting_on` from v1.5: the ids of the inbox items the feature waits on, left out when there are none; `activity` from F-018: one of `analyst_reviewing`, `analyst_researching`, `analyst_writing_spec`, `security_reviewing`, `readiness_check`, `advisor_working`, `waiting_for_owner`, `paused`, `idle`; clients ignore codes they don't know and treat a missing one as unknown) |
+| `engine.status` | none | `{ version, capabilities?, uptime_s, features: [{ id, stage, active_agents, waiting_on?, activity? }] }` (`capabilities` from v1.4; `waiting_on` from v1.5: the ids of the inbox items the feature waits on, left out when there are none; `activity` from F-018: one of `analyst_reviewing`, `analyst_researching`, `analyst_writing_spec`, `security_reviewing`, `readiness_check`, `advisor_working`, `waiting_for_owner`, `paused`, `idle`, and from v1.6 `waiting_for_decision` (the feature waits on the inbox items in `waiting_on` and no agent runs for it); `idle` only when nothing waits on the owner and no job is running or queued; clients ignore codes they don't know and treat a missing one as unknown) |
 | `engine.pause` | `{ feature? }` | `{ paused: [feature ids] }` |
 | `engine.resume` | `{ feature? }` | `{ resumed: [feature ids] }` |
 | `engine.shutdown` | none | `{ ok: true }` after agents reach a safe stop |
@@ -318,6 +324,12 @@ it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 | `interview.reply` | `{ session, item, revision, reply_id, kind, text }` | `{ status, next?: Item }` (v1.1) |
 | `interview.state` | `{ feature, item }` | `{ status, revision, recorded_at? }` (v1.1) |
 | `interview.close` | `{ session }` | `{ ok: true }`, releases the session lock (v1.1) |
+| `inbox.open` | none | `{ session, approval? }` (as `interview.open`, without a feature lock; `approval` only when the sign-in setting needs one) (v1.6) |
+| `inbox.list` | `{ session }` | `{ items: [{ id, kind, title, feature?, priority, blocking, rev }] }`: open items, blocking first, then effective priority, then id (v1.6) |
+| `inbox.show` | `{ session, item }` | `{ id, rev, kind, sections: [{ name, text }], private?: [{ name, text }], actions: [{ action, label }] }` (v1.6) |
+| `inbox.answer` | `{ session, item, rev, action, note?, reply_id }` | one of `{ recorded: true }`, `{ confirm: { words, code, expires_at } }`, `{ already: { by: "github" \| "console" \| "engine", action? } }`, `{ changed: { rev } }` (v1.6) |
+| `inbox.confirm` | `{ session, item, rev, code }` | `{ recorded: true }`, or the refusal `confirm_failed` (wrong or expired code) (v1.6) |
+| `inbox.close` | `{ session }` | `{ ok: true }` (v1.6) |
 
 `Item` (v1.1) is `{ id, revision, kind: "question" | "assumption", text, why,
 suggested?, options?: [string], findings?: [{ text, source }], status }`.
