@@ -696,5 +696,15 @@ describe("F-016: the full readiness gate", () => {
     expect(stageOf(e, feature)).toBe("readiness_gate");
     expect(items(w)).toHaveLength(0);
     expect(e.feature(feature)!.state.readiness.signoff).toBeFalsy();
+
+    // FR-7: the gate runs again at the next engine start.
+    await e.stop();
+    const again = await start(w, d, {
+      analyst: analyst(w, () => feature),
+      reviewer: reviewer(d, () => feature),
+      orchestrator: orchestrator(d, () => feature, () => JSON.stringify({ schema: "agent-report/1.0" })),
+    });
+    await until("the second readiness run", () => runsOf(w, feature, "orchestrator").length === 2);
+    await until("its session", () => again.s.count.orchestrator > 0);
   }, 60_000);
 });

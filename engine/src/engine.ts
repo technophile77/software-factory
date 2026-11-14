@@ -2100,6 +2100,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     for (const f of p.features.values()) {
       if (ambiguous.has(f.id) || jobs.has(f.id)) continue;
       if (f.stage() === GATE1_STAGE) afterInterview(p, f);
+      // F-016 FR-7: a gate that failed closed, or was cut off by a stop, runs again at start.
+      else if (f.stage() === READINESS_STAGE) startReadiness(p, f);
       else if (f.stage() === INTERVIEW_STAGE && f.state.gate1.pending && f.state.gate1.reportAt) {
         const since = f.state.gate1.reportAt;
         const tried = record.runs().some((r) => r.feature === f.id && r.project === p.real && r.role === "requirements-analyst" && r.started_at >= since);
