@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
-- **Spec version:** 13
+- **Spec version:** 14
 
 This is engine increment 4, "Build to PR" (F-007 section 13). It is a draft
 written before the owner interview, from the baseline spec, the ADRs and the
@@ -159,7 +159,9 @@ repo (OQ-2).
 Drafts. Each is a hygiene item the owner approves on a card before it is
 applied; nothing here is applied yet.
 
-### H-0190 (draft): limits for the new roles
+### H-0190 (approved): limits for the new roles
+Approved by the owner 2026-11-14 (decision card, as listed). Applied with
+the build's first milestone, together with the engine code that reads them.
 New sections in `engine/config/limits.yaml`, same keys as the analyst's
 minus the container keys (no containers until Beta, ADR 0026). A project's
 `limits:` may only lower them.
@@ -275,3 +277,4 @@ Asked one at a time on decision cards. None is assumed.
 | 11 | 2026-11-14 | Gate 2 runs Semgrep from a hash-pinned PyPI venv on the owner's PC, not Docker (FR-8, H-0196); ADR 0024 amended with the S4.1 recheck. Also: acceptance criteria AC-1 to AC-18, ADR 0028, hygiene drafts H-0190 to H-0196 | Owner, 2026-11-14 (decision card, Semgrep); rest drafts |
 | 12 | 2026-11-14 | H-0196 approved and applied: the six Semgrep dependency advisories accepted as unreachable until 2027-02-12 | Owner, 2026-11-14 (decision card) |
 | 13 | 2026-11-14 | H-0191 approved: developer and judge on Opus 5.5, test engineer and failure classifier on Sonnet 5.5; applied with the build | Owner, 2026-11-14 (decision card) |
+| 14 | 2026-11-14 | H-0190 approved: session limits for developer, test engineer, failure classifier and judge, test-run and CI-wait caps; applied with the build | Owner, 2026-11-14 (decision card) |
