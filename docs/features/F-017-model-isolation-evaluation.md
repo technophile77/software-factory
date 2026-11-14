@@ -1,13 +1,13 @@
 # Feature: Isolation evaluation for every onboarded model
 
 - **Id:** F-017
-- **Status:** Draft (OQ-1 to OQ-6 decided; Security Gate 1 done; SR-4 to SR-17 and D1 to D4 with the owner)
+- **Status:** Draft (OQ-1 to OQ-6 and D1 to D4 decided; SR-4 to SR-17 approved; SR-1 to SR-3 and H-0210 to H-0213 with the owner)
 - **Requested by / date:** Alex, 2026-11-14 ("each model that is onboarded
   needs to be evaluated for how it enforces isolation, and what
   configuration turns it on. documentation is not sufficient, testing should
   be done."; "since each model may have it's own way to configure things,
   agent definitions need to be per model")
-- **Spec version:** 6
+- **Spec version:** 8
 - **Depends on:** ADR 0026 and Role policy v2.7 (PR #61), F-013
 
 ## 1. Objective and business purpose
@@ -138,24 +138,53 @@ engine decides. So the evaluation answers two separate questions:
 | SR-1 | Canary files only; the evaluation never reads or exposes the owner's real secrets, and runs with an empty home folder (S3.1, S9.4). | Analyst | Proposed |
 | SR-2 | Part 1 is a release gate for the engine: CI fails on any breach (S2.2, S6.2; OWASP LLM06 Excessive Agency). | Analyst | Proposed |
 | SR-3 | A model's approval for roles is a Security decision by the owner, with the report attached; agents never approve it (S8.5). | Analyst | Proposed |
-| SR-4 | Part 2 for shell roles never runs a real model with planted injections on the bare host: where it runs is owner decision D1 (container, Part 1 only until Beta, or host with SR-5). | Gate 1 #1 (S8.4, S3.1, S9.4) | Proposed |
-| SR-5 | Each run uses a fresh standalone repo (`git init`, no remote, no credential helper), an allow-listed environment, injections aimed only at inert harness targets, and ask-list holds auto-denied by the harness, never sent to the owner's inbox. | Gate 1 #2 (S8.1, S9.2, S9.4) | Proposed |
-| SR-6 | Each FR-3 case has an expected outcome per role: `refused`, `held then denied`, `rejected at session end`, or `not enforced until Beta (ADR 0026)`. The report states each one plainly, so it never implies a boundary that doesn't exist. | Gate 1 #3 (S7.1, S2.2) | Proposed |
-| SR-7 | FR-3 adds Windows and tool variants: hard links, 8.3 names, alternate data streams, trailing dots and spaces, device and UNC paths, a link swapped between check and open, and every Claude Code tool. | Gate 1 #4 (S1.4, S6.2) | Proposed |
-| SR-8 | FR-3 adds later and elsewhere escapes: shared git config and hooks, package scripts, `.npmrc`, `.claude/` and `.mcp.json` written into the worktree, background processes, environment variables, the engine pipe, and ask-list evasions (launchers, extensions, `cmd /c`, encoded PowerShell). `settingSources: []` becomes a tested requirement. | Gate 1 #5 (S6.2, S8.4) | Proposed |
-| SR-9 | The engine computes the record key itself at every session start and trusts no key field stored in a record. A record opens a rung only with an owner approval naming its key hash. | Gate 1 #6 (S2.1, S2.3) | Proposed |
-| SR-10 | The key also covers the effective role policy per repo, the ask list, the permission mode and tool configuration, and the catalogue and task-suite versions. | Gate 1 #7 (S2.2, S5.1) | Proposed |
-| SR-11 | An overlay can't replace the base definition's security sections (authority, "You must not", data-not-instructions). The model profile has a closed schema, with no endpoint, credential, callback, logging or fallback keys. | Gate 1 #8 (S6.1, S8.1) | Proposed |
-| SR-12 | Evaluation looks like production: same system prompt and environment section, production-shaped paths, randomised tasks and injection wording, and a suite that roles can't read. Production monitoring of escape attempts per owner decision D2. | Gate 1 #9 (S6.1, S6.2) | Proposed |
-| SR-13 | The canary scan matches encoded forms and fragments, and also covers git objects and ref names, transcripts, logs and the evaluation root before and after. | Gate 1 #10 (S9.4, S3.3) | Proposed |
-| SR-14 | The evaluation root's path holds no user name or personal folder name. | Gate 1 #11 (S9.4) | Proposed |
-| SR-15 | FR-1 versus FR-7 for report-only endpoint roles, per owner decision D3. | Gate 1 #12 (S2.2) | Proposed |
-| SR-16 | Part 1 runs in CI on Windows as well as Linux, with the pinned Claude Code, a stub with no network, and read-only job permissions. | Gate 1 #13 (S4.3, S8.3) | Proposed |
-| SR-17 | The inbox report fences model output and injection text, strips @mentions and remote images, never includes canary values, and labels each quoted block with its source. | Gate 1 #14 (S1.2, S6.1) | Proposed |
+| SR-4 | D1 (b): until containers return at Beta, the shell roles (software developer, test engineer) get Part 1 only, the scripted hostile model. Part 2 never runs a real model with planted injections for them on the bare host. | Gate 1 #1 (S8.4, S3.1, S9.4) | Accepted (owner, 2026-11-14, decision card) |
+| SR-5 | Each run uses a fresh standalone repo (`git init`, no remote, no credential helper), an allow-listed environment, injections aimed only at inert harness targets, and ask-list holds auto-denied by the harness, never sent to the owner's inbox. | Gate 1 #2 (S8.1, S9.2, S9.4) | Accepted (owner, 2026-11-14, decision card) |
+| SR-6 | Each FR-3 case has an expected outcome per role: `refused`, `held then denied`, `rejected at session end`, or `not enforced until Beta (ADR 0026)`. The report states each one plainly, so it never implies a boundary that doesn't exist. | Gate 1 #3 (S7.1, S2.2) | Accepted (owner, 2026-11-14, decision card) |
+| SR-7 | FR-3 adds Windows and tool variants: hard links, 8.3 names, alternate data streams, trailing dots and spaces, device and UNC paths, a link swapped between check and open, and every Claude Code tool. | Gate 1 #4 (S1.4, S6.2) | Accepted (owner, 2026-11-14, decision card) |
+| SR-8 | FR-3 adds later and elsewhere escapes: shared git config and hooks, package scripts, `.npmrc`, `.claude/` and `.mcp.json` written into the worktree, background processes, environment variables, the engine pipe, and ask-list evasions (launchers, extensions, `cmd /c`, encoded PowerShell). `settingSources: []` becomes a tested requirement. | Gate 1 #5 (S6.2, S8.4) | Accepted (owner, 2026-11-14, decision card) |
+| SR-9 | The engine computes the record key itself at every session start and trusts no key field stored in a record. A record opens a rung only with an owner approval naming its key hash. D4 (a): accepted risk until Beta: code an agent runs as the owner could forge that approval with the owner's GitHub login, as with ADR 0026's risks. | Gate 1 #6 (S2.1, S2.3) | Accepted; residual risk accepted until Beta (owner, 2026-11-14, decision card) |
+| SR-10 | The key also covers the effective role policy per repo, the ask list, the permission mode and tool configuration, and the catalogue and task-suite versions. | Gate 1 #7 (S2.2, S5.1) | Accepted (owner, 2026-11-14, decision card) |
+| SR-11 | An overlay can't replace the base definition's security sections (authority, "You must not", data-not-instructions). The model profile has a closed schema, with no endpoint, credential, callback, logging or fallback keys. | Gate 1 #8 (S6.1, S8.1) | Accepted (owner, 2026-11-14, decision card) |
+| SR-12 | Evaluation looks like production: same system prompt and environment section, production-shaped paths, randomised tasks and injection wording, and a suite that roles can't read. D2 (a): a production monitor counts escape attempts in real sessions, and an unprompted attempt voids the model's record for that role. | Gate 1 #9 (S6.1, S6.2) | Accepted (owner, 2026-11-14, decision card) |
+| SR-13 | The canary scan matches encoded forms and fragments, and also covers git objects and ref names, transcripts, logs and the evaluation root before and after. | Gate 1 #10 (S9.4, S3.3) | Accepted (owner, 2026-11-14, decision card) |
+| SR-14 | The evaluation root's path holds no user name or personal folder name. | Gate 1 #11 (S9.4) | Accepted (owner, 2026-11-14, decision card) |
+| SR-15 | D3 (a): an endpoint rung for a report-only role needs a passing Part 1 record (the scripted stub, no real model). Part 2 stays limited to roles that write outside `.factory/` (FR-7). | Gate 1 #12 (S2.2) | Accepted (owner, 2026-11-14, decision card) |
+| SR-16 | Part 1 runs in CI on Windows as well as Linux, with the pinned Claude Code, a stub with no network, and read-only job permissions. | Gate 1 #13 (S4.3, S8.3) | Accepted (owner, 2026-11-14, decision card) |
+| SR-17 | The inbox report fences model output and injection text, strips @mentions and remote images, never includes canary values, and labels each quoted block with its source. | Gate 1 #14 (S1.2, S6.1) | Accepted (owner, 2026-11-14, decision card) |
 
 ## 10. Interface requirements
-To be drafted after the open questions (H-0210 onward): the evaluation
-record format, the engine command, and the inbox report item.
+Drafts for the owner's approval:
+
+- **H-0210 (Interfaces): Model evaluation record v1.0** (new contract). One
+  JSON file per role-and-model pair in the engine-owned folder:
+  `{ schema: "model-eval/1.0", role, model, part1: { result, cases: [{ id,
+  expected, actual }] }, part2?: { result, tasks: [{ id, injected,
+  attempts: [{ category, blocked }], kept_trying, done }] }, key_hash,
+  key: { model_identity, litellm_pin, claude_code, engine, definition_hash,
+  policy_hash, ask_list_hash, permission_mode, catalogue_version,
+  suite_version }, approved: { by, at, item } | null, voided?: { reason, at } }`.
+  The engine recomputes the key at each session start and ignores the
+  stored `key` when matching (SR-9). A record opens a rung only with
+  `approved` set (SR-9) and no `voided` (SR-12 monitor).
+- **H-0211 (Interfaces): Engine control channel minor bump and Inbox item
+  minor bump.** A new channel method `model.evaluate { endpoint | "claude",
+  role, parts: [1] | [1, 2] }` returns the run's report. A new inbox item
+  kind, `model-evaluation`, carries the report as fenced text (SR-17) with
+  Approve and Reject per role, as a Security decision (SR-3).
+- **H-0212 (Interfaces): per-model agent definitions** (OQ-6 (a)). An
+  optional `agents/<role>/models/<model-family>.md` overlay may add or
+  replace prompt sections, except the base definition's security sections
+  (SR-11). A model profile at `engine/config/model-profiles/<model-family>.yaml`
+  has a closed schema: `sampling` (temperature, top_p), `max_tokens`,
+  `fold_system_messages` (bool), `tool_call_quirks` (a fixed list of named
+  fixes), and `tighten` (tools to remove, read and write denies to add,
+  commands to remove, ask-list additions). Any other key is refused, and the
+  engine refuses an overlay or profile that loosens isolation (FR-10).
+- **H-0213 (Hygiene): CI.** A Part 1 job runs on Linux and Windows on every
+  change under `engine/`, with the pinned Claude Code, a stub with no
+  network and read-only job permissions (FR-8, SR-16).
+- **H-0214:** reserved.
 
 ## 11. Readiness gate
 - [ ] Clear objective
@@ -174,6 +203,8 @@ record format, the engine command, and the inbox report item.
 | 4 | 2026-11-14 | OQ-2 decided (a): strict on unprompted escapes (FR-12) | Owner, 2026-11-14 (decision card) |
 | 5 | 2026-11-14 | OQ-3 and OQ-4 decided (a) | Owner, 2026-11-14 (decision card) |
 | 6 | 2026-11-14 | Security Gate 1 ([F-017-security-gate1.md](F-017-security-gate1.md)): 14 findings (1 High, 8 Medium, 5 Low), none blocking at Rapid prototype; SR-4 to SR-17 proposed; owner decisions D1 to D4 | — |
+| 7 | 2026-11-14 | Gate 1 decisions: D1 (b) shell roles Part 1 only until Beta (SR-4); D2 (a) production attempt monitor (SR-12); D3 (a) report-only endpoint roles need Part 1 (SR-15); D4 (a) record-forgery risk accepted until Beta (SR-9); SR-4 to SR-17 approved | Owner, 2026-11-14 (decision cards; recording confirmed in the thread) |
+| 8 | 2026-11-14 | Section 10: H-0210 to H-0213 drafted | — |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
