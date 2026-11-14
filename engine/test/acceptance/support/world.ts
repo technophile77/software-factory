@@ -249,6 +249,10 @@ export interface ProjectSpec {
   /** Allow list; defaults to the repo owner. */
   allowed?: Array<{ login: string; id: number }>;
   enabled?: boolean;
+  /** Project and repo maturity (default production-ready); at rapid-prototype interview sessions open without sign-in by default (F-018 FR-13). */
+  maturity?: string;
+  /** `settings.interview_sign_in` as YAML flow text, for example `{ every: engine_start }` (F-018 FR-15). */
+  signIn?: string;
   budgetMode?: "subscription" | "tokens";
   /** Edits the generated manifest text. */
   editManifest?: (text: string) => string;
@@ -427,13 +431,15 @@ export class World {
       `owner:\n  github_id: ${p.ownerId}\n  oauth_client_id: ${p.clientId}\n` +
       `allowed_repo_owners:\n` +
       allowed.map((a) => `  - { login: ${a.login}, id: ${a.id} }\n`).join("") +
-      // Production ready, so the Gate 1 fixtures' High and Medium findings block (F-016 FR-19).
-      `\nrepos:\n  - name: ${p.repo}\n    url: ${p.url}\n    maturity: production-ready\n` +
-      `maturity: production-ready\n\n` +
+      // Production ready by default, so the Gate 1 fixtures' High and Medium findings block (F-016 FR-19).
+      `\nrepos:\n  - name: ${p.repo}\n    url: ${p.url}\n    maturity: ${s.maturity ?? "production-ready"}\n` +
+      `maturity: ${s.maturity ?? "production-ready"}\n\n` +
       `skills:\n  custom: []\n  override: []\n  exclude: []\n\n` +
       `agents:\n  custom: []\n  override: []\n\n` +
       `standards: {}\n\n` +
-      `settings:\n  budget:\n    mode: ${s.budgetMode ?? "subscription"}\n\n` +
+      `settings:\n` +
+      (s.signIn ? `  interview_sign_in: ${s.signIn}\n` : "") +
+      `  budget:\n    mode: ${s.budgetMode ?? "subscription"}\n\n` +
       policy +
       `\nnotes: |\n  Fixture.\n`;
     if (s.editManifest) text = s.editManifest(text);
@@ -596,10 +602,11 @@ export class World {
     return r.feature;
   }
 
-  /** Opens a session and approves it on the fake phone. */
+  /** Opens a session and approves it on the fake phone, unless this run's earlier approval covers it (F-018 FR-13). */
   async approvedSession(feature: string, asUserId?: number): Promise<string> {
     const open = await this.ok("interview.open", { feature });
     this.sessionTokens.push(open.session);
+    if (open.approval === undefined) return open.session;
     const p = this.projectOf(feature) ?? this.project();
     this.gh.approve(open.approval.user_code, asUserId ?? p.ownerId);
     const r = await drive(this.clock, this.rpc("interview.awaitApproval", { session: open.session, wait_s: 900 }, 120_000));

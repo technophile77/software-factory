@@ -17,7 +17,7 @@ const MIN = 60_000;
 
 describe("Session lock and takeover (channel v1.1, ADR 0014)", () => {
   it("[SE-1] a second interview.open gets busy (-32001) with data.started_at in ISO 8601 UTC; the token is 128 bits of hex", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     const f = await w.startFeature();
     const first = await w.ok("interview.open", { feature: f });
@@ -29,8 +29,8 @@ describe("Session lock and takeover (channel v1.1, ADR 0014)", () => {
     expect(second.error!.data.started_at).toBe(first.started_at);
   });
 
-  it("[SE-2] takeover ends the old session and the new one needs its own approval", async () => {
-    w = await World.create();
+  it("[SE-2] at Alpha, takeover ends the old session and the new one needs its own approval", async () => {
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     const f = await w.startFeature();
     const old = await w.approvedSession(f);
@@ -41,7 +41,7 @@ describe("Session lock and takeover (channel v1.1, ADR 0014)", () => {
   });
 
   it("[SE-3] edge case: takeover during a pending approval; approving the old code doesn't approve the new session", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     const f = await w.startFeature();
     const first = await w.ok("interview.open", { feature: f });
@@ -57,7 +57,7 @@ describe("Session lock and takeover (channel v1.1, ADR 0014)", () => {
   });
 
   it("[SE-4] interview.close releases the lock and ends the session", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     const f = await w.startFeature();
     const s = await w.approvedSession(f);
@@ -67,7 +67,7 @@ describe("Session lock and takeover (channel v1.1, ADR 0014)", () => {
   });
 
   it("[SE-5] the lock is released after 30 minutes without a call", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     const f = await w.startFeature();
     const s = await w.approvedSession(f);
@@ -77,7 +77,7 @@ describe("Session lock and takeover (channel v1.1, ADR 0014)", () => {
   });
 
   it("[SE-6] calls within 30 minutes keep a session alive, but it ends 2 hours after approval", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     const f = await w.startFeature();
     const s = await w.approvedSession(f);
@@ -90,7 +90,7 @@ describe("Session lock and takeover (channel v1.1, ADR 0014)", () => {
   });
 
   it("[SE-7] an unknown session token is -32004, and so is a malformed one", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     expectRpcError(await w.rpc("interview.next", { session: "0".repeat(32) }), ERR.session);
     const bad = await w.rpc("interview.next", { session: "not a token" });
@@ -100,7 +100,7 @@ describe("Session lock and takeover (channel v1.1, ADR 0014)", () => {
 
 describe("Items, revisions, replies (channel v1.1)", () => {
   it("[SE-8] Item shape: id, revision, kind, text, why, suggested, options, findings, status; ids match the id pattern", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { feature, session } = await interviewReady(w);
     const item = await askAndFetch(w, feature, session, {
       text: "CSV or JSON?",
@@ -123,7 +123,7 @@ describe("Items, revisions, replies (channel v1.1)", () => {
   });
 
   it("[SE-9] a reply naming a revision other than the current one is stale (-32002) and changes nothing", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { feature, session } = await interviewReady(w);
     const item = await askAndFetch(w, feature, session);
     expectRpcError(await w.reply(session, { id: item.id, revision: item.revision + 1 }, "answer", "x"), ERR.stale);
@@ -133,7 +133,7 @@ describe("Items, revisions, replies (channel v1.1)", () => {
   });
 
   it("[SE-10] more_info puts a question in research; the analyst's revision brings it back open at revision + 1; the old revision is then stale; wait_s waits for it; itemReady is sent", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { feature, session } = await interviewReady(w);
     const listener = await w.connect();
     const item = await askAndFetch(w, feature, session);
@@ -165,7 +165,7 @@ describe("Items, revisions, replies (channel v1.1)", () => {
   });
 
   it("[SE-11] while research runs the item is researching; wait_s waits at most 600 s of engine time", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { feature, session } = await interviewReady(w);
     const item = await askAndFetch(w, feature, session);
     await w.reply(session, item, "more_info", "Please look into it.");
@@ -179,7 +179,7 @@ describe("Items, revisions, replies (channel v1.1)", () => {
   });
 
   it("[SE-12] a repeated reply_id returns the first result and changes nothing, even with other text", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { feature, session } = await interviewReady(w);
     const item = await askAndFetch(w, feature, session);
     const id = rand(8);
@@ -203,7 +203,7 @@ describe("Items, revisions, replies (channel v1.1)", () => {
   });
 
   it("[SE-13] reply kinds: assumption kinds on a question and question kinds on an assumption are -32005", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { feature, session } = await interviewReady(w);
     const q = await askAndFetch(w, feature, session);
     for (const kind of ["approve_assumption", "reject_assumption"]) {
@@ -218,7 +218,7 @@ describe("Items, revisions, replies (channel v1.1)", () => {
   });
 
   it("[SE-14] approve_assumption and reject_assumption set approved / rejected; interview.state reports recorded_at", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { feature, session } = await interviewReady(w);
     const a1 = await w.propose(feature, { text: "Assume UTF-8 only." });
     const a2 = await w.propose(feature, { text: "Assume no Excel quirks." });
@@ -232,13 +232,13 @@ describe("Items, revisions, replies (channel v1.1)", () => {
   });
 
   it("[SE-15] interview.state of an unknown item is -32003", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { feature } = await interviewReady(w);
     expectRpcError(await w.rpc("interview.state", { feature, item: "nope" }), ERR.unknown);
   });
 
   it("[SE-16] interview.list counts open questions, deferred questions and pending assumptions", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { feature, session } = await interviewReady(w);
     const q1 = await askAndFetch(w, feature, session);
     await w.reply(session, q1, "defer", "");
@@ -252,7 +252,7 @@ describe("Items, revisions, replies (channel v1.1)", () => {
 
 describe("Deferred items once per session (channel v1.1)", () => {
   it("[SE-17] a new session gets deferred items first, each once, then new items", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { feature, session } = await interviewReady(w);
     const q1 = await askAndFetch(w, feature, session);
     await w.reply(session, q1, "defer", "");
@@ -270,7 +270,7 @@ describe("Deferred items once per session (channel v1.1)", () => {
   });
 
   it("[SE-18] a deferred question can still be answered later at its current revision", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { feature, session } = await interviewReady(w);
     const q1 = await askAndFetch(w, feature, session);
     await w.reply(session, q1, "defer", "");

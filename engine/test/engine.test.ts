@@ -334,7 +334,7 @@ describe("FR-14 interrupted runs", () => {
     expect((await e2.interviewTools(feature, w.worktree).interview_propose_assumption({ text: "A.", why: "w" })).ok).toBe(true);
     expect(new EngineRecord(w.home).runs()).toHaveLength(1);
     const c2 = await connect(w);
-    expect((await c2.ok("engine.status")).features).toEqual([{ id: feature, stage: "requirements_interview", active_agents: 0 }]);
+    expect((await c2.ok("engine.status")).features).toEqual([{ id: feature, stage: "requirements_interview", active_agents: 0, activity: expect.any(String) }]);
   });
 
   it("an append the engine committed but didn't record before a kill is still its own", async () => {

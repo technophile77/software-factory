@@ -1,10 +1,28 @@
 import YAML from "yaml";
-import { MANIFEST_FILE } from "../constants";
+import { MANIFEST_FILE, RAPID_PROTOTYPE } from "../constants";
 import { Git } from "../git";
 import { RoleAssignmentError, parseRoleAssignments } from "./endpoint-roles";
 import { ENDPOINT_NAME_RE } from "./models";
 import { ConfigError } from "./paths-file";
 import { checkConfig, manifestFile } from "../schemas/config";
+
+/**
+ * How often the owner signs in to GitHub to open interview sessions
+ * (F-018 FR-15): `never`, once per `engine_start`, every `session`, or once
+ * per `hours` hours.
+ */
+export type SignInEvery = "never" | "engine_start" | "session" | "hours";
+export interface InterviewSignIn {
+  every: SignInEvery;
+  hours?: number;
+}
+const SIGN_IN_EVERY: readonly SignInEvery[] = ["never", "engine_start", "session", "hours"];
+export const MAX_SIGN_IN_HOURS = 168;
+
+/** The setting in force: the manifest's, or the level's default when it has none. */
+export function interviewSignIn(m: Pick<Manifest, "maturity" | "interviewSignIn">): InterviewSignIn {
+  return m.interviewSignIn ?? { every: m.maturity === RAPID_PROTOTYPE ? "never" : "session" };
+}
 
 export interface RepoOwner {
   login: string;
@@ -24,6 +42,10 @@ export interface Manifest {
   endpoints: string[];
   /** The master factory tag the project uses (spec v30: skills, AGENT.md and limit defaults come from its commit). */
   factoryVersion: string;
+  /** The project's maturity level (H-0008); `rapid-prototype` relaxes interview approval (F-018 FR-13). */
+  maturity: string;
+  /** `settings.interview_sign_in` as written; null when absent (F-018 FR-15). */
+  interviewSignIn: InterviewSignIn | null;
   /** The parsed document, from which a session's Role policy is resolved when it starts. */
   raw?: unknown;
 }
@@ -116,6 +138,7 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
       endpoints.push(n as string);
     }
   }
+  const signIn = isObj(doc.settings) ? parseSignIn(doc.settings.interview_sign_in, doc.maturity as string, bad) : null;
   try {
     parseRoleAssignments(isObj(doc.settings) ? doc.settings.agents : undefined);
   } catch (e) {
@@ -132,6 +155,26 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
     billingMode: mode as "subscription" | "tokens",
     endpoints,
     factoryVersion: (doc.factory as { version: string }).version,
+    maturity: doc.maturity as string,
+    interviewSignIn: signIn,
     raw: doc,
   };
+}
+
+function parseSignIn(v: unknown, maturity: string, bad: (m: string) => never): InterviewSignIn | null {
+  if (v === undefined) return null;
+  const k = "settings.interview_sign_in";
+  if (!isObj(v)) return bad(`${k} must be a mapping with 'every'`);
+  const every = v.every;
+  if (typeof every !== "string" || !SIGN_IN_EVERY.includes(every as SignInEvery)) bad(`${k}.every must be one of ${SIGN_IN_EVERY.join(", ")}`);
+  const extra = Object.keys(v).filter((x) => x !== "every" && x !== "hours");
+  if (extra.length) bad(`${k} has unknown key '${extra[0]}'`);
+  if (every === "hours") {
+    if (!isPosInt(v.hours) || v.hours > MAX_SIGN_IN_HOURS) bad(`${k}.hours must be a whole number from 1 to ${MAX_SIGN_IN_HOURS}`);
+    return { every, hours: v.hours as number };
+  }
+  if (v.hours !== undefined) bad(`${k}.hours is only allowed with every: hours`);
+  // No sign-in at all is an accepted risk only until Alpha (F-018 SR-8).
+  if (every === "never" && maturity !== RAPID_PROTOTYPE) bad(`${k}.every: never is allowed only at ${RAPID_PROTOTYPE}`);
+  return { every: every as SignInEvery };
 }

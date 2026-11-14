@@ -130,6 +130,15 @@ describe("Channel transport and access (AC-4, FR-4, SR-15 on Linux)", () => {
     expect(a.result).toBeDefined();
     expect(b.result).toBeDefined();
   });
+
+  it("[CH-5b] F-018 FR-14 (H-0225): engine.status gives each feature a fixed activity code", async () => {
+    w = await World.create();
+    await w.boot();
+    const f = await w.startFeature();
+    const r = await w.ok("engine.status", {});
+    const mine = (r.features as Array<{ id: string; activity?: string }>).find((x) => x.id === f);
+    expect(["analyst_reviewing", "analyst_researching", "analyst_writing_spec", "waiting_for_owner", "idle"]).toContain(mine?.activity);
+  });
 });
 
 describe("Framing (channel v1.1): one JSON-RPC message per line, UTF-8, \\n, at most 1 MiB", () => {

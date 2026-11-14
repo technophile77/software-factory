@@ -1,17 +1,17 @@
-// F-005 v10 (ADR 0025) end to end: the engine's `mcp` mode against the real
-// engine (engine/test/helpers.ts's world: real git, fake GitHub and clock),
-// driven through the MCP SDK's stdio client. Spec constraint: "tested ...
+// F-005 v10 end to end: the interview operations `factory-engine interview`
+// runs (F-018, ADR 0029) against the real engine (engine/test/helpers.ts's
+// world: real git, fake GitHub and clock). Spec constraint: "tested ...
 // end to end with the real engine". Unix only here: the engine serves a
 // named pipe on Windows, and this file has not been run there.
 
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { EngineHandle } from "../../src/engine";
 import { OTHER_ID, OWNER_ID, type World, engineJson, makeWorld, removeTmpdirs, start } from "../helpers";
-import { IS_UNIX, Mcp, type ToolResult, buildEngine, expectCleanFailure, expectOk, removeTmp } from "./support/mcp-harness";
+import { IS_UNIX, Ops, type ToolResult, buildEngine, expectCleanFailure, expectOk, removeTmp } from "./support/mcp-harness";
 
 let bundle: string | undefined;
 const engines: EngineHandle[] = [];
-const procs: Mcp[] = [];
+const procs: Ops[] = [];
 
 afterEach(async () => {
   for (const m of procs.splice(0)) await m.close();
@@ -22,23 +22,23 @@ afterAll(() => {
   removeTmpdirs();
 });
 
-async function setup(): Promise<{ w: World; m: Mcp }> {
+async function setup(): Promise<{ w: World; m: Ops }> {
   bundle ??= await buildEngine();
   const w = makeWorld();
   engines.push(await start(w));
   return { w, m: await mcp(w) };
 }
 
-async function mcp(w: World): Promise<Mcp> {
-  const m = await Mcp.start(bundle!, w.config);
+async function mcp(w: World): Promise<Ops> {
+  const m = await Ops.start(bundle!, w.config);
   procs.push(m);
   return m;
 }
 
-const call = (m: Mcp, tool: string, args: Record<string, unknown> = {}): Promise<ToolResult> => m.call(`interview_${tool}`, args);
+const call = (m: Ops, tool: string, args: Record<string, unknown> = {}): Promise<ToolResult> => m.call(`interview_${tool}`, args);
 
 /** The owner approves on (fake) GitHub; polls interview_approval until the engine accepts. */
-async function approve(w: World, m: Mcp, feature: string, approver = OWNER_ID): Promise<ToolResult> {
+async function approve(w: World, m: Ops, feature: string, approver = OWNER_ID): Promise<ToolResult> {
   w.github.approver = approver;
   await w.clock.advance(5000);
   w.github.approver = null;

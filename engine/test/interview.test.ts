@@ -56,8 +56,8 @@ describe("feature.start (FR-5)", () => {
     expect((await c.ok("feature.start", { request: "second" })).feature).toBe("F-002");
     const st = await c.ok("engine.status");
     expect(st.features).toEqual([
-      { id: "F-001", stage: "requirements_interview", active_agents: 0 },
-      { id: "F-002", stage: "requirements_interview", active_agents: 0 },
+      { id: "F-001", stage: "requirements_interview", active_agents: 0, activity: expect.any(String) },
+      { id: "F-002", stage: "requirements_interview", active_agents: 0, activity: expect.any(String) },
     ]);
   });
 

@@ -1,6 +1,6 @@
 # 0025. The spec interview's tools come from an MCP mode of the engine
 
-- **Status:** Accepted
+- **Status:** Superseded by [0029](0029-interview-in-a-terminal-command.md) (2026-11-14)
 - **Date:** 2026-11-13
 - **Decided by:** owner (decision card, option A)
 - **Decision item:** `docs/proposals/0029-interview-tools-over-mcp.md`

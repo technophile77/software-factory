@@ -76,7 +76,7 @@ describe("interview_spec_ready (FR-12, AC-10)", () => {
     const branch = e.feature(feature)!.state.branch;
     expect(report.commit).toBe(git(w.config, "rev-parse", `refs/heads/${branch}`));
     expect(report.commit).not.toBe(git(decoy, "rev-parse", "HEAD"));
-    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "security_gate_1", active_agents: 0 }]);
+    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "security_gate_1", active_agents: 0, activity: expect.any(String) }]);
     void e;
   });
 
