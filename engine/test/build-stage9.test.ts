@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CheckRun } from "../src/build/pulls";
-import { ACTIONS_APP_ID, checksVerdict, doneComment, prText, prWorkflowProblems, verbatimMatch } from "../src/build/stage9";
+import { ACTIONS_APP_ID, checksVerdict, doneComment, prText, prWorkflowProblems, publishRefusal, verbatimMatch } from "../src/build/stage9";
 
 // F-015 stage 9 rules: green CI, pull request workflows, and what never leaves the PC.
 
@@ -70,5 +70,20 @@ describe("PR text (SR-4) and the definition-of-done comment (F-011 FR-9)", () =>
     const c = doneComment({ feature: "F-001", specVersion: 3, head: SHA, configRepo: "o/acme-config", fork: false, items: [{ n: 1, label: "Requirements approved", met: true }, { n: 7, label: "Final security review passed", met: true, ref: "runs/F-001/code_review/security-reviewer-2.json" }] });
     expect(c).toContain("| 1 | Requirements approved | Met | - |");
     expect(c).toContain("(https://github.com/o/acme-config/blob/factory/state/runs/F-001/code_review/security-reviewer-2.json)");
+  });
+});
+
+describe("publishRefusal (SR-6, AC-23, H-0249)", () => {
+  it("pushes to a private repo, or a public one the owner confirmed at onboarding", () => {
+    expect(publishRefusal({ status: 200, private: true }, undefined)).toBeNull();
+    expect(publishRefusal({ status: 200, private: true }, "private")).toBeNull();
+    expect(publishRefusal({ status: 200, private: false }, "public")).toBeNull();
+  });
+
+  it("refuses an unconfirmed public repo, any change since onboarding, and an unreadable repo", () => {
+    expect(publishRefusal({ status: 200, private: false }, undefined)).toMatch(/wasn't confirmed/);
+    expect(publishRefusal({ status: 200, private: false }, "private")).toMatch(/is public but was private/);
+    expect(publishRefusal({ status: 200, private: true }, "public")).toMatch(/is private but was public/);
+    expect(publishRefusal({ status: 404 }, "public")).toMatch(/HTTP 404/);
   });
 });

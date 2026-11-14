@@ -137,3 +137,17 @@ export function doneComment(o: { feature: string; specVersion: number | null; he
     o.fork ? "This pull request comes from a fork or an account without write access." : "This pull request comes from a branch in this repo, opened with the owner's token.",
   ].join("\n");
 }
+
+/**
+ * SR-6 (H-0249): why the engine may not push to a repo, or null when it may.
+ * `recorded` is the manifest's `repos[].visibility`: `public` only after the
+ * owner confirmed publishing there at onboarding. A repo with nothing
+ * recorded may only be private, and any change since onboarding stops pushes.
+ */
+export function publishRefusal(live: { status: number; private?: boolean }, recorded: "private" | "public" | undefined): string | null {
+  if (live.status !== 200 || typeof live.private !== "boolean") return `couldn't be read (HTTP ${live.status})`;
+  const now = live.private ? "private" : "public";
+  if (recorded === undefined) return now === "private" ? null : "is public, and publishing to it wasn't confirmed at onboarding";
+  if (recorded !== now) return `is ${now} but was ${recorded} at onboarding`;
+  return null;
+}

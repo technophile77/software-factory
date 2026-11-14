@@ -70,6 +70,7 @@ const repo = z.strictObject({
   name: text(100),
   url: text(300),
   maturity: text(40).optional(),
+  visibility: z.enum(["private", "public"]).optional(),
   policy: open.optional(),
   commands: z.strictObject({
     test: z.array(text(500)).min(1).max(50).optional(),
@@ -78,7 +79,7 @@ const repo = z.strictObject({
   }).optional(),
 });
 
-/** `factory-project.yaml` (Project manifest v1.7) in the project's config repo. */
+/** `factory-project.yaml` (Project manifest v1.9) in the project's config repo. */
 export const manifestFile = z.strictObject({
   schema: z.literal("factory-project/1.0"),
   name: text(100),

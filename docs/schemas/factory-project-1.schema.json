@@ -99,6 +99,13 @@
             "type": "string",
             "maxLength": 40
           },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "private",
+              "public"
+            ]
+          },
           "policy": {
             "type": "object",
             "propertyNames": {

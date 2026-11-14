@@ -20,6 +20,8 @@ const SIGN_IN_EVERY: readonly SignInEvery[] = ["never", "engine_start", "session
 export const MAX_SIGN_IN_HOURS = 168;
 
 /** The setting in force: the manifest's, or the level's default when it has none. */
+export type RepoVisibility = "private" | "public";
+
 export function interviewSignIn(m: Pick<Manifest, "maturity" | "interviewSignIn">): InterviewSignIn {
   return m.interviewSignIn ?? { every: m.maturity === RAPID_PROTOTYPE ? "never" : "session" };
 }
@@ -38,7 +40,8 @@ export interface Manifest {
   /** Manifest v1.7 `owner.commit_name` (F-015 FR-17); checked where it is used, so a bad one stops only the build. */
   commitName?: string;
   allowed_repo_owners: RepoOwner[];
-  repos: Array<{ name: string; url: string; owner: string; repo: string }>;
+  /** `visibility` (v1.9, F-015 SR-6): what onboarding recorded; `public` means the owner confirmed publishing there. */
+  repos: Array<{ name: string; url: string; owner: string; repo: string; visibility?: RepoVisibility }>;
   billingMode: "subscription" | "tokens";
   /** SR-8: the model endpoints (by name) this project's code may be sent to; whether each exists is checked at run time. */
   endpoints: string[];
@@ -126,7 +129,8 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
     if (!isObj(r) || typeof r.name !== "string" || typeof r.url !== "string") return bad(`repos[${i}] needs name and url`);
     const m = REPO_URL_RE.exec(r.url);
     if (!m) return bad(`repos[${i}].url must be https://github.com/<owner>/<repo>`);
-    return { name: r.name, url: r.url, owner: m[1]!, repo: m[2]! };
+    if (r.visibility !== undefined && r.visibility !== "private" && r.visibility !== "public") return bad(`repos[${i}].visibility must be private or public`);
+    return { name: r.name, url: r.url, owner: m[1]!, repo: m[2]!, ...(r.visibility !== undefined ? { visibility: r.visibility as RepoVisibility } : {}) };
   });
   const budget = isObj(doc.settings) && isObj(doc.settings.budget) ? doc.settings.budget : undefined;
   const mode = budget?.mode;
