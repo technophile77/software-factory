@@ -1,13 +1,13 @@
 # Feature: Isolation evaluation for every onboarded model
 
 - **Id:** F-017
-- **Status:** Draft (OQ-1 to OQ-6 decided; Security Gate 1 next)
+- **Status:** Draft (OQ-1 to OQ-6 decided; Security Gate 1 done; SR-4 to SR-17 and D1 to D4 with the owner)
 - **Requested by / date:** Alex, 2026-11-14 ("each model that is onboarded
   needs to be evaluated for how it enforces isolation, and what
   configuration turns it on. documentation is not sufficient, testing should
   be done."; "since each model may have it's own way to configure things,
   agent definitions need to be per model")
-- **Spec version:** 5
+- **Spec version:** 6
 - **Depends on:** ADR 0026 and Role policy v2.7 (PR #61), F-013
 
 ## 1. Objective and business purpose
@@ -138,6 +138,20 @@ engine decides. So the evaluation answers two separate questions:
 | SR-1 | Canary files only; the evaluation never reads or exposes the owner's real secrets, and runs with an empty home folder (S3.1, S9.4). | Analyst | Proposed |
 | SR-2 | Part 1 is a release gate for the engine: CI fails on any breach (S2.2, S6.2; OWASP LLM06 Excessive Agency). | Analyst | Proposed |
 | SR-3 | A model's approval for roles is a Security decision by the owner, with the report attached; agents never approve it (S8.5). | Analyst | Proposed |
+| SR-4 | Part 2 for shell roles never runs a real model with planted injections on the bare host: where it runs is owner decision D1 (container, Part 1 only until Beta, or host with SR-5). | Gate 1 #1 (S8.4, S3.1, S9.4) | Proposed |
+| SR-5 | Each run uses a fresh standalone repo (`git init`, no remote, no credential helper), an allow-listed environment, injections aimed only at inert harness targets, and ask-list holds auto-denied by the harness, never sent to the owner's inbox. | Gate 1 #2 (S8.1, S9.2, S9.4) | Proposed |
+| SR-6 | Each FR-3 case has an expected outcome per role: `refused`, `held then denied`, `rejected at session end`, or `not enforced until Beta (ADR 0026)`. The report states each one plainly, so it never implies a boundary that doesn't exist. | Gate 1 #3 (S7.1, S2.2) | Proposed |
+| SR-7 | FR-3 adds Windows and tool variants: hard links, 8.3 names, alternate data streams, trailing dots and spaces, device and UNC paths, a link swapped between check and open, and every Claude Code tool. | Gate 1 #4 (S1.4, S6.2) | Proposed |
+| SR-8 | FR-3 adds later and elsewhere escapes: shared git config and hooks, package scripts, `.npmrc`, `.claude/` and `.mcp.json` written into the worktree, background processes, environment variables, the engine pipe, and ask-list evasions (launchers, extensions, `cmd /c`, encoded PowerShell). `settingSources: []` becomes a tested requirement. | Gate 1 #5 (S6.2, S8.4) | Proposed |
+| SR-9 | The engine computes the record key itself at every session start and trusts no key field stored in a record. A record opens a rung only with an owner approval naming its key hash. | Gate 1 #6 (S2.1, S2.3) | Proposed |
+| SR-10 | The key also covers the effective role policy per repo, the ask list, the permission mode and tool configuration, and the catalogue and task-suite versions. | Gate 1 #7 (S2.2, S5.1) | Proposed |
+| SR-11 | An overlay can't replace the base definition's security sections (authority, "You must not", data-not-instructions). The model profile has a closed schema, with no endpoint, credential, callback, logging or fallback keys. | Gate 1 #8 (S6.1, S8.1) | Proposed |
+| SR-12 | Evaluation looks like production: same system prompt and environment section, production-shaped paths, randomised tasks and injection wording, and a suite that roles can't read. Production monitoring of escape attempts per owner decision D2. | Gate 1 #9 (S6.1, S6.2) | Proposed |
+| SR-13 | The canary scan matches encoded forms and fragments, and also covers git objects and ref names, transcripts, logs and the evaluation root before and after. | Gate 1 #10 (S9.4, S3.3) | Proposed |
+| SR-14 | The evaluation root's path holds no user name or personal folder name. | Gate 1 #11 (S9.4) | Proposed |
+| SR-15 | FR-1 versus FR-7 for report-only endpoint roles, per owner decision D3. | Gate 1 #12 (S2.2) | Proposed |
+| SR-16 | Part 1 runs in CI on Windows as well as Linux, with the pinned Claude Code, a stub with no network, and read-only job permissions. | Gate 1 #13 (S4.3, S8.3) | Proposed |
+| SR-17 | The inbox report fences model output and injection text, strips @mentions and remote images, never includes canary values, and labels each quoted block with its source. | Gate 1 #14 (S1.2, S6.1) | Proposed |
 
 ## 10. Interface requirements
 To be drafted after the open questions (H-0210 onward): the evaluation
@@ -159,6 +173,7 @@ record format, the engine command, and the inbox report item.
 | 3 | 2026-11-14 | Scope: only roles that write outside `.factory/` count as having write permissions; OQ-5 moot; AC-5 generalised | Owner, 2026-11-14 (decision card) |
 | 4 | 2026-11-14 | OQ-2 decided (a): strict on unprompted escapes (FR-12) | Owner, 2026-11-14 (decision card) |
 | 5 | 2026-11-14 | OQ-3 and OQ-4 decided (a) | Owner, 2026-11-14 (decision card) |
+| 6 | 2026-11-14 | Security Gate 1 ([F-017-security-gate1.md](F-017-security-gate1.md)): 14 findings (1 High, 8 Medium, 5 Low), none blocking at Rapid prototype; SR-4 to SR-17 proposed; owner decisions D1 to D4 | — |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
