@@ -35,8 +35,8 @@ const CATEGORIES: Category[] = ["Product", "Architecture", "Interfaces", "Assump
  * else is record only (H-0182).
  */
 const EFFECTS: Array<[RegExp, (m: RegExpExecArray) => ItemInput["effect"]]> = [
-  [/^Gate 1 #(\d+) for (F-\d{3,6}): the owner's choice$/, (m) => ({ type: "gate1_choice", feature: m[2], finding: Number(m[1]) })],
-  [/^Gate 1 #(\d+) for (F-\d{3,6}): accept the risk or send it back$/, (m) => ({ type: "gate1_risk", feature: m[2], finding: Number(m[1]) })],
+  [/^Gate 1 #(\d+) for (F-\d{3,6}): the owner's choice$/, (m) => ({ type: "gate1_choice", feature: m[2]!, finding: Number(m[1]) })],
+  [/^Gate 1 #(\d+) for (F-\d{3,6}): accept the risk or send it back$/, (m) => ({ type: "gate1_risk", feature: m[2]!, finding: Number(m[1]) })],
   [/^Pinned owner keys changed$/, () => ({ type: "pins" })],
 ];
 

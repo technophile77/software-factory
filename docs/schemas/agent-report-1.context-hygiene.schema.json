@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "agent-report/1.0"
+    },
+    "role": {
+      "type": "string",
+      "const": "context-hygiene"
+    },
+    "feature": {
+      "type": "string",
+      "pattern": "^F-\\d{3,6}$"
+    },
+    "stage": {
+      "type": "string",
+      "maxLength": 60
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "blocked",
+        "failed",
+        "partial"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "sizes": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "tokens": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "budget": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "change_since_last_review": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "file",
+              "tokens",
+              "budget",
+              "change_since_last_review"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "duplicates": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "instruction": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "locations": {
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 300
+                }
+              }
+            },
+            "required": [
+              "instruction",
+              "locations"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "skill_misses": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "run": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "skill": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "not_loaded",
+                  "not_applicable"
+                ]
+              }
+            },
+            "required": [
+              "run",
+              "skill",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "conflicts": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "explanation": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "location",
+              "explanation"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "proposed_items": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        }
+      },
+      "required": [
+        "sizes",
+        "duplicates",
+        "skill_misses",
+        "conflicts",
+        "proposed_items"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "role",
+    "feature",
+    "stage",
+    "commit",
+    "outcome",
+    "summary",
+    "body"
+  ],
+  "additionalProperties": false
+}

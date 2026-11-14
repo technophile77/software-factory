@@ -26,6 +26,8 @@ export interface ToolCall {
 
 export class FakeSession {
   result = "done";
+  /** What the session returns as its structured result (F-020 FR-9), when the engine gave it a schema. */
+  structured: unknown = undefined;
   readonly id = "fake-" + randomBytes(6).toString("hex");
   /** What each tool call returned to the agent, in order: everything that reached it. */
   readonly received: Array<{ tool: string; text: string }> = [];
@@ -107,7 +109,7 @@ export class FakeSdk {
   query(p: { prompt: AsyncIterable<any>; options: any }): AsyncIterable<any> {
     const tools: FactoryTool[] = p.options.mcpServers?.factory?.fakeTools ?? [];
     // The reader's only factory tool is fetch_page (Role policy v2.5); the analyst's are the interview tools;
-    // the Gate 1 security reviewer (F-008) has none, as it only writes its report file.
+    // the Gate 1 security reviewer (F-008) has none, as it only returns its report.
     const role: Role = tools.some((t) => t.name === "fetch_page") ? "reader" : tools.some((t) => t.name.startsWith("interview_")) ? "analyst" : "reviewer";
     const s = new FakeSession(role, p.options, tools, p.prompt[Symbol.asyncIterator](), this.docker);
     this.sessions.push(s);
@@ -115,7 +117,10 @@ export class FakeSdk {
     return (async function* () {
       yield { type: "system", subtype: "init", session_id: s.id, tools: p.options.tools };
       if (behaviour) await behaviour(s);
-      yield { type: "result", subtype: "success", session_id: s.id, num_turns: 1, total_cost_usd: 0, usage: { input_tokens: 1, output_tokens: 1 }, result: s.result };
+      yield {
+        type: "result", subtype: "success", session_id: s.id, num_turns: 1, total_cost_usd: 0, usage: { input_tokens: 1, output_tokens: 1 }, result: s.result,
+        ...(p.options.outputFormat && s.structured !== undefined ? { structured_output: s.structured } : {}),
+      };
     })();
   }
 

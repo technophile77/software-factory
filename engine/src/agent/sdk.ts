@@ -76,6 +76,8 @@ export interface SessionOptions {
   maxBudgetUsd?: number;
   model?: string;
   resume?: string;
+  /** F-020 FR-9: the report's JSON Schema; the session's result then carries the report as `structured_output`. */
+  outputFormat?: { type: "json_schema"; schema: Record<string, unknown> };
   env: Record<string, string>;
   abortController: AbortController;
   spawnClaudeCodeProcess(o: SpawnOptions): SpawnedProcess;
@@ -86,7 +88,7 @@ export interface SessionOptions {
 export type SdkMessage =
   | { type: "system"; subtype: "init"; session_id: string; tools?: string[]; mcp_servers?: Array<{ name: string; status: string }>; model?: string }
   | { type: "assistant"; session_id: string; message: { content?: Array<{ type: string; name?: string; input?: unknown }>; usage?: { output_tokens?: number } } }
-  | { type: "result"; subtype: string; session_id: string; num_turns?: number; total_cost_usd?: number; usage?: { input_tokens?: number; output_tokens?: number }; result?: string; is_error?: boolean; errors?: string[] }
+  | { type: "result"; subtype: string; session_id: string; num_turns?: number; total_cost_usd?: number; usage?: { input_tokens?: number; output_tokens?: number }; result?: string; is_error?: boolean; errors?: string[]; structured_output?: unknown }
   | { type: string; session_id?: string; [k: string]: unknown };
 
 export interface UserTurn {

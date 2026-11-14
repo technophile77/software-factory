@@ -322,7 +322,8 @@ export interface Finding {
   location: string;
   explanation: string;
   fix: string;
-  blocks: boolean;
+  /** The engine fills it (F-016 FR-19); a report that sets it is refused (F-020 SR-7). */
+  blocks?: boolean;
   needs_owner?: boolean;
   options?: Array<{ id: string; label: string }>;
   recommendation?: string;
@@ -335,7 +336,6 @@ export function requirementFinding(o: Partial<Finding> = {}): Finding {
     location: "Section 9",
     explanation: "The spec doesn't say how values that look like formulas are handled when exported.",
     fix: "Exported cells are prefixed with a single quote when they start with =, +, - or @.",
-    blocks: true,
     needs_owner: false,
     ...o,
   };
@@ -348,7 +348,6 @@ export function choiceFinding(o: Partial<Finding> = {}): Finding {
     location: "Section 2",
     explanation: "The export could run in the browser or on the server; each widens a different permission.",
     fix: "Choose where the export runs.",
-    blocks: true,
     needs_owner: true,
     options: [
       { id: "A", label: "Export in the browser" },
@@ -369,8 +368,6 @@ export function reportDoc(w: World, ctx: ReviewerCtx, o: { findings?: Finding[];
     commit: ctx.commit,
     outcome: "complete",
     summary: o.summary ?? "The spec covers the export's input handling; see section 9.",
-    items_filed: [],
-    artifacts: [],
     body: {
       gate: 1,
       findings: o.findings ?? [],
@@ -382,9 +379,22 @@ export function reportDoc(w: World, ctx: ReviewerCtx, o: { findings?: Finding[];
   };
 }
 
-/** The act of writing `content` as the named report. */
+/**
+ * The act of reporting `content`: as the session's structured result when
+ * the engine gave it a schema (F-020 FR-9), else by writing the named report
+ * file. Text that isn't JSON is returned as it is.
+ */
 export function writeReport(content: (ctx: ReviewerCtx) => string): ReviewerAct {
-  return (ctx) => [{ write: `/workspace/${ctx.reportRel}`, content: content(ctx) }];
+  return (ctx) => {
+    const text = content(ctx);
+    if (!ctx.session.options.outputFormat) return [{ write: `/workspace/${ctx.reportRel}`, content: text }];
+    try {
+      ctx.session.structured = JSON.parse(text);
+    } catch {
+      ctx.session.structured = text;
+    }
+    return [];
+  };
 }
 
 export function validReport(w: World, o: Parameters<typeof reportDoc>[2] = {}): ReviewerAct {

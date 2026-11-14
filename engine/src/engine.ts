@@ -41,7 +41,8 @@ import { ensureOwnerDir, findOnPath, sha256Hex, writeFileAtomic } from "./fsutil
 import { Git } from "./git";
 import { GitHubClient, GitHubError, GitHubUnreachable, HttpGitHub, checkBase } from "./github";
 import { HttpIssues, IssuesApi } from "./inbox/github-issues";
-import { Inbox, Recorded } from "./inbox/store";
+import { ConsoleResult, Inbox, Recorded } from "./inbox/store";
+import { InboxLocal } from "./inbox/local";
 import type { ItemInput } from "./inbox/model";
 import { type OsNotify, osNotifier } from "./os/notify";
 import { Gitleaks, SecretsScanner } from "./gitleaks";
@@ -57,7 +58,9 @@ import { READINESS_STAGE, analystGate1Turn, analystReturnTurn, correctionTurn, g
 import { findingRef, plain, renderReport } from "./gate1/render";
 import { ADVISORY_WALL_MS, type AdvisoryHints, advisoryBlock, matchRate, runAdvisory } from "./gate1/advisory";
 import { runAdvisorySession } from "./gate1/advisory-session";
-import { GATE1_STAGE, Gate1Report, REVIEWER_ROLE, readReportFile, validateReport } from "./gate1/report";
+import { GATE1_STAGE, Gate1Report, REVIEWER_ROLE, validateReport } from "./gate1/report";
+import { modelReport, reportOutputSchema } from "./schemas/agent-report";
+import { schemaErrors } from "./schemas/json-file";
 import { StandardsError, loadStandards } from "./gate1/standards";
 import { type Check, readinessChecks, specPathPattern } from "./interview/readiness";
 import { structuralChecks } from "./readiness/checks";
@@ -308,6 +311,49 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }));
 
   const notify = o.notify ?? osNotifier({ platform: osApi.platform, children, log, cwd: home });
+  /**
+   * F-021 SR-5: private detail goes through the secrets scan before it is
+   * stored; each flagged line is replaced, and if the scan still flags the
+   * result, all of it is.
+   */
+  const REMOVED = "[secret removed by the engine]";
+  const scrubPrivate = async (text: string): Promise<string> => {
+    const scan = (t: string) => scanner.scan([{ sha: sha256Hex(t), content: Buffer.from(t, "utf8") }]);
+    const r = await scan(text);
+    if (r.clean) return text;
+    const lines = text.split("\n");
+    for (const h of r.hits ?? []) if (h.line >= 1 && h.line <= lines.length) lines[h.line - 1] = REMOVED;
+    const out = lines.join("\n");
+    return (await scan(out)).clean ? out : REMOVED;
+  };
+
+  /**
+   * F-021 FR-4 (b): the engine's own log lines that name `match`, newest
+   * last, at most `max`, from today's and yesterday's log. Only for private
+   * detail, which never leaves the PC.
+   */
+  const logLines = (match: string, max = 200): string => {
+    const dir = path.join(home, "logs");
+    const out: string[] = [];
+    try {
+      const files = fs.readdirSync(dir).filter((n) => /^\d{4}-\d{2}-\d{2}\.log$/.test(n)).sort().slice(-2);
+      for (const f of files) {
+        for (const line of fs.readFileSync(path.join(dir, f), "utf8").split("\n")) {
+          if (!line) continue;
+          try {
+            const rec = JSON.parse(line) as { at?: string; level?: string; message?: string };
+            if (typeof rec.message === "string" && rec.message.includes(match)) out.push(`${rec.at ?? ""} ${rec.level ?? ""} ${rec.message}`);
+          } catch {
+            // A damaged line is skipped; the log is the engine's own.
+          }
+        }
+      }
+    } catch {
+      return "";
+    }
+    return out.slice(-max).join("\n");
+  };
+
   const alert = async (p: Project, key: string, a: SecurityAlert) => {
     if (!p.inbox || dead) return;
     const k = sha256Hex(`${p.real}\0${key}`);
@@ -435,7 +481,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       stop(p, `factory/state couldn't be checked out at .factory (${(e as Error).message})`);
       continue;
     }
-    p.inbox = new Inbox({ state: p.state_repo, clock, log, notify });
+    // F-021: private detail and console answer proofs stay in the engine folder, keyed by the project's path (H-0246).
+    p.inbox = new Inbox({ state: p.state_repo, clock, log, notify, local: new InboxLocal(home, sha256Hex(p.real!).slice(0, 16)), scrub: scrubPrivate });
+    const legacy = await p.inbox.legacyRecords();
+    if (legacy.length) {
+      // F-020 SR-4: filing an item here would hide the open ones in the unread files, so the owner is told on the PC only.
+      const why = `the inbox has ${legacy.length} record(s) in the old YAML form (${legacy.slice(0, 3).join(", ")}${legacy.length > 3 ? ", ..." : ""}); run \`npm run migrate-inbox-json -- --project ${p.real} --gitleaks <path>\` in engine/ and restart the engine`;
+      stop(p, why);
+      notify("Factory project stopped", why);
+      continue;
+    }
     await p.inbox.records().catch(() => []);
     try {
       p.manifest = await readManifest(git, p.real);
@@ -740,6 +795,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       sessions: p.sessions!,
       features: () => [...p.features.values()].filter((f) => !ambiguous.has(f.id)),
       feature: (fid) => (ambiguous.has(fid) ? null : p.features.get(fid) ?? null),
+      inbox: () => {
+        const ib = p.inbox;
+        if (!ib) return null;
+        return {
+          list: () => ib.consoleList(),
+          show: (id) => ib.consoleShow(id),
+          answer: async (a) => answeredInConsole(p, await ib.consoleAnswer(a)),
+          confirm: async (a) => answeredInConsole(p, await ib.consoleConfirm(a)),
+        };
+      },
       secretRefused: async (where, found, fid) => {
         const rules = [...new Set(found.rules)].filter((r) => /^[A-Za-z0-9_.-]{1,80}$/.test(r));
         // Each refusal is its own event, so the alert key never repeats.
@@ -1213,6 +1278,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (!f.state.gate1.blocked) await f.exclusive(() => f.append([{ type: "gate1_blocked", reason: why }], "gate 1 run limit"));
       await alert(p, `gate1cap:${f.id}:${f.state.gate1.runs}`, {
         title: `Gate 1 for ${f.id} reached its run limit`, feature: f.id,
+        private: [{ name: "Engine log", text: logLines(`${f.id}`) || "The engine log has no lines for this feature from today or yesterday." }],
         context: `${why}. Another run would cost another reviewer session. The Gate 1 reports and the engine log say why the earlier runs didn't pass.`,
         impact: `${f.id} stays at Security Gate 1 until you allow another run.`,
         confirm: "Allow one more Gate 1 run: the security reviewer checks the current spec again", hold: "Keep the feature where it is, with no more runs", recommendation: "A",
@@ -1248,7 +1314,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           confirm: "Fix the additions file on main", hold: "Find out who changed it", recommendation: "A",
         });
       }
-      const policy = reviewerPolicy(m.raw, undefined, reportRel);
+      // F-020 FR-10: the Claude reviewer returns its report as structured output and writes nothing; only the endpoint's advisory pass writes a file (A-2, SR-11).
+      const policy = reviewerPolicy(m.raw, undefined);
+      const filePolicy = reviewerPolicy(m.raw, undefined, reportRel);
       const sdk = await rt.sdk();
       const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
       const image = await shared(images, `${ident.project}\0${ident.masterCommit}\0${ident.skillsDigest}`, () => ensureAgentImage(rt.docker, rt.dockerDir, path.join(home, "images"), ident, sources));
@@ -1276,9 +1344,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       });
       const group = new SessionGroup(groupFor(runId));
       let valid: Gate1Report | null = null;
-      const first = resumeId
-        ? `The engine restarted. Finish your Gate 1 report at /workspace/${reportRel}.`
-        : reviewerTurn({ feature: f.id, specPath, specVersion, commit, reportPath: reportRel, standards: loaded.standards, transcript: transcriptSummary(f.state) });
+      const turnFor = (reportPath?: string) => reviewerTurn({ feature: f.id, specPath, specVersion, commit, ...(reportPath ? { reportPath } : {}), standards: loaded.standards, transcript: transcriptSummary(f.state) });
+      const first = resumeId ? "The engine restarted. Finish your Gate 1 report and return it as your structured output." : turnFor();
       const reportTarget = `${WORKSPACE}/${path.posix.dirname(reportRel)}`;
       // The worktree and the report folder are checked after every reviewer session, whether it ran on Claude or on an endpoint (SR-12, AC-4).
       const verifyIn = (dir: string) => async (pol: RolePolicy) => {
@@ -1314,8 +1381,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
               return await runAdvisorySession({
                 route, group: new SessionGroup(groupFor(advId, route.router)), reportDir: advDir, reportName, maxBytes: g1!.reportBytes,
                 run: {
-                  sdk, docker: rt.docker, policy, worktree: wt.path, reportDir: { source: advDir, target: reportTarget }, instructions: instructions!.text,
-                  caps: { ...g1!.caps, wallTimeMs: Math.min(g1!.caps.wallTimeMs, ADVISORY_WALL_MS) }, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), first,
+                  sdk, docker: rt.docker, policy: filePolicy, worktree: wt.path, reportDir: { source: advDir, target: reportTarget }, instructions: instructions!.text,
+                  caps: { ...g1!.caps, wallTimeMs: Math.min(g1!.caps.wallTimeMs, ADVISORY_WALL_MS) }, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), first: turnFor(reportRel),
                   billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
                   verify: verifyIn(advDir), onBreach: onBreachOf(advId, "'s advisory pass"), log,
                 },
@@ -1334,7 +1401,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         if (rates.length) facts.endpoint_rates = rates;
         if (adv.status !== "none") {
           facts.advisory = {
-            endpoint: adv.endpoint, status: adv.status, ...(adv.status !== "ok" ? { reason: adv.reason } : {}),
+            endpoint: adv.endpoint, status: adv.status, ...(adv.status !== "ok" ? { reason: adv.reason } : {}), ...(adv.status !== "skipped" ? { report_via: "file" as const } : {}),
             ...(adv.status === "ok" ? { model: adv.model, hints: adv.hints.findings.length, dropped: adv.hints.dropped } : {}), ...(advUsage ? { usage: advUsage } : {}),
             ...(adv.status !== "ok" && adv.fallback ? { fallback: adv.fallback } : {}),
           };
@@ -1352,26 +1419,25 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           }
         } else if (adv.status === "ok") hints = adv.hints;
       }
+      facts.report_via = "structured_output";
       const result = await runReviewerSessions({
-        sdk, docker: rt.docker, group, policy, worktree: wt.path,
-        reportDir: { source: reportDir, target: reportTarget },
+        sdk, docker: rt.docker, group, policy, worktree: wt.path, outputSchema: reportOutputSchema(REVIEWER_ROLE),
         instructions: instructions!.text, caps: g1!.caps, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), model: model!, first: reviewerFirst,
         ...(resumeId ? { resume: resumeId } : {}),
         ...(known?.used ? { used: known.used } : {}),
         onUsed: (u) => void (dead || runs.update(runId, { used: u })),
         billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
-        check: async () => {
-          const read = readReportFile(reportDir, reportName, g1!.reportBytes);
-          const errors = "missing" in read ? [`there is no report at /workspace/${reportRel}`]
-            : "refused" in read ? [read.refused]
-            : (() => {
-                const v = validateReport(read.text, { feature: f.id, commit, standards: loaded.standards, spec, maxBytes: g1!.reportBytes, maturity: maturityOf(p.manifest!) });
-                if (v.ok) valid = v.report;
-                return v.ok ? [] : v.errors;
-              })();
+        check: async (structured) => {
+          // SR-7: the model's schema first, so a report that sets an engine-filled field is refused; then the Gate 1 rules.
+          const shape = schemaErrors(structured, modelReport(REVIEWER_ROLE));
+          const errors = shape.length ? shape : (() => {
+            const v = validateReport(JSON.stringify(structured), { feature: f.id, commit, standards: loaded.standards, spec, maxBytes: g1!.reportBytes, maturity: maturityOf(p.manifest!) });
+            if (v.ok) valid = v.report;
+            return v.ok ? [] : v.errors;
+          })();
           if (!errors.length) return null;
           log.warn(`${f.id}: Gate 1 report refused: ${errors.slice(0, 5).join("; ")}`);
-          return correctionTurn(reportRel, errors);
+          return correctionTurn(undefined, errors);
         },
         // SR-12: the report folder may hold the named report and nothing else.
         verify: verifyIn(reportDir),
@@ -1395,6 +1461,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         // SR-9: reviewer text with a secret in it goes nowhere.
         await alert(p, `secret:${crypto.randomBytes(8).toString("hex")}`, {
           title: "Gate 1 report refused: the secrets scan found a secret", feature: f.id,
+          private: [{ name: "Where the scan found it", text: `Files: ${e.paths.join(", ") || "not named"}\nRules: ${e.rules.join(", ") || "not named"}` }],
           context: `The engine didn't record run ${runId}'s Gate 1 report, its rendering or its items because gitleaks flagged them (F-008 SR-9).`,
           impact: `${f.id} stays at Security Gate 1.`, confirm: "Rotate the secret if it was real, then run Gate 1 again", hold: "It was a false positive: no action", recommendation: "A",
         });
@@ -1511,7 +1578,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         const waiting = p.inbox?.waitingOn(f.id) ?? [];
         // H-0183 (channel v1.5): the items the feature waits on, only when there are any.
         const stage = f.stage() || INTERVIEW_STAGE;
-        const activity = activityOf({ stage, paused: f.paused, running: jobs.has(f.id), statuses: f.state.list().map((it) => it.status) });
+        const activity = activityOf({ stage, paused: f.paused, running: jobs.has(f.id), statuses: f.state.list().map((it) => it.status), decisions: waiting });
         return { id: f.id, stage, active_agents: jobs.has(f.id) ? 1 : 0, activity, ...(waiting.length ? { waiting_on: waiting } : {}) };
       })),
     }),
@@ -1823,19 +1890,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
     const n = await nextReadinessReport(p, f.id);
-    const reportName = `${READINESS_ROLE}-${n}.json`;
-    const reportRel = `.factory/runs/${f.id}/${READINESS_STAGE}/${reportName}`;
     const wt = await prepareWorktree(git, p.real!, path.join(path.dirname(worktreeDir(p, f.id)), `${f.id}-ready`), f.state.branch, undefined, commit);
     await populateWorktree(git, p.real!, commit, wt.path, wt.gitDir);
     const run = runs.start({ project: p.real!, feature: f.id, role: READINESS_ROLE, stage: READINESS_STAGE, worktree: wt.path });
     runs.update(run.id, { git_dir: wt.gitDir, last_commit: commit });
     await f.exclusive(() => f.append([{ type: "readiness_run", run: run.id, commit }], "readiness gate started"));
-    const reportDir = path.join(home, "readiness", sha256Hex(p.real!).slice(0, 16), run.id);
     const facts: RunFacts = { model: model! };
     try {
       const credential = modelCredentialFor(env, modelCredential);
       if (!credential) throw new SessionRefused("no model credential is stored or set");
-      const policy = orchestratorPolicy(m.raw, reportRel);
+      const policy = orchestratorPolicy(m.raw);
       const sdk = await rt!.sdk();
       const sources = p.sources!;
       const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
@@ -1843,36 +1907,29 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       proxyImage ??= baseImageId(rt!.docker);
       proxyImage.catch(() => (proxyImage = null));
       const proxyImageId = await proxyImage;
-      fs.rmSync(reportDir, { recursive: true, force: true });
-      ensureOwnerDir(reportDir);
-      fs.mkdirSync(path.join(wt.path, ...path.posix.dirname(reportRel).split("/")), { recursive: true });
       const group = new SessionGroup({
         docker: rt!.docker, runId: run.id, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt!.proxyScript,
         agentLimits: roleContainerLimits(p.limits!), proxyLimits: containerLimits(p.limits!.proxy), maxPageBytes: maxPageBytes(p.limits!),
         credential, log, ...(rt!.platform ? { platform: rt!.platform } : {}), ...(rt!.sleep ? { sleep: rt!.sleep } : {}),
       });
       let valid: ReadinessReport | null = null;
+      facts.report_via = "structured_output";
       const result = await runReviewerSessions({
-        sdk, docker: rt!.docker, group, policy, worktree: wt.path,
-        reportDir: { source: reportDir, target: `${WORKSPACE}/${path.posix.dirname(reportRel)}` },
+        sdk, docker: rt!.docker, group, policy, worktree: wt.path, outputSchema: reportOutputSchema(READINESS_ROLE),
         instructions: instructions!.text, caps: rl!.caps, model: model!,
-        first: orchestratorTurn({ feature: f.id, specPath, specVersion: version, commit, reportPath: reportRel }),
+        first: orchestratorTurn({ feature: f.id, specPath, specVersion: version, commit }),
         onUsed: (u) => void (dead || runs.update(run.id, { used: u })),
         billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
-        check: async () => {
-          const read = readReportFile(reportDir, reportName, rl!.reportBytes);
-          const errors = "missing" in read ? [`there is no report at /workspace/${reportRel}`]
-            : "refused" in read ? [read.refused]
-            : (() => {
-                const v = validateReadinessReport(read.text, { feature: f.id, commit, maxBytes: rl!.reportBytes });
-                if (v.ok) valid = v.report;
-                return v.ok ? [] : v.errors;
-              })();
-          return errors.length ? readinessCorrection(reportRel, errors) : null;
+        check: async (structured) => {
+          const shape = schemaErrors(structured, modelReport(READINESS_ROLE));
+          const errors = shape.length ? shape : (() => {
+            const v = validateReadinessReport(JSON.stringify(structured), { feature: f.id, commit, maxBytes: rl!.reportBytes });
+            if (v.ok) valid = v.report;
+            return v.ok ? [] : v.errors;
+          })();
+          return errors.length ? readinessCorrection(undefined, errors) : null;
         },
         verify: async (pol: RolePolicy) => {
-          const extra = fs.existsSync(reportDir) ? fs.readdirSync(reportDir).filter((x) => x !== reportName) : [];
-          if (extra.length) return { status: "rejected" as const, breaches: extra.slice(0, 20).map((x) => ({ path: `${path.posix.dirname(reportRel)}/${x}`, reason: "not_allowed" as const })) };
           return commitWorktree({
             git, gitDir: wt.gitDir, worktree: wt.path, branch: f.state.branch, base: commit, policy: { ...pol, write: { allow: [], deny: [] } }, scanner, tmpDir,
             message: `${f.id}: readiness session (run ${run.id})`, limits: worktreeLimits(p.limits!),
@@ -1928,7 +1985,6 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       runs.finish(run.id, "failed", engineWords(e));
       throw e;
     } finally {
-      fs.rmSync(reportDir, { recursive: true, force: true });
       await o.agents?.docker.run(["volume", "rm", "--force", runVolume(run.id)], { okCodes: [1] }).catch(() => undefined);
     }
   }
@@ -1968,8 +2024,28 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   // The whole entry, not its time, so a forged entry beside a real one is never taken for it (Gate 2 re-review R1).
   const answerKey = (p: Project, r: Recorded): string => `${p.name}/${r.id}/${sha256Hex(JSON.stringify(r.entry))}`;
 
+  /**
+   * F-021 FR-9: an answer given in the console is carried out at once, by the
+   * same code as one from GitHub. The poll and the console take turns, so no
+   * answer's effect runs twice.
+   */
+  const applying = new Map<Project, Promise<void>>();
+  function applyAnswers(p: Project): Promise<void> {
+    const run = (applying.get(p) ?? Promise.resolve()).then(() => applyAnswersNow(p));
+    applying.set(p, run.catch(() => undefined));
+    return run;
+  }
+
+  async function answeredInConsole(p: Project, r: ConsoleResult): Promise<ConsoleResult> {
+    if ("recorded" in r) {
+      recordedHere.add(answerKey(p, r.recorded));
+      await applyAnswers(p).catch((e) => log.warn(`${p.name}: a console answer's effect wasn't applied now (${engineWords(e)}); the next poll tries again.`));
+    }
+    return r;
+  }
+
   /** Carries out every recorded answer without an effect yet: new ones, ones a crash left, and ones that failed before (FR-2, SR-7). */
-  async function applyAnswers(p: Project): Promise<void> {
+  async function applyAnswersNow(p: Project): Promise<void> {
     for (const r of await p.inbox!.pendingEffects()) {
       if (dead || polling.signal.aborted) return;
       // A stopped project applies only the pins approval; other answers wait for its next start.
@@ -2006,6 +2082,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
             kind: "notice", title: `${id}: your answer couldn't be carried out`, priority: "high", blocking: false, created_by: "engine",
             ...(r.record.feature ? { feature: r.record.feature } : {}),
             sections: { Details: [{ engine: `The engine recorded your answer on ${id} but failed 3 times to carry it out (F-016 SR-7). Nothing changed: ${r.record.feature ?? "the project"} stays where it is. The engine tries once more when it restarts; the engine log has the reason.` }] },
+            private: [{ name: "Engine log", text: logLines(id) || "The engine log has no lines for this item from today or yesterday." }],
           }).catch(() => undefined);
         }
       }

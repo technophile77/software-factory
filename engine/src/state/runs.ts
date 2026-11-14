@@ -6,6 +6,8 @@ import type { MatchRate } from "../gate1/advisory";
 import type { InterviewState } from "../interview/model";
 import type { Change } from "./state-repo";
 import { EngineRecord, RunRecord } from "./record";
+import { storedReport } from "../schemas/agent-report";
+import { jsonFileContent } from "../schemas/json-file";
 
 export interface RunUsage {
   input_tokens: number;
@@ -29,6 +31,8 @@ export interface RunFacts {
   advisory?: AdvisoryFacts;
   /** F-013 FR-12: the endpoints' measured speeds by prompt-size band, for the run review. */
   endpoint_rates?: EndpointRateReport[];
+  /** F-020 FR-9, SR-11: how the agent's report reached the engine; "file" only for a session the engine let write it (A-2). */
+  report_via?: "structured_output" | "file";
 }
 
 /** The advisory pass of a gate role, for the run review (F-013 FR-10). Names the endpoint, never its address. */
@@ -44,6 +48,8 @@ export interface AdvisoryFacts {
   match?: MatchRate;
   /** F-013 FR-7: the pass fell back (reason "deadline", say) and the gate ran without it. */
   fallback?: { endpoint: string; reason: string; waited_s: number; prompt_tokens: number };
+  /** F-020 A-2, SR-11: an endpoint session writes its answer to the one file the engine allows it. */
+  report_via?: "file";
 }
 
 export type ResumePlan =
@@ -167,5 +173,7 @@ export function agentReport(o: {
     body: o.body,
     ...o.facts,
   };
-  return { path: `runs/${o.feature}/${o.stage}/${o.role}-${o.n}.json`, content: JSON.stringify(report, null, 2) + "\n" };
+  const file = `runs/${o.feature}/${o.stage}/${o.role}-${o.n}.json`;
+  // F-020 FR-3: a report that fails its schema is never committed.
+  return { path: file, content: jsonFileContent(file, report, storedReport) };
 }

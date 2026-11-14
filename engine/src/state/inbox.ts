@@ -1,5 +1,5 @@
 import type { Inbox } from "../inbox/store";
-import type { Part } from "../inbox/model";
+import type { Effect, Part } from "../inbox/model";
 import { actionLabel } from "../inbox/render";
 
 export interface SecurityAlert {
@@ -13,6 +13,8 @@ export interface SecurityAlert {
   recommendation: "A" | "B";
   /** Engine values the item's effect needs, such as the manifest commit a pins item names (Gate 2 M2). */
   effectData?: Record<string, string | number>;
+  /** F-021 FR-4: detail shown only in the console, never on GitHub. */
+  private?: Array<{ name: string; text: string }>;
 }
 
 /**
@@ -29,6 +31,7 @@ export async function fileSecurityItem(inbox: Inbox, type: string, a: SecurityAl
     options: [{ id: "A", label: a.confirm }, { id: "B", label: a.hold }],
     recommendation: a.recommendation,
     effect: { ...a.effectData, type, ...(a.feature ? { feature: a.feature } : {}) },
+    ...(a.private?.length ? { private: a.private } : {}),
     sections: {
       Context: [{ engine: a.context }],
       Options: [{ engine: `- **A. ${a.confirm}.** Pro: work resumes. Con: wrong if you didn't make the change.\n- **B. ${a.hold}.** Pro: nothing runs until you've looked. Con: the project stays stopped.` }],
@@ -50,7 +53,7 @@ export interface DecisionItem {
   optionsBy?: string;
   recommendation: string;
   costOfDelay: string;
-  effect: { type: string; [k: string]: unknown };
+  effect: Effect;
 }
 
 /** A Security item with 2 to 4 options (F-008 FR-8, FR-13). Labels are rendered as plain text by the inbox. */

@@ -12,10 +12,10 @@ import { structuralChecks } from "../src/readiness/checks";
 import { validateReadinessReport } from "../src/readiness/report";
 import type { Entry } from "../src/state/transcript";
 import { FakeDocker } from "./fakes";
-import { GIT_ENV, World, git, manifestYaml, start as startEngine, tmpdir } from "./helpers";
+import { GIT_ENV, OWNER_ID, RpcClient, World, git, manifestYaml, start as startEngine, tmpdir } from "./helpers";
 import { FakeIssues, OTHER, OWNER } from "./inbox-fake";
 import { inboxItems, securityItemsIn } from "./inbox-items";
-import { ORCHESTRATOR, ORCHESTRATOR_MD, POLICY, REVIEWER, Script, boot, entries, interview, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
+import { ORCHESTRATOR, ORCHESTRATOR_MD, POLICY, REVIEWER, Script, boot, entries, interview, orchestratorDir, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
 import { policyDoc } from "./policy-fixture";
 
 // F-016 acceptance tests written by the test engineer from spec v11 (plus
@@ -24,24 +24,18 @@ import { policyDoc } from "./policy-fixture";
 
 const CHOICE = {
   criterion: "S8.5", severity: "Medium", location: "FR-1", explanation: "Where the export runs decides who can read it.", fix: "Say where the export runs.",
-  blocks: false, needs_owner: true, options: [{ id: "A", label: "Export in the browser" }, { id: "B", label: "Export on the server" }], recommendation: "A",
+  needs_owner: true, options: [{ id: "A", label: "Export in the browser" }, { id: "B", label: "Export on the server" }], recommendation: "A",
 };
 const CHOICE2 = {
   criterion: "S6.1", severity: "Medium", location: "FR-1", explanation: "Old exports could be read later.", fix: "Say how long exports are kept.",
-  blocks: false, needs_owner: true, options: [{ id: "A", label: "Keep exports for a day" }, { id: "B", label: "Delete exports at once" }], recommendation: "B",
+  needs_owner: true, options: [{ id: "A", label: "Keep exports for a day" }, { id: "B", label: "Delete exports at once" }], recommendation: "B",
 };
 const FIX = "The export never includes card numbers.";
-const REQUIREMENT = { criterion: "S3.2", severity: "High", location: "FR-1", explanation: "Exports may hold card numbers.", fix: FIX, blocks: true, needs_owner: false };
+const REQUIREMENT = { criterion: "S3.2", severity: "High", location: "FR-1", explanation: "Exports may hold card numbers.", fix: FIX, needs_owner: false };
 const JUDGED = ["clear_objective", "expected_behavior_defined", "acceptance_criteria_testable", "constraints_documented"];
 const PRIORITY_ORDER = ["critical", "high", "medium", "low"];
 
 // ---------- helpers (same shape as f016-run.test.ts, kept local so these tests stand alone) ----------
-
-function orchestratorDir(d: FakeDocker): string {
-  const run = [...d.calls].reverse().find((x) => x.args[0] === "run" && x.args.includes("factory.role=orchestrator"))!.args;
-  const mount = run.filter((a, i) => run[i - 1] === "--mount").find((m) => m.includes("readiness_gate"))!;
-  return /source=([^,]+)/.exec(mount)![1]!;
-}
 
 function readiness(feature: string, commit: string): string {
   return JSON.stringify({
@@ -69,7 +63,7 @@ function orchestrator(d: FakeDocker, feature: () => string, extra: (commit: stri
   return async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
     const first = (await sc.next())!;
     commit = /at commit ([0-9a-f]{40})/.exec(first)?.[1] ?? commit;
-    const name = /(orchestrator-\d+\.json)/.exec(first)![1]!;
+    const name = `orchestrator-${n}.json`;
     for (let turn = 0; ; turn++) {
       fs.writeFileSync(path.join(orchestratorDir(d), name), make(commit));
       if (turn === 0) extra(commit, n);
@@ -159,11 +153,11 @@ function moveBranch(repo: string, branch: string): string {
 /** Writes an owner's choice of B on D-0001 into the record, as an engine that crashed before its effect would leave it. */
 function recordChoice(w: World, commentId: number, reactionId: number, confirmId: number): void {
   const state = path.join(w.config, ".factory");
-  const rec = YAML.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.yaml"), "utf8"));
+  const rec = JSON.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.json"), "utf8"));
   rec.status = "chosen";
   rec.history.push({ at: "2026-11-11T10:04:00Z", by: "engine", action: "confirm_requested", pending: "choose:B", code: "K7QX" });
   rec.history.push({ at: "2026-11-11T10:05:00Z", by: "owner", action: "chosen", option: "B", rev: 1, source: "reaction", actor_id: OWNER, comment_id: commentId, reaction_id: reactionId, ref: "https://github.com/o/cfg/issues/1", confirmed_by: { source: "command", comment_id: confirmId } });
-  fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), YAML.stringify(rec));
+  fs.writeFileSync(path.join(state, "inbox", "D-0001.json"), JSON.stringify(rec));
   execFileSync("git", ["-C", state, "-c", "user.name=crash test", "-c", "user.email=crash@example.invalid", "commit", "-qam", "D-0001: chosen B by the owner"]);
 }
 
@@ -197,12 +191,12 @@ describe("F-016 acceptance: Gate 1 items on issues", () => {
     expect(gh.actionComment(1, "choose:B").body).toMatch(/^<!-- factory-action: D-0001 rev 1 choose:B -->\n/);
     await pollUntil(w, "the issue bound", () => record(w, "D-0001")?.issue === 1);
     const rec = record(w, "D-0001")!;
-    expect(rec).toMatchObject({ schema: "inbox-record/3.0", id: "D-0001", kind: "decision", category: "Security", status: "open", issue: 1, feature, recommendation: "A", blocking: true });
+    expect(rec).toMatchObject({ schema: "inbox-record/4.0", id: "D-0001", kind: "decision", category: "Security", status: "open", issue: 1, feature, recommendation: "A", blocking: true });
     expect(rec.options).toEqual([{ id: "A", label: "Export in the browser" }, { id: "B", label: "Export on the server" }]);
     // Only F-011 records under inbox/ on factory/state; no old per-kind item files anywhere.
     const stateFiles = git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", "inbox").split("\n").filter(Boolean);
     expect(stateFiles.length).toBeGreaterThan(0);
-    for (const f of stateFiles) expect(f).toMatch(/^inbox\/[DTHSMN]-\d{4,}(\.yaml|\.rev\d+\.md)$/);
+    for (const f of stateFiles) expect(f).toMatch(/^inbox\/[DTHSMN]-\d{4,}(\.json|\.rev\d+\.md)$/);
     expect(git(w.config, "ls-tree", "-r", "--name-only", "HEAD").split("\n").filter((f) => f.startsWith(".factory/inbox/") || f.startsWith("inbox/"))).toEqual([]);
   }, 60_000);
 
@@ -276,7 +270,7 @@ describe("F-016 acceptance: Gate 1 items on issues", () => {
 
     // The first commit whose record holds effect_done also writes the stage change to the transcript; its parent already holds the owner's action.
     const transcript = `interviews/${feature}/transcript.jsonl`;
-    const commits = git(w.config, "log", "--format=%H", "--reverse", "factory/state", "--", "inbox/D-0001.yaml").split("\n").filter(Boolean);
+    const commits = git(w.config, "log", "--format=%H", "--reverse", "factory/state", "--", "inbox/D-0001.json").split("\n").filter(Boolean);
     const at = (c: string, f: string) => {
       try {
         return git(w.config, "show", `${c}:${f}`);
@@ -284,12 +278,12 @@ describe("F-016 acceptance: Gate 1 items on issues", () => {
         return "";
       }
     };
-    const c = commits.find((x) => YAML.parse(at(x, "inbox/D-0001.yaml")).history.some((h: any) => h.action === "effect_done"))!;
+    const c = commits.find((x) => JSON.parse(at(x, "inbox/D-0001.json")).history.some((h: any) => h.action === "effect_done"))!;
     expect(c).toBeTruthy();
-    expect(git(w.config, "show", "--name-only", "--format=", c).split("\n")).toEqual(expect.arrayContaining(["inbox/D-0001.yaml", transcript]));
+    expect(git(w.config, "show", "--name-only", "--format=", c).split("\n")).toEqual(expect.arrayContaining(["inbox/D-0001.json", transcript]));
     const stageEntries = (t: string) => t.split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((x) => x.type === "stage" && x.stage === "requirements_interview").length;
     expect(stageEntries(at(c, transcript))).toBe(stageEntries(at(`${c}^`, transcript)) + 1);
-    expect(YAML.parse(at(`${c}^`, "inbox/D-0001.yaml")).history.some((h: any) => h.by === "owner" && h.action === "rejected")).toBe(true);
+    expect(JSON.parse(at(`${c}^`, "inbox/D-0001.json")).history.some((h: any) => h.by === "owner" && h.action === "rejected")).toBe(true);
   }, 60_000);
 
   it("AC-5: Defer on a Gate 1 risk item keeps the feature blocked and the issue open, one priority lower", async () => {
@@ -779,4 +773,64 @@ describe("F-016 SR-6, SR-10, AC-3: Gate 1 choices and accepted risks in section 
       expect(r.check.evidence, row).toContain("Gate 1 #1");
     }
   });
+});
+
+// ---------- F-021: the same items answered in the console ----------
+
+/** A console session (channel v1.6), signed in as the tests' projects require. */
+async function consoleSession(w: World, c: RpcClient): Promise<string> {
+  const open = await c.ok("inbox.open");
+  w.github.approver = OWNER_ID;
+  await w.clock.advance(5000);
+  w.github.approver = null;
+  for (let i = 0; i < 200; i++) {
+    const r = await c.call("interview.awaitApproval", { session: open.session, wait_s: 0 });
+    if (!r.error || (r.error as { code: number }).code !== -32006) break;
+    await new Promise((res) => setTimeout(res, 10));
+  }
+  return open.session as string;
+}
+
+describe("F-021 acceptance: Gate 1 items answered in the console", () => {
+  it("AC-2, AC-3, FR-9: listed, shown whole, confirmed with the engine's code, carried out at once; the issue closes and a later 👍 does nothing", async () => {
+    const { w, c, gh } = await blockedOnChoice();
+    const session = await consoleSession(w, c);
+    const listed = await c.ok("inbox.list", { session });
+    expect((listed.items as Array<Record<string, unknown>>).map((i) => [i.id, i.kind, i.blocking, i.rev])).toEqual([["D-0001", "decision", true, 1]]);
+    const shown = await c.ok("inbox.show", { session, item: "D-0001" });
+    expect((shown.sections as Array<{ name: string }>).map((x) => x.name)).toEqual(["Context", "Options", "Project impact", "Recommendation", "Cost of delay"]);
+    expect((shown.actions as Array<{ action: string }>).map((a) => a.action)).toContain("choose:B");
+    const a = await c.ok("inbox.answer", { session, item: "D-0001", rev: 1, action: "choose:B", reply_id: "r1" });
+    const confirm = a.confirm as { words: string; code: string };
+    expect(confirm.words).toMatch(/^Confirm: Option B: .* on D-0001: you accept what option B means for the project\.$/);
+    // A resent call after a lost reply gets the same answer, not a new code.
+    expect(await c.ok("inbox.answer", { session, item: "D-0001", rev: 1, action: "choose:B", reply_id: "r1" })).toEqual(a);
+    expect(await c.ok("inbox.confirm", { session, item: "D-0001", rev: 1, code: confirm.code })).toEqual({ recorded: true });
+    // Carried out before the call returned: no poll was needed.
+    expect(effects(w, "D-0001")).toHaveLength(1);
+    expect(ownerEntries(w, "D-0001")).toEqual([expect.objectContaining({ option: "B", source: "console", signed_in: true, confirmed_by: { source: "console" } })]);
+    await pollUntil(w, "the issue to close", () => gh.issues.get(1)!.state === "closed");
+    expect((gh.comments_.get(1) ?? []).filter((x) => x.body.startsWith("Recorded from the console:")).map((x) => x.body)).toHaveLength(1);
+    gh.react(gh.actionComment(1, "choose:A").id, "+1");
+    await polls(w, 2);
+    expect(ownerEntries(w, "D-0001")).toHaveLength(1);
+    expect(effects(w, "D-0001")).toHaveLength(1);
+    expect(await c.ok("inbox.answer", { session, item: "D-0001", rev: 1, action: "choose:A", reply_id: "r2" })).toMatchObject({ already: { by: "console" } });
+  }, 90_000);
+
+  it("SR-3: inbox calls need an approved session and well-formed values", async () => {
+    const { w, c } = await blockedOnChoice();
+    const open = await c.ok("inbox.open");
+    const pending = await c.call("inbox.list", { session: open.session });
+    expect((pending.error as { code: number }).code).toBe(-32006);
+    const session = await consoleSession(w, c);
+    const bad = await c.call("inbox.show", { session, item: "../D-0001" });
+    expect((bad.error as { code: number }).code).toBe(-32602);
+    expect(await c.ok("inbox.confirm", { session, item: "D-0001", rev: 1, code: "ABCD" })).toEqual({ refused: "confirm_failed" });
+    const noAction = await c.call("inbox.answer", { session, item: "D-0001", rev: 1, action: "merge", reply_id: "r1" });
+    expect((noAction.error as { code: number }).code).toBe(-32602);
+    const forged = await c.call("interview.next", { session });
+    // A console session is not an interview session for any feature.
+    expect((forged.error as { code: number }).code).toBe(-32602);
+  }, 60_000);
 });

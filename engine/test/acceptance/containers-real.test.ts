@@ -161,7 +161,7 @@ describe.skipIf(!ON)(`F-007 milestone 2 on a real Docker daemon (AC-8, AC-14, AC
       for (const url of [...REFUSED_URLS, CONTROL_URL]) fetches[url] = await s.call("fetch_page", { url });
       readerIn.open();
       await readerGo.wait;
-      s.result = "Nothing useful.";
+      s.structured = { schema: "web-reader-answer/1.0", facts: [], page_contains_instructions: false };
     };
     await w.boot();
     await w.startFeature();

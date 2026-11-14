@@ -235,6 +235,10 @@ describe("FR-15: inputs", () => {
       reply: ["feature", "item", "kind", "reply_id", "revision", "status", "text", "wait_s"],
       state: ["feature", "item"],
       close: ["feature"],
+      // F-021: the console's inbox operations.
+      inbox_open: [], inbox_list: ["feature"], inbox_show: ["feature", "item"],
+      inbox_answer: ["action", "feature", "item", "note", "reply_id", "rev"],
+      inbox_confirm: ["code", "feature", "item", "rev"],
     });
   });
 });

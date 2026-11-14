@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import YAML from "yaml";
+import { checkConfig, engineFile } from "./schemas/config";
 import { systemClock } from "./clock";
 import type { AgentRuntime } from "./agent/runtime";
 import { loadAgentSdk } from "./agent/sdk-binding";
@@ -33,6 +34,9 @@ const USAGE = `factory-engine <command>
           Answers the requirements analyst's questions in this terminal (F-018).
           --project defaults to the current folder, inside the project's repo.
           Started by the software-factory plugin, not by hand.
+  inbox [<item id>] [--project <path>]
+          Lists the project's open inbox items and answers them in this terminal
+          (F-021). Every item is still a GitHub issue; the first answer counts.
 `;
 
 function flags(args: string[]): Record<string, string> {
@@ -68,10 +72,11 @@ async function agentRuntime(home: string): Promise<AgentRuntime> {
 function engineConfig(home: string): { gitleaks?: string } {
   const file = path.join(home, "engine.yaml");
   if (!fs.existsSync(file)) return {};
-  const doc = YAML.parse(fs.readFileSync(file, "utf8")) as unknown;
-  if (!doc || typeof doc !== "object") return {};
-  const g = (doc as Record<string, unknown>).gitleaks;
-  return typeof g === "string" ? { gitleaks: g } : {};
+  const doc = YAML.parse(fs.readFileSync(file, "utf8"), { uniqueKeys: true, maxAliasCount: 0 }) as unknown;
+  if (doc === null) return {};
+  checkConfig("engine.yaml", doc, engineFile);
+  const g = (doc as { gitleaks?: string }).gitleaks;
+  return g ? { gitleaks: g } : {};
 }
 
 /** Reads a secret without echoing it, so it never lands on a command line or in shell history (SR-1). */
@@ -158,7 +163,8 @@ function terminalIo(ascii: boolean): TerminalIo & { close(): void } {
   };
 }
 
-async function interview(rest: string[]): Promise<number> {
+/** `interview` (F-018) and `inbox` (F-021) share their checks and their terminal. */
+async function interview(rest: string[], command: "interview" | "inbox" = "interview"): Promise<number> {
   const feature = rest[0] && !rest[0].startsWith("--") ? rest[0] : undefined;
   let f: Record<string, string>;
   try {
@@ -167,13 +173,14 @@ async function interview(rest: string[]): Promise<number> {
     process.stderr.write(USAGE);
     return 2;
   }
-  if (Object.keys(f).some((k) => k !== "project") || (feature !== undefined && !ID_RE.test(feature))) {
+  const idOk = command === "inbox" ? /^[DTHSMN]-\d{4,8}$/ : ID_RE;
+  if (Object.keys(f).some((k) => k !== "project") || (feature !== undefined && !idOk.test(feature))) {
     process.stderr.write(USAGE);
     return 2;
   }
   // A script or a model's shell tool must not type answers for the owner (SR-3).
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    process.stderr.write("factory-engine interview runs only in a terminal, with you typing the answers.\n");
+    process.stderr.write(`factory-engine ${command} runs only in a terminal, with you typing the answers.\n`);
     return 2;
   }
   const ops = new Interview({ os: realOsApi(), projectDir: path.resolve(f.project ?? process.cwd()) });
@@ -182,7 +189,8 @@ async function interview(rest: string[]): Promise<number> {
   const marker = ascii ? "| " : "\u2502 ";
   const io = terminalIo(ascii);
   try {
-    return await new TerminalInterview((op, req) => ops.run(op, req), io, marker).main(feature);
+    const t = new TerminalInterview((op, req) => ops.run(op, req), io, marker);
+    return await (command === "inbox" ? t.inboxMain(feature) : t.main(feature));
   } finally {
     io.close();
   }
@@ -191,6 +199,7 @@ async function interview(rest: string[]): Promise<number> {
 async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   if (cmd === "interview") return interview(rest);
+  if (cmd === "inbox") return interview(rest, "inbox");
   if (cmd === "secret") {
     const [sub, name] = rest;
     if (sub !== "set" || !name || !isSecretName(name)) {

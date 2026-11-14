@@ -45,6 +45,12 @@ npm run test:platform  # only the files that exercise OS-specific code (what PRs
 npm run coverage   # the same with V8 coverage; reported, not gated
 ```
 
+To put `factory-engine` on your PATH, run `npm link` once in this folder
+after the first build. npm adds a `factory-engine` command (a `.cmd` shim on
+Windows) in its global bin folder that points at this checkout's
+`dist/engine.js`, so later builds need no relink. `npm unlink -g
+software-factory-engine` removes it.
+
 CI splits the suite across several runners per OS. `FACTORY_TEST_SHARD=k/n`
 runs only shard k of n: every test file, but only its share of each file's
 tests (`test/shard.ts`). Unset, everything runs. To rerun one CI shard
@@ -83,6 +89,11 @@ factory-engine mcp                      # started by Claude Code, not by hand
   the analyst (F-018, ADR 0029): it prints each item word for word and reads
   the answer from the keyboard, talking to the running engine over the
   control channel. It runs only in a terminal and never starts the engine.
+- `inbox [<item id>] [--project <path>]` lists the project's open inbox items
+  and answers them in this terminal (F-021, ADR 0033): every item is still a
+  GitHub issue, and the first answer from either path counts. Items with
+  private detail show it only here. Like `interview`, it runs only in a
+  terminal and needs a running engine.
 
 The gitleaks binary's absolute path comes from `--gitleaks` or from
 `gitleaks:` in `<engine home>/engine.yaml`. The engine refuses to run any

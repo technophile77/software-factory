@@ -99,7 +99,10 @@ export function unreadableUnder(worktree: string, rel: string, read: RolePolicy[
  * every tool call, and as `canUseTool`, which it skips for calls it
  * approves by itself (reads inside the working folder, read-only Bash).
  */
-export function toolGate(policy: RolePolicy, worktree: string | null, factoryTools: string[], log: Logger, workspace: string = WORKSPACE): CanUseTool {
+/** The tool Claude Code offers the model for a session's structured result. */
+export const STRUCTURED_OUTPUT_TOOL = "StructuredOutput";
+
+export function toolGate(policy: RolePolicy, worktree: string | null, factoryTools: string[], log: Logger, workspace: string = WORKSPACE, structured = false): CanUseTool {
   const builtins = new Set<string>(policy.tools.filter((t) => t !== "fetch_page"));
   const mcp = new Set(factoryTools.map((t) => `mcp__${FACTORY_SERVER}__${t}`));
   return async (name, input) => {
@@ -108,6 +111,8 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
       return { behavior: "deny" as const, message: `Refused by the factory engine: ${why}.` };
     };
     if (mcp.has(name)) return { behavior: "allow", updatedInput: input };
+    // F-020 FR-9: the CLI's own tool for returning the report; it touches nothing, and exists only when the engine asked for a schema.
+    if (structured && name === STRUCTURED_OUTPUT_TOOL) return { behavior: "allow", updatedInput: input };
     if (!builtins.has(name)) return deny("not one of this role's tools");
     const readKey = READ_TOOLS[name];
     const writeKey = WRITE_TOOLS[name];
@@ -171,6 +176,8 @@ export interface SessionInput {
   skillsPluginDir?: string;
   model?: string;
   resume?: string;
+  /** F-020 FR-9: the JSON Schema the session's report must match, returned as its structured result. */
+  outputSchema?: Record<string, unknown>;
   spawn(o: SpawnOptions): SpawnedProcess;
   log: Logger;
 }
@@ -181,7 +188,7 @@ export function sessionOptions(s: SessionInput, abort: AbortController): Session
   const builtins: string[] = s.policy.tools.filter((t) => t !== "fetch_page");
   if (builtins.includes("Skill") && !s.skillsPluginDir) throw new Error("the role uses Skill, but the image has no baked skills");
   if (!s.instructions.trim()) throw new Error("no instructions for the role");
-  const gate = toolGate(s.policy, s.worktree, s.factoryTools, s.log, s.workspace);
+  const gate = toolGate(s.policy, s.worktree, s.factoryTools, s.log, s.workspace, s.outputSchema !== undefined);
   return {
     cwd: s.cwd ?? WORKSPACE,
     settingSources: [],
@@ -199,6 +206,7 @@ export function sessionOptions(s: SessionInput, abort: AbortController): Session
     ...(s.caps.maxBudgetUsd !== undefined ? { maxBudgetUsd: s.caps.maxBudgetUsd } : {}),
     ...(s.model ? { model: s.model } : {}),
     ...(s.resume ? { resume: s.resume } : {}),
+    ...(s.outputSchema ? { outputFormat: { type: "json_schema" as const, schema: s.outputSchema } } : {}),
     // The SDK's environment for the CLI: the container sets its own, so nothing of the engine's goes in.
     env: { ...CONTAINER_FLAGS },
     abortController: abort,
@@ -238,6 +246,8 @@ export interface SessionOutcome {
   sessionId?: string;
   /** The final result text the CLI reported, if any. */
   result?: string;
+  /** F-020 FR-9, SR-7: the structured result of a successful session, and only of one. */
+  structured?: unknown;
   /** The CLI's own error text for a failed session, for the engine log only: it isn't engine words, so the owner never sees it. */
   detail?: string;
   turns: number;
@@ -288,6 +298,8 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
         out.costUsd = r.total_cost_usd ?? out.costUsd;
         out.inputTokens = r.usage?.input_tokens ?? out.inputTokens;
         if (typeof r.result === "string") out.result = r.result;
+        if (r.subtype === "success" && r.structured_output !== undefined) out.structured = r.structured_output;
+        else delete out.structured;
         if (r.usage?.output_tokens !== undefined) out.outputTokens = Math.max(out.outputTokens, r.usage.output_tokens);
         if (r.subtype === "error_max_turns") stop("turns");
         else if (r.subtype === "error_max_budget_usd") stop("dollars");
