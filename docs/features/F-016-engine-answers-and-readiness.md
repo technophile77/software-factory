@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until I
   can start onboarding some of my existing projects?"; chose to build engine
   increment 3 next, decision card)
-- **Spec version:** 13
+- **Spec version:** 14
 
 This is the rest of the engine's increment 3 ("Requirements to ready", F-007
 section 13). F-008 built Security Gate 1 and said that reading inbox answers
@@ -76,6 +76,7 @@ signs the spec off, and the feature is handed to development
 | FR-11 | Effects and the structural checks are code (owner rule, 2026-11-13: tools, not tokens); only the judgment of checks 1 to 4 is an agent session, and only after the code checks pass (OQ-1). No agent reads issue comments or records. The orchestrator session's model and limits come from the master's `models.yaml` and `limits.yaml` (H-0184); a project's `limits:` may only lower them; without an `orchestrator` entry, or without the role in the project's policy, no session starts and the transcript and engine log say why. |
 | FR-13 | Analyst run stopped (issue #64): when an analyst run ends failed for any reason other than a rules breach or a secrets-scan refusal (those file their own items), for example a turn, token, dollar or wall-time cap, the worktree size cap, or a session error, the engine files one Security item `analyststop` for that run (section 10, H-0182) and the transcript says the run stopped and why. Option A starts one new analyst run for the feature, at its branch head, whose first turn carries the transcript summary; replies the owner recorded but no analyst received follow as turns. Option B leaves the feature stopped. At start, the engine files the item for an interview-stage feature whose latest analyst run is failed (for any of those reasons) and has no item yet, so features stopped before this change aren't left stuck. |
 | FR-14 | `engine.status` reports `active_agents` as the number of agent sessions running for the feature (0 or 1 in this increment), no longer always 0. When the interview has nothing waiting and no analyst is running, the interview skill says so and names any inbox items the feature waits on, instead of saying the analyst is still working (issue #65). |
+| FR-15 | Gate 1 findings not resolved after the interview, with none waiting on the owner and none refused (so no risk item is filed): the feature returns to `requirements_interview` and the analyst gets a return `gate1_unresolved` with the check's evidence as data, telling it to take up each named finding as an interview question with the suggested requirement. This happens once per Gate 1 report. If the check fails the same way again, the engine files a Security item `gate1unresolved` (section 10, H-0182) instead: option A sends the feature back to the analyst again, option B leaves it at Security Gate 1. Before this, the engine recorded "not resolved" and stopped with no analyst and no item. |
 | FR-12 | Existing open item files on `factory/state` are moved to issues by F-011's one-time migration script (F-011 FR-16); an item whose effect is defined here gets that effect when answered on its issue. |
 
 ## 4. Acceptance criteria
@@ -96,6 +97,7 @@ signs the spec off, and the feature is handed to development
 | AC-14 | Given an orchestrator report that is invalid twice, or a session that writes outside its report, then the gate fails closed, nothing is committed from it, and the transcript and engine log say why (the write case also files a Security item, as for the reviewer). | FR-7, SR-11 |
 | AC-15 | Given an analyst run that stops at its wall-time cap, then one `analyststop` Security item is filed for the feature; given option A confirmed, then one new analyst run starts whose first turn has the transcript summary and which receives the owner's undelivered replies; given option B, nothing starts. Given an engine start with an interview-stage feature whose latest analyst run is failed at a cap and has no item, then the item is filed once, also across restarts. | FR-13 |
 | AC-16 | Given a feature in the interview with no analyst session running and nothing waiting for the owner, then the interview skill's "nothing waiting" answer says no analyst is running and names the items in `waiting_on`; given a running analyst session, then `engine.status` shows `active_agents` 1 and the answer says the analyst is working. | FR-14 |
+| AC-17 | Given a spec whose Gate 1 findings were taken up only as assumptions, when the interview checks pass, then the feature returns to the interview, the analyst's first turn names the unresolved findings as data, and no item is filed; given the same result a second time for the same report, then one `gate1unresolved` item is filed; option A sends the feature back with an analyst run, and option B leaves it at Security Gate 1. | FR-15 |
 | AC-12 | Given a feature waiting on items, then `engine.status` lists its stage and the open item ids. | FR-10 |
 
 ## 5. Constraints
@@ -176,6 +178,7 @@ H-0180, H-0182, H-0183 approved (owner, 2026-11-13, decision card); H-0184 appro
   | `chain` (transcript changed outside the engine) | resume: re-read the transcript; if the chain is intact again, reopen the feature, else file anew |
   | `breach` (analyst or reviewer wrote outside its rules) | resume, within the run caps (SR-8) |
   | `gate1cap` (Gate 1 run limit) | resume: the feature's Gate 1 run cap rises by one for this approval only (the owner's explicit override of F-008 SR-11); the next limit files a new item |
+  | `gate1unresolved` (Gate 1 findings still not taken up after one send-back; FR-15) | resume: the feature returns to the interview and an analyst run starts |
   | `analyststop` (an analyst run stopped at a cap or on an error; FR-13) | resume: one new analyst run with the transcript summary (SR-13) |
   | `sources`, `manifest`, `auth`, `fetch`, `dup`, `additions`, `secret` | record only (the owner fixes the cause; the engine re-checks at its next check) |
   | Gate 1 choice and risk items | FR-3 to FR-5 |
@@ -242,6 +245,7 @@ Checked 2026-11-13 against spec v10.
 | 11 | 2026-11-14 | SR-11 reworded and H-0184 container limits unused until Beta, after the owner dropped agent containers until Beta (ADR 0026) | Owner, 2026-11-14 (in chat, after a decision card) |
 | 12 | 2026-11-14 | H-0185 approved and applied (onboarding checker limit keys). SR-12 added for Gate 2 M1, after the owner chose both fixes | Owner, 2026-11-14 (decision cards) |
 | 13 | 2026-11-14 | FR-13, FR-14, AC-15, AC-16, SR-13 and the `analyststop` row in H-0182 added after the live trial found a feature stuck after an analyst cap stop (issues #64, #65). Pins effect reworded: re-pins; the project runs at the next engine start. H-0186, H-0187 and H-0188 approved | Owner, 2026-11-14 (in thread) |
+| 14 | 2026-11-14 | FR-15, AC-17 and the `gate1unresolved` row in H-0182 added after the live trial stopped at Security Gate 1 with findings taken up only as assumptions | Owner, 2026-11-14 (decision card and in thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
