@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until I
   can start onboarding some of my existing projects?"; chose to build engine
   increment 3 next, decision card)
-- **Spec version:** 10
+- **Spec version:** 11
 
 This is the rest of the engine's increment 3 ("Requirements to ready", F-007
 section 13). F-008 built Security Gate 1 and said that reading inbox answers
@@ -152,7 +152,7 @@ SR-1 to SR-5 drafted by the analyst; SR-6 to SR-10 from Security Gate 1 (`F-016-
 | SR-7 | The stage change and the `effect_done` entry are one commit on the feature's chain, after the inbox record; a failed effect leaves the stage unchanged and is retried next poll; after 3 failed tries a Notice is filed and the feature stays where it is. | Gate 1 #2 (S2.1, S5.1) | Approved (owner, 2026-11-13) |
 | SR-8 | A resume restart counts against the feature's run caps (F-007 `MAX_RESUMES`, F-008 SR-11); at a cap, option A files a Notice and restarts nothing. | Gate 1 #3 (S6.1, S6.2) | Approved (owner, 2026-11-13) |
 | SR-9 | The factory token's added permission is Issues read and write on the config repo only, to file and read inbox items (F-011 SR-1); managed code repos get no Issues permission in this increment. The engine checks it at start and reports a missing permission instead of filing. | Gate 1 #4 (S8.5, S8.2) | Approved (owner, 2026-11-13) |
-| SR-11 | The orchestrator readiness session runs under the same container, proxy and policy rules as the security reviewer (F-008 FR-2): worktree read-only, tools Read, Grep, Glob and Write, only write its named report, no network but the model API; spec and transcript reach it as data (S6.1). A pass from it never skips a failed code check. | Analyst; OQ-1 | Approved (owner, 2026-11-13) |
+| SR-11 | The orchestrator readiness session runs under the same session rules as the security reviewer: its own engine worktree, tools Read, Grep, Glob and Write only (no Bash, no web tools), it may write only its named report (file-tool rules plus the end-of-session write check), and no other files are committed. Spec and transcript reach it as data (S6.1). A pass from it never skips a failed code check. Until Beta (per the containers ADR, ADR 0026) it runs on the owner's PC with no container, so network and CPU/memory limits aren't enforced. This is an accepted risk. | Analyst; OQ-1; ADR 0026 | Approved (owner, 2026-11-14, v11) |
 | SR-10 | The analyst records each accepted risk in section 9 with status `Accepted risk`, citing `Gate 1 #<n>; <item id>`; the readiness gate fails if a recorded accepted risk has no such row. | Gate 1 #5 (S7.1, S3.2) | Approved (owner, 2026-11-13) |
 
 ## 10. Interface requirements
@@ -183,7 +183,10 @@ H-0180, H-0182, H-0183 approved (owner, 2026-11-13, decision card); H-0184 appro
   `readiness_gate: runs_per_feature: 5, report_kib: 64`). A project runs it
   only with an `orchestrator` role in its manifest policy: tools Read, Grep,
   Glob, Write; write `.factory/runs/**/orchestrator-*.json`; no commands, no
-  network (Role policy v2.6 as is, no contract change).
+  network (Role policy v2.6 as is, no contract change). Until Beta (ADR 0026)
+  the container limits (cpus, memory_mib, pids, tmp_mib) stay in
+  `limits.yaml` but go unused; the turn, token, dollar and wall-time limits
+  still apply (owner, 2026-11-14).
 
 ## 11. Readiness gate
 Checked 2026-11-13 against spec v10.
@@ -209,6 +212,7 @@ Checked 2026-11-13 against spec v10.
 | 9 | 2026-11-13 | SR-1 to SR-5 and SR-11 approved | Owner, 2026-11-13 (decision card) |
 | 10 | 2026-11-13 | A-1 approved; readiness gate passed | Owner, 2026-11-13 (decision card); orchestrator (gate) |
 | 10 | 2026-11-13 | Spec v10 signed off; status Approved | Owner, 2026-11-13 (decision card) |
+| 11 | 2026-11-14 | SR-11 reworded and H-0184 container limits unused until Beta, after the owner dropped agent containers until Beta (ADR 0026) | Owner, 2026-11-14 (in chat, after a decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
