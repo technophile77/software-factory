@@ -29,7 +29,7 @@ engine will do next.
 
 | Id | Requirement |
 |---|---|
-| FR-1 | Each stateful part below is defined as one jssm machine in its own module: the feature lifecycle (stages, including the waiting conditions inside each stage); each agent run (`running`, `interrupted`, `complete`, `failed`, and resume) for the requirements analyst, security reviewer, readiness checker and advisor; interview items (`open`, `deferred`, `researching`, `answered`, `approved`, `rejected`, `superseded`); and inbox items |
+| FR-1 | Each stateful part below is defined as one jssm machine in its own module: the feature lifecycle (stages, including the waiting conditions inside each stage); each agent run (`running`, `interrupted`, `complete`, `failed`, and resume) for the requirements analyst, security reviewer, readiness checker and advisor; interview items (`open`, `deferred`, `researching`, `answered`, `approved`, `rejected`, `superseded`); and inbox items, modelled as both the engine's record state (open, answered, expired) and the GitHub issue's state (open, closed, reopened, deleted), so that a hand-closed or deleted issue is a modelled state with its F-011 handling (A-2) |
 | FR-2 | Every non-final state declares who acts next: the engine (with the action it takes), a named agent role, or the owner (with the inbox item that asks them). A state with no actor is a dead end |
 | FR-3 | A liveness test, run with the engine's unit tests, fails when any machine has a state that can't be entered (`has_unenterables()`), a non-final state with no exits (`is_terminal()` without being declared final), or a non-final state with no actor (FR-2). The failure names the machine and state |
 | FR-4 | The same test fails when a final state is reachable only through a path the owner never sees: every path to `failed` must pass through a state that files an owner item or offers a rerun |
@@ -62,7 +62,8 @@ engine will do next.
 
 - Event logs written before this feature, including ones with stage moves the new machine forbids (FR-6 decides what happens; see A-1).
 - Two runs for the same feature in the log (an old interrupted one and a new one).
-- An owner item closed on GitHub while the engine was stopped.
+- An owner item closed or deleted on GitHub while the engine was stopped (F-011: reopened once with a note; a deleted one gets a Notice).
+- An item closed by hand a second time, after the engine's one reopen. F-011 doesn't say what happens next, so under FR-3 this is a dead end today (OQ-1).
 
 ## 7. Dependencies
 
@@ -70,10 +71,13 @@ ADR 0031 (jssm). F-016 (increment 3, PR #60), F-018 (`activity` codes, PR #68), 
 
 ## 8. Assumptions
 
+Open question OQ-1: what the engine does when the owner closes an unanswered inbox issue by hand a second time.
+
+
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
 | A-1 | Replaying an existing log that contains a forbidden move pauses the feature and asks the owner which state to use | Owner, decision card 2026-11-14 08:01Z | Approved |
-| A-2 | Inbox items are modelled from the engine's side only (open, answered, expired); GitHub's own issue states are inputs | | Pending |
+| A-2 | Inbox items mirror the GitHub issue's states (open, closed, reopened, deleted) alongside the engine's record state | Owner, decision card 2026-11-14 08:01Z | Approved |
 
 ## 9. Security considerations
 
