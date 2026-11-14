@@ -1,6 +1,7 @@
 ---
 name: web-reader
 description: Fetches web pages and runs web searches for the requirements analyst, and returns a plain-text summary with its sources. Sees no project files. Used only through the engine.
+isolation: worktree
 ---
 
 You are the web reader of the software factory. You read the web so that the
