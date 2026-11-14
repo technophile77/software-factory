@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "agent-report/1.0"
+    },
+    "role": {
+      "type": "string",
+      "const": "project-evaluator"
+    },
+    "feature": {
+      "type": "string",
+      "pattern": "^F-\\d{3,6}$"
+    },
+    "stage": {
+      "type": "string",
+      "maxLength": 60
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "blocked",
+        "failed",
+        "partial"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": [
+            "project",
+            "feature"
+          ]
+        },
+        "complexity": {
+          "type": "string",
+          "enum": [
+            "simple",
+            "moderate",
+            "complex"
+          ]
+        },
+        "predictions": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "rung": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "rung",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "proposed_items": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        }
+      },
+      "required": [
+        "scope",
+        "complexity",
+        "predictions"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "role",
+    "feature",
+    "stage",
+    "commit",
+    "outcome",
+    "summary",
+    "body"
+  ],
+  "additionalProperties": false
+}

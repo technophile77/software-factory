@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { FakeDocker } from "./fakes";
 import { git } from "./helpers";
 import { securityItemsIn } from "./inbox-items";
+import { reportOutputSchema } from "../src/schemas/agent-report";
 import { REVIEWER_MD, analyst, boot, entries, interview, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
 
 describe("Security Gate 1 on the engine, with fake Docker and SDK (F-008)", () => {
@@ -26,13 +27,16 @@ describe("Security Gate 1 on the engine, with fake Docker and SDK (F-008)", () =
     await interview(w, e, c, () => feature, (f) => (feature = f));
     await until("readiness_gate", () => stageOf(e, feature) === "readiness_gate");
 
-    // AC-3: read-only worktree, its own writable report folder, the reviewer's model, tools and caps.
+    // AC-3: read-only worktree, the reviewer's model, tools and caps. F-020 AC-10: no report folder and no Write; the report is the structured result.
     const run = d.calls.find((x) => x.args[0] === "run" && x.args.includes("factory.role=security-reviewer"))!.args;
     const mounts = run.filter((a, i) => run[i - 1] === "--mount");
     expect(mounts.find((m) => m.includes("target=/workspace,"))).toMatch(/,readonly$/);
-    expect(mounts.find((m) => m.includes("security_gate_1"))).not.toMatch(/readonly/);
+    expect(mounts.filter((m) => m.includes("security_gate_1"))).toEqual([]);
     const o = s.seen.find((x) => x.systemPrompt === REVIEWER_MD)!;
-    expect(o.tools).toEqual(["Read", "Grep", "Glob", "Write"]);
+    expect(o.tools).toEqual(["Read", "Grep", "Glob"]);
+    expect(o.outputFormat).toEqual({ type: "json_schema", schema: reportOutputSchema("security-reviewer") });
+    expect(o.canUseTool).toBeDefined();
+    expect((await o.canUseTool("Write", { file_path: "/workspace/x.json" }, { signal: new AbortController().signal })).behavior).toBe("deny");
     expect(o.model).toBe("claude-sonnet-5-5");
     expect(o.maxTurns).toBe(100);
     expect(o.mcpServers).toEqual({ factory: { factory: true } });
@@ -41,7 +45,7 @@ describe("Security Gate 1 on the engine, with fake Docker and SDK (F-008)", () =
     const g1 = runsOf(w, feature, "security-reviewer")[0]!;
     await until("the run's end", () => runsOf(w, feature, "security-reviewer")[0]!.status === "complete");
     const rep = JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/security_gate_1/security-reviewer-1.json`));
-    expect(rep).toMatchObject({ role: "security-reviewer", outcome: "complete", model: "claude-sonnet-5-5", body: { gate: 1, findings: [] } });
+    expect(rep).toMatchObject({ role: "security-reviewer", outcome: "complete", model: "claude-sonnet-5-5", report_via: "structured_output", body: { gate: 1, findings: [] } });
     const branch = e.feature(feature)!.state.branch;
     expect(git(w.config, "show", `${branch}:docs/features/${feature}-security-gate1.md`)).toContain(`# ${feature} Security Gate 1`);
     expect(entries(w, feature).map((x) => x.type)).toEqual(expect.arrayContaining(["gate1_run", "gate1_report"]));
@@ -68,7 +72,7 @@ describe("Security Gate 1 on the engine, with fake Docker and SDK (F-008)", () =
         const first = (await sc.next())!;
         const commit = /at commit ([0-9a-f]{40})/.exec(first)![1]!;
         fs.writeFileSync(path.join(reportDir(d), "security-reviewer-1.json"), report(feature, commit, [
-          { criterion: "S3.2", severity: "High", location: "FR-1", explanation: "Exports may hold card numbers.", fix, blocks: true, needs_owner: false },
+          { criterion: "S3.2", severity: "High", location: "FR-1", explanation: "Exports may hold card numbers.", fix, needs_owner: false },
         ]));
         await sc.next();
         yield { type: "result", subtype: "success", session_id: "r-2", num_turns: 3 };
@@ -95,7 +99,7 @@ describe("Security Gate 1 on the engine, with fake Docker and SDK (F-008)", () =
         const first = (await sc.next())!;
         const commit = /at commit ([0-9a-f]{40})/.exec(first)![1]!;
         fs.writeFileSync(path.join(reportDir(d), "security-reviewer-1.json"), report(feature, commit, [
-          { criterion: "S8.5", severity: "Medium", location: "FR-2", explanation: "A token scope [click](https://evil.example).", fix: "Which scope.", blocks: false, needs_owner: true, options: [{ id: "A", label: "Read only" }, { id: "B", label: "Read and write" }], recommendation: "A" },
+          { criterion: "S8.5", severity: "Medium", location: "FR-2", explanation: "A token scope [click](https://evil.example).", fix: "Which scope.", needs_owner: true, options: [{ id: "A", label: "Read only" }, { id: "B", label: "Read and write" }], recommendation: "A" },
         ]));
         await sc.next();
         yield { type: "result", subtype: "success", session_id: "r-3", num_turns: 3 };
@@ -126,7 +130,7 @@ describe("Security Gate 1 on the engine, with fake Docker and SDK (F-008)", () =
         if (n === 2) expect(turn).toMatch(/criterion must be a criterion id/);
         const commit = runsOf(w, feature, "security-reviewer")[0]!.last_commit!;
         fs.writeFileSync(path.join(reportDir(d), "security-reviewer-1.json"), report(feature, commit, [
-          { criterion: "S99.9", severity: "High", location: "x", explanation: "y", fix: "z", blocks: true, needs_owner: false },
+          { criterion: "S99.9", severity: "High", location: "x", explanation: "y", fix: "z", needs_owner: false },
         ]));
         await sc.next();
         yield { type: "result", subtype: "success", session_id: "r-4", num_turns: 1 };
@@ -149,6 +153,52 @@ describe("Security Gate 1 on the engine, with fake Docker and SDK (F-008)", () =
         return false;
       }
     });
+    expect(stageOf(e, feature)).toBe("security_gate_1");
+  });
+
+  it("F-020 SR-7: a structured report that sets a field the engine fills gets one correction naming the field; the corrected report is used", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    const turns: string[] = [];
+    const s = scriptedSdk({
+      analyst: analyst(w, () => feature),
+      reviewer: async function* (sc, n) {
+        turns.push((await sc.next())!);
+        const commit = runsOf(w, feature, "security-reviewer")[0]!.last_commit!;
+        const good = JSON.parse(report(feature, commit));
+        fs.writeFileSync(path.join(reportDir(d), "security-reviewer-1.json"), JSON.stringify(n === 1 ? { ...good, model: "forged", items_filed: [] } : good));
+        await sc.next();
+        yield { type: "result", subtype: "success", session_id: "r-7", num_turns: 1 };
+      },
+    });
+    const { e, c } = await boot(w, runtime(d, s.sdk));
+    await interview(w, e, c, () => feature, (f) => (feature = f));
+    await until("readiness_gate", () => stageOf(e, feature) === "readiness_gate");
+    expect(s.count.reviewer).toBe(2);
+    expect(turns[1]).toContain(`(top level) is invalid (unknown key "model", "items_filed")`);
+    expect(turns[1]).toContain("Return the whole report again as your structured output");
+    const rep = JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/security_gate_1/security-reviewer-1.json`));
+    expect(rep.model).toBe("claude-sonnet-5-5");
+  });
+
+  it("F-020 AC-11: a session that ends without a structured report fails the run with \"no report\", without a correction session", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    const s = scriptedSdk({
+      analyst: analyst(w, () => feature),
+      reviewer: async function* (sc) {
+        await sc.next();
+        await sc.next();
+        yield { type: "result", subtype: "success", session_id: "r-8", num_turns: 1 };
+      },
+    });
+    const { e, c } = await boot(w, runtime(d, s.sdk));
+    await interview(w, e, c, () => feature, (f) => (feature = f));
+    await until("the failed run", () => runsOf(w, feature, "security-reviewer")[0]?.status === "failed");
+    expect(runsOf(w, feature, "security-reviewer")[0]!.reason).toBe("no report");
+    expect(s.count.reviewer).toBe(1);
     expect(stageOf(e, feature)).toBe("security_gate_1");
   });
 

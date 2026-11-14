@@ -98,9 +98,10 @@ function toolResults(bodies: string[]): Map<string, string> {
 }
 
 /** Runs one session of the real binary under `policy` in `ws`, against a fake API that makes the scripted tool calls. */
-async function runReal(policy: RolePolicy, ws: string, steps: Step[]) {
+async function runReal(policy: RolePolicy, ws: string, steps: Step[], extra: { outputSchema?: Record<string, unknown> } = {}) {
   const home = tmpdir();
   const api = await fakeApi(steps);
+  let outcome: Awaited<ReturnType<typeof runSession>> | undefined;
   try {
     const sdk = await loadAgentSdk();
     const log = new MemoryLogger();
@@ -121,16 +122,16 @@ async function runReal(policy: RolePolicy, ws: string, steps: Step[]) {
     };
     const opts = sessionOptions({
       policy, worktree: ws, workspace: ws, cwd: ws, instructions: "Test session.", factoryServer: sdk.createFactoryServer([]), factoryTools: [],
-      caps: { maxTurns: 20, maxBudgetUsd: 5, wallTimeMs: 150_000 }, spawn: spawnLocal, log,
+      caps: { maxTurns: 20, maxBudgetUsd: 5, wallTimeMs: 150_000 }, spawn: spawnLocal, log, ...extra,
     }, abort);
     async function* turns() {
       yield { type: "user" as const, message: { role: "user" as const, content: "go" }, parent_tool_use_id: null, session_id: "" };
     }
-    await runSession(sdk, opts, turns(), { maxTurns: 20, maxBudgetUsd: 5, wallTimeMs: 150_000 }, { onSessionId: () => undefined, onWebSearch: () => undefined });
+    outcome = await runSession(sdk, opts, turns(), { maxTurns: 20, maxBudgetUsd: 5, wallTimeMs: 150_000 }, { onSessionId: () => undefined, onWebSearch: () => undefined });
   } finally {
     await api.close();
   }
-  return api;
+  return Object.assign(api, { outcome: outcome! });
 }
 
 describe.skipIf(!runnable)(`H1: the tool gate holds against the real Claude Code binary${runnable ? "" : " (skipped: no host binary for this platform in the SDK package, or Windows)"}`, () => {
@@ -187,5 +188,34 @@ describe.skipIf(!runnable)(`H1: the tool gate holds against the real Claude Code
     for (const b of api.bodies) expect(refusedBody(Buffer.from(b), { webSearch: true })).toBeNull();
     expect(api.bodies.some((b) => refusedBody(Buffer.from(b)) !== null)).toBe(true);
     expect([...api.betas].filter((b) => !ALLOWED_BETAS.has(b))).toEqual([]);
+  });
+});
+
+describe.skipIf(!runnable)(`F-020 A-3: structured output with tool use on the real Claude Code binary${runnable ? "" : " (skipped: no host binary)"}`, () => {
+  it("a session that reads a file and then returns its report as structured output ends with the report in structured_output", { timeout: 180_000 }, async () => {
+    const ws = tmpdir();
+    fs.writeFileSync(path.join(ws, "spec.md"), "SPEC-OK\n");
+    const policy: RolePolicy = {
+      role: "orchestrator", tools: ["Read", "Grep", "Glob"], read: { allow: ["**"], deny: [...SECRET_DENIES] }, write: { allow: [], deny: [] },
+      commands: [], network: [], mayRequest: [],
+    };
+    const report = { verdict: "ok", checks: [{ name: "clear_objective", passed: true }] };
+    const outputSchema = {
+      type: "object", additionalProperties: false, required: ["verdict", "checks"],
+      properties: {
+        verdict: { type: "string" },
+        checks: { type: "array", items: { type: "object", additionalProperties: false, required: ["name", "passed"], properties: { name: { type: "string" }, passed: { type: "boolean" } } } },
+      },
+    };
+    const api = await runReal(policy, ws, [
+      { name: "Read", input: { file_path: `${ws}/spec.md` } },
+      { name: "StructuredOutput", input: report },
+    ], { outputSchema });
+    expect(api.done()).toBe(2);
+    // The CLI offers the report as a tool the model calls; the engine only ever sees the result message's field.
+    expect(api.bodies.some((b) => b.includes("\"StructuredOutput\""))).toBe(true);
+    expect(toolResults(api.bodies).get("toolu_1")).toContain("SPEC-OK");
+    expect(api.outcome.status).toBe("complete");
+    expect(api.outcome.structured).toEqual(report);
   });
 });

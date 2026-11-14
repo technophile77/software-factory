@@ -4,6 +4,7 @@ import { Git } from "../git";
 import { RoleAssignmentError, parseRoleAssignments } from "./endpoint-roles";
 import { ENDPOINT_NAME_RE } from "./models";
 import { ConfigError } from "./paths-file";
+import { checkConfig, manifestFile } from "../schemas/config";
 
 /**
  * How often the owner signs in to GitHub to open interview sessions
@@ -77,7 +78,10 @@ export async function readManifest(git: Git, repo: string): Promise<Manifest> {
   } catch {
     throw new ConfigError(`${MANIFEST_FILE} is not valid YAML.`);
   }
-  return validateManifest(doc, commit);
+  const m = validateManifest(doc, commit);
+  // F-020 FR-12: after the detailed rules, the outline: an unknown or misplaced key is refused with its path.
+  checkConfig(MANIFEST_FILE, doc, manifestFile);
+  return m;
 }
 
 /**

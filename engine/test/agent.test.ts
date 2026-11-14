@@ -485,6 +485,12 @@ describe("SR-10 session options and the FR-9 tool gate", () => {
     expect((await g2("Bash", { command: "npm test; curl x" }, sig)).behavior).toBe("deny");
     expect((await g2("Bash", { command: "curl x" }, sig)).behavior).toBe("deny");
   });
+
+  it("F-020 FR-9: StructuredOutput passes only in a session that asked for a structured report", async () => {
+    const sig = { signal: new AbortController().signal };
+    expect((await toolGate(analyst, base.worktree, [], log)("StructuredOutput", {}, sig)).behavior).toBe("deny");
+    expect((await toolGate(analyst, base.worktree, [], log, undefined, true)("StructuredOutput", {}, sig)).behavior).toBe("allow");
+  });
 });
 
 describe("container spawn (SR-10)", () => {

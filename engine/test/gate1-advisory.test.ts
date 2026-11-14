@@ -16,6 +16,7 @@ import { ownerOnly } from "./acceptance/support/platform";
 import { FakeDocker } from "./fakes";
 import { RpcClient, World, approvedSession, engineJson, git, makeWorld, manifestYaml, start } from "./helpers";
 import { policyDoc } from "./policy-fixture";
+import { reportDir, withStructured } from "./agents-harness";
 
 // F-013 FR-10, FR-11, SR-10, AC-10: the advisory first pass of the security reviewer, end to end on the engine with fake Docker and SDK.
 // The scaffolding is gate1-run.test.ts's, trimmed to what these tests need.
@@ -54,14 +55,14 @@ function scriptedSdk(scripts: { analyst: (s: Script, n: number) => AsyncGenerato
       const it = prompt[Symbol.asyncIterator]();
       const own = tools;
       const n = ++count[role];
-      return scripts[role]({
+      return withStructured(scripts[role]({
         options,
         next: async () => {
           const r = await it.next();
           return r.done ? null : r.value.message.content;
         },
         call: async (name, args) => JSON.parse((await own.find((x) => x.name === name)!.handler(args)).content[0]!.text),
-      }, n);
+      }, n), options, role === "reviewer" ? "security-reviewer-" : "analyst-");
     },
   };
   return { sdk, seen, count };
@@ -125,13 +126,6 @@ function spec(feature: string, version: number): string {
   ].join("\n");
 }
 
-/** The host folder mounted as the latest reviewer container's report folder. */
-function reportDir(d: FakeDocker): string {
-  const run = [...d.calls].reverse().find((x) => x.args[0] === "run" && x.args.includes("factory.role=security-reviewer"))!.args;
-  const mount = run.filter((a, i) => run[i - 1] === "--mount").find((m) => m.includes("security_gate_1"))!;
-  return /source=([^,]+)/.exec(mount)![1]!;
-}
-
 function claudeReport(feature: string, commit: string, findings: unknown[] = []): string {
   return JSON.stringify({
     schema: "agent-report/1.0", role: "security-reviewer", feature, stage: "security_gate_1", commit, outcome: "complete",
@@ -144,7 +138,7 @@ function claudeReport(feature: string, commit: string, findings: unknown[] = [])
   });
 }
 
-const CHOICE = { criterion: "S8.5", severity: "Medium", location: "FR-2", explanation: "A token scope.", fix: "Which scope.", blocks: false, needs_owner: true, options: [{ id: "A", label: "Read only" }, { id: "B", label: "Read and write" }], recommendation: "A" };
+const CHOICE = { criterion: "S8.5", severity: "Medium", location: "FR-2", explanation: "A token scope.", fix: "Which scope.", needs_owner: true, options: [{ id: "A", label: "Read only" }, { id: "B", label: "Read and write" }], recommendation: "A" };
 
 function analyst(w: World, feature: () => string) {
   return async function* (s: Script): AsyncGenerator<SdkMessage> {
@@ -231,7 +225,7 @@ describe("the advisory first pass of the security reviewer on the engine (F-013 
     const rep = agentReportOf(w, feature);
     expect(rep).toMatchObject({ outcome: "blocked", model: "claude-sonnet-5-5", body: { findings: [{ criterion: "S8.5" }] } });
     expect(rep.advisory).toEqual({
-      endpoint: "lan", status: "ok", model: "lan/qwen3", hints: 2, dropped: 2,
+      endpoint: "lan", status: "ok", report_via: "file", model: "lan/qwen3", hints: 2, dropped: 2,
       usage: { input_tokens: 0, output_tokens: 0, cost_usd: 0, duration_s: 0 },
       match: { claude_findings: 1, matched: 1, by_severity: { Medium: { claude: 1, matched: 1 } }, verdict_match: true },
     });

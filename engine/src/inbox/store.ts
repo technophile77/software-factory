@@ -1,7 +1,8 @@
 import * as crypto from "node:crypto";
-import YAML from "yaml";
 import { Clock, iso } from "../clock";
 import type { Logger } from "../log";
+import { INBOX_RECORD_SCHEMA, inboxRecord } from "../schemas/inbox-record";
+import { jsonFileContent, parseJsonFile } from "../schemas/json-file";
 import type { StateRepo } from "../state/state-repo";
 import { MAX_NOTE_CHARS, confirmCode, looksLikeCommand, parseCommand } from "./commands";
 import { IssueComment, IssuesApi, WORKFLOW_LOGIN } from "./github-issues";
@@ -122,7 +123,7 @@ export class Inbox {
     const listed = await this.o.state.list("inbox").catch(() => []);
     const out: InboxRecord[] = [];
     for (const e of listed) {
-      const m = /^inbox\/([DTHSMN]-\d{4,})\.yaml$/.exec(e.path);
+      const m = /^inbox\/([DTHSMN]-\d{4,})\.json$/.exec(e.path);
       if (!m) continue;
       const r = await this.read(m[1]!);
       if (r) out.push(r);
@@ -130,18 +131,28 @@ export class Inbox {
     return out;
   }
 
+  /**
+   * F-020 SR-4: records still in the v3 YAML form. While any exists the
+   * engine runs nothing for the project and files nothing, so an open item
+   * in an unread file (a blocking Security item, say) can't be skipped.
+   */
+  async legacyRecords(): Promise<string[]> {
+    const listed = await this.o.state.list("inbox").catch(() => []);
+    return listed.map((e) => e.path).filter((p) => /^inbox\/[^/]+\.ya?ml$/.test(p)).sort();
+  }
+
   async read(id: string): Promise<InboxRecord | null> {
     if (!ID_RE.test(id)) return null;
     const raw = await this.o.state.read(recordPath(id));
     if (!raw) return null;
-    const r = YAML.parse(raw.toString("utf8")) as InboxRecord;
-    if (r?.schema !== "inbox-record/3.0" || r.id !== id) throw new Error(`the inbox record ${id} is malformed`);
+    const r = parseJsonFile(recordPath(id), raw, inboxRecord);
+    if (r.id !== id) throw new Error(`the inbox record ${id} is malformed`);
     this.track(r);
     return r;
   }
 
   private async write(r: InboxRecord, message: string, extra: Array<{ path: string; content: string }> = [], removes: string[] = []): Promise<void> {
-    await this.o.state.commit([{ path: recordPath(r.id), content: YAML.stringify(r) }, ...extra], `${r.id}: ${message}`, removes);
+    await this.o.state.commit([{ path: recordPath(r.id), content: jsonFileContent(recordPath(r.id), r, inboxRecord) }, ...extra], `${r.id}: ${message}`, removes);
     this.track(r);
   }
 
@@ -160,7 +171,7 @@ export class Inbox {
     let max = 0;
     for (const dir of ["inbox", `inbox/${kind}`, "inbox/decision"]) {
       for (const e of await this.o.state.list(dir).catch(() => [])) {
-        const m = new RegExp(`(?:^|/)${prefix}-(\\d{4,})\\.(?:yaml|md)$`).exec(e.path);
+        const m = new RegExp(`(?:^|/)${prefix}-(\\d{4,})\\.(?:json|yaml|md)$`).exec(e.path);
         if (m) max = Math.max(max, Number(m[1]));
       }
     }
@@ -189,13 +200,15 @@ export class Inbox {
 
   private async fileNow(item: ItemInput, id: string | undefined, migratedFrom: string | undefined, notes: string[]): Promise<string> {
     checkItem(item);
+    const legacy = await this.legacyRecords();
+    if (legacy.length) throw new Error(`the inbox still has ${legacy.length} YAML record(s); run "npm run migrate-inbox-json" in engine/ first`);
     id ??= await this.nextId(item.kind);
     if (!ID_RE.test(id) || id[0] !== KIND_PREFIX[item.kind]) throw new Error(`${id} is not a ${item.kind} id`);
     const at = iso(this.o.clock.now());
     await this.keepPrivate(id, 1, item);
     const body = renderBody(id, 1, this.withPrivateLine(id, item));
     const r: InboxRecord = {
-      schema: "inbox-record/3.0", id, kind: item.kind, title: item.title,
+      schema: INBOX_RECORD_SCHEMA, id, kind: item.kind, title: item.title,
       ...(item.category ? { category: item.category } : {}),
       priority: item.priority, effective_priority: item.priority, blocking: item.blocking, status: "open",
       repo: item.repo ?? "project",
@@ -287,7 +300,7 @@ export class Inbox {
     const r = await this.read(id);
     if (!r) throw new Error(`no inbox record ${id}`);
     r.history.push({ at: iso(this.o.clock.now()), by: "engine", action: "effect_done", effect, ...(stage ? { stage } : {}) });
-    return { path: recordPath(id), content: YAML.stringify(r) };
+    return { path: recordPath(id), content: jsonFileContent(recordPath(id), r, inboxRecord) };
   }
 
   /** Records that an effect ran, for effects with no feature to commit with. */

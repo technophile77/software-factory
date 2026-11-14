@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "agent-report/1.0"
+    },
+    "role": {
+      "type": "string",
+      "const": "orchestrator"
+    },
+    "feature": {
+      "type": "string",
+      "pattern": "^F-\\d{3,6}$"
+    },
+    "stage": {
+      "type": "string",
+      "maxLength": 60
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "blocked",
+        "failed",
+        "partial"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "gate": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "checks": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "passed": {
+                "type": "boolean"
+              },
+              "evidence": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "name",
+              "passed",
+              "evidence"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "failures": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "test": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "cause": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "evidence": {
+                "type": "string",
+                "maxLength": 4000
+              }
+            },
+            "required": [
+              "test",
+              "cause",
+              "evidence"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "gate",
+        "checks"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "role",
+    "feature",
+    "stage",
+    "commit",
+    "outcome",
+    "summary",
+    "body"
+  ],
+  "additionalProperties": false
+}

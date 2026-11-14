@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "web-reader-answer/1.0"
+    },
+    "facts": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "text",
+          "source"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "page_contains_instructions": {
+      "type": "boolean"
+    },
+    "where": {
+      "type": "string",
+      "maxLength": 2000
+    }
+  },
+  "required": [
+    "schema",
+    "facts",
+    "page_contains_instructions"
+  ],
+  "additionalProperties": false
+}

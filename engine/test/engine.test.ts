@@ -113,7 +113,7 @@ describe("engine start (FR-1 to FR-4)", () => {
     expect(beta).toMatchObject({ state: "running" });
     expect(securityItems(w)).toHaveLength(1);
     const item = securityItemsIn(w.config)[0]!.text;
-    expect(item).toContain("category: Security");
+    expect(item).toContain("\"category\": \"Security\"");
     expect(item).not.toContain("github_pat_");
   });
 
@@ -148,6 +148,35 @@ describe("engine start (FR-1 to FR-4)", () => {
     const e = await boot(w);
     expect(e.projects[0]!.state).toBe("stopped");
     expect(securityItems(w)).toHaveLength(1);
+  });
+});
+
+describe("F-020 FR-12: the manifest's outline is checked against its schema", () => {
+  it("AC-13: an unknown key under settings stops the project, naming the file and the key's path", async () => {
+    const w = makeWorld({ manifest: manifestYaml({ extra: "  surprise: 1" }), pinned: false });
+    const e = await boot(w);
+    expect(e.projects[0]!.state).toBe("stopped");
+    expect(e.projects[0]!.reason).toBe("factory-project.yaml: settings is invalid (unknown key 'surprise')");
+  });
+});
+
+describe("F-020 SR-4: inbox records still in YAML", () => {
+  it("the project is stopped, nothing is filed, and the owner is told to run the migration", async () => {
+    const w = makeWorld();
+    const first = await boot(w);
+    expect(first.projects[0]!.state).toBe("running");
+    await first.stop();
+    engines = engines.filter((x) => x !== first);
+    const state = path.join(w.config, ".factory");
+    fs.mkdirSync(path.join(state, "inbox"), { recursive: true });
+    fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), "schema: inbox-record/3.0\nid: D-0001\nstatus: open\n");
+    git(state, "add", "inbox/D-0001.yaml");
+    git(state, "commit", "-q", "-m", "D-0001: an item from before F-020");
+    const before = git(w.config, "rev-parse", "factory/state");
+    const e = await boot(w);
+    expect(e.projects[0]).toMatchObject({ state: "stopped" });
+    expect(e.projects[0]!.reason).toMatch(/1 record\(s\) in the old YAML form \(inbox\/D-0001\.yaml\); run `npm run migrate-inbox-json -- --project /);
+    expect(git(w.config, "rev-parse", "factory/state")).toBe(before);
   });
 });
 
@@ -377,7 +406,7 @@ describe("limits (H-0087, Project manifest v1.4)", () => {
     expect(e.projects[0]!.reason).not.toContain("proxy.pids");
     expect(securityItems(w)).toHaveLength(1);
     const item = securityItemsIn(w.config)[0]!.text;
-    expect(item).toContain("category: Security");
+    expect(item).toContain("\"category\": \"Security\"");
     expect(item).toContain("analyst.turns");
     expect(() => e.limits("acme")).toThrow(/No running project/);
   });
@@ -536,6 +565,6 @@ describe("factory.version sources (spec v30)", () => {
     const e = await boot(w);
     expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringMatching(re) });
     expect(securityItems(w)).toHaveLength(1);
-    expect(securityItemsIn(w.config)[0]!.text).toContain("category: Security");
+    expect(securityItemsIn(w.config)[0]!.text).toContain("\"category\": \"Security\"");
   });
 });

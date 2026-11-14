@@ -2,7 +2,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { z } from "zod";
 import { ensureOwnerDir, writeFileAtomic } from "../fsutil";
+import { consoleAnswer as AnswerFile, inboxPrivate as PrivateFile } from "../schemas/inbox-local";
 import { ID_RE } from "./model";
+
+export { MAX_PRIVATE_SECTION_CHARS } from "../schemas/inbox-local";
 
 /**
  * F-021: what the inbox keeps only on the PC, in the engine folder: private
@@ -13,28 +16,8 @@ import { ID_RE } from "./model";
  */
 
 const MAX_FILE_BYTES = 256 * 1024;
-export const MAX_PRIVATE_SECTION_CHARS = 40_000;
 
-const PrivateFile = z.object({
-  schema: z.literal("inbox-private/1.0"),
-  id: z.string().regex(ID_RE),
-  rev: z.number().int().min(1),
-  sections: z.array(z.object({ name: z.string().min(1).max(80), text: z.string().max(MAX_PRIVATE_SECTION_CHARS) })).max(10),
-}).strict();
 export type PrivateDetail = z.infer<typeof PrivateFile>["sections"];
-
-const AnswerFile = z.object({
-  schema: z.literal("console-answer/1.0"),
-  id: z.string().regex(ID_RE),
-  /** The entry's index in the record's history. */
-  n: z.number().int().min(0),
-  rev: z.number().int().min(1),
-  action: z.string().max(40),
-  note: z.string().max(4_000).optional(),
-  at: z.string().max(40),
-  session: z.number().int().min(0),
-  entry_sha256: z.string().regex(/^[0-9a-f]{64}$/),
-}).strict();
 export type ConsoleAnswer = z.infer<typeof AnswerFile>;
 
 /**

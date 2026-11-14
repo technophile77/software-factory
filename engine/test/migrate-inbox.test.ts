@@ -48,9 +48,9 @@ describe("one-time inbox migration (F-011 FR-16)", () => {
     const r = await run();
     expect(r).toEqual({ migrated: [{ from: "inbox/decision/D-0003.md", id: "D-0003" }], skipped: [], closed: ["inbox/decision/D-0001.md"] });
     const files = git(repo, "ls-tree", "-r", "--name-only", "factory/state", "--", "inbox").split("\n");
-    expect(files).toEqual(["inbox/D-0003.rev1.md", "inbox/D-0003.yaml", "inbox/decision/D-0001.md"]);
+    expect(files).toEqual(["inbox/D-0003.json", "inbox/D-0003.rev1.md", "inbox/decision/D-0001.md"]);
     expect(git(repo, "show", "--name-status", "--format=%s", "factory/state").split("\n").filter(Boolean)).toEqual([
-      "D-0003: migrated from inbox/decision/D-0003.md", "A\tinbox/D-0003.rev1.md", "A\tinbox/D-0003.yaml", "D\tinbox/decision/D-0003.md",
+      "D-0003: migrated from inbox/decision/D-0003.md", "A\tinbox/D-0003.json", "A\tinbox/D-0003.rev1.md", "D\tinbox/decision/D-0003.md",
     ]);
     const [item] = inboxItems(repo);
     // F-016 FR-12: the engine's own Gate 1 item keeps its effect; SR-20: the owner's old action is dropped and noted.

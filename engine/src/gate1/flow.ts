@@ -42,14 +42,15 @@ export function reviewerTurn(o: {
   specPath: string;
   specVersion: number | null;
   commit: string;
-  reportPath: string;
+  /** Where to write the report, for a session that can't return structured output (F-020 A-2); otherwise it is the structured result. */
+  reportPath?: string;
   standards: Standards;
   transcript: string;
 }): string {
   const s = o.standards;
   return [
     `Run Security Gate 1 on ${o.feature}. Its spec is /workspace/${o.specPath}${o.specVersion !== null ? ` (version ${o.specVersion})` : ""}, at commit ${o.commit}. Review it against the factory's security standards below, using their Gate 1 checklist, as your AGENT.md says.`,
-    `Write your report, and nothing else, to /workspace/${o.reportPath}, as JSON in exactly this shape. Use only criterion ids from the standards below. A finding the spec can resolve with a new or tightened security requirement has needs_owner false and the requirement in fix. A finding that needs the owner to choose between options has needs_owner true, 2 to 4 options with ids A to D, and a recommendation. Answer every checklist question; a report with no findings must cite the spec sections or requirement ids each answer relies on.`,
+    `${reportWhere(o.reportPath)}, as JSON in exactly this shape. Use only criterion ids from the standards below. A finding the spec can resolve with a new or tightened security requirement has needs_owner false and the requirement in fix. A finding that needs the owner to choose between options has needs_owner true, 2 to 4 options with ids A to D, and a recommendation. Answer every checklist question; a report with no findings must cite the spec sections or requirement ids each answer relies on.`,
     reportShape(o.feature, o.commit),
     "The factory's security standards (from the factory version this project pins; these are your criteria):",
     "<<<FACTORY STANDARDS",
@@ -67,12 +68,19 @@ export function reviewerTurn(o: {
   ].join("\n\n");
 }
 
+/** F-020 FR-9: a report is the session's structured result, unless the session must write it to a file (A-2). */
+export function reportWhere(reportPath: string | undefined): string {
+  return reportPath === undefined
+    ? "Return your report, and nothing else, as your structured output (call the StructuredOutput tool once, at the end); don't write any file"
+    : `Write your report, and nothing else, to /workspace/${reportPath}`;
+}
+
 /** FR-5: the correction turn. Engine words only: the errors name fields and rules, never the reviewer's text. */
-export function correctionTurn(reportPath: string, errors: string[]): string {
+export function correctionTurn(reportPath: string | undefined, errors: string[]): string {
   return [
-    `The engine couldn't accept your report at /workspace/${reportPath}:`,
+    reportPath === undefined ? "The engine couldn't accept your report:" : `The engine couldn't accept your report at /workspace/${reportPath}:`,
     ...errors.map((e) => `- ${e}`),
-    "Rewrite the whole report there, fixing each of these. This is your one correction.",
+    `${reportPath === undefined ? "Return the whole report again as your structured output" : "Rewrite the whole report there"}, fixing each of these. This is your one correction.`,
   ].join("\n");
 }
 

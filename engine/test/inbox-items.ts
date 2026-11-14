@@ -26,11 +26,11 @@ export function inboxItems(repo: string, ref = "refs/heads/factory/state"): Stor
   }
   const out: StoredItem[] = [];
   for (const n of names.sort()) {
-    const m = /^inbox\/([A-Z]-\d{4,})\.yaml$/.exec(n);
+    const m = /^inbox\/([A-Z]-\d{4,})\.json$/.exec(n);
     if (!m) continue;
     const raw = show(repo, ref, n);
     if (!raw) continue;
-    const record = YAML.parse(raw) as Record<string, any>;
+    const record = JSON.parse(raw) as Record<string, any>;
     const rev = Array.isArray(record.revisions) ? record.revisions.length : 0;
     const body = rev ? show(repo, ref, `inbox/${m[1]}.rev${rev}.md`) ?? "" : "";
     out.push({ id: m[1]!, record, text: `${raw}\n${body}` });

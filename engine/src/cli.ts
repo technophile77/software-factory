@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import YAML from "yaml";
+import { checkConfig, engineFile } from "./schemas/config";
 import { systemClock } from "./clock";
 import type { AgentRuntime } from "./agent/runtime";
 import { loadAgentSdk } from "./agent/sdk-binding";
@@ -71,10 +72,11 @@ async function agentRuntime(home: string): Promise<AgentRuntime> {
 function engineConfig(home: string): { gitleaks?: string } {
   const file = path.join(home, "engine.yaml");
   if (!fs.existsSync(file)) return {};
-  const doc = YAML.parse(fs.readFileSync(file, "utf8")) as unknown;
-  if (!doc || typeof doc !== "object") return {};
-  const g = (doc as Record<string, unknown>).gitleaks;
-  return typeof g === "string" ? { gitleaks: g } : {};
+  const doc = YAML.parse(fs.readFileSync(file, "utf8"), { uniqueKeys: true, maxAliasCount: 0 }) as unknown;
+  if (doc === null) return {};
+  checkConfig("engine.yaml", doc, engineFile);
+  const g = (doc as { gitleaks?: string }).gitleaks;
+  return g ? { gitleaks: g } : {};
 }
 
 /** Reads a secret without echoing it, so it never lands on a command line or in shell history (SR-1). */

@@ -1,6 +1,5 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import YAML from "yaml";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { Git } from "../src/git";
 import { InboxLocal } from "../src/inbox/local";
@@ -237,7 +236,7 @@ describe("F-021 console answers in the inbox store", () => {
     rec.history.push({ ...forged, console_answer: entryHash(forged) });
     rec.status = "chosen";
     // As a push to the config repo would put it there: the store can't tell it from its own write.
-    await w.state.commit([{ path: `inbox/${id}.yaml`, content: YAML.stringify(rec) }], "forged");
+    await w.state.commit([{ path: `inbox/${id}.json`, content: JSON.stringify(rec, null, 2) }], "forged");
     const fresh = w.make();
     const [pending] = await fresh.pendingEffects();
     expect(await fresh.verify(pending!)).toBe(false);

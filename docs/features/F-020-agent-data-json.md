@@ -1,7 +1,7 @@
 # Feature: The rest of the agents' data moves to JSON, with schemas
 
 - **Id:** F-020
-- **Status:** Approved
+- **Status:** In development
 - **Requested by / date:** owner, 2026-11-14 ("I would like the default format for any data, reports, etc. that an agent interacts with to be in json, unless there is a specific reason that it should be something different"; proposal 0034 decision 3, "Start F-020, full scope", decision card 08:53Z)
 - **Spec version:** 4
 
@@ -114,7 +114,7 @@ H-0240 and proposal 0034 (merged, PR #76). F-011 (inbox records), F-006 (advisor
 
 ## 10. Interface requirements
 
-Each change is an Interfaces decision, applied with the build once approved:
+Each change is an Interfaces decision. All four approved by the owner as specced, 2026-11-14 09:20Z (decision card); each is applied with its part of the build:
 
 | Id | Contract | Change |
 |---|---|---|
