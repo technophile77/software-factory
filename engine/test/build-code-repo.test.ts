@@ -93,7 +93,7 @@ describe("engine clones (SR-7, AC-1, AC-24, FR-5)", () => {
     commitOn(b.test, "test/app.test.js", "test\n");
     await repo.ensureBranches(b, main);
     expect(await repo.head(b.dev)).not.toBe(main);
-    const r = await repo.mergeAgentBranches(b, path.join(root, "merge-wt"), ID, "F-001");
+    const r = await repo.mergeAgentBranches(b, path.join(root, "merge-wt"), ID, "F-001", () => true);
     expect(r.status).toBe("merged");
     const head = (r as { commit: string }).commit;
     expect(await repo.head(b.feature)).toBe(head);
@@ -104,8 +104,8 @@ describe("engine clones (SR-7, AC-1, AC-24, FR-5)", () => {
     void g;
   });
 
-  it("a conflict leaves the feature branch where it was and names the files", async () => {
-    const { root, repo } = setup();
+  const conflicted = async () => {
+    const { root, repo, origin } = setup();
     await repo.init();
     const main = await repo.fetchMain("t");
     const b = featureBranches("F-001", "feature/F-001-app");
@@ -117,8 +117,43 @@ describe("engine clones (SR-7, AC-1, AC-24, FR-5)", () => {
       git(wt, "commit", "-qam", "edit");
       git(repo.localDir, "worktree", "remove", "--force", wt);
     }
-    const r = await repo.mergeAgentBranches(b, path.join(root, "merge-wt"), ID, "F-001");
-    expect(r).toEqual({ status: "conflict", files: ["README.md"] });
+    return { root, repo, origin, main, b };
+  };
+
+  it("a conflict no agent may resolve leaves the feature branch where it was and names the files", async () => {
+    const { root, repo, main, b } = await conflicted();
+    const r = await repo.mergeAgentBranches(b, path.join(root, "merge-wt"), ID, "F-001", () => false);
+    expect(r).toEqual({ status: "conflict", files: ["README.md"], commit: null });
     expect(await repo.head(b.feature)).toBe(main);
+  });
+
+  it("ADR 0013: a conflict the roles may resolve is committed with its markers on the feature branch, both branches as parents", async () => {
+    const { root, repo, b } = await conflicted();
+    const r = await repo.mergeAgentBranches(b, path.join(root, "merge-wt"), ID, "F-001", (files) => files.join() === "README.md");
+    expect(r).toMatchObject({ status: "conflict", files: ["README.md"] });
+    const commit = (r as { commit: string }).commit;
+    expect(await repo.head(b.feature)).toBe(commit);
+    expect(git(repo.localDir, "show", `${commit}:README.md`)).toMatch(/^<{7} [\s\S]*^>{7} /m);
+    expect(git(repo.localDir, "rev-list", "--parents", "-n", "1", commit).split(" ")).toHaveLength(3);
+    // A merge after the resolution: dev is already in, so only what is new merges.
+    expect(await repo.mergeAgentBranches(b, path.join(root, "merge-wt"), ID, "F-001", () => true)).toEqual({ status: "merged", commit });
+  });
+
+  it("ADR 0013: a moved main is merged in, never rebased, and remoteMain reads GitHub's main without fetching", async () => {
+    const { root, repo, origin } = setup();
+    await repo.init();
+    const main = await repo.fetchMain("t");
+    const b = featureBranches("F-001", "feature/F-001-app");
+    await repo.ensureBranches(b, main);
+    expect(await repo.hasMain(b)).toBe(true);
+    git(origin, "commit", "-q", "--allow-empty", "-m", "moved");
+    const moved = git(origin, "rev-parse", "main");
+    expect(await repo.remoteMain("t")).toBe(moved);
+    expect(await repo.head("main")).toBe(main);
+    await repo.fetchMain("t");
+    expect(await repo.hasMain(b)).toBe(false);
+    const r = await repo.mergeMain(b, path.join(root, "merge-wt"), ID, "F-001", () => true);
+    expect(r.status).toBe("merged");
+    expect(await repo.hasMain(b)).toBe(true);
   });
 });

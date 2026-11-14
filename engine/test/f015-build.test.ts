@@ -400,3 +400,97 @@ process.exit(1);
     expect(git(local, "show", `${e.feature(feature)!.state.branch}:src/export.js`)).toContain("fixed");
   }, 150_000);
 });
+
+/** acme-web's main moves on GitHub the moment the first PR opens, changing the README the developer also changed. */
+class MovingMainPulls extends FakePulls {
+  moved = "";
+  constructor(bare: string, readonly root: string) {
+    super(bare);
+  }
+  override async createPull(repo: string, p: { title: string; head: string; base: string; body: string }): Promise<Pull> {
+    const pr = await super.createPull(repo, p);
+    const clone = path.join(this.root, "someone-else");
+    git(this.root, "clone", "-q", this.bare, clone);
+    fs.writeFileSync(path.join(clone, "README.md"), "acme web\n\nNow with a changelog.\n");
+    git(clone, "commit", "-qam", "Another feature merged");
+    git(clone, "push", "-q", "origin", "main");
+    this.moved = git(clone, "rev-parse", "HEAD");
+    return pr;
+  }
+  override async pull(): Promise<Pull> {
+    this.pr = { ...this.pr!, head: { ...this.pr!.head, sha: git(this.root, "--git-dir", this.bare, "rev-parse", `refs/heads/${this.pr!.head.ref}`) } };
+    return this.pr;
+  }
+  override async findPull(): Promise<Pull | null> {
+    return this.pr ? this.pull() : null;
+  }
+}
+
+describe("ADR 0013: main moves while the pull request waits", () => {
+  it("the engine merges main in, the developer resolves the conflict in its own file, and the feature is tested, reviewed and pushed again", async () => {
+    const { w, d, gh, id } = await signedOff((yaml, root) => {
+      const script = path.join(root, "pass.js");
+      fs.writeFileSync(script, `require("fs").writeFileSync("test-results.xml", '<?xml version="1.0"?><testsuites><testsuite name="export"><testcase classname="test/export.test.js" name="May"/></testsuite></testsuites>');\n`);
+      return yaml.replace("    url: https://github.com/example-org/acme-web\n", `    url: https://github.com/example-org/acme-web\n    commands:\n      test: [${JSON.stringify(process.execPath)}, ${JSON.stringify(script)}]\n      test_results: test-results.xml\n`);
+    });
+    const feature = id.value;
+    const seen = { refused: [] as string[], first: "" };
+    const first = developer(() => feature, seen);
+    let resolveTurn = "";
+    let marked = "";
+    const dev = async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
+      if (n === 1) {
+        yield* first(sc);
+        return;
+      }
+      const turn = (await sc.next())!;
+      resolveTurn = turn;
+      const wt = turnFact(turn, /You work in (\S+), a checkout/);
+      marked = fs.readFileSync(path.join(wt, "README.md"), "utf8");
+      fs.writeFileSync(path.join(wt, "README.md"), "acme web\n\nExports orders as CSV.\n\nNow with a changelog.\n");
+      yield {
+        type: "result", subtype: "success", session_id: "dev-r", num_turns: 2,
+        structured_output: {
+          schema: "agent-report/1.0", role: "software-developer", feature, stage: turnFact(turn, /stage "([a-z_]+)"/), commit: turnFact(turn, /commit "([0-9a-f]{40})"/), outcome: "complete", summary: "README.md: kept both paragraphs.",
+          body: { files_changed: ["README.md"], spec_deviations: [], not_done: [], docs_updated: ["README.md"] },
+        },
+      } as SdkMessage;
+    };
+    const report = (role: string, stage: string, body: unknown) => async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
+      const turn = (await sc.next())!;
+      yield { type: "result", subtype: "success", session_id: `${role}-${n}`, num_turns: 2, structured_output: { schema: "agent-report/1.0", role, feature, stage, commit: turnFact(turn, /at commit ([0-9a-f]{40})/), outcome: "complete", summary: "Fine.", body } } as SdkMessage;
+    };
+    const codeReviewer = report("security-reviewer", "code_review", { gate: 2, findings: [] });
+    const judge = report("validation-judge", "validation", { verdict: "PASS", checklist: [{ area: "Each acceptance criterion", status: "Met", evidence: "passes" }], findings: [] });
+    const semgrep = nodeProgram(path.join(w.root, "semgrep"), String.raw`
+const a = process.argv.slice(2);
+if (a[0] === "--version") { console.log("1.183.0"); process.exit(0); }
+require("fs").writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ results: [], errors: [] }));
+`);
+    const s = scriptedSdk({ analyst: async function* () {}, reviewer: codeReviewer, developer: dev, tester: tester(() => feature, seen), judge });
+    const pulls = new MovingMainPulls(path.join(w.root, "remote", "example-org", "acme-web.git"), w.root);
+    const tokenApi = { reachableRepos: async () => ["example-org/acme-web", "example-org/acme-config"], workflowWriteRefused: async () => true };
+    const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, semgrep: { program: semgrep }, pulls: () => pulls, prPollMs: 50, tokenCheck: () => tokenApi });
+    await until("the ready pull request", () => ["green", "failed", "refused", "escalate"].some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000).catch((err) => {
+      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature(feature)?.state.build.actions)}; last ${JSON.stringify(e.feature(feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-6).map((l) => l.message ?? l.action).join(" | ")}`);
+    });
+
+    expect(e.feature(feature)!.state.build.actions).toEqual([
+      "dependencies_merged", "done", "done", "branches_merged", "passed", "clean", "pass", "opened",
+      "main_moved", "conflict", "done", "resolved", "passed", "clean", "pass", "opened", "green",
+    ]);
+    const conflict = e.feature(feature)!.state.build.events.find((x) => x.action === "conflict")!;
+    expect(conflict).toMatchObject({ from: "main", files: ["README.md"], owners: { developer: ["README.md"], tester: [] } });
+    expect(marked).toMatch(/^<{7} [\s\S]*Exports orders as CSV[\s\S]*Now with a changelog[\s\S]*^>{7} /m);
+    expect(resolveTurn).toContain("A merge into this branch conflicted");
+    expect(resolveTurn).toContain('"files":["README.md"]');
+    // Main was merged in, never rebased: the pushed head holds the moved main and the resolution.
+    const pushed = git(w.root, "--git-dir", pulls.bare, "rev-parse", `refs/heads/${e.feature(feature)!.state.branch}`);
+    expect(git(w.root, "--git-dir", pulls.bare, "merge-base", "--is-ancestor", pulls.moved, pushed)).toBe("");
+    expect(git(w.root, "--git-dir", pulls.bare, "show", `${pushed}:README.md`)).toBe("acme web\n\nExports orders as CSV.\n\nNow with a changelog.");
+    expect(pulls.created).toHaveLength(1);
+    expect(s.count.developer).toBe(2);
+    expect(s.count.reviewer).toBe(2);
+    expect(s.count.judge).toBe(2);
+  }, 150_000);
+});
