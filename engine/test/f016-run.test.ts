@@ -336,6 +336,48 @@ describe("F-016: Security item effects (H-0182)", () => {
     expect(third).toContain('"why": "gate1_risk_accepted"');
   }, 60_000);
 
+  it("FR-16, AC-18: a security table titled \"Security requirements\" counts; a risk item filed before the spec took the finding up is withdrawn at the next start", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    let session = "";
+    const scripts = {
+      analyst: analyst(w, () => feature, async (sc, _input, n) => {
+        if (n !== 2) return;
+        await sc.call("interview_ask", { text: "Gate 1 #1: exports may leak card numbers", why: "Security Gate 1 found it.", suggested: FIX });
+        await sc.next();
+        // The answer is the suggested requirement, but the spec leaves it out, so a risk item is filed.
+        writeSpec(w, feature, spec(feature, 4));
+        await sc.call("interview_spec_ready", { spec_path: `docs/features/${feature}-export.md`, spec_version: 4 });
+      }),
+      reviewer: reviewer(d, () => feature, [REQUIREMENT]),
+    };
+    const first = await start(w, d, scripts);
+    session = await interview(w, first.e, first.c, () => feature, (f) => (feature = f));
+    await until("the Gate 1 question", () => [...(first.e.feature(feature)?.state.items.values() ?? [])].some((i) => i.text.startsWith("Gate 1 #1")));
+    const q = [...first.e.feature(feature)!.state.items.values()].find((i) => i.text.startsWith("Gate 1 #1"))!;
+    await first.c.ok("interview.reply", { session, item: q.id, revision: 0, reply_id: "r2", kind: "answer", text: FIX });
+    await until("the risk item", () => items(w).some((i) => i.record.effect?.type === "gate1_risk"));
+    await pollUntil(w, "the issue bound", () => items(w).find((i) => i.record.effect?.type === "gate1_risk")!.record.issue === 1);
+    const branch = first.e.feature(feature)!.state.branch;
+    await first.e.stop();
+
+    // The spec now has the row, under the other title the analyst may use.
+    const fixed = spec(feature, 4, ["| SR-1 | Inputs are validated. | Analyst | Approved |", `| SR-2 | ${FIX} | Gate 1 #1 | Approved |`]).replace("## 9. Security considerations", "## 9. Security requirements");
+    const wt = path.join(w.root, "fix-wt");
+    git(w.config, "worktree", "add", "-q", "--detach", wt, branch);
+    fs.writeFileSync(path.join(wt, "docs", "features", `${feature}-export.md`), fixed);
+    git(wt, "-c", "user.name=a", "-c", "user.email=a@example.invalid", "commit", "-qam", "spec row");
+    git(w.config, "update-ref", `refs/heads/${branch}`, git(wt, "rev-parse", "HEAD").trim());
+    git(w.config, "worktree", "remove", "--force", wt);
+
+    const second = await start(w, d, scripts, first.gh);
+    await until("readiness_gate", () => stageOf(second.e, feature) === "readiness_gate");
+    const risk = items(w).find((i) => i.record.effect?.type === "gate1_risk")!;
+    await until("the item withdrawn", () => items(w).find((i) => i.id === risk.id)!.record.status === "closed");
+    await until("the issue closed", () => first.gh.issues.get(1)!.state === "closed");
+  }, 60_000);
+
   it("AC-4: Send it back has the analyst ask about the finding again", async () => {
     const w = world();
     const d = new FakeDocker();

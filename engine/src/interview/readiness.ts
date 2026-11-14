@@ -122,7 +122,7 @@ export interface SpecRequirement {
 /** The rows of the spec's section 9 security requirements table (F-008 SR-7, FR-9). */
 export function specSecurityRequirements(spec: string): SpecRequirement[] {
   const out: SpecRequirement[] = [];
-  for (const { n, line } of sectionLines(spec, /^##\s+(\d+\.\s+)?Security considerations\s*$/i)) {
+  for (const { n, line } of sectionLines(spec, /^##\s+(\d+\.\s+)?Security (considerations|requirements)\s*$/i)) {
     if (!line.trim().startsWith("|")) continue;
     const c = cells(line);
     if (c.length < 4 || /^-+$/.test(c[0]!.replace(/:/g, "")) || c[0]!.toLowerCase() === "id") continue;

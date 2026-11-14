@@ -1083,7 +1083,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (!rt || dead || shuttingDown || jobs.has(f.id) || !f.chainIntact || p.state !== "running" || ambiguous.has(f.id)) return;
     if (f.stage() !== GATE1_STAGE) return;
     const g = f.state.gate1;
-    if (g.blocked && !resume) return;
+    // F-016 FR-16: a blocked feature is checked again, in case the spec already answers what its items ask.
+    if (g.blocked && !resume && !g.pending) return;
     const job: Job = { turns: null, done: Promise.resolve() };
     jobs.set(f.id, job);
     job.done = (g.pending && !resume ? resolveGate1(p, f) : runGate1(rt, p, f, resume))
@@ -1118,8 +1119,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (r.check.passed) {
       await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: true, evidence: r.check.evidence }, { type: "stage", stage: READINESS_STAGE }], "gate 1: findings resolved"));
       log.info(`${f.id}: Gate 1 findings resolved; the feature is at ${READINESS_STAGE}.`);
+      // FR-16: a risk item filed before the spec was read right asks about a finding the spec now takes up.
+      for (const rec of p.inbox ? await p.inbox.records() : []) {
+        if (rec.status === "open" && rec.effect?.type === "gate1_risk" && rec.effect.feature === f.id) {
+          await p.inbox!.withdraw(rec.id, `${f.id}'s spec takes up this Gate 1 finding, so Security Gate 1 passed.`);
+        }
+      }
       return;
     }
+    // FR-16: already waiting on the owner; the items stand until answered or the spec takes them up.
+    if (f.state.gate1.blocked) return;
     const filed: Array<{ n: number; item: string }> = [];
     for (const n of r.rejected.filter((x) => !f.state.gate1.riskFiled.includes(x))) {
       const finding = f.state.gate1.findings.find((x) => x.n === n)!;

@@ -222,6 +222,20 @@ export class Inbox {
     await this.write(r, "reopened for a revision");
   }
 
+  /** F-016 FR-16: an open item the engine no longer needs answered is closed with the engine's reason. */
+  async withdraw(id: string, why: string): Promise<void> {
+    const r = await this.read(id);
+    if (!r || r.status !== "open") return;
+    r.status = "closed";
+    r.history.push({ at: iso(this.o.clock.now()), by: "engine", action: "closed" });
+    await this.write(r, "withdrawn");
+    if (!this.c || r.issue === undefined) return;
+    // The record already says closed, so a failed comment or close leaves only a stale issue, never a live action.
+    await this.reply(r, `Withdrawn by the engine: ${why} Nothing needs your answer here.`).catch(() => undefined);
+    await this.api.updateIssue(this.repo, r.issue, { state: "closed" }).catch(() => undefined);
+    await this.write(r, "withdrawn: issue closed").catch(() => undefined);
+  }
+
   /**
    * The record change that says an effect ran (F-016 H-0180, SR-5, SR-7),
    * for the caller to commit in the same commit as the feature's stage.
