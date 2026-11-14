@@ -145,6 +145,7 @@ jobs:
         run: >
           "$RUNNER_TEMP/osv-scanner" scan source --config engine/osv-scanner.toml
           -L engine/package-lock.json -L engine/docker/claude-code/package-lock.json
+          -L requirements.txt:engine/config/semgrep-requirements.txt
       # Built as the engine builds it, from the base image the engine pins.
       # Skills are text files the engine adds per project, so an empty folder
       # stands in for them; they add no packages to scan.

@@ -23,10 +23,10 @@ stages:
     on_fail: requirements_interview
   - id: build_and_test_prep
     owner: [software-developer, test-engineer]
-    parallel: true
+    parallel: false   # test engineer after the developer (owner, 2026-11-14, F-015)
     exit: [developer_complete, test_suite_ready]
   - id: orchestrator_review
-    owner: orchestrator
+    owner: orchestrator   # engine code; the agent only classifies failures (F-015)
     exit: [tests_passed, test_run_complete]
     on_fail: { retry_policy: by_cause, then: testing_inbox }  # docs/testing-strategy.md
   - id: security_gate_2
@@ -39,7 +39,7 @@ stages:
     on_fail: orchestrator_review
     on_needs_human_review: decision_inbox
   - id: pull_request
-    owner: orchestrator
+    owner: orchestrator   # engine code (F-015)
     exit: [definition_of_done_met, pr_opened, ci_green]   # ADR 0008
     # The owner merges. No agent merges.
 # Not a gate: runs once a feature's run ends, whether a PR opened or the run
