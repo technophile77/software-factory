@@ -227,9 +227,9 @@ describe("F-016: answers in the inbox have their effects", () => {
 
     // Gate 2 re-review R2: the same 👍 copied into a new entry is a replay, not a second answer.
     const state = path.join(w.config, ".factory");
-    const rec = YAML.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.yaml"), "utf8"));
+    const rec = JSON.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.json"), "utf8"));
     rec.history.push({ ...rec.history.find((h: any) => h.by === "owner"), at: "2026-11-11T10:30:00Z" });
-    fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), YAML.stringify(rec));
+    fs.writeFileSync(path.join(state, "inbox", "D-0001.json"), JSON.stringify(rec));
     execFileSync("git", ["-C", state, "-c", "user.name=someone", "-c", "user.email=someone@example.invalid", "commit", "-qam", "D-0001: again"]);
     const fourth = await start(w, d, scripts, first.gh);
     await pollUntil(w, "the replay refused", () => effects(w, "D-0001").length === 2);
@@ -289,12 +289,12 @@ function crashAfterRecording(w: World, gh: FakeIssues, commentId: number, reacti
   const confirm = gh.say(1, "/confirm K7QX");
   gh.now = now;
   const state = path.join(w.config, ".factory");
-  const rec = YAML.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.yaml"), "utf8"));
+  const rec = JSON.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.json"), "utf8"));
   rec.status = "chosen";
   rec.engine_comments = [...(rec.engine_comments ?? []), request.id];
   rec.history.push({ at: "2026-11-11T10:00:00Z", by: "engine", action: "confirm_requested", rev: 1, pending: "choose:B", code: "K7QX", comment_id: request.id });
   rec.history.push({ at: "2026-11-11T10:05:00Z", by: "owner", action: "chosen", option: "B", rev: 1, source: "reaction", actor_id: OWNER, comment_id: commentId, reaction_id: reactionId, ref: "https://github.com/o/cfg/issues/1", confirmed_by: { source: "command", comment_id: confirm.id } });
-  fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), YAML.stringify(rec));
+  fs.writeFileSync(path.join(state, "inbox", "D-0001.json"), JSON.stringify(rec));
   execFileSync("git", ["-C", state, "-c", "user.name=crash test", "-c", "user.email=crash@example.invalid", "commit", "-qam", "D-0001: chosen B by the owner"]);
 }
 

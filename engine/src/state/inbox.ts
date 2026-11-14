@@ -1,5 +1,5 @@
 import type { Inbox } from "../inbox/store";
-import type { Part } from "../inbox/model";
+import type { Effect, Part } from "../inbox/model";
 import { actionLabel } from "../inbox/render";
 
 export interface SecurityAlert {
@@ -50,7 +50,7 @@ export interface DecisionItem {
   optionsBy?: string;
   recommendation: string;
   costOfDelay: string;
-  effect: { type: string; [k: string]: unknown };
+  effect: Effect;
 }
 
 /** A Security item with 2 to 4 options (F-008 FR-8, FR-13). Labels are rendered as plain text by the inbox. */

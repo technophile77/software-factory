@@ -433,6 +433,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       continue;
     }
     p.inbox = new Inbox({ state: p.state_repo, clock, log, notify });
+    const legacy = await p.inbox.legacyRecords();
+    if (legacy.length) {
+      // F-020 SR-4: filing an item here would hide the open ones in the unread files, so the owner is told on the PC only.
+      const why = `the inbox has ${legacy.length} record(s) in the old YAML form (${legacy.slice(0, 3).join(", ")}${legacy.length > 3 ? ", ..." : ""}); run \`npm run migrate-inbox-json -- --project ${p.real} --gitleaks <path>\` in engine/ and restart the engine`;
+      stop(p, why);
+      notify("Factory project stopped", why);
+      continue;
+    }
     await p.inbox.records().catch(() => []);
     try {
       p.manifest = await readManifest(git, p.real);

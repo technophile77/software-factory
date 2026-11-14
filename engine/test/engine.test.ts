@@ -151,6 +151,26 @@ describe("engine start (FR-1 to FR-4)", () => {
   });
 });
 
+describe("F-020 SR-4: inbox records still in YAML", () => {
+  it("the project is stopped, nothing is filed, and the owner is told to run the migration", async () => {
+    const w = makeWorld();
+    const first = await boot(w);
+    expect(first.projects[0]!.state).toBe("running");
+    await first.stop();
+    engines = engines.filter((x) => x !== first);
+    const state = path.join(w.config, ".factory");
+    fs.mkdirSync(path.join(state, "inbox"), { recursive: true });
+    fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), "schema: inbox-record/3.0\nid: D-0001\nstatus: open\n");
+    git(state, "add", "inbox/D-0001.yaml");
+    git(state, "commit", "-q", "-m", "D-0001: an item from before F-020");
+    const before = git(w.config, "rev-parse", "factory/state");
+    const e = await boot(w);
+    expect(e.projects[0]).toMatchObject({ state: "stopped" });
+    expect(e.projects[0]!.reason).toMatch(/1 record\(s\) in the old YAML form \(inbox\/D-0001\.yaml\); run `npm run migrate-inbox-json -- --project /);
+    expect(git(w.config, "rev-parse", "factory/state")).toBe(before);
+  });
+});
+
 describe("git process budgets (F-014 FR-7, AC-2)", () => {
   // Measured when F-014 was built; a change that needs more processes on these paths has to raise them on purpose.
   it("an engine start of one project, a second start, and a manifest read stay within their budgets", async () => {

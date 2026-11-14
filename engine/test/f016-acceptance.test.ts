@@ -159,11 +159,11 @@ function moveBranch(repo: string, branch: string): string {
 /** Writes an owner's choice of B on D-0001 into the record, as an engine that crashed before its effect would leave it. */
 function recordChoice(w: World, commentId: number, reactionId: number, confirmId: number): void {
   const state = path.join(w.config, ".factory");
-  const rec = YAML.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.yaml"), "utf8"));
+  const rec = JSON.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.json"), "utf8"));
   rec.status = "chosen";
   rec.history.push({ at: "2026-11-11T10:04:00Z", by: "engine", action: "confirm_requested", pending: "choose:B", code: "K7QX" });
   rec.history.push({ at: "2026-11-11T10:05:00Z", by: "owner", action: "chosen", option: "B", rev: 1, source: "reaction", actor_id: OWNER, comment_id: commentId, reaction_id: reactionId, ref: "https://github.com/o/cfg/issues/1", confirmed_by: { source: "command", comment_id: confirmId } });
-  fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), YAML.stringify(rec));
+  fs.writeFileSync(path.join(state, "inbox", "D-0001.json"), JSON.stringify(rec));
   execFileSync("git", ["-C", state, "-c", "user.name=crash test", "-c", "user.email=crash@example.invalid", "commit", "-qam", "D-0001: chosen B by the owner"]);
 }
 
@@ -197,12 +197,12 @@ describe("F-016 acceptance: Gate 1 items on issues", () => {
     expect(gh.actionComment(1, "choose:B").body).toMatch(/^<!-- factory-action: D-0001 rev 1 choose:B -->\n/);
     await pollUntil(w, "the issue bound", () => record(w, "D-0001")?.issue === 1);
     const rec = record(w, "D-0001")!;
-    expect(rec).toMatchObject({ schema: "inbox-record/3.0", id: "D-0001", kind: "decision", category: "Security", status: "open", issue: 1, feature, recommendation: "A", blocking: true });
+    expect(rec).toMatchObject({ schema: "inbox-record/4.0", id: "D-0001", kind: "decision", category: "Security", status: "open", issue: 1, feature, recommendation: "A", blocking: true });
     expect(rec.options).toEqual([{ id: "A", label: "Export in the browser" }, { id: "B", label: "Export on the server" }]);
     // Only F-011 records under inbox/ on factory/state; no old per-kind item files anywhere.
     const stateFiles = git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", "inbox").split("\n").filter(Boolean);
     expect(stateFiles.length).toBeGreaterThan(0);
-    for (const f of stateFiles) expect(f).toMatch(/^inbox\/[DTHSMN]-\d{4,}(\.yaml|\.rev\d+\.md)$/);
+    for (const f of stateFiles) expect(f).toMatch(/^inbox\/[DTHSMN]-\d{4,}(\.json|\.rev\d+\.md)$/);
     expect(git(w.config, "ls-tree", "-r", "--name-only", "HEAD").split("\n").filter((f) => f.startsWith(".factory/inbox/") || f.startsWith("inbox/"))).toEqual([]);
   }, 60_000);
 
@@ -276,7 +276,7 @@ describe("F-016 acceptance: Gate 1 items on issues", () => {
 
     // The first commit whose record holds effect_done also writes the stage change to the transcript; its parent already holds the owner's action.
     const transcript = `interviews/${feature}/transcript.jsonl`;
-    const commits = git(w.config, "log", "--format=%H", "--reverse", "factory/state", "--", "inbox/D-0001.yaml").split("\n").filter(Boolean);
+    const commits = git(w.config, "log", "--format=%H", "--reverse", "factory/state", "--", "inbox/D-0001.json").split("\n").filter(Boolean);
     const at = (c: string, f: string) => {
       try {
         return git(w.config, "show", `${c}:${f}`);
@@ -284,12 +284,12 @@ describe("F-016 acceptance: Gate 1 items on issues", () => {
         return "";
       }
     };
-    const c = commits.find((x) => YAML.parse(at(x, "inbox/D-0001.yaml")).history.some((h: any) => h.action === "effect_done"))!;
+    const c = commits.find((x) => JSON.parse(at(x, "inbox/D-0001.json")).history.some((h: any) => h.action === "effect_done"))!;
     expect(c).toBeTruthy();
-    expect(git(w.config, "show", "--name-only", "--format=", c).split("\n")).toEqual(expect.arrayContaining(["inbox/D-0001.yaml", transcript]));
+    expect(git(w.config, "show", "--name-only", "--format=", c).split("\n")).toEqual(expect.arrayContaining(["inbox/D-0001.json", transcript]));
     const stageEntries = (t: string) => t.split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((x) => x.type === "stage" && x.stage === "requirements_interview").length;
     expect(stageEntries(at(c, transcript))).toBe(stageEntries(at(`${c}^`, transcript)) + 1);
-    expect(YAML.parse(at(`${c}^`, "inbox/D-0001.yaml")).history.some((h: any) => h.by === "owner" && h.action === "rejected")).toBe(true);
+    expect(JSON.parse(at(`${c}^`, "inbox/D-0001.json")).history.some((h: any) => h.by === "owner" && h.action === "rejected")).toBe(true);
   }, 60_000);
 
   it("AC-5: Defer on a Gate 1 risk item keeps the feature blocked and the issue open, one priority lower", async () => {

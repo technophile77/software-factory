@@ -56,12 +56,12 @@ Project manifest v1.7 (H-0193) and Agent report v1.5 (H-0194) for F-015
 
 ---
 
-## Inbox item — v3.1
+## Inbox item — v4.0
 
-- Status: Approved
-- Owner decision: ADR 0022; v3.0 by the owner, 2026-11-13 (F-011 H-0165, decision card); v3.1 (F-016 H-0180, `effect_done` and `accepted_risk`) by the owner, 2026-11-13 (decision card). v3.0 replaces v1.1, and v2.0 (F-011 H-0120), v2.1 and Phone issue v1.0 (F-012 H-0125), which were approved but never applied.
+- Status: Approved (v3.1); v4.0 draft, awaiting owner approval (H-0241)
+- Owner decision: ADR 0022; v4.0 records as JSON (F-020 H-0241, ADR 0032), draft awaiting owner approval; v3.0 by the owner, 2026-11-13 (F-011 H-0165, decision card); v3.1 (F-016 H-0180, `effect_done` and `accepted_risk`) by the owner, 2026-11-13 (decision card). v3.0 replaces v1.1, and v2.0 (F-011 H-0120), v2.1 and Phone issue v1.0 (F-012 H-0125), which were approved but never applied.
 - Used by: engine (files, reads, records), the config repo workflow (opens issues, posts action comments), Microsoft's GitHub Pull Requests extension and GitHub Mobile (view only)
-- Compatibility: breaking (major) from v1.1: items are issues in the project's private config repo, not files; `pull_request` is not a kind (F-011 OQ-12); owner actions are proven by GitHub (ADR 0018, ADR 0022), not signed commits. Adding a kind, action, label or optional record field is minor; changing a template's fixed text, the marker lines or the command grammar is major.
+- Compatibility: breaking (major) from v1.1: items are issues in the project's private config repo, not files; `pull_request` is not a kind (F-011 OQ-12); owner actions are proven by GitHub (ADR 0018, ADR 0022), not signed commits. Adding a kind, action, label or optional record field is minor; changing a template's fixed text, the marker lines or the command grammar is major. v4.0 is breaking: records move from `inbox/<id>.yaml` to `inbox/<id>.json`, moved once by a script; the fields don't change.
 
 **Ids.** `^[DTHSMN]-\d{4,}$`: `D` decision, `T` testing, `H` hygiene, `S` spec
 sign-off, `M` maturity, `N` notice. Numbered per project: the next id is one
@@ -106,11 +106,20 @@ owner); `Stale: revision <n> replaces this.` (edit of an old action
 comment); on PRs, `Factory evidence for <feature>:` followed by the FR-9
 fields.
 
-**Record** (config repo `factory/state`, `inbox/<id>.yaml`, one commit per
-change, message starting with the id):
+**Record** (config repo `factory/state`, `inbox/<id>.json`, one commit per
+change, message starting with the id). From v4.0 (F-020) the record is JSON
+under the schema `inbox-record/4.0`, with the same fields as v3.1, shown
+here in YAML form for reading. The engine checks every read and write
+against the schema in `engine/src/schemas/inbox-record.ts`: unknown keys
+are refused, and lists, strings and the file size are capped. A
+`confirm_requested` history entry carries `chosen` (action, source,
+comment_id, reaction_id, url, note), the owner action waiting for its
+confirmation. v3.1 records (`inbox/<id>.yaml`) are moved once by
+`engine/scripts/migrate-inbox-json-once.ts`; while any is left, the engine
+runs nothing for the project (F-020 SR-4).
 
 ```yaml
-schema: inbox-record/3.0
+schema: inbox-record/4.0
 id: D-0007
 kind: decision            # decision | testing | hygiene | spec | maturity | notice
 title: Choose session store for login
@@ -163,7 +172,7 @@ From v3.1, a Gate 1 risk item (`effect.type: gate1_risk`) answered with
 longer blocks, and the spec must record it in section 9 with status
 "Accepted risk", citing the finding and the item (F-016 FR-5).
 
-**PR records** (config repo `factory/state`, `prs/<owner>/<repo>/<n>.yaml`):
+**PR records** (config repo `factory/state`, `prs/<owner>/<repo>/<n>.json` from v4.0, schema `pr-record/1.0`; not yet written by the engine):
 `evidence_comment_id`, `feature`, `head` at evidence time, and history
 entries `evidence_posted`, `changes_requested` (with the comment id and
 actor id), `merged_on_github` (merge commit, merged by), `closed_on_github`.

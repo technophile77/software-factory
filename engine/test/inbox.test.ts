@@ -73,7 +73,7 @@ describe("F-011 inbox on GitHub issues", () => {
     const actions = (await w.gh.comments("", issue)).map((c) => c.body.split("\n")[0]);
     expect(actions).toEqual(["choose:A", "choose:B", "reject", "changes", "research", "defer", "restore"].map((a) => `<!-- factory-action: D-0001 rev 1 ${a} -->`));
     expect(w.notes).toEqual(["Factory: D-0001 needs you"]);
-    const rec = YAML.parse(git(w.repo, "show", "factory/state:inbox/D-0001.yaml"));
+    const rec = JSON.parse(git(w.repo, "show", "factory/state:inbox/D-0001.json"));
     expect(rec.revisions[0].action_comments).toHaveLength(7);
     for (const kind of ["hygiene", "spec", "maturity", "notice"] as const) {
       const r = await filed(w, { kind, title: "t", priority: "low", blocking: false, created_by: "engine", sections: {} });
@@ -150,7 +150,7 @@ describe("F-011 inbox on GitHub issues", () => {
     const id = await w.gh.comment("", issue, "/choose A");
     const rec = (await w.inbox.read("D-0001"))!;
     rec.engine_comments.push(id);
-    await w.state.commit([{ path: "inbox/D-0001.yaml", content: YAML.stringify(rec) }], "D-0001: test");
+    await w.state.commit([{ path: "inbox/D-0001.json", content: JSON.stringify(rec) }], "D-0001: test");
     expect(await w.inbox.poll()).toEqual([]);
     for (const t of [engineText.confirm("/approve", "/x", "ABCD"), engineText.recorded("/approve"), engineText.notRecorded("not a command"), engineText.stale(2), engineText.reopened()]) {
       expect(t.startsWith("/")).toBe(false);

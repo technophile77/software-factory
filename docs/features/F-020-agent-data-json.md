@@ -1,7 +1,7 @@
 # Feature: The rest of the agents' data moves to JSON, with schemas
 
 - **Id:** F-020
-- **Status:** Approved
+- **Status:** In development
 - **Requested by / date:** owner, 2026-11-14 ("I would like the default format for any data, reports, etc. that an agent interacts with to be in json, unless there is a specific reason that it should be something different"; proposal 0034 decision 3, "Start F-020, full scope", decision card 08:53Z)
 - **Spec version:** 4
 

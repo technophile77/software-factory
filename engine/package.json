@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:platform": "vitest run test/agent.test.ts test/channel.test.ts test/claude-real.test.ts test/engine.test.ts test/mcp-pipe.test.ts test/policy.test.ts test/sdk-binding.test.ts test/units.test.ts test/worktree-populate.test.ts test/acceptance/channel.test.ts test/acceptance/fixtures.selfcheck.test.ts test/acceptance/git-safety.test.ts test/acceptance/pinning.test.ts test/acceptance/secrets.test.ts test/acceptance/settings-isolation.test.ts test/acceptance/startup.test.ts test/acceptance/transcript.test.ts",
     "coverage": "vitest run --coverage",
-    "migrate-inbox": "esbuild scripts/migrate-inbox-once.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/migrate-inbox-once.js && node dist/migrate-inbox-once.js"
+    "migrate-inbox": "esbuild scripts/migrate-inbox-once.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/migrate-inbox-once.js && node dist/migrate-inbox-once.js",
+    "migrate-inbox-json": "esbuild scripts/migrate-inbox-json-once.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/migrate-inbox-json-once.js && node dist/migrate-inbox-json-once.js"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.311",
