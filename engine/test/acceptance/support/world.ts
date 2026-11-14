@@ -248,6 +248,8 @@ export interface ProjectSpec {
   /** Allow list; defaults to the repo owner. */
   allowed?: Array<{ login: string; id: number }>;
   enabled?: boolean;
+  /** Project and repo maturity; at rapid-prototype one approval covers an engine run's later sessions (F-018 FR-13). */
+  maturity?: string;
   budgetMode?: "subscription" | "tokens";
   /** Edits the generated manifest text. */
   editManifest?: (text: string) => string;
@@ -426,8 +428,8 @@ export class World {
       `owner:\n  github_id: ${p.ownerId}\n  oauth_client_id: ${p.clientId}\n` +
       `allowed_repo_owners:\n` +
       allowed.map((a) => `  - { login: ${a.login}, id: ${a.id} }\n`).join("") +
-      `\nrepos:\n  - name: ${p.repo}\n    url: ${p.url}\n    maturity: rapid-prototype\n` +
-      `maturity: rapid-prototype\n\n` +
+      `\nrepos:\n  - name: ${p.repo}\n    url: ${p.url}\n    maturity: ${s.maturity ?? "rapid-prototype"}\n` +
+      `maturity: ${s.maturity ?? "rapid-prototype"}\n\n` +
       `skills:\n  custom: []\n  override: []\n  exclude: []\n\n` +
       `agents:\n  custom: []\n  override: []\n\n` +
       `standards: {}\n\n` +
@@ -594,10 +596,11 @@ export class World {
     return r.feature;
   }
 
-  /** Opens a session and approves it on the fake phone. */
+  /** Opens a session and approves it on the fake phone, unless this run's earlier approval covers it (F-018 FR-13). */
   async approvedSession(feature: string, asUserId?: number): Promise<string> {
     const open = await this.ok("interview.open", { feature });
     this.sessionTokens.push(open.session);
+    if (open.approval === undefined) return open.session;
     const p = this.projectOf(feature) ?? this.project();
     this.gh.approve(open.approval.user_code, asUserId ?? p.ownerId);
     const r = await drive(this.clock, this.rpc("interview.awaitApproval", { session: open.session, wait_s: 900 }, 120_000));

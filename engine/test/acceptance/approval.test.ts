@@ -149,8 +149,8 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
     expect(d.sentSecret).toBe(false);
   });
 
-  it("[AP-10] ADR 0014: each session gets its own device code; a new session needs a new approval", async () => {
-    w = await World.create();
+  it("[AP-10] ADR 0014: at Alpha each session gets its own device code; a new session needs a new approval", async () => {
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     const f = await w.startFeature();
     // Boot's first-pin confirmation used a device code of its own.
@@ -161,6 +161,19 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
     expect(w.gh.devices.length).toBe(before + 2);
     expect(open2.approval.user_code).not.toBe(w.gh.devices[before]!.userCode);
     expectRpcError(await w.rpc("interview.next", { session: open2.session }), ERR.approvalPending);
+  });
+
+  it("[AP-10b] F-018 FR-13: at Rapid prototype a later session of the same engine run needs no new approval", async () => {
+    w = await World.create();
+    await w.boot();
+    const f = await w.startFeature();
+    const before = w.gh.devices.length;
+    const s1 = await w.approvedSession(f);
+    await w.ok("interview.close", { session: s1 });
+    const open2 = await w.ok("interview.open", { feature: f });
+    expect(w.gh.devices.length).toBe(before + 1);
+    expect(open2.approval).toBeUndefined();
+    expect(await w.ok("interview.next", { session: open2.session })).toHaveProperty("item");
   });
 
   it("[AP-11] channel v1.2: awaitApproval waits at most 900 s of engine time, whatever wait_s says", async () => {

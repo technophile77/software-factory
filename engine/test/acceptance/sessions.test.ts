@@ -29,8 +29,8 @@ describe("Session lock and takeover (channel v1.1, ADR 0014)", () => {
     expect(second.error!.data.started_at).toBe(first.started_at);
   });
 
-  it("[SE-2] takeover ends the old session and the new one needs its own approval", async () => {
-    w = await World.create();
+  it("[SE-2] at Alpha, takeover ends the old session and the new one needs its own approval", async () => {
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     const f = await w.startFeature();
     const old = await w.approvedSession(f);
