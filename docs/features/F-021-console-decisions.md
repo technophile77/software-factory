@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-14 ("the console is actually the
   better method of communicating with the factory"; "the console app should
   also say when a decision is pending, not just factory is idle")
-- **Spec version:** 4
+- **Spec version:** 5
 - **Depends on:** F-011 (inbox on GitHub issues, ADR 0022), F-016 (answers
   and their effects, Gate 2 M1 check), F-018 (`factory-engine interview`,
   live status), F-020 (inbox records as JSON, `inbox-record/4.0`)
@@ -158,19 +158,19 @@ driving the command through its input and output streams.
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | The owner runs `factory-engine inbox` on the PC that runs the engine, as the same OS user, from a folder inside the project's repo or config repo (as F-018 A-1). | — | Pending |
-| A-2 | The engine folder on the PC is a safe place for private detail: owner-only, not synced to a cloud drive by the owner, and kept as long as the items are open. | — | Pending |
+| A-1 | The owner runs `factory-engine inbox` on the PC that runs the engine, as the same OS user, from a folder inside the project's repo or config repo (as F-018 A-1). | Owner, 2026-11-14 10:29Z (decision card) | Approved |
+| A-2 | The engine folder on the PC is a safe place for private detail: owner-only, not synced to a cloud drive by the owner, and kept as long as the items are open. | Owner, 2026-11-14 10:29Z (decision card) | Approved |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | Everything the command prints from an item (body sections, labels, private detail, log lines) goes through `clean()` and carries the engine-text margin marker, as F-018 SR-1 and SR-2. The command's own menu, confirm line and code are printed only by the command, from engine values checked against the patterns the inbox already uses (ids, option ids A to D, the confirm code alphabet). | Analyst (S1.2, S6.1); Gate 1 #1 | Proposed |
-| SR-2 | The confirm code and words come from the engine's answer to the action, never from item text. A code is good for one action, one item, one revision and 15 minutes; a wrong code ends the attempt (no retry against the same code). | Analyst (S2.1, S5.1); Gate 1 #2 | Proposed |
-| SR-3 | The command refuses unless stdin and stdout are terminals (F-018 SR-3). The engine refuses console calls from agent processes it started (F-005 SR-14). The item id comes from the command line only if it matches the inbox id pattern; answers, notes and codes are read at prompts, never from arguments (F-018 SR-4, SR-5). | Analyst (S1.1, S1.3) | Proposed |
+| SR-1 | Everything the command prints from an item (body sections, labels, private detail, log lines) goes through `clean()` and carries the engine-text margin marker, as F-018 SR-1 and SR-2. The command's own menu, confirm line and code are printed only by the command, from engine values checked against the patterns the inbox already uses (ids, option ids A to D, the confirm code alphabet). | Analyst (S1.2, S6.1); Gate 1 #1 | Approved (owner, 2026-11-14 10:29Z, decision card) |
+| SR-2 | The confirm code and words come from the engine's answer to the action, never from item text. A code is good for one action, one item, one revision and 15 minutes; a wrong code ends the attempt (no retry against the same code). | Analyst (S2.1, S5.1); Gate 1 #2 | Approved (owner, 2026-11-14 10:29Z, decision card) |
+| SR-3 | The command refuses unless stdin and stdout are terminals (F-018 SR-3). The engine refuses console calls from agent processes it started (F-005 SR-14). The item id comes from the command line only if it matches the inbox id pattern; answers, notes and codes are read at prompts, never from arguments (F-018 SR-4, SR-5). | Analyst (S1.1, S1.3) | Approved (owner, 2026-11-14 10:29Z, decision card) |
 | SR-4 | **Accepted risk until the setting asks for sign-in (owner, 2026-11-14 10:28Z, OQ-2 (a)):** without a sign-in, any program running as the owner that reaches the engine's socket or pipe can answer inbox items in the owner's name, including Security decisions and spec sign-off, which today need the owner's GitHub account. That includes agents with a shell on the PC (ADR 0026), and a pseudo-terminal gets past SR-3. The record marks each such answer `source: console` with the session's sign-in state. The risk ends when the project moves to `alpha` (sign-in every session by default) or the owner raises the setting. | Analyst (S2.1, S6.2, S8.5); Gate 1 #3 | Accepted risk (owner, 2026-11-14 10:28Z, decision card) |
-| SR-5 | Private detail never leaves the PC: it is never written to `factory/state` or any repo, never sent to GitHub (bodies, comments, titles, labels, workflow dispatch), never in a model prompt, never in the engine log beyond the lines it was taken from. A test checks every GitHub request and every `factory/state` commit in the AC-6 run for the detail text. Private detail is passed through the secrets scan before it is stored, and any finding is replaced by "[secret removed by the engine]", so the console never shows a secret value. | Analyst (S3.1, S3.2, S9.4); owner rule 2026-11-12 (sensitive info never in a public repo); Gate 1 #4 | Proposed |
-| SR-6 | Local answer files (FR-10) and private detail files are created owner-only (as the engine folder, `ensureOwnerDir`), written atomically, read with a size limit and checked against their JSON Schemas; a file that fails is treated as missing. | Analyst (S1.1, S8.4); Gate 1 #5 | Proposed |
-| SR-7 | The issue comment for a console answer is a fixed text built from engine values and `actionWords` (already plain text); it starts with a word that is not a command (F-011 SR-17). Notes typed in the console are recorded in the record as today's `/changes` notes are, and are not posted to the issue. | Analyst (S1.2, S6.1) | Proposed |
+| SR-5 | Private detail never leaves the PC: it is never written to `factory/state` or any repo, never sent to GitHub (bodies, comments, titles, labels, workflow dispatch), never in a model prompt, never in the engine log beyond the lines it was taken from. A test checks every GitHub request and every `factory/state` commit in the AC-6 run for the detail text. Private detail is passed through the secrets scan before it is stored, and any finding is replaced by "[secret removed by the engine]", so the console never shows a secret value. | Analyst (S3.1, S3.2, S9.4); owner rule 2026-11-12 (sensitive info never in a public repo); Gate 1 #4 | Approved (owner, 2026-11-14 10:29Z, decision card) |
+| SR-6 | Local answer files (FR-10) and private detail files are created owner-only (as the engine folder, `ensureOwnerDir`), written atomically, read with a size limit and checked against their JSON Schemas; a file that fails is treated as missing. | Analyst (S1.1, S8.4); Gate 1 #5 | Approved (owner, 2026-11-14 10:29Z, decision card) |
+| SR-7 | The issue comment for a console answer is a fixed text built from engine values and `actionWords` (already plain text); it starts with a word that is not a command (F-011 SR-17). Notes typed in the console are recorded in the record as today's `/changes` notes are, and are not posted to the issue. | Analyst (S1.2, S6.1) | Approved (owner, 2026-11-14 10:29Z, decision card) |
 
 ## 10. Interface requirements
 The change-controlled edits, one hygiene item each, applied with the build
@@ -178,7 +178,7 @@ after the owner approves their text:
 
 | Id | File(s) | Change | Status |
 |---|---|---|---|
-| H-0245 | `docs/interface-contracts.md` (Engine control channel v1.6) | Replace "Inbox actions do **not** go through this channel" with: from v1.6 the owner can also answer inbox items here; the issue stays the record of what was asked. New methods: `inbox.list` (`{ session }` → `{ items: [{ id, kind, title, feature?, priority, blocking, rev }] }`), `inbox.show` (`{ session, item }` → `{ id, rev, kind, sections, private?, actions: [{ action, label }] }`), `inbox.answer` (`{ session, item, rev, action, note?, reply_id }` → `{ recorded: true }` or `{ confirm: { words, code, expires_at } }` or `{ already: { by: "github" \| "console" \| "engine", action? } }` or `{ changed: { rev } }`), `inbox.confirm` (`{ session, item, rev, code }` → `{ recorded: true }` or a refusal). Sessions per OQ-2. `activity` gains `waiting_for_decision` (FR-12). Adding methods is non-breaking. | Draft |
+| H-0245 | `docs/interface-contracts.md` (Engine control channel v1.6) | Replace "Inbox actions do **not** go through this channel" with: from v1.6 the owner can also answer inbox items here; the issue stays the record of what was asked. New methods: `inbox.open` (a console session per OQ-2, no feature lock), `inbox.close`, `inbox.list` (`{ session }` → `{ items: [{ id, kind, title, feature?, priority, blocking, rev }] }`), `inbox.show` (`{ session, item }` → `{ id, rev, kind, sections, private?, actions: [{ action, label }] }`), `inbox.answer` (`{ session, item, rev, action, note?, reply_id }` → `{ recorded: true }` or `{ confirm: { words, code, expires_at } }` or `{ already: { by: "github" \| "console" \| "engine", action? } }` or `{ changed: { rev } }`), `inbox.confirm` (`{ session, item, rev, code }` → `{ recorded: true }` or a refusal). Sessions per OQ-2. `activity` gains `waiting_for_decision` (FR-12). Adding methods is non-breaking. | Draft |
 | H-0246 | `docs/interface-contracts.md` (Inbox item, minor version on top of F-020's v4.0) | Owner history entries may have `source: console` with `console_answer` (sha256) and no comment, reaction or actor ids; `confirmed_by.source` may be `console`. New engine comment `Recorded from the console: <action>.` New optional Context line `More detail is on the PC that runs the factory: run factory-engine inbox <id> there.` Private detail and answer files (`inbox-private/1.0`, `console-answer/1.0`) live in the engine folder, never on `factory/state`. | Draft |
 | H-0247 | `docs/adr/0033-answer-inbox-items-in-the-console.md` (new), `docs/adr/README.md`, a note in ADR 0022 | Records the decision: the console is a second answer path for every inbox item, first answer wins, private detail stays on the PC. | Draft |
 | H-0248 | `README.md`, `engine/README.md` | Describe `factory-engine inbox` and the console answers (FR-15). | Draft |
@@ -188,8 +188,8 @@ after the owner approves their text:
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit (A-1, A-2 pending)
-- [ ] Blocking decisions resolved (OQ-1, OQ-2 decided; pending SR-1 to SR-7, H-0245 to H-0248)
+- [x] Assumptions explicit (A-1, A-2 approved)
+- [ ] Blocking decisions resolved (OQ-1, OQ-2 decided; SR-1 to SR-7 approved or accepted; pending H-0245 to H-0248)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -198,6 +198,7 @@ after the owner approves their text:
 | 2 | 2026-11-14 | FR-12 and AC-11 from the owner's message 10:23Z (status says when a decision is pending; idle only with nothing pending); Security Gate 1 ([F-021-security-gate1.md](F-021-security-gate1.md)): 5 findings (0 Critical, 0 High, 3 Medium, 2 Low), none blocking, covered by SR-1, SR-2, SR-4 to SR-6 | — |
 | 3 | 2026-11-14 | OQ-1 decided (a): both the new `inbox` command and the interview command (FR-2, FR-11 stand as written) | Owner, 2026-11-14 10:27Z (decision card) |
 | 4 | 2026-11-14 | OQ-2 decided (a): console answers follow `settings.interview_sign_in`; FR-13 written out; SR-4 accepted risk | Owner, 2026-11-14 10:28Z (decision card) |
+| 5 | 2026-11-14 | A-1, A-2, SR-1 to SR-3 and SR-5 to SR-7 approved as written; H-0245 names `inbox.open` and `inbox.close`; exact H-0245 to H-0248 text drafted | Owner, 2026-11-14 10:29Z (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
