@@ -9,7 +9,7 @@ machine-readable version lives in `workflows/feature-development/`.
 | 2. Requirements interview | Requirements analyst | Spec drafted; assumptions submitted |
 | 3. Security requirements review (Gate 1) | Security reviewer | Report filed; approved security requirements merged into spec |
 | 4. Readiness gate | Orchestrator | All six readiness checks pass (below) |
-| 5. Development and test prep | Developer, test engineer in parallel | Developer reports done; test suite ready |
+| 5. Development and test prep | Developer, then test engineer (sequential, F-015) | Developer reports done; test suite ready |
 | 6. Orchestrator review | Orchestrator | Tests pass and the run was complete |
 | 7. Final security review (Gate 2) | Security reviewer | No blocking findings |
 | 8. Validation | Validation judge | PASS |
@@ -49,3 +49,14 @@ check 6.
 | Any | Spec found wrong or incomplete | Analyst; the spec is re-approved |
 
 Retry limits for stage 6 are in `testing-strategy.md`.
+
+## Engine code and agents (F-015)
+
+Stages 6 and 9 are engine code: the engine runs each repo's declared test
+command and reads its JUnit XML results, reruns, counts fix cycles against
+the retry table, files Testing items, pushes the feature branch, opens the
+PR and reads its CI. The orchestrator agent runs only when a test run
+fails, read-only, to name each failure's cause; the engine then applies the
+retry table to that cause. Code and tests go to the feature's one code repo;
+the spec, transcripts, reports and records stay in the private config repo
+(ADR 0028).
