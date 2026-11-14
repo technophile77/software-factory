@@ -1,0 +1,382 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "analyst": {
+      "type": "object",
+      "properties": {
+        "turns": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "output_tokens": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "dollars": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "wall_time_minutes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cpus": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "memory_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "pids": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tmp_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "turns",
+        "output_tokens",
+        "dollars",
+        "wall_time_minutes",
+        "cpus",
+        "memory_mib",
+        "pids",
+        "tmp_mib"
+      ],
+      "additionalProperties": false
+    },
+    "web_reader": {
+      "type": "object",
+      "properties": {
+        "turns": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "output_tokens": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "dollars": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "wall_time_minutes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cpus": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "memory_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "pids": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tmp_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "turns",
+        "output_tokens",
+        "dollars",
+        "wall_time_minutes",
+        "cpus",
+        "memory_mib",
+        "pids",
+        "tmp_mib"
+      ],
+      "additionalProperties": false
+    },
+    "proxy": {
+      "type": "object",
+      "properties": {
+        "cpus": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "memory_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "pids": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tmp_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "cpus",
+        "memory_mib",
+        "pids",
+        "tmp_mib"
+      ],
+      "additionalProperties": false
+    },
+    "research_web": {
+      "type": "object",
+      "properties": {
+        "per_question": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "per_session": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "per_question",
+        "per_session"
+      ],
+      "additionalProperties": false
+    },
+    "fetch_page": {
+      "type": "object",
+      "properties": {
+        "max_download_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_chars": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "max_download_mib",
+        "max_chars"
+      ],
+      "additionalProperties": false
+    },
+    "research_result": {
+      "type": "object",
+      "properties": {
+        "summary_chars": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "max_sources": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "summary_chars",
+        "max_sources"
+      ],
+      "additionalProperties": false
+    },
+    "worktree_commit": {
+      "type": "object",
+      "properties": {
+        "max_files": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "max_total_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_file_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "max_files",
+        "max_total_mib",
+        "max_file_mib"
+      ],
+      "additionalProperties": false
+    },
+    "security_reviewer": {
+      "type": "object",
+      "properties": {
+        "turns": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "output_tokens": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "dollars": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "wall_time_minutes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cpus": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "memory_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "pids": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tmp_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "turns",
+        "output_tokens",
+        "dollars",
+        "wall_time_minutes",
+        "cpus",
+        "memory_mib",
+        "pids",
+        "tmp_mib"
+      ],
+      "additionalProperties": false
+    },
+    "security_gate_1": {
+      "type": "object",
+      "properties": {
+        "runs_per_feature": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "report_kib": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "additions_kib": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "runs_per_feature",
+        "report_kib",
+        "additions_kib"
+      ],
+      "additionalProperties": false
+    },
+    "orchestrator": {
+      "type": "object",
+      "properties": {
+        "turns": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "output_tokens": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "dollars": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "wall_time_minutes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cpus": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "memory_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "pids": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tmp_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "turns",
+        "output_tokens",
+        "dollars",
+        "wall_time_minutes",
+        "cpus",
+        "memory_mib",
+        "pids",
+        "tmp_mib"
+      ],
+      "additionalProperties": false
+    },
+    "readiness_gate": {
+      "type": "object",
+      "properties": {
+        "runs_per_feature": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "report_kib": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "runs_per_feature",
+        "report_kib"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "analyst",
+    "web_reader",
+    "proxy",
+    "research_web",
+    "fetch_page",
+    "research_result",
+    "worktree_commit"
+  ],
+  "additionalProperties": false
+}

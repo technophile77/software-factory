@@ -15,7 +15,7 @@ import { FakeDocker } from "./fakes";
 import { GIT_ENV, World, git, manifestYaml, start as startEngine, tmpdir } from "./helpers";
 import { FakeIssues, OTHER, OWNER } from "./inbox-fake";
 import { inboxItems, securityItemsIn } from "./inbox-items";
-import { ORCHESTRATOR, ORCHESTRATOR_MD, POLICY, REVIEWER, Script, boot, entries, interview, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
+import { ORCHESTRATOR, ORCHESTRATOR_MD, POLICY, REVIEWER, Script, boot, entries, interview, orchestratorDir, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
 import { policyDoc } from "./policy-fixture";
 
 // F-016 acceptance tests written by the test engineer from spec v11 (plus
@@ -24,24 +24,18 @@ import { policyDoc } from "./policy-fixture";
 
 const CHOICE = {
   criterion: "S8.5", severity: "Medium", location: "FR-1", explanation: "Where the export runs decides who can read it.", fix: "Say where the export runs.",
-  blocks: false, needs_owner: true, options: [{ id: "A", label: "Export in the browser" }, { id: "B", label: "Export on the server" }], recommendation: "A",
+  needs_owner: true, options: [{ id: "A", label: "Export in the browser" }, { id: "B", label: "Export on the server" }], recommendation: "A",
 };
 const CHOICE2 = {
   criterion: "S6.1", severity: "Medium", location: "FR-1", explanation: "Old exports could be read later.", fix: "Say how long exports are kept.",
-  blocks: false, needs_owner: true, options: [{ id: "A", label: "Keep exports for a day" }, { id: "B", label: "Delete exports at once" }], recommendation: "B",
+  needs_owner: true, options: [{ id: "A", label: "Keep exports for a day" }, { id: "B", label: "Delete exports at once" }], recommendation: "B",
 };
 const FIX = "The export never includes card numbers.";
-const REQUIREMENT = { criterion: "S3.2", severity: "High", location: "FR-1", explanation: "Exports may hold card numbers.", fix: FIX, blocks: true, needs_owner: false };
+const REQUIREMENT = { criterion: "S3.2", severity: "High", location: "FR-1", explanation: "Exports may hold card numbers.", fix: FIX, needs_owner: false };
 const JUDGED = ["clear_objective", "expected_behavior_defined", "acceptance_criteria_testable", "constraints_documented"];
 const PRIORITY_ORDER = ["critical", "high", "medium", "low"];
 
 // ---------- helpers (same shape as f016-run.test.ts, kept local so these tests stand alone) ----------
-
-function orchestratorDir(d: FakeDocker): string {
-  const run = [...d.calls].reverse().find((x) => x.args[0] === "run" && x.args.includes("factory.role=orchestrator"))!.args;
-  const mount = run.filter((a, i) => run[i - 1] === "--mount").find((m) => m.includes("readiness_gate"))!;
-  return /source=([^,]+)/.exec(mount)![1]!;
-}
 
 function readiness(feature: string, commit: string): string {
   return JSON.stringify({
@@ -69,7 +63,7 @@ function orchestrator(d: FakeDocker, feature: () => string, extra: (commit: stri
   return async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
     const first = (await sc.next())!;
     commit = /at commit ([0-9a-f]{40})/.exec(first)?.[1] ?? commit;
-    const name = /(orchestrator-\d+\.json)/.exec(first)![1]!;
+    const name = `orchestrator-${n}.json`;
     for (let turn = 0; ; turn++) {
       fs.writeFileSync(path.join(orchestratorDir(d), name), make(commit));
       if (turn === 0) extra(commit, n);
@@ -159,11 +153,11 @@ function moveBranch(repo: string, branch: string): string {
 /** Writes an owner's choice of B on D-0001 into the record, as an engine that crashed before its effect would leave it. */
 function recordChoice(w: World, commentId: number, reactionId: number, confirmId: number): void {
   const state = path.join(w.config, ".factory");
-  const rec = YAML.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.yaml"), "utf8"));
+  const rec = JSON.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.json"), "utf8"));
   rec.status = "chosen";
   rec.history.push({ at: "2026-11-11T10:04:00Z", by: "engine", action: "confirm_requested", pending: "choose:B", code: "K7QX" });
   rec.history.push({ at: "2026-11-11T10:05:00Z", by: "owner", action: "chosen", option: "B", rev: 1, source: "reaction", actor_id: OWNER, comment_id: commentId, reaction_id: reactionId, ref: "https://github.com/o/cfg/issues/1", confirmed_by: { source: "command", comment_id: confirmId } });
-  fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), YAML.stringify(rec));
+  fs.writeFileSync(path.join(state, "inbox", "D-0001.json"), JSON.stringify(rec));
   execFileSync("git", ["-C", state, "-c", "user.name=crash test", "-c", "user.email=crash@example.invalid", "commit", "-qam", "D-0001: chosen B by the owner"]);
 }
 
@@ -197,12 +191,12 @@ describe("F-016 acceptance: Gate 1 items on issues", () => {
     expect(gh.actionComment(1, "choose:B").body).toMatch(/^<!-- factory-action: D-0001 rev 1 choose:B -->\n/);
     await pollUntil(w, "the issue bound", () => record(w, "D-0001")?.issue === 1);
     const rec = record(w, "D-0001")!;
-    expect(rec).toMatchObject({ schema: "inbox-record/3.0", id: "D-0001", kind: "decision", category: "Security", status: "open", issue: 1, feature, recommendation: "A", blocking: true });
+    expect(rec).toMatchObject({ schema: "inbox-record/4.0", id: "D-0001", kind: "decision", category: "Security", status: "open", issue: 1, feature, recommendation: "A", blocking: true });
     expect(rec.options).toEqual([{ id: "A", label: "Export in the browser" }, { id: "B", label: "Export on the server" }]);
     // Only F-011 records under inbox/ on factory/state; no old per-kind item files anywhere.
     const stateFiles = git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", "inbox").split("\n").filter(Boolean);
     expect(stateFiles.length).toBeGreaterThan(0);
-    for (const f of stateFiles) expect(f).toMatch(/^inbox\/[DTHSMN]-\d{4,}(\.yaml|\.rev\d+\.md)$/);
+    for (const f of stateFiles) expect(f).toMatch(/^inbox\/[DTHSMN]-\d{4,}(\.json|\.rev\d+\.md)$/);
     expect(git(w.config, "ls-tree", "-r", "--name-only", "HEAD").split("\n").filter((f) => f.startsWith(".factory/inbox/") || f.startsWith("inbox/"))).toEqual([]);
   }, 60_000);
 
@@ -276,7 +270,7 @@ describe("F-016 acceptance: Gate 1 items on issues", () => {
 
     // The first commit whose record holds effect_done also writes the stage change to the transcript; its parent already holds the owner's action.
     const transcript = `interviews/${feature}/transcript.jsonl`;
-    const commits = git(w.config, "log", "--format=%H", "--reverse", "factory/state", "--", "inbox/D-0001.yaml").split("\n").filter(Boolean);
+    const commits = git(w.config, "log", "--format=%H", "--reverse", "factory/state", "--", "inbox/D-0001.json").split("\n").filter(Boolean);
     const at = (c: string, f: string) => {
       try {
         return git(w.config, "show", `${c}:${f}`);
@@ -284,12 +278,12 @@ describe("F-016 acceptance: Gate 1 items on issues", () => {
         return "";
       }
     };
-    const c = commits.find((x) => YAML.parse(at(x, "inbox/D-0001.yaml")).history.some((h: any) => h.action === "effect_done"))!;
+    const c = commits.find((x) => JSON.parse(at(x, "inbox/D-0001.json")).history.some((h: any) => h.action === "effect_done"))!;
     expect(c).toBeTruthy();
-    expect(git(w.config, "show", "--name-only", "--format=", c).split("\n")).toEqual(expect.arrayContaining(["inbox/D-0001.yaml", transcript]));
+    expect(git(w.config, "show", "--name-only", "--format=", c).split("\n")).toEqual(expect.arrayContaining(["inbox/D-0001.json", transcript]));
     const stageEntries = (t: string) => t.split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((x) => x.type === "stage" && x.stage === "requirements_interview").length;
     expect(stageEntries(at(c, transcript))).toBe(stageEntries(at(`${c}^`, transcript)) + 1);
-    expect(YAML.parse(at(`${c}^`, "inbox/D-0001.yaml")).history.some((h: any) => h.by === "owner" && h.action === "rejected")).toBe(true);
+    expect(JSON.parse(at(`${c}^`, "inbox/D-0001.json")).history.some((h: any) => h.by === "owner" && h.action === "rejected")).toBe(true);
   }, 60_000);
 
   it("AC-5: Defer on a Gate 1 risk item keeps the feature blocked and the issue open, one priority lower", async () => {

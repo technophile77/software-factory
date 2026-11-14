@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "run-review/1.0"
+    },
+    "feature": {
+      "type": "string",
+      "pattern": "^F-\\d{3,6}$"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "pr_opened",
+        "stopped"
+      ]
+    },
+    "derived_complexity": {
+      "type": "string",
+      "enum": [
+        "simple",
+        "moderate",
+        "complex"
+      ]
+    },
+    "evaluator": {
+      "type": "object",
+      "properties": {
+        "predicted": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "correct": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "predicted",
+        "correct"
+      ],
+      "additionalProperties": false
+    },
+    "transcripts_proposed": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "ref": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ]
+          }
+        },
+        "required": [
+          "role",
+          "ref",
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "roles": {
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "rung": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "runs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "first_try_pass": {
+            "type": "boolean"
+          },
+          "fix_cycles": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "reruns": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "attributed_failures": {
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cause": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "stage": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "report": {
+                  "type": "string",
+                  "maxLength": 500
+                }
+              },
+              "required": [
+                "cause",
+                "stage",
+                "report"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "input_tokens": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "output_tokens": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "cost_usd": {
+                "type": "number",
+                "minimum": 0
+              },
+              "duration_s": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "input_tokens",
+              "output_tokens",
+              "cost_usd",
+              "duration_s"
+            ],
+            "additionalProperties": false
+          },
+          "suggestions_filed": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^H-\\d{4,}$"
+            }
+          }
+        },
+        "required": [
+          "role",
+          "rung",
+          "runs",
+          "first_try_pass",
+          "fix_cycles",
+          "reruns",
+          "attributed_failures",
+          "usage",
+          "suggestions_filed"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "feature",
+    "outcome",
+    "derived_complexity",
+    "evaluator",
+    "transcripts_proposed",
+    "roles"
+  ],
+  "additionalProperties": false
+}

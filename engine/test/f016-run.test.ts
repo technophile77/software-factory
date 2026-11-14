@@ -12,23 +12,17 @@ import { realPath } from "../src/fsutil";
 import { World, git, manifestYaml, start as startEngine } from "./helpers";
 import { FakeIssues, OWNER } from "./inbox-fake";
 import { inboxItems } from "./inbox-items";
-import { POLICY, Script, boot, entries, interview, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
+import { POLICY, Script, boot, entries, interview, orchestratorDir, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
 
 // F-016 on the engine: answers on inbox issues have their effects, and the full readiness gate runs.
 
 const CHOICE = {
   criterion: "S8.5", severity: "Medium", location: "FR-1", explanation: "Where the export runs decides who can read it.", fix: "Say where the export runs.",
-  blocks: false, needs_owner: true, options: [{ id: "A", label: "Export in the browser" }, { id: "B", label: "Export on the server" }], recommendation: "A",
+  needs_owner: true, options: [{ id: "A", label: "Export in the browser" }, { id: "B", label: "Export on the server" }], recommendation: "A",
 };
 const JUDGED = ["clear_objective", "expected_behavior_defined", "acceptance_criteria_testable", "constraints_documented"];
 
 /** The host folder mounted as the orchestrator's report folder. */
-function orchestratorDir(d: FakeDocker): string {
-  const run = [...d.calls].reverse().find((x) => x.args[0] === "run" && x.args.includes("factory.role=orchestrator"))!.args;
-  const mount = run.filter((a, i) => run[i - 1] === "--mount").find((m) => m.includes("readiness_gate"))!;
-  return /source=([^,]+)/.exec(mount)![1]!;
-}
-
 function readiness(feature: string, commit: string, failed: string | null = null): string {
   return JSON.stringify({
     schema: "agent-report/1.0", role: "orchestrator", feature, stage: "readiness_gate", commit, outcome: "complete", summary: "Judged.",
@@ -227,9 +221,9 @@ describe("F-016: answers in the inbox have their effects", () => {
 
     // Gate 2 re-review R2: the same 👍 copied into a new entry is a replay, not a second answer.
     const state = path.join(w.config, ".factory");
-    const rec = YAML.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.yaml"), "utf8"));
+    const rec = JSON.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.json"), "utf8"));
     rec.history.push({ ...rec.history.find((h: any) => h.by === "owner"), at: "2026-11-11T10:30:00Z" });
-    fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), YAML.stringify(rec));
+    fs.writeFileSync(path.join(state, "inbox", "D-0001.json"), JSON.stringify(rec));
     execFileSync("git", ["-C", state, "-c", "user.name=someone", "-c", "user.email=someone@example.invalid", "commit", "-qam", "D-0001: again"]);
     const fourth = await start(w, d, scripts, first.gh);
     await pollUntil(w, "the replay refused", () => effects(w, "D-0001").length === 2);
@@ -289,24 +283,24 @@ function crashAfterRecording(w: World, gh: FakeIssues, commentId: number, reacti
   const confirm = gh.say(1, "/confirm K7QX");
   gh.now = now;
   const state = path.join(w.config, ".factory");
-  const rec = YAML.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.yaml"), "utf8"));
+  const rec = JSON.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.json"), "utf8"));
   rec.status = "chosen";
   rec.engine_comments = [...(rec.engine_comments ?? []), request.id];
   rec.history.push({ at: "2026-11-11T10:00:00Z", by: "engine", action: "confirm_requested", rev: 1, pending: "choose:B", code: "K7QX", comment_id: request.id });
   rec.history.push({ at: "2026-11-11T10:05:00Z", by: "owner", action: "chosen", option: "B", rev: 1, source: "reaction", actor_id: OWNER, comment_id: commentId, reaction_id: reactionId, ref: "https://github.com/o/cfg/issues/1", confirmed_by: { source: "command", comment_id: confirm.id } });
-  fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), YAML.stringify(rec));
+  fs.writeFileSync(path.join(state, "inbox", "D-0001.json"), JSON.stringify(rec));
   execFileSync("git", ["-C", state, "-c", "user.name=crash test", "-c", "user.email=crash@example.invalid", "commit", "-qam", "D-0001: chosen B by the owner"]);
 }
 
 describe("F-016: Security item effects (H-0182)", () => {
   const FIX = "The export never includes card numbers.";
-  const REQUIREMENT = { criterion: "S3.2", severity: "High", location: "FR-1", explanation: "Exports may hold card numbers.", fix: FIX, blocks: true, needs_owner: false };
+  const REQUIREMENT = { criterion: "S3.2", severity: "High", location: "FR-1", explanation: "Exports may hold card numbers.", fix: FIX, needs_owner: false };
 
   it("FR-19, AC-21: at Rapid prototype, findings below Critical are recorded as known issues and Gate 1 goes on to the readiness gate without questions", async () => {
     const w = world({}, { maturity: "rapid-prototype" });
     const d = new FakeDocker();
     let feature = "";
-    const low = { ...REQUIREMENT, severity: "Low", blocks: false };
+    const low = { ...REQUIREMENT, severity: "Low" };
     const { e, c, s } = await start(w, d, { analyst: analyst(w, () => feature, async () => undefined), reviewer: reviewer(d, () => feature, [low, { ...low, criterion: "S4.4", severity: "High" }]) });
     await interview(w, e, c, () => feature, (f) => (feature = f));
     await until("readiness_gate", () => stageOf(e, feature) === "readiness_gate");
@@ -661,16 +655,18 @@ describe("F-016: the full readiness gate", () => {
     await until("the sign-off item", () => !!e.feature(feature)?.state.readiness.signoff);
     expect(s.count.orchestrator).toBe(1);
 
-    // SR-11: the orchestrator's tools, its model and its report folder.
+    // SR-11: the orchestrator's tools and its model. F-020 FR-10: no Write and no report folder; the report is the structured result.
     const o = s.seen.find((x) => x.systemPrompt === "# Orchestrator (master)\n")!;
-    expect(o.tools).toEqual(["Read", "Grep", "Glob", "Write"]);
+    expect(o.tools).toEqual(["Read", "Grep", "Glob"]);
+    expect(o.outputFormat?.type).toBe("json_schema");
     expect(o.model).toBe("claude-sonnet-5-5");
     expect(o.maxTurns).toBe(40);
     const run = d.calls.find((x) => x.args[0] === "run" && x.args.includes("factory.role=orchestrator"))!.args;
     expect(run.filter((a, i) => run[i - 1] === "--mount").find((m) => m.includes("target=/workspace,"))).toMatch(/,readonly$/);
 
     const rep = JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/readiness_gate/orchestrator-1.json`));
-    expect(rep).toMatchObject({ role: "orchestrator", outcome: "complete", body: { gate: "readiness" } });
+    expect(rep).toMatchObject({ role: "orchestrator", outcome: "complete", report_via: "structured_output", body: { gate: "readiness" } });
+    expect(run.filter((a, i) => run[i - 1] === "--mount").filter((m) => m.includes("readiness_gate"))).toEqual([]);
     expect(rep.body.checks.map((x: any) => x.name)).toEqual(expect.arrayContaining(["structure_acceptance_criteria_testable", ...JUDGED]));
 
     await pollUntil(w, "the sign-off issue", () => gh.issues.size === 1);
@@ -868,7 +864,7 @@ describe("F-016 FR-13, FR-14: an analyst run that stopped (issues #64, #65)", ()
 });
 
 describe("F-016 FR-15: Gate 1 findings the interview didn't take up", () => {
-  const FINDING = { criterion: "S5.2", severity: "Medium", location: "FR-1", explanation: "Errors may show stack traces.", fix: "Errors show no internals.", blocks: false, needs_owner: false };
+  const FINDING = { criterion: "S5.2", severity: "Medium", location: "FR-1", explanation: "Errors may show stack traces.", fix: "Errors show no internals.", needs_owner: false };
 
   it("AC-17: the feature goes back to the analyst once with the evidence; the second time an item is filed; option B leaves it at Gate 1", async () => {
     const w = world();

@@ -207,7 +207,7 @@ describe("fetch (TR-11: SR-17 on fetch)", () => {
     await c.ok("feature.start", { request: "Export" });
     c.close();
     const before = securityItems(w.config).length;
-    const forged = forge(w, bare, { "inbox/D-0009.yaml": "id: D-0009\nhistory: []\n" });
+    const forged = forge(w, bare, { "inbox/D-0009.json": "{\"id\":\"D-0009\",\"history\":[]}\n" });
     await e.sync();
     expect(git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", "inbox")).not.toContain("D-0009");
     expect(git(w.config, "rev-parse", "factory/state")).not.toBe(forged);

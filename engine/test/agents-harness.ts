@@ -11,7 +11,7 @@ import { SECRET_DENIES } from "../src/policy/role-policy";
 import { EngineRecord } from "../src/state/record";
 import { parseTranscript } from "../src/state/transcript";
 import { FakeDocker } from "./fakes";
-import { RpcClient, World, approvedSession, engineJson, git, makeWorld, manifestYaml, start } from "./helpers";
+import { RpcClient, World, approvedSession, engineJson, git, makeWorld, manifestYaml, start, tmpdir } from "./helpers";
 import { policyDoc } from "./policy-fixture";
 
 // The engine, fake Docker and scripted SDK that F-008's and F-016's engine tests share.
@@ -23,12 +23,49 @@ export const ORCHESTRATOR_MD = "# Orchestrator (master)\n";
 
 let engines: EngineHandle[] = [];
 let clients: RpcClient[] = [];
+let box: string | null = null;
 afterEach(async () => {
   for (const c of clients) c.close();
   for (const e of engines) await e.stop();
   engines = [];
   clients = [];
+  if (box) fs.rmSync(box, { recursive: true, force: true });
+  box = null;
 });
+
+/**
+ * Where a scripted session puts the report it returns as structured output
+ * (F-020 FR-9): the fake SDK hands the file's JSON back on the session's
+ * success result, as the real CLI hands back its StructuredOutput call.
+ */
+function reportBox(): string {
+  box ??= tmpdir();
+  return box;
+}
+
+/** The newest report a scripted session left for `prefix`, taken out of the box; text that isn't JSON comes back as the string. */
+function takeReport(prefix: string): unknown {
+  if (!box || !fs.existsSync(box)) return undefined;
+  const files = fs.readdirSync(box).filter((f) => f.startsWith(prefix)).map((f) => path.join(box!, f));
+  if (!files.length) return undefined;
+  files.sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
+  const text = fs.readFileSync(files.at(-1)!, "utf8");
+  for (const f of files) fs.rmSync(f);
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+export async function* withStructured(gen: AsyncGenerator<SdkMessage>, options: SessionOptions, prefix: string): AsyncGenerator<SdkMessage> {
+  for await (const m of gen) {
+    if (options.outputFormat && m.type === "result" && m.subtype === "success" && !("structured_output" in m)) {
+      const report = takeReport(prefix);
+      yield report === undefined ? m : { ...m, structured_output: report };
+    } else yield m;
+  }
+}
 
 export interface Script {
   options: SessionOptions;
@@ -54,7 +91,7 @@ export function scriptedSdk(scripts: { analyst: RoleScript; reviewer: RoleScript
       const n = ++count[role];
       const script = scripts[role];
       if (!script) throw new Error(`no script for the ${role}`);
-      return script({
+      return withStructured(script({
         options,
         next: async () => {
           const r = await it.next();
@@ -63,7 +100,7 @@ export function scriptedSdk(scripts: { analyst: RoleScript; reviewer: RoleScript
           return r.value.message.content;
         },
         call: async (name, args) => JSON.parse((await own.find((x) => x.name === name)!.handler(args)).content[0]!.text),
-      }, n);
+      }, n), options, role === "reviewer" ? "security-reviewer-" : `${role}-`);
     },
   };
   return { sdk, seen, prompts, count };
@@ -153,11 +190,20 @@ export function spec(feature: string, version: number, srs: string[] = ["| SR-1 
   ].join("\n");
 }
 
-/** The host folder mounted as the reviewer's report folder, from the container's arguments. */
+/**
+ * Where the latest reviewer session puts its report: the host folder mounted
+ * as its report folder for a session that writes a file (F-020 A-2), else
+ * the box its structured output comes from.
+ */
 export function reportDir(d: FakeDocker): string {
   const run = [...d.calls].reverse().find((x) => x.args[0] === "run" && x.args.includes("factory.role=security-reviewer"))!.args;
-  const mount = run.filter((a, i) => run[i - 1] === "--mount").find((m) => m.includes("security_gate_1"))!;
-  return /source=([^,]+)/.exec(mount)![1]!;
+  const mount = run.filter((a, i) => run[i - 1] === "--mount").find((m) => m.includes("security_gate_1"));
+  return mount ? /source=([^,]+)/.exec(mount)![1]! : reportBox();
+}
+
+/** Where the readiness orchestrator puts the report it returns as structured output. */
+export function orchestratorDir(_d?: FakeDocker): string {
+  return reportBox();
 }
 
 export function report(feature: string, commit: string, findings: unknown[] = []): string {

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "agent-report/1.0"
+    },
+    "role": {
+      "type": "string",
+      "const": "requirements-analyst"
+    },
+    "feature": {
+      "type": "string",
+      "pattern": "^F-\\d{3,6}$"
+    },
+    "stage": {
+      "type": "string",
+      "maxLength": 60
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "blocked",
+        "failed",
+        "partial"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "spec_path": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "spec_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "open_assumptions": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[DTHSMN]-\\d{4,}$"
+          }
+        }
+      },
+      "required": [
+        "spec_path",
+        "spec_version",
+        "open_assumptions"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "role",
+    "feature",
+    "stage",
+    "commit",
+    "outcome",
+    "summary",
+    "body"
+  ],
+  "additionalProperties": false
+}

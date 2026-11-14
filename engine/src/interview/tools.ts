@@ -1,4 +1,5 @@
 import { AFTER_INTERVIEW_STAGE, ID_RE, TOOL_LIMITS as L } from "../constants";
+import type { ResearchResult } from "../agent/web-reader";
 import { Logger } from "../log";
 import type { Change } from "../state/state-repo";
 import { SecretFound } from "../state/state-repo";
@@ -133,8 +134,8 @@ export interface ToolContext {
 }
 
 export interface ResearchConfig {
-  /** Runs one web reader session with only the query (Interview tools v1.0). */
-  run(query: string): Promise<{ summary: string; sources: string[] }>;
+  /** Runs one web reader session with only the query (Interview tools v1.2). */
+  run(query: string): Promise<ResearchResult>;
   /** Caps from change-controlled config (H-0082); the engine has no defaults. */
   perQuestion: number;
   perSession: number;
@@ -144,7 +145,7 @@ export interface InterviewTools {
   interview_ask(args: unknown): Promise<ToolResult<{ item: WireItem }>>;
   interview_propose_assumption(args: unknown): Promise<ToolResult<{ item: WireItem }>>;
   interview_revise(args: unknown): Promise<ToolResult<{ revision: number }>>;
-  research_web(args: unknown): Promise<ToolResult<{ summary: string; sources: string[] }>>;
+  research_web(args: unknown): Promise<ToolResult<ResearchResult>>;
   interview_spec_ready(args: unknown): Promise<ToolResult<{ checks: Check[] }>>;
   interview_confirm_sources(args: unknown): Promise<ToolResult<{ item: WireItem }>>;
 }
@@ -251,7 +252,7 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
       if (!asked.ok) return asked;
       try {
         const res = await ctx.research!.run(asked.result);
-        return { ok: true, result: { summary: res.summary, sources: res.sources } };
+        return { ok: true, result: { facts: res.facts, sources: res.sources, page_contains_instructions: res.page_contains_instructions, ...(res.where !== undefined ? { where: res.where } : {}) } };
       } catch (e) {
         ctx.log.warn(`${f.id}: research failed: ${(e as Error).message.slice(0, 200)}`);
         return { ok: false, error: { code: "unavailable", message: "The web reader couldn't finish; try again later." } };

@@ -247,7 +247,7 @@ function realWait(ms: number) {
 }
 
 describe("AC-3 / FR-2, SR-1: what a Gate 1 session can do", () => {
-  it("[G1-6] AC-3 / FR-11: the session's tools are within Read, Grep, Glob, Write and Skill, with no factory tools; its container is on the internal network only, its proxy grant has no host beyond the model API, the worktree is read-only and only the report folder is writable", T, async () => {
+  it("[G1-6] AC-3 / FR-11, F-020 AC-10: the session's tools are within Read, Grep, Glob and Skill, with no Write and no factory tools; its report is the session's structured result; its container is on the internal network only, its proxy grant has no host beyond the model API, and nothing in it is writable", T, async () => {
     const r = await rig();
     const { feature, reviewer } = await start(r, [passing()], [validReport(r.w)]);
     await waitStage(r.w, feature, READINESS);
@@ -256,7 +256,8 @@ describe("AC-3 / FR-2, SR-1: what a Gate 1 session can do", () => {
     expect(tools.length).toBeGreaterThan(0);
     for (const t of tools) expect(REVIEWER_TOOLS, `tool ${t}`).toContain(t);
     expect(tools).toContain("Read");
-    expect(tools).toContain("Write");
+    expect(tools).not.toContain("Write");
+    expect(s.options.outputFormat?.type).toBe("json_schema");
     expect(s.toolNames).toEqual([]);
     expect((s.options.allowedTools ?? []).filter((t: string) => t.startsWith("mcp__"))).toEqual([]);
     expect(s.options.permissionMode).not.toBe("bypassPermissions");
@@ -274,7 +275,8 @@ describe("AC-3 / FR-2, SR-1: what a Gate 1 session can do", () => {
     const ws = mounts.find((m) => m.target === "/workspace")!;
     expect(isReadOnly(ws)).toBe(true);
     const writable = mounts.filter((m) => m.type === "bind" && !isReadOnly(m));
-    expect(writable.map((m) => m.target)).toEqual([`/workspace/${reviewer.ctx[0]!.reportRel.replace(/\/[^/]+$/, "")}`]);
+    expect(writable.map((m) => m.target)).toEqual([]);
+    expect(reviewer.ctx[0]!.turn).toMatch(/structured output/);
     // The proxy grant for the reviewer's credential: no host of its own.
     const grants = r.docker.proxyMessages().filter((m) => m.t === "grant" && m.role === "security-reviewer");
     expect(grants.length).toBeGreaterThan(0);
@@ -360,8 +362,8 @@ const invalidCases = (w: World): Array<[string, ReviewerAct, RegExp]> => [
   ["a wrong role", mutated(w, (d) => (d.role = "requirements-analyst")), /role/i],
   ["a wrong stage (SR-5: readiness_gate)", mutated(w, (d) => (d.stage = "readiness_gate")), /stage/i],
   ["a wrong commit", mutated(w, (d) => (d.commit = "0".repeat(40))), /commit/i],
-  ["invalid JSON", writeReport(() => '{ "schema": "agent-report/1.0", '), /JSON/i],
-  ["no report at all", () => [], /no report|missing|not found|there is no/i],
+  ["not a JSON object", writeReport(() => '"just text"'), /\(top level\) is invalid/],
+  ["a field the engine fills (F-020 SR-7)", mutated(w, (d) => (d.usage = { input_tokens: 1, output_tokens: 1, cost_usd: 0, duration_s: 1 })), /unknown key "usage"/],
 ];
 
 describe("AC-5 / FR-5: an invalid report gets one correction", () => {
@@ -378,7 +380,7 @@ describe("AC-5 / FR-5: an invalid report gets one correction", () => {
     expect((await reviewerRuns(r.w, feature)).map((x) => x.status)).toEqual(["complete"]);
   });
 
-  const twice = ["an unknown criterion id", "invalid JSON", "no report at all", "a wrong commit"];
+  const twice = ["an unknown criterion id", "not a JSON object", "a wrong commit"];
   it.each(twice)("[G1-11] AC-5 / FR-10: a report with %s, still invalid after the correction: the run fails, nothing from it is committed, and the transcript, the log and the agent report say why", T, async (name) => {
     const r = await rig();
     const c = invalidCases(r.w).find((x) => x[0] === name)!;
@@ -397,6 +399,19 @@ describe("AC-5 / FR-5: an invalid report gets one correction", () => {
     expect(gate1Reports(r.w, feature).length).toBeGreaterThan(0);
     expect(committedTranscript(r.w, feature)).toMatch(/invalid|refused|report/i);
     expect(engineLog(r.w)).toMatch(new RegExp(`${feature}.*Gate 1.*(refused|invalid|stopped)`, "i"));
+  });
+});
+
+describe("F-020 AC-11: a session that ends without its report", () => {
+  it("[G1-11b] F-020 AC-11 / FR-9: the run fails with \"no report\" at once, with no correction session, and nothing from it is committed", T, async () => {
+    const r = await rig();
+    const { feature } = await start(r, [passing()], [() => []]);
+    const runs = await reviewerSettled(r.w, feature);
+    await r.w.settle();
+    expect(runs.map((x) => [x.status, x.reason])).toEqual([["failed", "no report"]]);
+    expect(r.sdk.of("reviewer").length).toBe(1);
+    expect(rendering(r.w, feature)).toBeNull();
+    expect(await stageOf(r.w, feature)).toBe(GATE1);
   });
 });
 
@@ -535,7 +550,7 @@ describe("AC-9 / FR-10: the engine stops during a Gate 1 run", () => {
     expect(runs.map((x) => x.id)).toEqual([run.id]);
     expect(runs[0]!.status).toBe("complete");
     expect(reviewer.ctx.length).toBeGreaterThanOrEqual(2);
-    expect(reviewer.ctx[1]!.reportRel).toMatch(/security-reviewer-\d+\.json$/);
+    expect(reviewer.ctx[1]!.turn).toMatch(/structured output/);
   });
 
   it("[G1-19] AC-9: stopped gracefully while the reviewer works, the run isn't failed; on restart it resumes and finishes", T, async () => {
@@ -634,13 +649,6 @@ describe("AC-12 / SR-2, SR-7: prompt injection and empty reports", () => {
 });
 
 /** A valid report as text, padded with trailing whitespace to exactly `bytes`. */
-function padded(w: World, bytes: number): ReviewerAct {
-  return writeReport((ctx) => {
-    const t = JSON.stringify(reportDoc(w, ctx));
-    return t + " ".repeat(bytes - Buffer.byteLength(t));
-  });
-}
-
 describe("AC-13 / SR-8, SR-12: reading the report safely", () => {
   it.skipIf(process.platform === "win32")("[G1-25] AC-13: a report path that is a symbolic link to a valid report is not read through: the report is refused and the run fails", T, async () => {
     const r = await rig();
@@ -660,9 +668,11 @@ describe("AC-13 / SR-8, SR-12: reading the report safely", () => {
     expect(engineLog(r.w)).not.toContain(word);
   });
 
-  it("[G1-26] AC-13 / SR-8: a report over 256 KiB is refused (correction asked); one of exactly 256 KiB is accepted", T, async () => {
+  it("[G1-26] AC-13 / SR-8: a report over 256 KiB is refused (correction asked); the corrected report is accepted", T, async () => {
     const r = await rig();
-    const { feature, reviewer } = await start(r, [passing()], [padded(r.w, 256 * 1024 + 1), padded(r.w, 256 * 1024)]);
+    // Within the model's schema, but over the size cap: the engine counts the report as JSON text (F-020 FR-9).
+    const big = mutated(r.w, (d) => (d.body.findings = Array.from({ length: 70 }, (_, i) => requirementFinding({ explanation: `${i} ${"x".repeat(3990)}` }))));
+    const { feature, reviewer } = await start(r, [passing()], [big, validReport(r.w)]);
     await waitStage(r.w, feature, READINESS);
     expect(r.sdk.of("reviewer").length).toBe(2);
     expect(reviewer.turns[1]).toMatch(/KiB|size|large|over/i);
@@ -679,20 +689,16 @@ describe("AC-13 / SR-8, SR-12: reading the report safely", () => {
     expect(r.sdk.of("reviewer").length).toBe(2);
   });
 
-  const others: Array<[string, (dir: string) => string]> = [
-    ["another report file the role's glob allows", (d) => `${d}/security-reviewer-99.json`],
-    ["a notes file", (d) => `${d}/notes.txt`],
-    ["a file in a subfolder", (d) => `${d}/sub/security-reviewer-1.json`],
-  ];
-  it.each(others)("[G1-28] AC-13 / SR-12: a session that writes its valid report and also %s in the report folder doesn't get the report accepted", T, async (_what, other) => {
+  it("[G1-28] AC-13 / SR-12, F-020 FR-10: there is no report folder to write to: a report file written where it was lands nowhere, and only the structured result is the report", T, async () => {
     const r = await rig();
+    const rel = (f: string) => `.factory/runs/${f}/${GATE1}/security-reviewer-99.json`;
     const { feature } = await start(r, [passing()], [
-      (ctx) => [...(validReport(r.w)(ctx) as any[]), { write: other(`/workspace/${ctx.reportRel.replace(/\/[^/]+$/, "")}`), content: "{}\n" }],
+      (ctx) => [{ write: `/workspace/${rel(ctx.feature)}`, content: "{}\n" }, ...(validReport(r.w)(ctx) as any[])],
     ]);
-    await reviewerSettled(r.w, feature);
-    await r.w.settle();
-    expect(await stageOf(r.w, feature)).not.toBe(READINESS);
-    expect(rendering(r.w, feature)).toBeNull();
+    await waitStage(r.w, feature, READINESS);
+    const execs = r.docker.calls().filter((c) => c.argv.includes("exec") && c.argv.some((a) => /security-reviewer/.test(a)));
+    expect(execs.flatMap((c) => c.results ?? []).some((x) => x.includes("security-reviewer-99.json: Read-only"))).toBe(true);
+    expect(tryGit(r.w.project().clone, "show", `${featureBranch(r.w, feature)}:${rel(feature)}`)).toBeNull();
   });
 });
 

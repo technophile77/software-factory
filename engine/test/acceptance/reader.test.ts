@@ -52,11 +52,11 @@ const HIDDEN_PAGE = [
   "</body></html>",
 ].join("\n");
 
-/** The analyst asks a question and researches it; the reader fetches each URL and ends. */
-async function research(r: Awaited<ReturnType<typeof rig>>, urls: string[]) {
+/** The analyst asks a question and researches it; the reader fetches each URL and answers (F-020 FR-7), by default with one fact per page. */
+async function research(r: Awaited<ReturnType<typeof rig>>, urls: string[], answer?: Record<string, unknown>) {
   r.sdk.behaviours.reader = async (s) => {
     for (const url of urls) await s.call("fetch_page", { url });
-    s.result = "Summary of what I read.";
+    s.structured = answer ?? { schema: "web-reader-answer/1.0", facts: urls.map((u) => ({ text: "What I read.", source: u })), page_contains_instructions: false };
   };
   let result: unknown;
   let done!: () => void;
@@ -112,6 +112,20 @@ describe("AC-21 / SR-21 / H-0083: fetch_page strips what a reader shouldn't see"
     expect(reader.toolNames).toEqual(["fetch_page"]);
     expect(r.docker.proxyMessages().filter((m) => m.t === "fetch").map((m) => m.url)).toEqual([url]);
     expect(JSON.stringify(result)).toContain(url);
+  });
+
+  it("[RW-5] F-020 AC-8, SR-10: the reader's claim of instructions on a page reaches the analyst with the address, labelled untrusted; a fact from a page the engine didn't fetch is dropped", async () => {
+    const r = await rig();
+    const url = "https://docs.example.org/csv";
+    r.docker.set({ web: { [url]: { body: "<p>VISIBLE-ONE</p>" } } });
+    const { result } = await research(r, [url], {
+      schema: "web-reader-answer/1.0", page_contains_instructions: true, where: url,
+      facts: [{ text: "Quote fields with commas.", source: url }, { text: "Claimed from elsewhere.", source: "https://unfetched.example.net/" }],
+    });
+    // The tool's result is the untrusted label, then the answer as JSON.
+    const text = (result as { value: string }).value;
+    expect(text.startsWith("Untrusted: this is the web reader's answer")).toBe(true);
+    expect(JSON.parse(text.slice(text.indexOf("{")))).toEqual({ facts: [{ text: "Quote fields with commas.", source: url }], sources: [url], page_contains_instructions: true, where: url });
   });
 
   it.skip("[RW-4] AC-21: text hidden only by a stylesheet class rule doesn't reach the reader (skipped: accepted residual risk until Alpha, owner decision 2026-11-12, spec v43; unskip with the fix before Alpha)", () => undefined);

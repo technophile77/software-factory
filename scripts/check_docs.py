@@ -48,6 +48,9 @@ for path in glob.glob("agents/*/AGENT.md") + glob.glob("skills/*/SKILL.md"):
     # Claude Code starts it as a subagent; the engine's own runs have their own.
     if path.startswith("agents/") and isinstance(meta, dict) and meta.get("isolation") != "worktree":
         errors.append(f"{path}: frontmatter needs isolation: worktree")
+    # H-0240, F-020 FR-13: every agent says its output is JSON.
+    if path.startswith("agents/") and not re.search(r"^.*\bJSON\b.*\(H-0240\)", text, re.M):
+        errors.append(f"{path}: needs the Output format line (JSON, H-0240)")
 
 print("\n".join(errors) or "All docs checks passed.")
 sys.exit(1 if errors else 0)
