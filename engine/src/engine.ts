@@ -41,7 +41,8 @@ import { ensureOwnerDir, findOnPath, sha256Hex, writeFileAtomic } from "./fsutil
 import { Git } from "./git";
 import { GitHubClient, GitHubError, GitHubUnreachable, HttpGitHub, checkBase } from "./github";
 import { HttpIssues, IssuesApi } from "./inbox/github-issues";
-import { Inbox, Recorded } from "./inbox/store";
+import { ConsoleResult, Inbox, Recorded } from "./inbox/store";
+import { InboxLocal } from "./inbox/local";
 import type { ItemInput } from "./inbox/model";
 import { type OsNotify, osNotifier } from "./os/notify";
 import { Gitleaks, SecretsScanner } from "./gitleaks";
@@ -310,6 +311,49 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }));
 
   const notify = o.notify ?? osNotifier({ platform: osApi.platform, children, log, cwd: home });
+  /**
+   * F-021 SR-5: private detail goes through the secrets scan before it is
+   * stored; each flagged line is replaced, and if the scan still flags the
+   * result, all of it is.
+   */
+  const REMOVED = "[secret removed by the engine]";
+  const scrubPrivate = async (text: string): Promise<string> => {
+    const scan = (t: string) => scanner.scan([{ sha: sha256Hex(t), content: Buffer.from(t, "utf8") }]);
+    const r = await scan(text);
+    if (r.clean) return text;
+    const lines = text.split("\n");
+    for (const h of r.hits ?? []) if (h.line >= 1 && h.line <= lines.length) lines[h.line - 1] = REMOVED;
+    const out = lines.join("\n");
+    return (await scan(out)).clean ? out : REMOVED;
+  };
+
+  /**
+   * F-021 FR-4 (b): the engine's own log lines that name `match`, newest
+   * last, at most `max`, from today's and yesterday's log. Only for private
+   * detail, which never leaves the PC.
+   */
+  const logLines = (match: string, max = 200): string => {
+    const dir = path.join(home, "logs");
+    const out: string[] = [];
+    try {
+      const files = fs.readdirSync(dir).filter((n) => /^\d{4}-\d{2}-\d{2}\.log$/.test(n)).sort().slice(-2);
+      for (const f of files) {
+        for (const line of fs.readFileSync(path.join(dir, f), "utf8").split("\n")) {
+          if (!line) continue;
+          try {
+            const rec = JSON.parse(line) as { at?: string; level?: string; message?: string };
+            if (typeof rec.message === "string" && rec.message.includes(match)) out.push(`${rec.at ?? ""} ${rec.level ?? ""} ${rec.message}`);
+          } catch {
+            // A damaged line is skipped; the log is the engine's own.
+          }
+        }
+      }
+    } catch {
+      return "";
+    }
+    return out.slice(-max).join("\n");
+  };
+
   const alert = async (p: Project, key: string, a: SecurityAlert) => {
     if (!p.inbox || dead) return;
     const k = sha256Hex(`${p.real}\0${key}`);
@@ -437,7 +481,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       stop(p, `factory/state couldn't be checked out at .factory (${(e as Error).message})`);
       continue;
     }
-    p.inbox = new Inbox({ state: p.state_repo, clock, log, notify });
+    // F-021: private detail and console answer proofs stay in the engine folder, keyed by the project's path (H-0246).
+    p.inbox = new Inbox({ state: p.state_repo, clock, log, notify, local: new InboxLocal(home, sha256Hex(p.real!).slice(0, 16)), scrub: scrubPrivate });
     const legacy = await p.inbox.legacyRecords();
     if (legacy.length) {
       // F-020 SR-4: filing an item here would hide the open ones in the unread files, so the owner is told on the PC only.
@@ -750,6 +795,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       sessions: p.sessions!,
       features: () => [...p.features.values()].filter((f) => !ambiguous.has(f.id)),
       feature: (fid) => (ambiguous.has(fid) ? null : p.features.get(fid) ?? null),
+      inbox: () => {
+        const ib = p.inbox;
+        if (!ib) return null;
+        return {
+          list: () => ib.consoleList(),
+          show: (id) => ib.consoleShow(id),
+          answer: async (a) => answeredInConsole(p, await ib.consoleAnswer(a)),
+          confirm: async (a) => answeredInConsole(p, await ib.consoleConfirm(a)),
+        };
+      },
       secretRefused: async (where, found, fid) => {
         const rules = [...new Set(found.rules)].filter((r) => /^[A-Za-z0-9_.-]{1,80}$/.test(r));
         // Each refusal is its own event, so the alert key never repeats.
@@ -1223,6 +1278,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (!f.state.gate1.blocked) await f.exclusive(() => f.append([{ type: "gate1_blocked", reason: why }], "gate 1 run limit"));
       await alert(p, `gate1cap:${f.id}:${f.state.gate1.runs}`, {
         title: `Gate 1 for ${f.id} reached its run limit`, feature: f.id,
+        private: [{ name: "Engine log", text: logLines(`${f.id}`) || "The engine log has no lines for this feature from today or yesterday." }],
         context: `${why}. Another run would cost another reviewer session. The Gate 1 reports and the engine log say why the earlier runs didn't pass.`,
         impact: `${f.id} stays at Security Gate 1 until you allow another run.`,
         confirm: "Allow one more Gate 1 run: the security reviewer checks the current spec again", hold: "Keep the feature where it is, with no more runs", recommendation: "A",
@@ -1405,6 +1461,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         // SR-9: reviewer text with a secret in it goes nowhere.
         await alert(p, `secret:${crypto.randomBytes(8).toString("hex")}`, {
           title: "Gate 1 report refused: the secrets scan found a secret", feature: f.id,
+          private: [{ name: "Where the scan found it", text: `Files: ${e.paths.join(", ") || "not named"}\nRules: ${e.rules.join(", ") || "not named"}` }],
           context: `The engine didn't record run ${runId}'s Gate 1 report, its rendering or its items because gitleaks flagged them (F-008 SR-9).`,
           impact: `${f.id} stays at Security Gate 1.`, confirm: "Rotate the secret if it was real, then run Gate 1 again", hold: "It was a false positive: no action", recommendation: "A",
         });
@@ -1521,7 +1578,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         const waiting = p.inbox?.waitingOn(f.id) ?? [];
         // H-0183 (channel v1.5): the items the feature waits on, only when there are any.
         const stage = f.stage() || INTERVIEW_STAGE;
-        const activity = activityOf({ stage, paused: f.paused, running: jobs.has(f.id), statuses: f.state.list().map((it) => it.status) });
+        const activity = activityOf({ stage, paused: f.paused, running: jobs.has(f.id), statuses: f.state.list().map((it) => it.status), decisions: waiting });
         return { id: f.id, stage, active_agents: jobs.has(f.id) ? 1 : 0, activity, ...(waiting.length ? { waiting_on: waiting } : {}) };
       })),
     }),
@@ -1967,8 +2024,28 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   // The whole entry, not its time, so a forged entry beside a real one is never taken for it (Gate 2 re-review R1).
   const answerKey = (p: Project, r: Recorded): string => `${p.name}/${r.id}/${sha256Hex(JSON.stringify(r.entry))}`;
 
+  /**
+   * F-021 FR-9: an answer given in the console is carried out at once, by the
+   * same code as one from GitHub. The poll and the console take turns, so no
+   * answer's effect runs twice.
+   */
+  const applying = new Map<Project, Promise<void>>();
+  function applyAnswers(p: Project): Promise<void> {
+    const run = (applying.get(p) ?? Promise.resolve()).then(() => applyAnswersNow(p));
+    applying.set(p, run.catch(() => undefined));
+    return run;
+  }
+
+  async function answeredInConsole(p: Project, r: ConsoleResult): Promise<ConsoleResult> {
+    if ("recorded" in r) {
+      recordedHere.add(answerKey(p, r.recorded));
+      await applyAnswers(p).catch((e) => log.warn(`${p.name}: a console answer's effect wasn't applied now (${engineWords(e)}); the next poll tries again.`));
+    }
+    return r;
+  }
+
   /** Carries out every recorded answer without an effect yet: new ones, ones a crash left, and ones that failed before (FR-2, SR-7). */
-  async function applyAnswers(p: Project): Promise<void> {
+  async function applyAnswersNow(p: Project): Promise<void> {
     for (const r of await p.inbox!.pendingEffects()) {
       if (dead || polling.signal.aborted) return;
       // A stopped project applies only the pins approval; other answers wait for its next start.
@@ -2005,6 +2082,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
             kind: "notice", title: `${id}: your answer couldn't be carried out`, priority: "high", blocking: false, created_by: "engine",
             ...(r.record.feature ? { feature: r.record.feature } : {}),
             sections: { Details: [{ engine: `The engine recorded your answer on ${id} but failed 3 times to carry it out (F-016 SR-7). Nothing changed: ${r.record.feature ?? "the project"} stays where it is. The engine tries once more when it restarts; the engine log has the reason.` }] },
+            private: [{ name: "Engine log", text: logLines(id) || "The engine log has no lines for this item from today or yesterday." }],
           }).catch(() => undefined);
         }
       }

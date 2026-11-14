@@ -21,12 +21,17 @@ export interface Session {
   result: Promise<boolean>;
   /** Deferred items already returned in this session. */
   shown: Set<string>;
+  /** Whether the owner signed in to GitHub for this session; recorded with console answers (F-021 FR-13). */
+  signedIn: boolean;
 }
 
 export interface Owner {
   githubId: number;
   oauthClientId: string;
 }
+
+/** Console sessions' lock keys start with this; feature ids can't hold a colon. */
+export const CONSOLE_PREFIX = "inbox:";
 
 const hash = (token: string) => crypto.createHash("sha256").update(token).digest("hex");
 
@@ -112,7 +117,7 @@ export class SessionManager {
     const th = hash(token);
     const now = this.clock.now();
     const s: Session = {
-      no, feature, startedAt: now, lastCall: now, state: "pending", abort, shown: new Set(),
+      no, feature, startedAt: now, lastCall: now, state: "pending", abort, shown: new Set(), signedIn: true,
       approval: { user_code: pending.userCode, verification_uri: pending.verificationUri, expires_at: pending.expiresAt },
       result: pending.result.then(async (r) => {
         if (s.state !== "pending") return s.state === "approved";
@@ -145,13 +150,22 @@ export class SessionManager {
     const th = hash(token);
     const now = this.clock.now();
     const s: Session = {
-      no, feature, startedAt: now, lastCall: now, state: "approved", approvedAt: now, abort, shown: new Set(),
+      no, feature, startedAt: now, lastCall: now, state: "approved", approvedAt: now, abort, shown: new Set(), signedIn: false,
       result: Promise.resolve(true),
     };
     this.byToken.set(th, s);
     this.locks.set(feature, th);
     this.log.info(`${this.project}: session ${no} for ${feature} opened without sign-in (setting: ${this.signIn.every}).`);
     return { session: token, started_at: iso(now) };
+  }
+
+  /**
+   * F-021 FR-13: a console session for answering inbox items, under the same
+   * sign-in setting as interviews. Its lock key can never be a feature id, and
+   * each console gets its own, so two consoles don't take each other's place.
+   */
+  openConsole(): Promise<{ session: string; started_at: string; approval?: Session["approval"] }> {
+    return this.open(`${CONSOLE_PREFIX}${crypto.randomBytes(8).toString("hex")}`, false);
   }
 
   /** The session for `token`, counted as a call. Errors follow channel v1.1/v1.2. */

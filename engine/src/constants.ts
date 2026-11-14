@@ -14,9 +14,10 @@ export const SERVED_CHANNEL_VERSION = "1.2";
  * What this engine accepts beyond its version, as written to engine.json and
  * returned by engine.status (channel v1.4, owner decision 2026-11-12). The
  * version can't say it: the engine takes `document` (v1.4) while still
- * reporting 1.2, because it doesn't serve v1.3's advisor yet.
+ * reporting 1.2, because it doesn't serve v1.3's advisor yet. `inbox` is v1.6's console answers (F-021,
+ * H-0245).
  */
-export const CAPABILITIES: readonly string[] = ["document"];
+export const CAPABILITIES: readonly string[] = ["document", "inbox"];
 
 export const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 export const FEATURE_ID_RE = /^F-(\d{3,6})$/;

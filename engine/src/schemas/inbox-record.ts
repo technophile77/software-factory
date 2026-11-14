@@ -22,6 +22,8 @@ const historyAction = z.enum([
   "chosen", "approved", "rejected", "changes_requested", "research_requested", "deferred", "restored", "dismissed", "step_chosen",
 ]);
 const source = z.enum(["reaction", "command"]);
+/** F-021 (H-0246): owner answers may also come from the console, proven by a file in the engine folder. */
+const answerSource = z.enum(["reaction", "command", "console"]);
 
 const option = z.strictObject({ id: text(3), label: text(500) });
 const link = z.strictObject({ kind: text(40), ref: text(2000) });
@@ -33,13 +35,17 @@ const history = z.strictObject({
   option: text(3).optional(),
   step: z.number().int().min(1).max(99).optional(),
   rev: z.number().int().min(1).optional(),
-  source: source.optional(),
+  source: answerSource.optional(),
+  /** Console answers only: whether the console session signed in to GitHub (F-021 FR-13). */
+  signed_in: z.boolean().optional(),
+  /** Console answers only: sha256 of the entry without this field, as the local answer file holds it (F-021 FR-10). */
+  console_answer: sha.optional(),
   actor_id: ghId.optional(),
   comment_id: ghId.optional(),
   reaction_id: ghId.optional(),
   ref: text(2000).optional(),
   note: text(4000).optional(),
-  confirmed_by: z.strictObject({ source, comment_id: ghId, reaction_id: ghId.optional() }).optional(),
+  confirmed_by: z.union([z.strictObject({ source, comment_id: ghId, reaction_id: ghId.optional() }), z.strictObject({ source: z.literal("console") })]).optional(),
   pending: text(200).optional(),
   /** confirm_requested only: the owner's action waiting for its confirmation. */
   chosen: z.strictObject({ action: text(200), source, comment_id: ghId, reaction_id: ghId.optional(), url: text(2000), note: text(4000).optional() }).optional(),

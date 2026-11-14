@@ -102,6 +102,8 @@ export const engineText = {
   confirm: (what: string, target: string, code: string) =>
     `Confirm: ${what} ${target}. React 🚀 or reply /confirm ${code} within 15 minutes.`,
   recorded: (what: string) => `Recorded: ${what}.`,
+  /** F-021 FR-8, SR-7: the owner answered in the console. */
+  recordedConsole: (what: string) => `Recorded from the console: ${what}.`,
   notRecorded: (reason: RefuseReason) => `Not recorded: ${reason}.`,
   stale: (rev: number) => `Stale: revision ${rev} replaces this.`,
   reopened: () => "Reopened: the factory's record still has this item open. Act on it here, or Dismiss or Reject it.",
@@ -121,4 +123,23 @@ export function priorityLower(p: Priority): Priority {
 
 export function kindOf(id: string): Kind {
   return ({ D: "decision", T: "testing", H: "hygiene", S: "spec", M: "maturity", N: "notice" } as const)[id[0] as "D"];
+}
+
+/**
+ * F-021 FR-3: a rendered body back into its sections, for the console. The
+ * marker and revision lines are the engine's own and are left out.
+ */
+export function bodySections(body: string): Array<{ name: string; text: string }> {
+  const out: Array<{ name: string; text: string }> = [];
+  for (const line of normalBody(body).split("\n")) {
+    const h = /^## (.+)$/.exec(line);
+    if (h) {
+      out.push({ name: h[1]!, text: "" });
+      continue;
+    }
+    if (!out.length || /^Revision \d+\.$/.test(line)) continue;
+    const cur = out[out.length - 1]!;
+    cur.text = cur.text ? `${cur.text}\n${line}` : line;
+  }
+  return out.map((x) => ({ name: x.name, text: x.text.trim() }));
 }

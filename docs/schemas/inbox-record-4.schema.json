@@ -329,8 +329,16 @@
             "type": "string",
             "enum": [
               "reaction",
-              "command"
+              "command",
+              "console"
             ]
+          },
+          "signed_in": {
+            "type": "boolean"
+          },
+          "console_answer": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
           },
           "actor_id": {
             "type": "integer",
@@ -356,31 +364,48 @@
             "maxLength": 4000
           },
           "confirmed_by": {
-            "type": "object",
-            "properties": {
-              "source": {
-                "type": "string",
-                "enum": [
-                  "reaction",
-                  "command"
-                ]
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "reaction",
+                      "command"
+                    ]
+                  },
+                  "comment_id": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "reaction_id": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "source",
+                  "comment_id"
+                ],
+                "additionalProperties": false
               },
-              "comment_id": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "reaction_id": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
+              {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "const": "console"
+                  }
+                },
+                "required": [
+                  "source"
+                ],
+                "additionalProperties": false
               }
-            },
-            "required": [
-              "source",
-              "comment_id"
-            ],
-            "additionalProperties": false
+            ]
           },
           "pending": {
             "type": "string",
