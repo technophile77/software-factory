@@ -47,7 +47,7 @@ no effect on it.
 | Worktree and branch per session | Yes | Kept |
 | File-tool path rules (read, write, secret-file denies) | Yes | Kept |
 | End-of-session write check on the branch diff | Yes | Kept |
-| Command allowlist | Guard rail | Kept, but now the only limit on commands. `npm`, `node` and test runners run repo code by design |
+| Command allowlist | Guard rail | Kept for every role except the software developer and test engineer, who have a full shell until Beta (F-015). `npm`, `node` and test runners run repo code by design |
 | Model credential kept from the agent (dummy key, proxy swaps it) | Yes | Partly kept: the proxy can run on the host, but agent code can read the owner's own Claude login from disk |
 
 Claude Code's own sandbox can't stand in on native Windows: "On native

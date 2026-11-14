@@ -42,9 +42,10 @@ and they do not limit reads or network
   signed owner actions (ADR 0015 decisions 2 and 3).
 - **Lost until Beta:** the container's read, network, resource and
   privilege boundary. Any command an agent may run, and any test or build
-  command the engine runs, runs as the owner on the owner's PC. Whether the
-  software developer and test engineer get a shell, and how far it is
-  limited, is decided in F-015, not here.
+  command the engine runs, runs as the owner on the owner's PC. The software developer
+  and test engineer have a full shell until Beta (F-015, owner,
+  2026-11-14), so for them nothing limits commands but the end-of-session
+  write check.
 - **Accepted risks (stated to the owner, accepted 2026-11-13, expire at
   Beta):**
   1. Code an agent runs (package install scripts, tests, a command planted
