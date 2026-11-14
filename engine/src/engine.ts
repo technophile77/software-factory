@@ -1388,10 +1388,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     for (const p of projects) {
       if (p.state !== "running" || !p.manifest || !p.state_repo) continue;
       const pin = pins.get(p.real!)!;
-      p.sessions = new SessionManager(p.manifest.name, { githubId: pin.owner.github_id, oauthClientId: pin.owner.oauth_client_id }, github, clock, log, async (fid, no, coveredBy) => {
+      p.sessions = new SessionManager(p.manifest.name, { githubId: pin.owner.github_id, oauthClientId: pin.owner.oauth_client_id }, github, clock, log, async (fid, no, signIn) => {
         const f = p.features.get(fid);
         if (f?.chainIntact) {
-          const entry = { type: "session_approved", session: no, owner_id: pin.owner.github_id, ...(coveredBy !== undefined ? { covered_by_session: coveredBy } : {}) };
+          // Without sign-in nothing proves who is answering, so the record doesn't claim the owner approved.
+          const entry = signIn
+            ? { type: "session_approved", session: no, owner_id: pin.owner.github_id }
+            : { type: "session_opened_without_sign_in", session: no, maturity: RAPID_PROTOTYPE };
           await f.exclusive(() => f.append([entry], "session approved"));
         }
       }, p.manifest.maturity === RAPID_PROTOTYPE);

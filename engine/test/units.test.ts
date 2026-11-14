@@ -429,47 +429,24 @@ describe("GitHub device flow (SR-23, ADR 0014)", () => {
     expect(() => b.get(s.session)).toThrow(/Unknown or expired/);
   });
 
-  it("at Rapid prototype one approval covers later sessions until the engine stops (F-018 FR-13)", async () => {
+  it("at Rapid prototype sessions open without sign-in; above it each needs its own (F-018 FR-13)", async () => {
     const gh = new FakeGitHub();
     const clock = new FakeClock();
-    const recorded: Array<[string, number, number | undefined]> = [];
-    const mk = (once: boolean) => new SessionManager("a", { githubId: OWNER_ID, oauthClientId: CLIENT_ID }, gh, clock, new MemoryLogger(),
-      async (f, no, by) => void recorded.push([f, no, by]), once);
+    const recorded: Array<[string, number, boolean]> = [];
+    const mk = (noSignIn: boolean) => new SessionManager("a", { githubId: OWNER_ID, oauthClientId: CLIENT_ID }, gh, clock, new MemoryLogger(),
+      async (f, no, signIn) => void recorded.push([f, no, signIn]), noSignIn);
     const m = mk(true);
     const first = await m.open("F-001", false);
-    expect(first.approval).toBeDefined();
-    // Not covered before the first approval completes.
-    const pendingTwo = await m.open("F-002", false);
-    expect(pendingTwo.approval).toBeDefined();
-    gh.approver = OWNER_ID;
-    await clock.advance(5000);
-    for (let i = 0; i < 20; i++) await settle();
-    const later = await m.open("F-003", false);
-    expect(later.approval).toBeUndefined();
-    expect(m.approved(later.session).feature).toBe("F-003");
-    expect(recorded).toContainEqual(["F-003", 3, 1]);
-    // A takeover under the run's approval is covered too, and still ends the other session.
-    const taken = await m.open("F-003", true);
+    expect(first.approval).toBeUndefined();
+    expect(m.approved(first.session).feature).toBe("F-001");
+    expect(recorded).toEqual([["F-001", 1, false]]);
+    const taken = await m.open("F-001", true);
     expect(taken.approval).toBeUndefined();
-    expect(() => m.approved(later.session)).toThrow();
-    // Above Rapid prototype every session needs its own approval.
+    expect(() => m.approved(first.session)).toThrow();
     const strict = mk(false);
-    const s1 = await strict.open("F-001", false);
-    await clock.advance(5000);
-    for (let i = 0; i < 20; i++) await settle();
-    expect(strict.approved(s1.session).feature).toBe("F-001");
-    expect((await strict.open("F-002", false)).approval).toBeDefined();
-  });
-
-  it("a failed first approval covers nothing", async () => {
-    const gh = new FakeGitHub();
-    const clock = new FakeClock();
-    const m = new SessionManager("a", { githubId: OWNER_ID, oauthClientId: CLIENT_ID }, gh, clock, new MemoryLogger(), async () => undefined, true);
-    await m.open("F-001", false);
-    gh.approver = OWNER_ID + 1;
-    await clock.advance(5000);
-    for (let i = 0; i < 20; i++) await settle();
-    expect((await m.open("F-002", false)).approval).toBeDefined();
+    const s1 = await strict.open("F-002", false);
+    expect(s1.approval).toBeDefined();
+    expect(() => strict.approved(s1.session)).toThrow(/approval/);
   });
 });
 

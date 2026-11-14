@@ -28,7 +28,7 @@ const await_ = (world: World, session: string, wait_s = 900) =>
 
 describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
   it("[AP-1] AC-6: interview.next and interview.reply on an unapproved session get approval_pending (-32006)", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { feature, open } = await openFeature(w);
     expect(open.session).toMatch(/^[0-9a-f]{32}$/i);
     expect(open.approval.user_code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
@@ -50,7 +50,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
   });
 
   it("[AP-2] AC-6: approval by a GitHub account other than the owner gives approval_failed (-32007), and the session never accepts a reply", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { open } = await openFeature(w);
     w.gh.addUser(9999, "someone-else");
     w.gh.approve(open.approval.user_code, 9999);
@@ -60,7 +60,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
   });
 
   it("[AP-3] FR-7: the owner's approval opens the session, and GET /user is called with the device token", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { open } = await openFeature(w);
     w.gh.approve(open.approval.user_code, w.project().ownerId);
     const r = await await_(w, open.session);
@@ -71,7 +71,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
   });
 
   it("[AP-4] ADR 0014: the owner is matched by numeric id, never by login", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { open } = await openFeature(w);
     const owner = w.project();
     // An impostor with the owner's login but another id.
@@ -81,7 +81,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
   });
 
   it("[AP-5] SR-23: a /user answer whose id is a string, even the owner's digits, is refused", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { open } = await openFeature(w);
     const owner = w.project();
     w.gh.userBody.set(owner.ownerId, { id: String(owner.ownerId), login: owner.ownerLogin });
@@ -90,14 +90,14 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
   });
 
   it("[AP-6] ADR 0014: a denied approval gives approval_failed", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { open } = await openFeature(w);
     w.gh.deny(open.approval.user_code);
     expectRpcError(await await_(w, open.session), ERR.approvalFailed);
   });
 
   it("[AP-7] ADR 0014 / edge case: the owner approves after the device code expired; approval_failed", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { open } = await openFeature(w);
     const pending = w.rpc("interview.awaitApproval", { session: open.session, wait_s: 900 }, 120_000);
     await w.clock.advance(901_000);
@@ -115,7 +115,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
     ["503 from GitHub", "down"],
     ["dropped connections", "reset"],
   ] as const)("[AP-8] ADR 0014 / SR-2: GitHub unreachable during the whole approval (%s) fails closed with approval_failed once the code expires", async (_n, outage) => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { open } = await openFeature(w);
     w.gh.outage = outage;
     w.gh.approve(open.approval.user_code, w.project().ownerId);
@@ -130,7 +130,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
     ["503 from GitHub", "down"],
     ["dropped connections", "reset"],
   ] as const)("[AP-8b] owner decision 2026-11-13: a short outage while polling (%s) is retried and the owner's approval still opens the session", async (_n, outage) => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { open } = await openFeature(w);
     w.gh.outage = outage;
     await w.clock.advance(12_000);
@@ -141,7 +141,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
   });
 
   it("[AP-9] FR-7: the device-code request carries the project's client id, no scopes and no client secret", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { open } = await openFeature(w);
     const d = w.gh.device(open.approval.user_code);
     expect(d.clientId).toBe(w.project().clientId);
@@ -163,21 +163,19 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
     expectRpcError(await w.rpc("interview.next", { session: open2.session }), ERR.approvalPending);
   });
 
-  it("[AP-10b] F-018 FR-13: at Rapid prototype a later session of the same engine run needs no new approval", async () => {
+  it("[AP-10b] F-018 FR-13: at Rapid prototype a session opens without sign-in and takes replies at once", async () => {
     w = await World.create();
     await w.boot();
     const f = await w.startFeature();
     const before = w.gh.devices.length;
-    const s1 = await w.approvedSession(f);
-    await w.ok("interview.close", { session: s1 });
-    const open2 = await w.ok("interview.open", { feature: f });
-    expect(w.gh.devices.length).toBe(before + 1);
-    expect(open2.approval).toBeUndefined();
-    expect(await w.ok("interview.next", { session: open2.session })).toHaveProperty("item");
+    const open = await w.ok("interview.open", { feature: f });
+    expect(open.approval).toBeUndefined();
+    expect(w.gh.devices.length).toBe(before);
+    expect(await w.ok("interview.next", { session: open.session })).toHaveProperty("item");
   });
 
   it("[AP-11] channel v1.2: awaitApproval waits at most 900 s of engine time, whatever wait_s says", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     const { open } = await openFeature(w);
     const t0 = w.clock.now();
     const r = await drive(w.clock, w.rpc("interview.awaitApproval", { session: open.session, wait_s: 100_000 }, 120_000), {
@@ -201,7 +199,7 @@ describe("SR-23: every device-flow field from GitHub is validated", () => {
     ["missing device_code", (d) => ({ ...d, device_code: undefined })],
   ];
   it.each(bad)("[AP-12] SR-23: %s: the code is never shown and no session can be approved", async (_n, override) => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     const feature = await w.startFeature();
     w.gh.deviceOverride = override;
@@ -220,7 +218,7 @@ describe("SR-23: every device-flow field from GitHub is validated", () => {
   });
 
   it("[AP-13] SR-23: expires_in over 900 s is refused or capped at 900 s", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     const feature = await w.startFeature();
     w.gh.deviceOverride = (d) => ({ ...d, expires_in: 86_400 });
@@ -238,7 +236,7 @@ describe("SR-23: every device-flow field from GitHub is validated", () => {
   });
 
   it("[AP-14] SR-23: polling honours interval, and slow_down adds to it", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     const feature = await w.startFeature();
     w.gh.deviceOverride = (d) => ({ ...d, interval: 7 });
@@ -265,7 +263,7 @@ describe("SR-23: every device-flow field from GitHub is validated", () => {
     ["zero", 0],
     ["negative", -1],
   ])("[AP-15] SR-23: an interval that is %s never makes the engine poll faster than every 5 s", async (_n, interval) => {
-    w = await World.create();
+    w = await World.create([{ maturity: "alpha" }]);
     await w.boot();
     const feature = await w.startFeature();
     w.gh.deviceOverride = (d) => ({ ...d, interval });
@@ -288,7 +286,7 @@ describe("SR-23: every device-flow field from GitHub is validated", () => {
       "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1",
       "-keyout", join(dir, "key.pem"), "-out", join(dir, "cert.pem"),
     ], { stdio: "ignore" });
-    w = await World.create([{}], {
+    w = await World.create([{ maturity: "alpha" }], {
       tls: { key: readFileSync(join(dir, "key.pem"), "utf8"), cert: readFileSync(join(dir, "cert.pem"), "utf8") },
     });
     execFileSync("rm", ["-rf", dir]);

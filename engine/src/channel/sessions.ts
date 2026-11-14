@@ -14,7 +14,7 @@ export interface Session {
   lastCall: number;
   state: State;
   approvedAt?: number;
-  /** Absent when the session is covered by this run's earlier approval (F-018 FR-13). */
+  /** Absent when the session opened without sign-in at Rapid prototype (F-018 FR-13). */
   approval?: { user_code: string; verification_uri: string; expires_at: string };
   abort: AbortController;
   result: Promise<boolean>;
@@ -33,16 +33,14 @@ const hash = (token: string) => crypto.createHash("sha256").update(token).digest
  * Interview sessions of one project (channel v1.1/v1.2, ADR 0014, SR-16).
  * The lock is the session token, not a connection. Tokens are kept only as
  * hashes, and nothing here writes them anywhere. A session takes replies
- * only after the project's pinned owner approves it on GitHub. At Rapid
- * prototype one approval covers every later session until the engine stops
- * (owner, 2026-11-14, F-018 FR-13); the risk is recorded in F-018 SR-8.
+ * only after the project's pinned owner approves it on GitHub, except at
+ * Rapid prototype, where sessions open without sign-in (owner, 2026-11-14,
+ * F-018 FR-13); the risk is recorded in F-018 SR-8.
  */
 export class SessionManager {
   private readonly byToken = new Map<string, Session>();
   private readonly locks = new Map<string, string>();
   private counter = 0;
-  /** The session whose approval covers this run, once one is approved and `oncePerRun` is set. */
-  private runApproval: number | null = null;
 
   constructor(
     private readonly project: string,
@@ -50,8 +48,8 @@ export class SessionManager {
     private readonly github: GitHubClient,
     private readonly clock: Clock,
     private readonly log: Logger,
-    private readonly onApproved: (feature: string, session: number, coveredBy?: number) => Promise<void> = async () => undefined,
-    private readonly oncePerRun = false,
+    private readonly onApproved: (feature: string, session: number, signIn: boolean) => Promise<void> = async () => undefined,
+    private readonly noSignIn = false,
   ) {}
 
   private live(s: Session): boolean {
@@ -80,7 +78,7 @@ export class SessionManager {
     }
     const abort = new AbortController();
     const no = ++this.counter;
-    if (this.oncePerRun && this.runApproval !== null) return this.covered(feature, no, this.runApproval, abort);
+    if (this.noSignIn) return this.withoutSignIn(feature, no, abort);
     let pending;
     try {
       pending = await startDeviceApproval({
@@ -101,11 +99,10 @@ export class SessionManager {
         if (s.state !== "pending") return s.state === "approved";
         if (r.approved) {
           // The approval is on the record before the session takes a reply.
-          await this.onApproved(feature, no).catch(() => undefined);
+          await this.onApproved(feature, no, true).catch(() => undefined);
           if (s.state !== "pending") return false;
           s.state = "approved";
           s.approvedAt = this.clock.now();
-          if (this.oncePerRun && this.runApproval === null) this.runApproval = no;
           // A session approved after it went idle starts its idle clock at approval.
           s.lastCall = s.approvedAt;
           return true;
@@ -120,10 +117,10 @@ export class SessionManager {
     return { session: token, started_at: iso(now), approval: s.approval };
   }
 
-  /** A session approved by this run's earlier approval: no device sign-in, so `open` returns no `approval`. */
-  private async covered(feature: string, no: number, by: number, abort: AbortController): Promise<{ session: string; started_at: string }> {
+  /** A session opened with no device sign-in, so `open` returns no `approval`. */
+  private async withoutSignIn(feature: string, no: number, abort: AbortController): Promise<{ session: string; started_at: string }> {
     // On the record before the session takes a reply, as a device approval is.
-    await this.onApproved(feature, no, by).catch(() => undefined);
+    await this.onApproved(feature, no, false).catch(() => undefined);
     const token = crypto.randomBytes(16).toString("hex");
     const th = hash(token);
     const now = this.clock.now();
@@ -133,7 +130,7 @@ export class SessionManager {
     };
     this.byToken.set(th, s);
     this.locks.set(feature, th);
-    this.log.info(`${this.project}: session ${no} for ${feature} opened under session ${by}'s approval (Rapid prototype).`);
+    this.log.info(`${this.project}: session ${no} for ${feature} opened without sign-in (Rapid prototype).`);
     return { session: token, started_at: iso(now) };
   }
 
