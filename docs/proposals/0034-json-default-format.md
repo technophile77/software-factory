@@ -5,8 +5,8 @@
   there is a specific reason that it should be something different."
 - **Category:** Architecture (a factory-wide data format rule); the format
   changes it leads to are Interfaces decisions, one per contract
-- **Status:** Open. The rule text is drafted as H-0240 in this PR; the
-  audit's choices go to the owner as decision cards
+- **Status:** H-0240 (the rule text) approved by the owner on 2026-11-14
+  (decision card, as drafted). Decisions 2 and 3 below are open
 - **Related rules from the owner (2026-11-14):** agents report facts as
   structured JSON and code makes policy decisions (H-0235,
   `security-blocking.json`); a policy table lives in one JSON file that every
