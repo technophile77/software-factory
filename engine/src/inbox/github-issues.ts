@@ -53,7 +53,7 @@ const MAX_RESPONSE = 4 * 1024 * 1024;
 const MAX_PAGES = 20;
 const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9_.-]{1,100}$/;
 
-function checkRepo(repo: string): string {
+export function checkRepo(repo: string): string {
   if (!REPO_RE.test(repo) || repo.endsWith("/.") || repo.endsWith("/..")) throw new GitHubError("malformed repository name");
   return repo;
 }
@@ -90,7 +90,7 @@ export class HttpIssues implements IssuesApi {
     this.api = checkBase(apiBase);
   }
 
-  private async call(method: string, path: string, body?: unknown): Promise<{ status: number; body: unknown; next: string | null }> {
+  protected async call(method: string, path: string, body?: unknown): Promise<{ status: number; body: unknown; next: string | null }> {
     let res: Response;
     try {
       res = await fetch(path.startsWith(this.api) ? path : `${this.api}${path}`, {
@@ -126,7 +126,7 @@ export class HttpIssues implements IssuesApi {
     return { status: res.status, body: parsed, next };
   }
 
-  private async list(path: string): Promise<Array<Record<string, unknown>>> {
+  protected async list(path: string): Promise<Array<Record<string, unknown>>> {
     const out: Array<Record<string, unknown>> = [];
     let url: string | null = path;
     for (let i = 0; url && i < MAX_PAGES; i++) {
@@ -138,7 +138,7 @@ export class HttpIssues implements IssuesApi {
     return out;
   }
 
-  private act(action: string, target: string, status: number): void {
+  protected act(action: string, target: string, status: number): void {
     this.log.action({ agent: "engine", action, target, outcome: String(status) });
   }
 
