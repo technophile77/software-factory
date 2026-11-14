@@ -188,6 +188,10 @@ H-0180, H-0182, H-0183 approved (owner, 2026-11-13, decision card); H-0184 appro
   the container limits (cpus, memory_mib, pids, tmp_mib) stay in
   `limits.yaml` but go unused; the turn, token, dollar and wall-time limits
   still apply (owner, 2026-11-14).
+- **H-0185 (Hygiene), approved (owner, 2026-11-14 02:26Z, decision card):** the
+  onboarding checker (`plugins/software-factory/skills/onboard-repo/scripts/factory_check.py`,
+  `LIMIT_KEYS`) accepts the `orchestrator` and `readiness_gate` limit sections
+  H-0184 adds, so a project's manifest may lower them. Applied in `6627209`.
 
 ## 11. Readiness gate
 Checked 2026-11-13 against spec v10.
@@ -214,6 +218,7 @@ Checked 2026-11-13 against spec v10.
 | 10 | 2026-11-13 | A-1 approved; readiness gate passed | Owner, 2026-11-13 (decision card); orchestrator (gate) |
 | 10 | 2026-11-13 | Spec v10 signed off; status Approved | Owner, 2026-11-13 (decision card) |
 | 11 | 2026-11-14 | SR-11 reworded and H-0184 container limits unused until Beta, after the owner dropped agent containers until Beta (ADR 0026) | Owner, 2026-11-14 (in chat, after a decision card) |
+| 12 | 2026-11-14 | H-0185 approved and applied (onboarding checker limit keys). SR-12 added for Gate 2 M1, after the owner chose both fixes | Owner, 2026-11-14 (decision cards) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |

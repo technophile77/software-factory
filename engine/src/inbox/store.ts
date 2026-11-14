@@ -266,7 +266,8 @@ export class Inbox {
     const c = comments.find((x) => x.id === e.comment_id);
     if (!c) return false;
     if (e.source === "reaction") {
-      const ac = r.revisions.flatMap((v) => v.action_comments).find((a) => a.id === e.comment_id);
+      // Only the revision the answer was recorded at counts, as when it was read (F-011 FR-8).
+      const ac = r.revisions.find((v) => v.rev === e.rev)?.action_comments.find((a) => a.id === e.comment_id);
       if (!ac || ac.action !== action || c.author !== WORKFLOW_LOGIN || sha256(normalBody(c.body)) !== ac.sha256) return false;
       if (!(await this.api.reactions(this.repo, c.id)).some((x) => x.id === e.reaction_id && x.userId === this.ownerId && x.content === "+1")) return false;
     } else {
@@ -274,16 +275,19 @@ export class Inbox {
       if (!cmd || cmd.kind !== "action" || cmd.action !== action || (cmd.note ?? undefined) !== (e.note ?? undefined)) return false;
     }
     if (!isRisky(r, action)) return true;
+    // The confirm must answer the engine's request for this action at this revision, within its 15 minutes (FR-6).
     const k = e.confirmed_by;
-    if (!k) return false;
+    const asked = r.history.slice(0, r.history.indexOf(e)).filter((h) => h.action === "confirm_requested" && h.pending === action && h.rev === e.rev).pop();
+    if (!k || !asked) return false;
     const cc = comments.find((x) => x.id === k.comment_id);
     if (!cc) return false;
+    const inTime = (at: string) => Date.parse(at) >= Date.parse(asked.at) && Date.parse(at) - Date.parse(asked.at) <= CONFIRM_MS;
     if (k.source === "reaction") {
-      return r.engine_comments.includes(cc.id) && (await this.api.reactions(this.repo, cc.id)).some((x) => x.id === k.reaction_id && x.userId === this.ownerId && x.content === "rocket");
+      if (cc.id !== asked.comment_id || !r.engine_comments.includes(cc.id)) return false;
+      return (await this.api.reactions(this.repo, cc.id)).some((x) => x.id === k.reaction_id && x.userId === this.ownerId && x.content === "rocket" && inTime(x.createdAt));
     }
     const cmd = cc.authorId === this.ownerId && !r.engine_comments.includes(cc.id) ? parseCommand(cc.body) : null;
-    const asked = r.history.filter((h) => h.action === "confirm_requested" && h.pending === action).pop();
-    return cmd?.kind === "confirm" && cmd.code === asked?.code;
+    return cmd?.kind === "confirm" && cmd.code === asked.code && inTime(cc.createdAt);
   }
 
   async checkPrivacy(): Promise<{ ok: boolean; reason: string }> {

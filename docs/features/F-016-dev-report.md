@@ -5,7 +5,7 @@
 - **Date:** 2026-11-14
 - **Branch:** `claude/project-thread-mszazz` (PR #60)
 - **Contracts used:** Inbox item v3.1 (H-0180, applied in `d15e0ed`), Engine control channel v1.5 (H-0183, `79478bb`), Agent report v1.4 and Role policy v2.6 as they are.
-- **Hygiene items applied:** H-0161 (engine inbox code and the one-time migration script), H-0162 (config repo workflow template), H-0163 (VS Code query block), H-0180, H-0183, H-0184 (orchestrator model and limits, `af92dec`). H-0185 (the onboarding checker's limit keys) is waiting on the owner. Until it is approved, the `onboard-repo` CI job fails on `test_keys_match_the_master_defaults`.
+- **Hygiene items applied:** H-0161 (engine inbox code and the one-time migration script), H-0162 (config repo workflow template), H-0163 (VS Code query block), H-0180, H-0183, H-0184 (orchestrator model and limits, `af92dec`). H-0185 (the onboarding checker's limit keys; owner approved 2026-11-14 02:26Z by decision card; applied in `6627209`).
 - **New dependencies:** none.
 
 ## What changed
@@ -61,15 +61,15 @@
 
 - New tests:
   - `test/inbox.test.ts`: 14 tests for F-011 AC-1 to AC-7, AC-12, SR-10, SR-17 and SR-18.
-  - `test/f016-run.test.ts`: 12 tests for F-016 AC-1 to AC-10 and AC-12 to AC-14.
+  - `test/f016-run.test.ts`: 19 tests for F-016 AC-1 to AC-10 and AC-12 to AC-14, Gate 2 M1, SR-8, SR-9, OQ-3, and the `chain` and `gate1cap` effects.
   - `test/migrate-inbox.test.ts`: 3 tests for F-011 AC-13 and SR-20.
   - `test/inbox-calls.test.ts`: 3 tests for F-011 FR-14 and AC-10.
   - `test/notify.test.ts`: 1 test.
   - `test/limits.test.ts`: H-0184.
 - `test/agents-harness.ts` now holds the fake Docker and scripted SDK shared by the Gate 1 and F-016 engine tests.
 - Existing tests now read the new records through `test/inbox-items.ts`.
-- Full suite on Linux at `d344b9d`: 63 files, 1,540 passed, 20 skipped, 0 failed.
-- CI on `d344b9d`: every engine job passed on Linux, Windows and macOS except one, F-016 AC-7, which needed a git author on CI runners and was fixed in `5946ea7`. `onboard-repo` fails until H-0185.
+- The test engineer added `test/f016-acceptance.test.ts` (30 tests); see `F-016-test-report.md`.
+- Full suite on Linux at `6246b09`: 1,578 passed, 20 skipped, 0 failed (validation judge's run). CI on `6246b09`: every job green.
 - F-016 AC-11 (F-002 in the trial project) is a live check. It needs the workflow installed in `factory-e2e-trial` (A-1), so it is left for validation on the owner's PC.
 
 ## Known gaps

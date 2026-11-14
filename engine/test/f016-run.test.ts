@@ -246,15 +246,34 @@ describe("F-016: answers in the inbox have their effects", () => {
     expect(entries(w, feature).filter((x) => x.type === "gate1_decided")).toHaveLength(0);
     expect(second.s.count.analyst).toBe(0);
   }, 60_000);
+
+  it("Gate 2 M1: a recorded answer whose real 👍 and /confirm came after the 15-minute window is not carried out", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    const scripts = { analyst: analyst(w, () => feature, async () => undefined), reviewer: reviewer(d, () => feature, [CHOICE]) };
+    const first = await start(w, d, scripts);
+    await interview(w, first.e, first.c, () => feature, (f) => (feature = f));
+    await until("blocked on the owner", () => !!first.e.feature(feature)?.state.gate1.blocked);
+    await pollUntil(w, "the issue bound", () => items(w).find((i) => i.id === "D-0001")?.record.issue === 1);
+    await first.e.stop();
+    const ac = first.gh.actionComment(1, "choose:B");
+    crashAfterRecording(w, ac.id, first.gh.react(ac.id, "+1"), first.gh.say(1, "/confirm K7QX").id, "2026-11-11T09:30:00Z");
+
+    const second = await start(w, d, scripts, first.gh);
+    await pollUntil(w, "the answer refused", () => effects(w, "D-0001").length === 1);
+    expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "unverified" });
+    expect(entries(w, feature).filter((x) => x.type === "gate1_decided")).toHaveLength(0);
+  }, 60_000);
 });
 
 /** Writes an owner's choice of B on D-0001 into the record and commits it, as an engine that crashed before the effect would leave it. */
-function crashAfterRecording(w: World, commentId: number, reactionId: number, confirmId = 0): void {
+function crashAfterRecording(w: World, commentId: number, reactionId: number, confirmId = 0, askedAt = "2026-11-11T09:59:00Z"): void {
   const state = path.join(w.config, ".factory");
   const rec = YAML.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.yaml"), "utf8"));
   rec.status = "chosen";
   // A Security choice is risky, so the owner confirmed it (F-011 FR-9).
-  rec.history.push({ at: "2026-11-11T10:04:00Z", by: "engine", action: "confirm_requested", pending: "choose:B", code: "K7QX" });
+  rec.history.push({ at: askedAt, by: "engine", action: "confirm_requested", rev: 1, pending: "choose:B", code: "K7QX" });
   rec.history.push({ at: "2026-11-11T10:05:00Z", by: "owner", action: "chosen", option: "B", rev: 1, source: "reaction", actor_id: OWNER, comment_id: commentId, reaction_id: reactionId, ref: "https://github.com/o/cfg/issues/1", confirmed_by: { source: "command", comment_id: confirmId } });
   fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), YAML.stringify(rec));
   execFileSync("git", ["-C", state, "-c", "user.name=crash test", "-c", "user.email=crash@example.invalid", "commit", "-qam", "D-0001: chosen B by the owner"]);
