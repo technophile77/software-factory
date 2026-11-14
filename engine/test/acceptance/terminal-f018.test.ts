@@ -344,6 +344,29 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
     expect(s.out).toContain("Security reviewer is reviewing the specification");
     expect(s.out).not.toContain("finished");
   });
+
+  test("FR-5: with no suggested answer, no choice offers to accept one", async () => {
+    engine.addFeature("F-1", "Export", [question("Q7", "open", { options: ["CSV"] }), question("Q8", "open", { suggested: "   " })]);
+    const { s } = await run(["1", "1"], "F-1");
+    expect(s.out).not.toMatch(/recommended|[Aa]ccept/);
+    // Q7's first choice is its option; Q8's is "Type my own answer", which then reads typed text.
+    expect(replies()[0]).toMatchObject({ item: "Q7", kind: "answer", text: "CSV" });
+    expect(replies()).toHaveLength(1);
+  });
+
+  test("FR-5: a suggestion holding a written backslash-n is sent exactly, not as a line break", async () => {
+    const suggested = "Use C:\\new\\table and the literal \\n marker";
+    engine.addFeature("F-1", "Export", [question("Q6", "open", { suggested })]);
+    await run(["1"], "F-1");
+    expect(replies()[0]).toMatchObject({ kind: "answer", text: suggested });
+    expect(replies()[0].text).not.toContain("\n");
+  });
+
+  test("FR-6: a typed backslash-n stays two characters", async () => {
+    engine.addFeature("F-1", "Export", [question("Q6")]);
+    await run(["first\\nsecond", ""], "F-1");
+    expect(replies()[0].text).toBe("first\\nsecond");
+  });
 });
 
 describe("render", () => {

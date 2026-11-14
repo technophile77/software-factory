@@ -99,7 +99,8 @@ export function render(display: string, marker: string): string {
 /** The question's answer choices: the suggested answer, then each option not equal to it (FR-5). */
 export function answerChoices(item: Item): Array<{ text: string; recommended: boolean }> {
   const out: Array<{ text: string; recommended: boolean }> = [];
-  if (item.suggested !== undefined) out.push({ text: item.suggested, recommended: true });
+  // Only a real suggestion is offered; an empty one would record an empty answer as the owner's.
+  if (item.suggested !== undefined && item.suggested.trim()) out.push({ text: item.suggested, recommended: true });
   for (const o of item.options ?? []) if (o !== item.suggested) out.push({ text: o, recommended: false });
   return out;
 }
