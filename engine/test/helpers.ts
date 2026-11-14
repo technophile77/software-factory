@@ -273,6 +273,9 @@ export function makeWorld(o: { manifest?: string; pinned?: boolean; configFiles?
         credentials: w.credentials, github: w.github, clock: w.clock, logger: w.log, env: {},
         // The test process hosts the engine, so a client it spawns would count as the engine's child.
         parentOf: () => null,
+        // A real toast per filed item would show on the test host's desktop, and on a hosted Windows runner, with no
+        // desktop to show it on, each PowerShell runs to its 10-second limit. test/notify.test.ts covers the notifier.
+        notify: Object.assign(() => undefined, { settled: async () => undefined, stop: async () => undefined }),
         ...extra,
       };
     },

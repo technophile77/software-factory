@@ -111,7 +111,8 @@ export function recordedOnly(f: Pick<Gate1Finding, "severity">, maturity: string
  * so a report from before the bar existed (or before the project's level changed) follows it too.
  */
 export function belowBar(f: Pick<Gate1Record, "severity" | "recorded">, maturity: string): boolean {
-  return !!f.recorded || (!!maturity && recordedOnly(f, maturity));
+  // The stored flag is history: once the level is known, only severity and the current level decide.
+  return maturity ? recordedOnly(f, maturity) : !!f.recorded;
 }
 
 export function records(findings: Gate1Finding[], items: Map<number, string>, maturity = ""): Gate1Record[] {

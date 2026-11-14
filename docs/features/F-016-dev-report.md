@@ -57,7 +57,7 @@
   - An invalid report, or a write outside the report, fails closed.
 - `engine/src/agent/reviewer.ts`: `orchestratorPolicy`. `engine/src/config/limits.ts`, `models.ts`: the `orchestrator` and `readiness_gate` sections, optional, so a factory version without them runs no session.
 
-## Live trial fixes (spec v13 to v17)
+## Live trial fixes (spec v13 to v19)
 
 The AC-11 trial on F-002 in `factory-e2e-trial` found these. Each one has a test.
 
@@ -70,6 +70,10 @@ The AC-11 trial on F-002 in `factory-e2e-trial` found these. Each one has a test
 | v16 FR-17, H-0189 (#67) | The analyst wrote its own section headings. | `docs/features/feature-template.structure.json` defines the exact headings and table header rows; `spec_structure` check; the analyst's first turn states the structure. |
 | v17 FR-18 | The skill turned a written `\n` into a line break, so a word-for-word answer didn't match. | Gate 1 matching treats written escapes as whitespace. |
 | Bug fixes, no spec change | Duplicate inbox ids; Docker stuck at start; a failed resume swallowed the owner's next reply; the session volume was root-owned, so no conversation survived a restart (#70); a restarted session lost questions' suggested answers. | `file()` serialized; 15 s Docker timeout with advice; turn stream closed per session; image creates `/home/node/.claude` for uid 1000 and rebuilds when its engine files change; the summary keeps suggested answers. |
+| v18 FR-19, H-0235 | Gate 1 asked the owner about Low findings that the approved standards never block at Rapid prototype. | The engine sets `blocks` from severity and maturity using one JSON table (`security-blocking.json`); findings below the bar are recorded as known issues, never asked. The reviewer only grades severity. |
+| H-0236 (PR #78) | The onboarding checker couldn't find that JSON once the skill was copied into a repo. | The JSON moved into the onboard-repo skill's `scripts/` folder; still one copy. |
+| v19 FR-20 (PR #80) | The analyst filed Gate 1 questions with a placeholder suggestion, and a report written before FR-19 still blocked on its Low findings. | The bar applies whenever a finding is used; `interview_ask` and `interview_revise` refuse a "Gate 1 #n" question whose suggestion isn't the finding's requirement. |
+| No spec change (PR #81) | The Gate 1 run-limit item didn't say option A allows another run. | Reworded. |
 
 ## Tests
 
@@ -84,7 +88,7 @@ The AC-11 trial on F-002 in `factory-e2e-trial` found these. Each one has a test
 - Existing tests now read the new records through `test/inbox-items.ts`.
 - The test engineer added `test/f016-acceptance.test.ts` (30 tests); see `F-016-test-report.md`.
 - Full suite on Linux at `6246b09`: 1,578 passed, 20 skipped, 0 failed (validation judge's run). CI on `6246b09`: every job green.
-- F-016 AC-11 (F-002 in the trial project) is a live check. It needs the workflow installed in `factory-e2e-trial` (A-1), so it is left for validation on the owner's PC.
+- F-016 AC-11 ran live on the owner's PC: F-002 reached the Spec sign-off item and, after the owner's confirmed Approve, `build_and_test_prep` (2026-11-14 10:33Z). See the test report.
 
 ## Known gaps
 
