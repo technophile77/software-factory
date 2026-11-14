@@ -1,3 +1,4 @@
+import blocking from "../../../plugins/software-factory/security-blocking.json";
 import type { Check } from "../interview/readiness";
 import { norm, specSecurityRequirements } from "../interview/readiness";
 import type { Gate1Record, InterviewState, Return } from "../interview/model";
@@ -16,10 +17,10 @@ function reportShape(feature: string, commit: string): string {
       gate: 1,
       findings: [{
         criterion: "S6.1", severity: "High", location: "spec section or requirement id", explanation: "what is missing and why it matters",
-        fix: "the security requirement that resolves it, worded for the spec", blocks: true, needs_owner: false,
+        fix: "the security requirement that resolves it, worded for the spec", needs_owner: false,
       }, {
         criterion: "S8.5", severity: "Medium", location: "...", explanation: "a choice only the owner can make", fix: "what the options decide",
-        blocks: false, needs_owner: true, options: [{ id: "A", label: "..." }, { id: "B", label: "..." }], recommendation: "A",
+        needs_owner: true, options: [{ id: "A", label: "..." }, { id: "B", label: "..." }], recommendation: "A",
       }],
       checklist: [{ question: "<each Gate 1 checklist question, exactly as written>", answer: "your answer, citing spec sections or ids" }],
       permissions_added: ["each permission the feature adds or widens, with its reason"],
@@ -76,10 +77,32 @@ export function correctionTurn(reportPath: string, errors: string[]): string {
 }
 
 /** What the transcript keeps of a valid report's findings, numbered as the rendered report numbers them. */
-export function records(findings: Gate1Finding[], items: Map<number, string>): Gate1Record[] {
+/** H-0235: the levels and the level each severity starts to block at, the one copy security-standards.md points to. */
+const BAR = blocking as { levels: string[]; blocks_from: Record<string, string | null> };
+
+/** Whether a finding of this severity blocks at this level. An unknown level or severity blocks. */
+export function blocksAt(severity: string, maturity: string): boolean {
+  const level = BAR.levels.indexOf(maturity);
+  const sev = severity.trim().toLowerCase();
+  if (level < 0 || !(sev in BAR.blocks_from)) return true;
+  const from = BAR.blocks_from[sev];
+  return from !== null && level >= BAR.levels.indexOf(from!);
+}
+
+/**
+ * F-016 FR-19: a finding below the project's level bar doesn't block, even one
+ * the reviewer framed as the owner's choice. It is recorded as a known issue
+ * that counts against promotion, and the owner isn't asked about it.
+ */
+export function recordedOnly(f: Pick<Gate1Finding, "severity">, maturity: string): boolean {
+  return !blocksAt(f.severity, maturity);
+}
+
+export function records(findings: Gate1Finding[], items: Map<number, string>, maturity = ""): Gate1Record[] {
   return findings.map((f, i) => ({
     n: i + 1, criterion: f.criterion, severity: f.severity, fix: f.fix, explanation: f.explanation, needs_owner: f.needs_owner,
     ...(items.has(i + 1) ? { item: items.get(i + 1)! } : {}),
+    ...(maturity && recordedOnly(f, maturity) ? { recorded: true } : {}),
   }));
 }
 
@@ -89,7 +112,7 @@ export function records(findings: Gate1Finding[], items: Map<number, string>): G
  * around them is the engine's.
  */
 export function analystGate1Turn(feature: string, specPath: string, findings: Gate1Record[]): string {
-  const toAsk = findings.filter((f) => !f.needs_owner);
+  const toAsk = findings.filter((f) => !f.needs_owner && !f.recorded);
   return [
     `Security Gate 1 reviewed ${feature}'s spec (${specPath}) and found gaps that new or tightened security requirements resolve. The owner decides each one in this interview.`,
     `For each finding below, ask the owner one question with interview_ask. Start its text with the finding's reference exactly (for example "${findingRef(toAsk[0]?.n ?? 1)}: "), explain the gap in your own words, and give the requirement as suggested. If the owner answers with the suggested requirement word for word, put it in the spec's section 9 table with source "Gate 1 #<n>" and status Approved. If the owner answers anything else, propose an assumption with interview_propose_assumption whose text is the reference, a colon, then exactly the requirement you would record (for example "${findingRef(toAsk[0]?.n ?? 1)}: <requirement>"); only once the owner approves it, put that requirement, word for word, in section 9 the same way. If the owner says no, or rejects the assumption, leave the finding out of the spec; the engine then asks the owner whether to accept the risk. Then bump the spec version and call interview_spec_ready.`,
@@ -178,6 +201,7 @@ export function gate1Resolution(spec: string, state: InterviewState): Resolution
   const rejected: number[] = [];
   const waiting: number[] = [];
   for (const f of state.gate1.findings) {
+    if (f.recorded) continue;
     const ref = findingRef(f.n);
     const accepted = state.gate1.accepted.get(f.n);
     if (accepted) {

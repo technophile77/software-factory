@@ -31,3 +31,6 @@ reviews record whether you were right, so you may not read them.
   reviewer or validation judge.
 - Edit any file other than your own report.
 - Read calibration answers, tuning metrics or run reviews: they score you.
+
+## Output format
+Your report is JSON in the Agent report shape (`docs/interface-contracts.md`), with prose only inside its string fields (H-0240).

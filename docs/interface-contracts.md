@@ -50,7 +50,7 @@ Project manifest v1.7 (H-0193) and Agent report v1.5 (H-0194) for F-015
 - Status: Proposed | Approved | Deprecated
 - Owner decision: <link>
 - Used by: <components>
-- Definition: <schema, signature, or format>
+- Definition: <schema, signature, or format>; JSON with a `schema` field and a JSON Schema unless the entry states a reason from `architecture.md` § Data formats
 - Compatibility: <what changes are breaking>
 ```
 
@@ -240,7 +240,7 @@ FR-7). Tuning metrics and Calibration result group rungs by the full
 | requirements-analyst | `spec_path`, `spec_version`, `open_assumptions` (item ids) |
 | software-developer | `files_changed`, `spec_deviations`, `not_done` |
 | test-engineer | `tests_run`, `passed`, `failed`, `skipped`, `criteria_map` (AC id → test ids), `failures` (test, expected, actual, log ref), `not_run` (with reason) |
-| security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks; from v1.3 optional `needs_owner`, `options` (id, label), `recommendation`); from v1.3 optional for Gate 1: `checklist` (question, answer), `permissions_added`, `abuse_cases`, `not_applicable` (criterion, reason) |
+| security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks (from F-016 v18 set by the engine from severity and maturity, never by the reviewer; a reviewer's value is ignored); from v1.3 optional `needs_owner`, `options` (id, label), `recommendation`); from v1.3 optional for Gate 1: `checklist` (question, answer), `permissions_added`, `abuse_cases`, `not_applicable` (criterion, reason) |
 | validation-judge | `verdict` (PASS, FAIL, NEEDS_HUMAN_REVIEW), `checklist` (area, status, evidence), `findings` (grade, location, explanation) |
 | orchestrator | `gate`, `checks` (name, passed, evidence); from v1.5, for the stage 6 failure classifier (F-015), `failures` (test, cause, evidence), where cause is one of the failure causes in `testing-strategy.md` |
 | project-evaluator | `scope` (project or feature), `complexity` (simple, moderate, complex), `predictions` (role → rung, reason), and from v1.2 `proposed_items` |

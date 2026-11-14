@@ -249,7 +249,7 @@ export interface ProjectSpec {
   /** Allow list; defaults to the repo owner. */
   allowed?: Array<{ login: string; id: number }>;
   enabled?: boolean;
-  /** Project and repo maturity; at rapid-prototype interview sessions open without sign-in by default (F-018 FR-13). */
+  /** Project and repo maturity (default production-ready); at rapid-prototype interview sessions open without sign-in by default (F-018 FR-13). */
   maturity?: string;
   /** `settings.interview_sign_in` as YAML flow text, for example `{ every: engine_start }` (F-018 FR-15). */
   signIn?: string;
@@ -431,8 +431,9 @@ export class World {
       `owner:\n  github_id: ${p.ownerId}\n  oauth_client_id: ${p.clientId}\n` +
       `allowed_repo_owners:\n` +
       allowed.map((a) => `  - { login: ${a.login}, id: ${a.id} }\n`).join("") +
-      `\nrepos:\n  - name: ${p.repo}\n    url: ${p.url}\n    maturity: ${s.maturity ?? "rapid-prototype"}\n` +
-      `maturity: ${s.maturity ?? "rapid-prototype"}\n\n` +
+      // Production ready by default, so the Gate 1 fixtures' High and Medium findings block (F-016 FR-19).
+      `\nrepos:\n  - name: ${p.repo}\n    url: ${p.url}\n    maturity: ${s.maturity ?? "production-ready"}\n` +
+      `maturity: ${s.maturity ?? "production-ready"}\n\n` +
       `skills:\n  custom: []\n  override: []\n  exclude: []\n\n` +
       `agents:\n  custom: []\n  override: []\n\n` +
       `standards: {}\n\n` +

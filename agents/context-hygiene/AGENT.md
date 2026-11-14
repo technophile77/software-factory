@@ -47,6 +47,7 @@ Your agent report (Agent report v1.2): sizes, duplicates, skill misses and
 conflicts found, and one Configuration hygiene item per proposed change in
 `proposed_items`, with all 8 parts (`docs/decision-management.md` § 3). The
 orchestrator files them.
+JSON only, with prose inside string fields (H-0240).
 
 ## You must not
 - Change any file other than your own report. Every fix goes through the

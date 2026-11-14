@@ -53,7 +53,7 @@ import { OsApi, realOsApi } from "./os/ffi";
 import { Children, osParent, osStartOrder } from "./proc";
 import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryTokenName } from "./secrets";
 import { SecurityAlert, fileDecisionItem, fileSecurityItem } from "./state/inbox";
-import { READINESS_STAGE, analystGate1Turn, analystReturnTurn, correctionTurn, gate1Resolution, records, reviewerTurn } from "./gate1/flow";
+import { READINESS_STAGE, analystGate1Turn, analystReturnTurn, correctionTurn, gate1Resolution, recordedOnly, records, reviewerTurn } from "./gate1/flow";
 import { findingRef, plain, renderReport } from "./gate1/render";
 import { ADVISORY_WALL_MS, type AdvisoryHints, advisoryBlock, matchRate, runAdvisory } from "./gate1/advisory";
 import { runAdvisorySession } from "./gate1/advisory-session";
@@ -1363,7 +1363,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           const errors = "missing" in read ? [`there is no report at /workspace/${reportRel}`]
             : "refused" in read ? [read.refused]
             : (() => {
-                const v = validateReport(read.text, { feature: f.id, commit, standards: loaded.standards, spec, maxBytes: g1!.reportBytes });
+                const v = validateReport(read.text, { feature: f.id, commit, standards: loaded.standards, spec, maxBytes: g1!.reportBytes, maturity: maturityOf(p.manifest!) });
                 if (v.ok) valid = v.report;
                 return v.ok ? [] : v.errors;
               })();
@@ -1408,6 +1408,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     }
   }
 
+  const maturityOf = (m: Manifest): string => {
+    const raw = m.raw as { maturity?: unknown } | undefined;
+    return typeof raw?.maturity === "string" ? raw.maturity : "";
+  };
+
   /** A valid report: rendering on the branch, then report, items, findings and stage in one factory/state commit. */
   async function acceptGate1(p: Project, f: FeatureInterview, a: {
     runId: string; n: number; commit: string; wt: { path: string; gitDir: string }; report: Gate1Report;
@@ -1428,6 +1433,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const rendered = `docs/features/${f.id}-security-gate1.md`;
     fs.writeFileSync(path.join(a.wt.path, ...rendered.split("/")), renderReport({
       feature: f.id, title: f.state.title, specVersion: a.specVersion, date: iso(clock.now()).slice(0, 10), runId: a.runId, report: a.report,
+      maturity: maturityOf(p.manifest!),
     }) + "\n");
     const enginePolicy: RolePolicy = { role: "engine", tools: [], read: { allow: [], deny: [] }, write: { allow: [rendered], deny: [] }, commands: [], network: [], mayRequest: [] };
     const c = await commitWorktree({
@@ -1439,7 +1445,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const items = new Map<number, string>();
     const findings = a.report.findings;
     for (const [i, fd] of findings.entries()) {
-      if (!fd.needs_owner) continue;
+      if (!fd.needs_owner || recordedOnly(fd, maturityOf(p.manifest!))) continue;
       items.set(i + 1, await fileDecisionItem(p.inbox!, {
         title: `${findingRef(i + 1)} for ${f.id}: the owner's choice`, feature: f.id,
         effect: { type: "gate1_choice", feature: f.id, finding: i + 1 },
@@ -1453,8 +1459,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         costOfDelay: `${f.id} can't reach the readiness gate.`,
       }));
     }
-    const recs = records(findings, items);
-    const toAnalyst = recs.some((r) => !r.needs_owner);
+    const recs = records(findings, items, maturityOf(p.manifest!));
+    const toAnalyst = recs.some((r) => !r.needs_owner && !r.recorded);
     const choices = [...items.values()];
     const report = agentReport({
       feature: f.id, stage: GATE1_STAGE, role: REVIEWER_ROLE, n: a.n, commit: a.commit, outcome: choices.length ? "blocked" : "complete",
@@ -1462,7 +1468,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       body: { gate: 1, findings: a.report.findings, checklist: a.report.checklist, permissions_added: a.report.permissions_added, abuse_cases: a.report.abuse_cases, not_applicable: a.report.not_applicable },
       facts: a.facts, artifacts: [...(runArtifacts.get(a.runId) ?? []), { kind: "report", ref: rendered }],
     });
-    const next = findings.length === 0 ? READINESS_STAGE : toAnalyst ? INTERVIEW_STAGE : GATE1_STAGE;
+    const next = recs.every((r) => r.recorded) ? READINESS_STAGE : toAnalyst ? INTERVIEW_STAGE : GATE1_STAGE;
     await f.exclusive(() => f.append([
       { type: "gate1_report", run: a.runId, report: a.n, commit: a.commit, rendered: c.commit, findings: recs },
       ...(choices.length && !toAnalyst ? [{ type: "gate1_blocked", reason: `Waiting on the owner's Security items: ${choices.join(", ")}.` }] : []),

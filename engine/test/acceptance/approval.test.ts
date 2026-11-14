@@ -164,7 +164,7 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
   });
 
   it("[AP-10b] F-018 FR-13: at Rapid prototype a session opens without sign-in and takes replies at once", async () => {
-    w = await World.create();
+    w = await World.create([{ maturity: "rapid-prototype" }]);
     await w.boot();
     const f = await w.startFeature();
     const before = w.gh.devices.length;

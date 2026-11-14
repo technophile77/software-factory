@@ -1,4 +1,5 @@
 import type { Gate1Report } from "./report";
+import { recordedOnly } from "./flow";
 
 /**
  * SR-4: reviewer text shown as plain text in Markdown. Every character that
@@ -22,12 +23,14 @@ export const findingRef = (n: number) => `Gate 1 #${n}`;
  * factory's own Gate 1 reports use. Engine text is written as is; every
  * reviewer string goes through `plain`.
  */
-export function renderReport(o: { feature: string; title: string; specVersion: number | null; date: string; runId: string; report: Gate1Report }): string {
+export function renderReport(o: { feature: string; title: string; specVersion: number | null; date: string; runId: string; report: Gate1Report; maturity?: string }): string {
   const r = o.report;
-  const choices = r.findings.filter((f) => f.needs_owner).length;
+  const isKnown = (f: Gate1Report["findings"][number]) => !!o.maturity && recordedOnly(f, o.maturity);
+  const known = r.findings.filter(isKnown).length;
+  const choices = r.findings.filter((f) => f.needs_owner && !isKnown(f)).length;
   const result = r.findings.length === 0
     ? "No findings."
-    : `${r.findings.length} finding${r.findings.length === 1 ? "" : "s"}; ${r.findings.length - choices} sent to the requirements analyst as requirements for the owner to approve in the interview, ${choices} filed as Security items for the owner's choice.`;
+    : `${r.findings.length} finding${r.findings.length === 1 ? "" : "s"}; ${r.findings.length - choices - known} sent to the requirements analyst as requirements for the owner to approve in the interview, ${choices} filed as Security items for the owner's choice${known ? `, ${known} below this maturity level's bar recorded as known issues, to fix before promotion` : ""}.`;
   const out = [
     `# ${o.feature} Security Gate 1 (requirements review)`,
     "",
@@ -43,9 +46,11 @@ export function renderReport(o: { feature: string; title: string; specVersion: n
   if (r.findings.length) {
     out.push("| # | Criterion | Severity | Blocks | Location | Finding | Resolution |", "|---|---|---|---|---|---|---|");
     r.findings.forEach((f, i) => {
-      const resolution = f.needs_owner
-        ? `Owner's choice: ${f.options!.map((op) => `${op.id}. ${plain(op.label)}`).join("; ")} (recommended ${f.recommendation})`
-        : plain(f.fix);
+      const resolution = isKnown(f)
+        ? `Known issue, open until fixed before promotion: ${plain(f.fix)}`
+        : f.needs_owner
+          ? `Owner's choice: ${f.options!.map((op) => `${op.id}. ${plain(op.label)}`).join("; ")} (recommended ${f.recommendation})`
+          : plain(f.fix);
       out.push(`| ${i + 1} | ${plain(f.criterion)} | ${plain(f.severity)} | ${f.blocks ? "Yes" : "No"} | ${plain(f.location)} | ${plain(f.explanation)} | ${resolution} |`);
     });
     out.push("");
