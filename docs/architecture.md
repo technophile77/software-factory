@@ -46,3 +46,26 @@ How each box is built is decided in ADRs:
 | Concurrency | ADR 0007: unlimited, with rebase-and-retest after each merge |
 | CI | ADR 0008: GitHub Actions, required merge gate, jobs scaled by maturity |
 | Factory state | ADR 0009: `factory/state` branch, checked out at `.factory/` |
+
+## Data formats
+
+Owner's rule, 2026-11-14 (H-0240, proposal 0034): data an agent reads or
+writes is JSON unless a reason below applies. Each JSON format names itself
+and its version in a `schema` field, has a JSON Schema that code checks on
+every read and write, keeps prose inside string fields, and holds facts
+only. Code makes policy decisions (what blocks, what is allowed) from the
+facts and from one JSON policy table per policy, which every consumer reads
+(for example `security-blocking.json`, H-0235).
+
+Reasons for another format, stated wherever the format is defined:
+
+1. **Written for the owner to read:** specs, ADRs, proposals and rendered
+   reports are Markdown. Code takes its facts from the JSON the Markdown is
+   rendered from, or from a JSON description of its structure
+   (`docs/features/feature-template.structure.json`).
+2. **Fixed by an outside tool:** `AGENT.md` and `SKILL.md`, GitHub issue and
+   PR bodies, JUnit XML, `gitleaks.toml`, `osv-scanner.toml`, GitHub Actions
+   workflows, `package.json`.
+3. **Edited by hand, with comments:** the configuration files proposal 0034
+   lists, pending the owner's choice there.
+4. **Append-only streams** use JSON Lines, which counts as JSON.

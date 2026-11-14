@@ -31,3 +31,6 @@ The approved feature spec, `docs/interface-contracts.md`,
 - Edit product code.
 - Use an approved tool in place of a better-fitting one, or count a tool for
   a test type it doesn't provide, without the owner's recorded OK.
+
+## Output format
+Your report is JSON in the Agent report shape (`docs/interface-contracts.md`), with prose only inside its string fields (H-0240).

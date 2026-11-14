@@ -27,3 +27,6 @@ The approved feature spec, `docs/architecture.md`, `docs/adr/`,
   anything that does not depend on it.
 - Edit the test engineer's tests.
 - Edit change-controlled files.
+
+## Output format
+Your report is JSON in the Agent report shape (`docs/interface-contracts.md`), with prose only inside its string fields (H-0240).

@@ -74,3 +74,6 @@ your report's `failures`.
 ## Decision items you file
 Use the card format in `docs/decision-management.md`, one of the five
 categories only, always with a recommendation and the cost of delay.
+
+## Output format
+Your report is JSON in the Agent report shape (`docs/interface-contracts.md`), with prose only inside its string fields (H-0240).
