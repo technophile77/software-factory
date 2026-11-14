@@ -1,6 +1,6 @@
 # 0008. CI is a required merge gate, with jobs scaled by maturity
 
-- **Status:** Accepted
+- **Status:** Accepted; at Rapid prototype no job is required ([ADR 0030](0030-rapid-prototype-advisory-ci-claude-merges.md))
 - **Date:** 2026-11-08
 - **Decided by:** owner
 - **Decision item:** open item 12; write-up in `docs/proposals/0012-continuous-integration.md`

@@ -1,6 +1,6 @@
 # 0017. PRs opened and merged with the owner's own account; the inbox click is the approval
 
-- **Status:** Accepted; until Beta, agent-run code runs as the owner and can reach this token ([ADR 0026](0026-agents-on-host-until-beta.md))
+- **Status:** Accepted; until Beta, agent-run code runs as the owner and can reach this token ([ADR 0026](0026-agents-on-host-until-beta.md)); at Rapid prototype Claude merges PRs whose content the owner approved ([ADR 0030](0030-rapid-prototype-advisory-ci-claude-merges.md))
 - **Date:** 2026-11-13
 - **Decided by:** owner (thread "Spec one inbox for all approvals")
 - **Decision item:** F-011 OQ-2; write-up in `docs/proposals/0021-owner-approval-merges.md`
