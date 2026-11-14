@@ -1481,10 +1481,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   // -- Owner answers and the readiness gate (F-016) -----------------------------
 
   /** The project's open features waiting on Gate 1 items: choices undecided, or risks neither accepted nor sent back. */
-  function gate1Waiting(f: FeatureInterview): string[] {
+  /** Findings still waiting on a Security item, other than `except`; risk items aren't on the finding, so the name falls back to its ref. */
+  function gate1Waiting(f: FeatureInterview, except?: number): string[] {
     const g = f.state.gate1;
     return g.findings
-      .filter((x) => (x.needs_owner && !g.decided.has(x.n)) || (g.riskFiled.includes(x.n) && !g.accepted.has(x.n)))
+      .filter((x) => x.n !== except && ((x.needs_owner && !g.decided.has(x.n)) || (g.riskFiled.includes(x.n) && !g.accepted.has(x.n))))
       .map((x) => x.item ?? findingRef(x.n));
   }
 
@@ -1545,10 +1546,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         effect = "gate1_reask";
       }
       // The feature goes back to the interview once nothing else of its Gate 1 waits on the owner.
-      const after = new Set(gate1Waiting(f!));
-      after.delete(r.id);
-      if (after.size) {
-        await done(effect, [...entries, { type: "gate1_blocked", reason: `Waiting on the owner's Security items: ${[...after].join(", ")}.` }]);
+      const after = gate1Waiting(f!, n);
+      if (after.length) {
+        await done(effect, [...entries, { type: "gate1_blocked", reason: `Waiting on the owner's Security items: ${after.join(", ")}.` }]);
         return;
       }
       await done(effect, [...entries, { type: "gate1_unblocked" }], INTERVIEW_STAGE);
