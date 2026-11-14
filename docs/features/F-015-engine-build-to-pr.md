@@ -156,17 +156,74 @@ repo (OQ-2).
 | SR-1 | Until Beta, the software developer and test engineer have a full `Bash` shell on the owner's PC, and the engine runs the declared build and test commands there too, under ADR 0026. **Accepted risk (stated to the owner):** anything these run, including code and tests the agents wrote, package install scripts and commands planted by prompt injection (OWASP LLM01:2025, LLM06:2025), runs as the owner with access to the owner's files, keys, GitHub sign-in and network, and can act as the owner. Claude Code's own sandbox doesn't cover native Windows. The engine's file-tool checks and end-of-session write check still apply, but a shell can bypass them until the session ends. Expires at Beta, when containers return. | Owner, decision card, 2026-11-14 ("Full shell") | Accepted risk until Beta (ADR 0026) |
 
 ## 10. Interface requirements
-Drafted after section 12 is answered. Expected hygiene items:
-- H-0190: limits for the developer, test engineer, Gate 2 reviewer, judge
-  (and orchestrator, if OQ-4 gives it a session).
-- H-0191: `models.yaml` entries for the same roles.
-- H-0192: Role policy changes for code repo worktrees (spec mounted
-  read-only; test engineer cannot read the dev branch).
-- H-0193: Project manifest additions, if OQ-5 or OQ-6 need them (test
-  command, toolchain).
-- H-0194: Agent report bodies for the orchestrator review and the run
-  report, if they change.
-- H-0195: ADR 0005 and ADR 0009 wording, and F-007 v41's exception closed.
+Drafts. Each is a hygiene item the owner approves on a card before it is
+applied; nothing here is applied yet.
+
+### H-0190 (draft): limits for the new roles
+New sections in `engine/config/limits.yaml`, same keys as the analyst's
+minus the container keys (no containers until Beta, ADR 0026). A project's
+`limits:` may only lower them.
+
+| Key | Developer | Test engineer | Orchestrator (classifier) | Validation judge |
+|---|---|---|---|---|
+| Turns per session | 300 | 200 | 30 | 100 |
+| Output tokens per session | 500,000 | 300,000 | 50,000 | 200,000 |
+| Dollars per session (API key mode) | 15 | 10 | 2 | 5 |
+| Wall time per session | 4 h | 3 h | 20 min | 60 min |
+
+Gate 2 uses the existing `security_reviewer` limits. New run caps:
+`test_run.wall_time_minutes: 30` and `test_run.output_kib: 1024` (the engine
+keeps at most this much of the test command's output per run),
+`ci_wait_minutes: 60` (stage 9 treats CI that hasn't finished by then as an
+incomplete run).
+
+### H-0191 (draft): models for the new roles
+`engine/config/models.yaml` gains `software-developer`, `test-engineer`,
+`orchestrator` and `validation-judge`. Proposed: developer and judge
+`claude-opus-5-5`; test engineer and orchestrator `claude-sonnet-5-5`.
+F-002 rungs replace these per project later.
+
+### H-0192 (draft): Role policy for code repo worktrees
+- The approved spec and contracts are mounted for reading at a fixed path
+  outside the worktree; no role may write there.
+- The test engineer's `read.deny` gains every path under the engine's
+  developer report and transcript folders; the developer's `write.deny`
+  keeps the test engineer's test paths (as today's example).
+- The orchestrator (classifier) gets `Read`, `Grep`, `Glob` only, reads the
+  run report, the spec and the diff, and writes only its report.
+- `Bash` for the developer and test engineer as SR-1 accepts.
+
+### H-0193 (draft): Project manifest v1.7
+Optional keys, non-breaking:
+
+```yaml
+owner:
+  commit_name: <name>            # optional; overrides the GitHub profile name (FR-17)
+repos:
+  - name: web
+    commands:
+      test: ["npm", "test", "--", "--reporter=junit", "--outputFile=reports/junit.xml"]
+      test_results: reports/junit.xml   # relative to the worktree, inside it
+      build: ["npm", "run", "build"]    # optional; run by the developer's tool and before tests
+```
+
+Commands are argument arrays, run with no shell. `test_results` must stay
+inside the worktree under the ADR 0015 path rule. Onboarding (F-003) asks for
+them per repo.
+
+### H-0194 (draft): Agent report location and bodies
+- Location: `.factory/runs/<feature>/<stage>/<role>-<n>.json` on the config
+  repo's `factory/state` (ADR 0028), not the feature branch.
+- Orchestrator body for the classifier: `failures` (test, cause, evidence).
+- The test-engineer body's run fields (`tests_run` ... `not_run`) are filled
+  by the engine from the JUnit results (FR-6); the agent fills
+  `criteria_map`.
+
+### H-0195 (draft): documents
+`development-workflow.md`, `workflows/feature-development/workflow.yaml` and
+the orchestrator's `AGENT.md` say which steps are engine code and which run
+the orchestrator agent (OQ-4); F-007 v41's exception is marked closed for
+code (ADR 0028).
 
 ## 11. Readiness gate
 Not run.
