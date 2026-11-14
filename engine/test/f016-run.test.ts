@@ -208,7 +208,7 @@ describe("F-016: answers in the inbox have their effects", () => {
     rec.status = "chosen";
     rec.history.push({ at: "2026-11-11T10:05:00Z", by: "owner", action: "chosen", option: "B", rev: 1, source: "reaction", actor_id: OWNER, comment_id: 1, ref: "https://github.com/o/cfg/issues/1" });
     fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), YAML.stringify(rec));
-    execFileSync("git", ["-C", state, "commit", "-qam", "D-0001: chosen B by the owner"]);
+    execFileSync("git", ["-C", state, "-c", "user.name=crash test", "-c", "user.email=crash@example.invalid", "commit", "-qam", "D-0001: chosen B by the owner"]);
 
     const second = await start(w, d, scripts, first.gh);
     await until("back in the interview", () => stageOf(second.e, feature) === "requirements_interview");
