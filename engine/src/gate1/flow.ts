@@ -142,6 +142,11 @@ export interface Resolution {
   waiting: number[];
 }
 
+/** True when a source names the item id as a whole id: `D-0001` is not cited by `D-00012` (Gate 2 L6). */
+export function citesItem(source: string, id: string): boolean {
+  return new RegExp(`(^|[^A-Za-z0-9-])${id}(?![0-9])`).test(source);
+}
+
 /** True when a requirement's source cites finding `n`: "Gate 1 #3", or "Gate 1 #2, #3". */
 export function citesFinding(source: string, n: number): boolean {
   const m = /Gate\s*1\s*(#.*)$/i.exec(source);
@@ -167,7 +172,7 @@ export function gate1Resolution(spec: string, state: InterviewState): Resolution
     const accepted = state.gate1.accepted.get(f.n);
     if (accepted) {
       // F-016 FR-5, SR-10: an accepted risk is written into the spec, so Gate 2 and validation see it.
-      if (!rows.some((r) => citesFinding(r.source, f.n) && r.source.includes(accepted) && norm(r.status).toLowerCase().startsWith("accepted risk"))) {
+      if (!rows.some((r) => citesFinding(r.source, f.n) && citesItem(r.source, accepted) && norm(r.status).toLowerCase().startsWith("accepted risk"))) {
         problems.push(`${ref}: the owner accepted the risk in ${accepted}, but no section 9 row with status Accepted risk cites ${ref} and ${accepted}`);
       }
       continue;
@@ -180,7 +185,7 @@ export function gate1Resolution(spec: string, state: InterviewState): Resolution
         continue;
       }
       // F-016 FR-3, SR-6: the owner's choice is in the spec, citing the finding and the item, with the option's label word for word.
-      const ok = rows.some((r) => citesFinding(r.source, f.n) && r.source.includes(d.item) && r.status.startsWith("approved") && norm(r.text).includes(norm(d.label)));
+      const ok = rows.some((r) => citesFinding(r.source, f.n) && citesItem(r.source, d.item) && r.status.startsWith("approved") && norm(r.text).includes(norm(d.label)));
       if (!ok) problems.push(`${ref}: no Approved section 9 row cites ${ref} and ${d.item} with the chosen option "${d.label}" word for word`);
       continue;
     }

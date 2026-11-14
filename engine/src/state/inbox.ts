@@ -10,6 +10,8 @@ export interface SecurityAlert {
   confirm: string;
   hold: string;
   recommendation: "A" | "B";
+  /** Engine values the item's effect needs, such as the manifest commit a pins item names (Gate 2 M2). */
+  effectData?: Record<string, string | number>;
 }
 
 /**
@@ -25,7 +27,7 @@ export async function fileSecurityItem(inbox: Inbox, type: string, a: SecurityAl
     ...(a.feature ? { feature: a.feature } : {}),
     options: [{ id: "A", label: a.confirm }, { id: "B", label: a.hold }],
     recommendation: a.recommendation,
-    effect: { type, ...(a.feature ? { feature: a.feature } : {}) },
+    effect: { ...a.effectData, type, ...(a.feature ? { feature: a.feature } : {}) },
     sections: {
       Context: [{ engine: a.context }],
       Options: [{ engine: `- **A. ${a.confirm}.** Pro: work resumes. Con: wrong if you didn't make the change.\n- **B. ${a.hold}.** Pro: nothing runs until you've looked. Con: the project stays stopped.` }],

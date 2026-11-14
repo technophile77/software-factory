@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { remaining, reviewerPolicy } from "../src/agent/reviewer";
 import { SessionRefused } from "../src/agent/analyst";
 import { Git } from "../src/git";
-import { analystGate1Turn, citesFinding, correctionTurn, gate1Resolution, records, reviewerTurn } from "../src/gate1/flow";
+import { analystGate1Turn, citesFinding, citesItem, correctionTurn, gate1Resolution, records, reviewerTurn } from "../src/gate1/flow";
 import { plain, renderReport } from "../src/gate1/render";
 import { Gate1Report, readReportFile, validateReport } from "../src/gate1/report";
 import { Standards, StandardsError, loadStandards, parseAdditions, parseStandards } from "../src/gate1/standards";
@@ -330,5 +330,14 @@ describe("FR-9 and FR-13: findings resolved", () => {
     expect(s.gate1).toMatchObject({ runs: 1, pending: true, blocked: "waiting", riskFiled: [1] });
     s.apply(e("gate1_resolved", { passed: true }));
     expect(s.gate1).toMatchObject({ pending: false, blocked: null });
+  });
+});
+
+describe("citesItem (F-016 SR-6, Gate 2 L6)", () => {
+  it("matches a whole item id only", () => {
+    expect(citesItem("Gate 1 #1; D-0001", "D-0001")).toBe(true);
+    expect(citesItem("Gate 1 #1; D-00012", "D-0001")).toBe(false);
+    expect(citesItem("Gate 1 #1; XD-0001", "D-0001")).toBe(false);
+    expect(citesItem("D-0001, D-0002", "D-0002")).toBe(true);
   });
 });

@@ -36,10 +36,10 @@ import { Manifest, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin, pinnedKeys } from "./config/pins";
 import { ConfirmIo, confirmProject as runConfirm } from "./config/confirm";
-import { CAPABILITIES, ENGINE_JSON, FEATURE_ID_RE, GITHUB_API_BASE, BUILD_STAGE, GITHUB_WEB_BASE, INTERVIEW_STAGE, SERVED_CHANNEL_VERSION } from "./constants";
+import { CAPABILITIES, ENGINE_JSON, FEATURE_ID_RE, GITHUB_API_BASE, BUILD_STAGE, GITHUB_WEB_BASE, INTERVIEW_STAGE, MAX_RESUMES, SERVED_CHANNEL_VERSION } from "./constants";
 import { ensureOwnerDir, findOnPath, sha256Hex, writeFileAtomic } from "./fsutil";
 import { Git } from "./git";
-import { GitHubClient, HttpGitHub, checkBase } from "./github";
+import { GitHubClient, GitHubError, GitHubUnreachable, HttpGitHub, checkBase } from "./github";
 import { HttpIssues, IssuesApi } from "./inbox/github-issues";
 import { Inbox, Recorded } from "./inbox/store";
 import { osNotifier } from "./os/notify";
@@ -361,6 +361,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const url = await p.state_repo.remoteUrl(gitBase, await p.state_repo.refuseRedirectingConfig());
       const repo = url.slice(gitBase.length + 1).replace(/\.git$/, "");
       const api = o.issues ? o.issues(p.token) : new HttpIssues(p.token, log, GITHUB_API_BASE);
+      // SR-9: a token without Issues read and write on the config repo is reported, not polled with every minute.
+      try {
+        await api.openIssues(repo);
+      } catch (e) {
+        if (e instanceof GitHubError && !(e instanceof GitHubUnreachable)) {
+          log.warn(`${p.name ?? p.path}: the factory token can't read issues on ${repo}, so the inbox is off: it needs Issues read and write on the config repo (F-016 SR-9).`);
+          notify("Factory inbox off", `${p.name ?? "A project"}: the factory token needs Issues read and write on the config repo.`);
+          return;
+        }
+      }
       p.inbox.connect({ api, repo, ownerId: pin.owner.github_id });
     } catch (e) {
       log.warn(`${p.name ?? p.path}: the inbox can't reach GitHub, so items are recorded but not filed (${e instanceof ConfigError ? e.message.slice(0, 300) : "its address couldn't be read"}).`);
@@ -444,8 +454,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       await alert(p, `pins:${p.manifest.commit}:${cmp.status}`, {
         title: cmp.status === "new_path" ? "New project path needs confirmation" : "Pinned owner keys changed",
         context: `The engine found ${what} (manifest on main at ${p.manifest.commit.slice(0, 12)}). Owner ids, the OAuth client id, the allow list and enabled are pinned until you confirm a change (F-007 SR-5).`,
-        impact: "The project is stopped. It runs again only after you confirm at the engine command and approve a GitHub device sign-in as the previously pinned owner.",
-        confirm: "Confirm with `factory-engine confirm` if you made this change", hold: "Keep the project stopped and find out who changed it", recommendation: "B",
+        impact: `The project is stopped. It runs again after you confirm this change here, or with \`factory-engine confirm\` and a GitHub device sign-in as the previously pinned owner, and restart the engine. A confirm here pins the manifest at ${p.manifest.commit.slice(0, 12)} only.`,
+        confirm: "Confirm the change if you made it", hold: "Keep the project stopped and find out who changed it", recommendation: "B",
+        ...(cmp.status === "changed" ? { effectData: { commit: p.manifest.commit } } : {}),
       });
       continue;
     }
@@ -1521,6 +1532,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const n = Number(r.effect!.finding);
       const finding = f!.state.gate1.findings.find((x) => x.n === n);
       if (!finding) return done("finding_gone");
+      // Gate 2 L1: a choice counts only from the item the engine filed for that finding.
+      if (type === "gate1_choice" && finding.item !== r.id) return done("not_the_findings_item");
       const note = e.note !== undefined ? { note: e.note } : {};
       let entries: Array<Record<string, unknown>>;
       let effect: string;
@@ -1586,6 +1599,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const m = p.manifest;
       const pin = p.real ? pins.get(p.real) : null;
       if (!m || !pin || e.actor_id !== pin.owner.github_id) return done("record_only");
+      // Gate 2 M2: the approval covers the manifest commit the item named, never a later change on main.
+      if (r.effect?.commit !== m.commit) {
+        notify(`Factory: ${m.name} not confirmed`, `${r.id} named another manifest commit. Restart the engine for a new item.`);
+        return done("pins_stale");
+      }
       pins.set(p.real!, { ...pinnedKeys(m), pinned_at: iso(clock.now()), commit: m.commit });
       log.action({ agent: "owner", action: "pins.confirm", target: m.name, approval_id: `inbox:${r.id}`, outcome: "pinned" });
       notify(`Factory: ${m.name} confirmed`, "Restart the engine to run the project.");
@@ -1606,6 +1624,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
     if (type === "breach" && f) {
+      // SR-8: restarts after a breach count against MAX_RESUMES per feature; at the cap the owner gets a Notice instead.
+      const restarts = (await p.inbox!.records()).filter((x) => x.effect?.type === "breach" && x.effect.feature === f.id && x.history.some((h) => h.action === "effect_done" && h.effect === "restarted")).length;
+      if (restarts >= MAX_RESUMES) {
+        await done("restart_capped");
+        await p.inbox!.file({
+          kind: "notice", title: `${f.id} not restarted: ${restarts} restarts after a rules breach`, priority: "high", blocking: false, created_by: "engine", feature: f.id,
+          sections: { Details: [{ engine: `${r.id} asked to restart ${f.id}, but it has already restarted ${restarts} times after the analyst wrote outside its rules, the most allowed (F-016 SR-8). Nothing was restarted. Look at the agent's instructions before starting the feature again.` }] },
+        });
+        return;
+      }
       await done("restarted");
       resumeFeature(p, f);
       return;
@@ -1831,22 +1859,40 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   // F-011 FR-5: each project's inbox is read every poll while the engine runs.
   const polling = new AbortController();
   const pollers: Promise<void>[] = [];
-  async function pollInbox(p: Project): Promise<void> {
-    // Answers recorded before a crash or stop get their effect now (F-016 FR-1).
-    if (p.state === "running") {
-      for (const r of await p.inbox!.pendingEffects().catch(() => [])) {
-        if (dead || polling.signal.aborted) return;
-        await onAnswer(p, r).catch((e) => log.warn(`${r.record.id}: its effect wasn't applied (${engineWords(e)}); it is tried again at the next start.`));
+  /** F-016 SR-7: failed effects, by item id; after 3 a Notice is filed and the item is left alone until the engine restarts. */
+  const effectTries = new Map<string, number>();
+
+  /** Carries out every recorded answer without an effect yet: new ones, ones a crash left, and ones that failed before (FR-2, SR-7). */
+  async function applyAnswers(p: Project): Promise<void> {
+    for (const r of await p.inbox!.pendingEffects()) {
+      if (dead || polling.signal.aborted) return;
+      // A stopped project applies only the pins approval; other answers wait for its next start.
+      if (p.state !== "running" && r.record.effect?.type !== "pins") continue;
+      const id = r.record.id;
+      const tries = effectTries.get(id) ?? 0;
+      if (tries >= 3) continue;
+      try {
+        await onAnswer(p, r);
+        effectTries.delete(id);
+      } catch (e) {
+        effectTries.set(id, tries + 1);
+        log.warn(`${id}: its effect wasn't applied (${engineWords(e)}); try ${tries + 1} of 3.`);
+        if (tries + 1 === 3) {
+          await p.inbox!.file({
+            kind: "notice", title: `${id}: your answer couldn't be carried out`, priority: "high", blocking: false, created_by: "engine",
+            ...(r.record.feature ? { feature: r.record.feature } : {}),
+            sections: { Details: [{ engine: `The engine recorded your answer on ${id} but failed 3 times to carry it out (F-016 SR-7). Nothing changed: ${r.record.feature ?? "the project"} stays where it is. The engine tries once more when it restarts; the engine log has the reason.` }] },
+          }).catch(() => undefined);
+        }
       }
     }
+  }
+
+  async function pollInbox(p: Project): Promise<void> {
     while (!polling.signal.aborted && !dead && (p.state === "running" || p.pinsWaiting)) {
       try {
-        for (const r of await p.inbox!.poll()) {
-          if (dead || polling.signal.aborted) break;
-          // A stopped project applies only the pins approval; other answers wait for its next start.
-          if (p.state !== "running" && r.record.effect?.type !== "pins") continue;
-          await onAnswer(p, r);
-        }
+        await p.inbox!.poll();
+        await applyAnswers(p);
       } catch (e) {
         log.warn(`${p.name}: the inbox couldn't be read this poll (${engineWords(e)}); it is read again at the next.`);
       }

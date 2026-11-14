@@ -4,11 +4,15 @@ import * as path from "node:path";
 import YAML from "yaml";
 import { describe, expect, it } from "vitest";
 import type { SdkMessage } from "../src/agent/sdk";
+import { MAX_RESUMES } from "../src/constants";
+import { GitHubError } from "../src/github";
 import { FakeDocker } from "./fakes";
-import { World, git } from "./helpers";
+import { PinStore } from "../src/config/pins";
+import { realPath } from "../src/fsutil";
+import { World, git, manifestYaml, start as startEngine } from "./helpers";
 import { FakeIssues, OWNER } from "./inbox-fake";
 import { inboxItems } from "./inbox-items";
-import { Script, boot, entries, interview, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
+import { POLICY, Script, boot, entries, interview, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
 
 // F-016 on the engine: answers on inbox issues have their effects, and the full readiness gate runs.
 
@@ -323,6 +327,94 @@ describe("F-016: Security item effects (H-0182)", () => {
     expect(effects(w, "D-0002")[0]).toMatchObject({ effect: "record_only" });
     expect(s.count.analyst).toBe(2);
     expect(e.feature(feature)).toBeTruthy();
+  }, 60_000);
+});
+
+describe("F-016 SR-9: the token's Issues permission", () => {
+  it("a token GitHub refuses issues to turns the inbox off, says why, and polls nothing (Gate 2 L4)", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    const gh = new FakeIssues();
+    gh.openIssues = async () => {
+      throw new GitHubError("GitHub refused a list (HTTP 403)");
+    };
+    await boot(w, runtime(d, scriptedSdk({ analyst: analyst(w, () => ""), reviewer: reviewer(d, () => "") }).sdk), { issues: () => gh });
+    expect(w.log.lines.map((l) => String(l.message))).toEqual(expect.arrayContaining([expect.stringContaining("needs Issues read and write on the config repo (F-016 SR-9)")]));
+    await w.clock.advance(120_000);
+    expect(gh.calls.filter((c) => c !== "openIssues")).toEqual([]);
+  });
+});
+
+describe("F-016 SR-8: breach restarts are capped", () => {
+  it("after MAX_RESUMES restarts, option A files a Notice and restarts nothing (Gate 2 L3)", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    const s = scriptedSdk({
+      analyst: async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
+        await sc.next();
+        const wt = runsOf(w, feature, "requirements-analyst").at(-1)!.worktree!;
+        fs.mkdirSync(path.join(wt, ".github"), { recursive: true });
+        fs.writeFileSync(path.join(wt, ".github", "x.yml"), "on: push\n");
+        yield { type: "result", subtype: "success", session_id: `a-${n}` };
+      },
+      reviewer: reviewer(d, () => feature),
+    });
+    const gh = new FakeIssues();
+    const { c } = await boot(w, runtime(d, s.sdk), { issues: () => gh });
+    feature = (await c.ok("feature.start", { request: "Export" })).feature as string;
+    const breaches = () => items(w).filter((i) => i.record.effect?.type === "breach");
+    for (let i = 1; i <= MAX_RESUMES; i++) {
+      await pollUntil(w, `breach item ${i}`, () => breaches().length === i);
+      await pollUntil(w, `issue ${i}`, () => gh.issues.size === i);
+      await act(w, gh, i, "choose:A");
+    }
+    await pollUntil(w, "the last breach item", () => breaches().length === MAX_RESUMES + 1);
+    await pollUntil(w, "the last issue", () => gh.issues.size === MAX_RESUMES + 1);
+    await act(w, gh, MAX_RESUMES + 1, "choose:A");
+    await pollUntil(w, "the notice", () => items(w).some((i) => i.record.kind === "notice"));
+    expect(effects(w, breaches().at(-1)!.id)[0]).toMatchObject({ effect: "restart_capped" });
+    expect(s.count.analyst).toBe(MAX_RESUMES + 1);
+  }, 90_000);
+});
+
+describe("F-016 OQ-3: pinned keys changed, approved in the inbox", () => {
+  function changeOwner(w: World, id: number): string {
+    fs.writeFileSync(path.join(w.config, "factory-project.yaml"), manifestYaml({ ownerId: id, extra: POLICY }));
+    git(w.config, "commit", "-qam", `owner ${id}`);
+    return git(w.config, "rev-parse", "HEAD");
+  }
+  const pinnedOwner = (w: World) => new PinStore(w.home).get(realPath(w.config))!.owner.github_id;
+
+  it("a confirmed A from the pinned owner pins the manifest commit the item named; an older item's A pins nothing (Gate 2 M2)", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    const rt = runtime(d, scriptedSdk({ analyst: analyst(w, () => ""), reviewer: reviewer(d, () => "") }).sdk);
+    // A stopped project serves no channel, so the engine is started without a client.
+    const stopped = async () => startEngine(w, { agents: rt, issues: () => gh });
+    const first = changeOwner(w, 1000002);
+    const gh = new FakeIssues();
+    const a = await stopped();
+    expect(a.projects[0]!.state).toBe("stopped");
+    await pollUntil(w, "the pins issue", () => gh.issues.size === 1);
+    expect(items(w)[0]!.record.effect).toEqual({ type: "pins", commit: first });
+    await a.stop();
+
+    // main moves on before the owner answers: the old item no longer matches.
+    changeOwner(w, 1000077);
+    const b = await stopped();
+    await pollUntil(w, "the second pins issue", () => gh.issues.size === 2);
+    await act(w, gh, 1, "choose:A");
+    await pollUntil(w, "the effect", () => effects(w, "D-0001").length === 1);
+    expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "pins_stale" });
+    expect(pinnedOwner(w)).toBe(OWNER);
+
+    await act(w, gh, 2, "choose:A");
+    await pollUntil(w, "the effect", () => effects(w, "D-0002").length === 1);
+    expect(effects(w, "D-0002")[0]).toMatchObject({ effect: "pinned" });
+    expect(pinnedOwner(w)).toBe(1000077);
+    expect(b.projects[0]!.state).toBe("stopped");
+    await b.stop();
   }, 60_000);
 });
 
