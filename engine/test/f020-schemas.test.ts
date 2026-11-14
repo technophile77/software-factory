@@ -91,7 +91,7 @@ describe("F-020 agent reports", () => {
   });
 
   it("FR-3: the engine never writes a stored report that fails its schema", () => {
-    const base = { feature: "F-012", stage: "security_gate_1", role: "security-reviewer", n: 1, commit: COMMIT, outcome: "complete" as const, summary: "s", body: {}, facts: {} };
+    const base = { feature: "F-012", stage: "security_testability_review", role: "security-reviewer", n: 1, commit: COMMIT, outcome: "complete" as const, summary: "s", body: {}, facts: {} };
     expect(JSON.parse(String(agentReport(base).content))).toMatchObject({ schema: "agent-report/1.0", items_filed: [], artifacts: [] });
     expect(() => agentReport({ ...base, summary: "x".repeat(5000) })).toThrow(SchemaError);
   });
@@ -117,7 +117,7 @@ describe("F-020 hand-edited YAML schemas (FR-11, FR-12, AC-12)", () => {
   const contractEndpoints = () => {
     const doc = fs.readFileSync(path.join(repoRoot, "docs", "interface-contracts.md"), "utf8");
     const at = doc.indexOf("## Model endpoints file");
-    const block = /```yaml\n([\s\S]*?)```/.exec(doc.slice(at))![1]!;
+    const block = /```yaml\r?\n([\s\S]*?)```/.exec(doc.slice(at))![1]!;
     return YAML.parse(block.replace(/<[^>]+>/g, "x"));
   };
   const examples: Array<[string, unknown, ZodType]> = [

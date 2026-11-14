@@ -3,7 +3,7 @@ import * as path from "node:path";
 /**
  * Finds git on PATH without ever picking a copy inside an open workspace
  * folder: a planted git binary there would run with the owner's rights
- * (Gate 2 finding 1). PATH entries that aren't absolute are skipped for the
+ * (Code Review finding 1). PATH entries that aren't absolute are skipped for the
  * same reason, since they resolve against the current directory.
  */
 export function findGitOnPath(

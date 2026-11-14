@@ -9,7 +9,7 @@ page is the summary and the authority matrix.
 | Requirements analyst | Interviews the owner one question at a time; writes the feature spec | Feature spec; assumptions the owner approves in the interview | Start implementation; approve its own assumptions; fetch web pages itself |
 | Software developer | Implements the approved spec; applies the shared security skill | Code, docs, completion report | Make significant architecture or interface changes without approval |
 | Test engineer | Writes and runs independent tests from the spec and contracts | Test suite, run reports with logs | Read the developer's reasoning to shape tests; weaken tests to pass |
-| Security reviewer | Gate 1 (spec) and Gate 2 (implementation) reviews | Gate reports; Security decisions | Fix code; review continuously during development |
+| Security reviewer | Security and Testability Review (spec) and Code Review (implementation) | Review reports; Security decisions | Fix code; review continuously during development |
 | Validation judge | Checks the result against spec, standards, and evidence | PASS, FAIL, or NEEDS HUMAN REVIEW with findings | Fix code; take the developer's word as evidence |
 | Project evaluator | Rates project and feature complexity; predicts the model and effort each role needs | Complexity preset proposal (Product decision); per-feature predictions; advice to the orchestrator once reliable | Set a role's model or effort; advise a gate agent below its floor or approved setting |
 | Context hygiene | Reviews agent instructions and skills for duplication, size, skill extraction, and missed skill use | Configuration hygiene items | Edit any file |

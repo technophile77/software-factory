@@ -106,13 +106,13 @@ Drafted from the requirements above; each is refined in the interview.
 - Every new library, tool and image gets a security review and an
   Architecture decision before use (S4.1), is pinned (S4.3) and checked for
   CVEs in CI (S4.4).
-- Pins from the S4.1 reviews (Gate 1): koffi 3.3.6, the Claude Agent SDK
+- Pins from the S4.1 reviews (Security and Testability Review): koffi 3.3.6, the Claude Agent SDK
   0.3.311 with the Claude Code 2.1.311 its manifest names (upgraded only
   together), and `node:26.13.1-trixie-slim` by digest (26.13.0 until spec v37). A lockfile with
   integrity hashes; `npm ci --ignore-scripts` on the host; Claude Code's
   `postinstall` only in the image build, with the binary's SHA-256 checked
   against the SDK manifest. Each bump is a new S4.1 check (G1 #22).
-- gitleaks 8.30.1, pinned by SHA-256 per platform (Gate 1 component review
+- gitleaks 8.30.1, pinned by SHA-256 per platform (Security and Testability Review component review
   5). The engine never runs its git mode: it copies each blob with
   `git cat-file` into an engine-owned 0700 folder, files named by blob SHA,
   and runs `gitleaks dir` with the fixed flags in that review, report to
@@ -154,11 +154,11 @@ the interview, never recorded otherwise.
 |---|---|---|---|
 
 ## 9. Security considerations
-From the analyst and Security Gate 1 (`F-007-security-gate1.md`, finding
+From the analyst and Security and Testability Review (`F-007-security-testability-review.md`, finding
 numbers in brackets). At Rapid prototype none blocks; the High ones (G1 #1
 to #7) block at Alpha, so they are requirements now.
 
-| Id | Requirement | Source (analyst / Gate 1) | Status |
+| Id | Requirement | Source (analyst / Security and Testability Review) | Status |
 |---|---|---|---|
 | SR-1 | The model credential, the factory token, the device-flow token and `device_code`, interview session tokens and proxy credentials never reach a log, a file in Git, an inbox item, an argument list or an agent's prompt. | Analyst; G1 comment on SR-1 | Draft |
 | SR-2 | Fail closed on every check: config, authorization, approval, container start and its post-start inspection (SR-14), proxy start and address rules (SR-8), secrets scan. | Analyst; G1 comment on SR-2 | Draft |
@@ -202,7 +202,7 @@ the image is built, never from a session. The factory token is fine-grained
 to the project's repos, `contents: write` and `metadata: read`, with an
 expiry, and never enters a container.
 
-**Threat model (S9.7):** in the Gate 1 report.
+**Threat model (S9.7):** in the Security and Testability Review report.
 
 ### Until Beta: agents on the owner's PC (ADR 0026)
 Reopened on 2026-11-14 because containers are dropped until Beta. Each row
@@ -224,7 +224,7 @@ replaces its requirement until then; the original applies again at Beta.
   values are ever committed to it (owner, 2026-11-11).
 
 The four changes below were approved by the owner on 2026-11-11 (decision
-card, as drafted after Gate 1) and applied in `docs/interface-contracts.md`,
+card, as drafted after Security and Testability Review) and applied in `docs/interface-contracts.md`,
 the onboarding template and checker, `.gitignore` and the web reader's
 AGENT.md.
 
@@ -352,7 +352,7 @@ and a project manifest may only lower them. Two changes:
 
 A session at any cap stops and reports which cap (SR-18).
 
-### H-0088 (approved): supply-chain checks in CI (SR-13, SR-19; Gate 2 M4, L3)
+### H-0088 (approved): supply-chain checks in CI (SR-13, SR-19; Code Review M4, L3)
 
 Approved by the owner 2026-11-11 (decision card, as drafted). The owner chose on 2026-11-11 (decision card)
 to add these now rather than before Alpha. Three changes, all to
@@ -366,7 +366,7 @@ change-controlled files:
      (`osv-scanner_linux_amd64`
      `fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8`).
      It is not the `osv-scanner-action`, because that action runs a container
-     image by a mutable tag. S4.1 review: Gate 1 report, review 7.
+     image by a mutable tag. S4.1 review: Security and Testability Review report, review 7.
    - Scan both lockfiles: `engine/package-lock.json` and
      `engine/docker/claude-code/package-lock.json`.
    - Build the agent image the way the engine does (`docker buildx build
@@ -414,7 +414,7 @@ Run by the orchestrator, 2026-11-11, on spec v21.
 - [x] Assumptions explicit: none. The interview ran in the project thread,
   not through the engine, so there is no engine transcript; no assumption
   was proposed or recorded.
-- [x] Blocking decisions resolved: OQ-1 to OQ-11 and Gate 1 #1, #4, #7,
+- [x] Blocking decisions resolved: OQ-1 to OQ-11 and Security and Testability Review #1, #4, #7,
   #19, #20 all decided by the owner; H-0080 to H-0083 approved and applied.
   None deferred.
 
@@ -436,8 +436,8 @@ Asked one at a time in the interview. None is assumed.
 | OQ-10 | One engine serves several projects, but the channel has no project field (G1 #11). Keep feature ids unique across all projects (no contract change), or add a `project` parameter to the channel? | Interfaces | Decided: feature ids unique across all of the engine's projects; no channel change (owner, decision card, 2026-11-11) |
 | OQ-11 | Which secrets scanner the engine uses before each commit (G1 #18): an existing tool after its S4.1 review, or patterns of our own in the engine. | Architecture, Security | Decided: gitleaks, pinned by version and checksum, after its S4.1 review (owner, decision card, 2026-11-11) |
 
-### Security Gate 1 decisions
-From `F-007-security-gate1.md`. All five decided; every finding is now in
+### Security and Testability Review decisions
+From `F-007-security-testability-review.md`. All five decided; every finding is now in
 section 9.
 
 | Finding | Question | Status |
@@ -452,7 +452,7 @@ section 9.
 1. **This feature:** engine core, channel, phone approval, analyst and web
    reader in containers, transcript, interview readiness checks.
 2. **Advisor:** the engine half of F-006 (its dev report's deferred list).
-3. **Requirements to ready:** Security Gate 1 runs, the engine reads the
+3. **Requirements to ready:** Security and Testability Review runs, the engine reads the
    inbox, owner actions count only when SSH-signed (ADR 0015), with the F-001
    follow-up that signs them; full readiness gate.
 4. **Build to PR:** stages 5 to 9, CI gate, PR through the factory token.
@@ -474,11 +474,11 @@ section 9.
 | 9 | 2026-11-11 | OQ-7: secrets in the OS credential store through koffi | Owner, 2026-11-11 (decision card) |
 | 10 | 2026-11-11 | Section 10: drafts of H-0080 (manifest owner keys), H-0081 (.gitignore) and H-0082 (interview tools, OQ-8) | — (drafts) |
 | 11 | 2026-11-11 | OQ-9: Vitest | Owner, 2026-11-11 (decision card) |
-| 12 | 2026-11-11 | Gate 1 #1: proxy as a sidecar container on an internal network | Owner, 2026-11-11 (decision card) |
-| 13 | 2026-11-11 | Gate 1 #4: model credential through a gateway in the proxy | Owner, 2026-11-11 (decision card) |
-| 14 | 2026-11-11 | Gate 1 #7: owner keys pinned, changes confirmed by the previous owner | Owner, 2026-11-11 (decision card) |
-| 15 | 2026-11-11 | Gate 1 #19: OS credential store residual risk accepted with scoped tokens | Owner, 2026-11-11 (decision card) |
-| 16 | 2026-11-11 | Gate 1 #20 decided (engine `fetch_page`, H-0083). All Gate 1 findings folded in: SR-1 to SR-23, sensitive data and external services, AC-14 to AC-21, pins in constraints, H-0082 limits and caps. OQ-10, OQ-11 added | Owner, 2026-11-11 (decision card, #20); rest drafts |
+| 12 | 2026-11-11 | Security and Testability Review #1: proxy as a sidecar container on an internal network | Owner, 2026-11-11 (decision card) |
+| 13 | 2026-11-11 | Security and Testability Review #4: model credential through a gateway in the proxy | Owner, 2026-11-11 (decision card) |
+| 14 | 2026-11-11 | Security and Testability Review #7: owner keys pinned, changes confirmed by the previous owner | Owner, 2026-11-11 (decision card) |
+| 15 | 2026-11-11 | Security and Testability Review #19: OS credential store residual risk accepted with scoped tokens | Owner, 2026-11-11 (decision card) |
+| 16 | 2026-11-11 | Security and Testability Review #20 decided (engine `fetch_page`, H-0083). All Security and Testability Review findings folded in: SR-1 to SR-23, sensitive data and external services, AC-14 to AC-21, pins in constraints, H-0082 limits and caps. OQ-10, OQ-11 added | Owner, 2026-11-11 (decision card, #20); rest drafts |
 | 17 | 2026-11-11 | OQ-10: feature ids unique across projects, no channel change | Owner, 2026-11-11 (decision card) |
 | 18 | 2026-11-11 | OQ-11: gitleaks as the secrets scanner | Owner, 2026-11-11 (decision card) |
 | 19 | 2026-11-11 | H-0080 to H-0083 approved and applied | Owner, 2026-11-11 (decision card) |
@@ -495,8 +495,8 @@ section 9.
 | 30 | 2026-11-11 | Skills, `AGENT.md` and limit defaults come from the master commit that `factory.version` names; a project's `agents.override` / `skills.override` (read from its config repo's `main`) win over them, and a factory pull never changes them | Owner, 2026-11-11 (decision card; thread message) |
 | 31 | 2026-11-11 | `research_web` counts against the item being researched, else the open question, and always against the per-session cap | Owner, 2026-11-11 (decision card) |
 | 32 | 2026-11-11 | Until F-002 is wired: analyst `claude-opus-5-5`, web reader `claude-haiku-5-5`, set in the master defaults file `engine/config/models.yaml`; per-project choice arrives with F-002's `settings.agents.<role>.rung` | Owner, 2026-11-11 (decision card) |
-| 33 | 2026-11-11 | Gate 2 M1: the credential gateway refuses server-side tools and passes only allow-listed `anthropic-beta` values | Owner, 2026-11-11 (decision card) |
-| 34 | 2026-11-11 | Gate 2 M3: this increment assumes a single-user host; defending against other local user accounts (engine home ACL on Windows, Docker pipe server identity, `ProgramData` plugin path, Unix socket owner) is deferred to Alpha and must be fixed before promotion | Owner, 2026-11-11 (decision card) |
+| 33 | 2026-11-11 | Code Review M1: the credential gateway refuses server-side tools and passes only allow-listed `anthropic-beta` values | Owner, 2026-11-11 (decision card) |
+| 34 | 2026-11-11 | Code Review M3: this increment assumes a single-user host; defending against other local user accounts (engine home ACL on Windows, Docker pipe server identity, `ProgramData` plugin path, Unix socket owner) is deferred to Alpha and must be fixed before promotion | Owner, 2026-11-11 (decision card) |
 | 35 | 2026-11-11 | H-0088 drafted: OSV-Scanner on both lockfiles and the agent image, actions pinned by SHA, SR-13 placeholder and paths-file checks | Owner chose to add now (decision card); values draft |
 | 36 | 2026-11-11 | H-0088 approved as drafted and applied | Owner, 2026-11-11 (decision card) |
 | 37 | 2026-11-11 | Image CVEs: CI fails only on those with a fix and lists the rest; base image moved to `node:26.13.1-trixie-slim` (Node security release 2026-11-10), index digest `sha256:e6bedef2…20bc` | Owner, 2026-11-11 (decision card) |

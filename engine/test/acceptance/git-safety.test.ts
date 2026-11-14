@@ -1,4 +1,4 @@
-// SR-11 (Gate 1 #6): every git command the engine runs has hooks, fsmonitor,
+// SR-11 (Security and Testability Review #6): every git command the engine runs has hooks, fsmonitor,
 // filters, textconv, file protocol, credential helpers and SSH commands
 // neutralised; pushes use the factory token through GIT_ASKPASS only.
 import { afterEach, describe, expect, it } from "vitest";

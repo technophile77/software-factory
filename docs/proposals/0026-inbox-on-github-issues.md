@@ -105,7 +105,7 @@ Files on `factory/state`, the extension, and the F-012 phone mirror.
 1. A new ADR records it, superseding ADR 0002 and 0011 for inbox
    items and amending 0009, 0015 decision 3, 0017 and 0018.
 2. F-001, F-011 and F-012 are revised through the requirements interview
-   (new versions, Security Gate 1 again), and the Inbox item contract gets
+   (new versions, Security and Testability Review again), and the Inbox item contract gets
    a new major version. None of the three is built past F-001's view, so
    nothing that works today breaks before the new specs are approved.
 3. Hygiene items (H-0161 to H-0165) for the engine, the config repo workflow,

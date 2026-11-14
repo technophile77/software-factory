@@ -6,13 +6,13 @@
 - **Commit:** `8abb039` (`claude/project-thread-95vuv4`). The F-006 range is `7066f99..8abb039`. It holds the interview and spec commits, the five hygiene items H-0060 to H-0064 (drafts `6651fe7`, `2ec5e02`, `1d6412f`, `c78c785`, all approved as drafted in `7e4fb0c`), and the developer's and test engineer's work (`8abb039`).
 - **Contracts:** Engine control channel v1.2 (H-0063), Inbox item v1.1 (H-0062), Role policy v2.3 (H-0061). All are owner-approved in `7e4fb0c`. `git diff 7e4fb0c..8abb039` doesn't touch `docs/interface-contracts.md`, `agents/` or `docs/spec/`. `7e4fb0c` changed only the status and approval lines of the drafts.
 - **Maturity level:** Rapid prototype. Any number of Major findings is allowed if each is logged. A Blocking finding or a Not met line still fails.
-- **Scope:** as in F-005, the engine doesn't exist yet (ADR 0001). Spec §5 says this feature delivers the role, its policy, the contract changes and the F-005 skill change, tested against a fake engine. I judged the engine-side halves of the acceptance criteria as deferred by §5, as F-005 was judged. I did not read `F-006-security-gate2.md`, on instruction: Gate 2 is running in parallel.
+- **Scope:** as in F-005, the engine doesn't exist yet (ADR 0001). Spec §5 says this feature delivers the role, its policy, the contract changes and the F-005 skill change, tested against a fake engine. I judged the engine-side halves of the acceptance criteria as deferred by §5, as F-005 was judged. I did not read `F-006-code-review.md`, on instruction: Code Review is running in parallel.
 - **Verdict:** **NEEDS HUMAN REVIEW**
   - No line is Not met and nothing is Blocking. Every suite passes on Python 3.11, 3.12 and 3.13 in my own run on `8abb039`.
   - Two related lines are Needs owner, both about the approved channel contract (Interfaces):
     - **M1.** The client refuses things that Engine control channel v1.2 allows. An engine that follows the contract to the letter can leave the owner stuck on an unreadable item (probe p2).
     - **M2.** On the interview path, SR-8 (caps shown in the approval prompt) and A-1 (the prompt says when a call would go over budget) can't be met by any engine under v1.2. The channel has no field to carry those facts, and `ask_advisor` has no prompt before the call starts. The section 6 edge case "advice shown against the revision it was asked about" has the same gap.
-  - The Security line waits for Gate 2. Gate 1 is present and has no blocking finding.
+  - The Security line waits for Code Review. Security and Testability Review is present and has no blocking finding.
   - 3 Major and 9 Minor findings are logged.
 
 ## My own run (evidence source)
@@ -115,7 +115,7 @@ The tests named are the test engineer's. They pass in their run and in mine on `
 | Comments | Met (see m7) | New comments say why: `interview_client.py:651-653`, `:671-672`, `:695-697`, `:752-754`; `factory_check.py:1218-1225`. One is inaccurate: `factory_check.py:1317` (m7) |
 | Test tools | Met (see m2) | `F-006-test-report.md` "Tool choice" names `unittest` with a reason. Coverage.py is named best fit and left open, not substituted. The seeded `random` checks are correctly not counted as property tests (H-0020) |
 | Documentation | Met (see m1) | H-0060 to H-0064 are all in place: `agents/advisor/AGENT.md`, spec §2.9, `docs/agent-responsibilities.md`, `docs/architecture.md`, the contracts, and the analyst and orchestrator AGENT.md files. SKILL.md and `plugin.json` 0.3.0 are updated. The repo README is not (m1). The dev and test reports are present |
-| Security | **Pending Gate 2** | Gate 1 (`F-006-security-gate1.md`) is present, with nothing blocking at Rapid prototype. I didn't read Gate 2, on instruction. This line becomes Met only if Gate 2 has no Critical finding |
+| Security | **Pending Code Review** | Security and Testability Review (`F-006-security-testability-review.md`) is present, with nothing blocking at Rapid prototype. I didn't read Code Review, on instruction. This line becomes Met only if Code Review has no Critical finding |
 
 ## Findings
 
@@ -150,7 +150,7 @@ None.
 - Blocking: 0.
 - Major: 3 (M1 to M3). M1 and M2 need the owner.
 - Minor: 9 (m1 to m9).
-- Lines: 0 Not met. 2 lines are Needs owner (Interface contracts; SR-8 and A-1 with the §6 revision case). The Security line waits for Gate 2.
+- Lines: 0 Not met. 2 lines are Needs owner (Interface contracts; SR-8 and A-1 with the §6 revision case). The Security line waits for Code Review.
 
 ## To reach PASS at Rapid prototype
 
@@ -162,7 +162,7 @@ None.
    - Product point: no extra confirm for an over-budget `ask_advisor` (M2).
 
    The orchestrator records the approval. The developer then shows the new fields in `display` and the test engineer adds tests.
-2. **Gate 2** must have no Critical finding. If it does, this becomes FAIL.
+2. **Code Review** must have no Critical finding. If it does, this becomes FAIL.
 3. Before the PR: the orchestrator review note (m3), and the deferred-AC list recorded for the engine feature (M3).
 
 ---
@@ -170,7 +170,7 @@ None.
 ## Re-validation 1 (8db0cf1)
 
 - **Commit:** `8db0cf1` (`claude/project-thread-95vuv4`). Since the first report (`5c18c92`):
-  - `bfba26a`: Gate 2.
+  - `bfba26a`: Code Review.
   - `81d66e3`, `5959ed9`, `cb97563`: drafts of H-0075, H-0076 and H-0077.
   - `85182f9`, `c94c594`: developer fix round 1, including the deferred-to-the-engine list.
   - `4503e52`: owner approval of H-0075 to H-0077, and spec v6.
@@ -181,7 +181,7 @@ None.
 - **Verdict:** **PASS**
   - Every checklist line is Met. There are no Blocking findings and no open Major findings.
   - The two Needs owner lines (M1, M2) are closed by the owner's approval of H-0075.
-  - Gate 2 passes, with nothing Critical or High. Its two Mediums (#1, #2) and three Lows (#3 to #5) are each addressed by H-0075 to H-0077 and fix round 1.
+  - Code Review passes, with nothing Critical or High. Its two Mediums (#1, #2) and three Lows (#3 to #5) are each addressed by H-0075 to H-0077 and fix round 1.
   - 6 Minor findings are open, all logged. Nothing here needs the owner.
 
 ### My own run
@@ -210,18 +210,18 @@ Product hashes (first 12 hex characters of SHA-256): `interview_client.py` 5557e
 | SR-8, A-1 | Met (client half); caps and budget enforcement deferred to the engine | Limits and over-budget shown before the owner chooses, with no extra step, as H-0075 says (AC-4 unchanged). `H0075AdvisorCall`, `SkillTextRound2`, probe |
 | SR-4 | Met (client half) | Hash compared with the text as sent; mismatch warned. `H0075AdviceEntry` (2 hash tests) |
 | §6 revision edge case | Met (client half) | "asked about revision n", flagged when the question has moved on. `H0075AdviceEntry` |
-| SR-1 | Met | Missing and empty query lists are told apart (Gate 2 #3). `GateTwo3WebQueries` |
+| SR-1 | Met | Missing and empty query lists are told apart (Code Review #3). `GateTwo3WebQueries` |
 | SR-7, A-3, AC-8 (policy half) | Met | H-0076: `ADVISOR_EXTRA_DENY = [".factory/**", "**/.factory/**"]` (`factory_check.py:1223`), template updated. `H0076FactoryDenied` (4), `AdvisorFactoryDeny` (4) |
 | SR-5 | Met | H-0077: the orchestrator takes no action from instructions in advice and says when a revision followed a call (`agents/orchestrator/AGENT.md:48-54`) |
 | SR-6 | Engine; extra defence added | Advisor AGENT.md: never quote a secret; say where it is (H-0077) |
-| A-2, FR-3 (lost `ask_advisor`) | Met (client half) | SKILL.md "If a reply fails": recover with `CLIENT next`, never `state`; ask the owner if unclear (Gate 2 #4). `SkillTextRound2.test_gate2_4_*` |
+| A-2, FR-3 (lost `ask_advisor`) | Met (client half) | SKILL.md "If a reply fails": recover with `CLIENT next`, never `state`; ask the owner if unclear (Code Review #4). `SkillTextRound2.test_code_review_4_*` |
 | FR-11 (v7) | Met | Advisor offered and sent only when `engine.json` says 1.2 or later; `status` and `open` report `advisor`. `V12GateOnOldEngine` (2), `F006FixRound1.test_m6_*`. See n2 |
 | Code quality | Met, with findings | The new parsing stays in one place and fails closed. The engine's numbers are shown only after integer checks, so they can sit outside a fence. Finding: n3 |
 | Comments | Met | New comments say why: `# Hashed before cleaning…`, `# Missing is not the same as none…`, `# F-005 OQ-3: no escalation until…`, the corrected `_covered` comment (m7) |
 | Documentation | Met | README 0.3.0 with the advisor (m1). Spec v6 and v7 change log. The dev report has fix round 1 and the full deferred list; the test report has round 2 |
-| Security | Met | Gate 1 and Gate 2 (`F-006-security-gate2.md`) are present. Gate 2: PASS at Rapid prototype, 2 Medium, 3 Low, none blocking. Each is addressed (table below). Gate 2 hasn't re-reviewed fix round 1 (n4) |
+| Security | Met | Security and Testability Review and Code Review (`F-006-code-review.md`) are present. Code Review: PASS at Rapid prototype, 2 Medium, 3 Low, none blocking. Each is addressed (table below). Code Review hasn't re-reviewed fix round 1 (n4) |
 
-### Gate 2 findings
+### Code Review findings
 
 | # | Now | Evidence |
 |---|---|---|
@@ -266,7 +266,7 @@ None.
 | n1 | `docs/interface-contracts.md:192`; test report O5 | The contract still shows `engine.json` as `{ "version": "1.1", … }`. It doesn't say that `version` is the channel version the engine speaks, or that clients offer the advisor only at 1.2 or later. A v1.2 engine that copies the example literally gets no advisor. That fails safe, and spec v7 FR-11 states the rule, so this doesn't block. Fix the wording at the next channel change. |
 | n2 | `F-006-advisor-agent.md` change log v7 | v7 adds the version gate to FR-11, approved by reference to the owner's F-005 OQ-3 answer, which §1 already quotes ("Until F-006 is built, no escalation is offered"). It is recorded, not silent, and it applies an existing owner rule. The orchestrator should show v7 to the owner with the next card so the approval is explicit. |
 | n3 | `interview_client.py:5-7`, `read_engine_address` docstring | Cosmetic: the module docstring now breaks "Standard library" onto its own line, and the `read_engine_address` docstring's first line runs to about 100 characters. |
-| n4 | Fix round 1 | Gate 2 hasn't re-reviewed `85182f9`. The changes carry out Gate 2's own suggestions and the approved amendments, and each one tightens: new fields are parsed strictly and fail closed, the policy denies more, and advisor replies are refused against older engines. At Rapid prototype I don't require a re-review, as for F-005 `5f20e1b`. Gate 2 can confirm it with the engine's first review. |
+| n4 | Fix round 1 | Code Review hasn't re-reviewed `85182f9`. The changes carry out the Code Review's own suggestions and the approved amendments, and each one tightens: new fields are parsed strictly and fail closed, the policy denies more, and advisor replies are refused against older engines. At Rapid prototype I don't require a re-review, as for F-005 `5f20e1b`. Code Review can confirm it with the engine's first review. |
 | m2, m3 | Carried | Coverage reporting and the orchestrator review note, as above |
 
 ### Counts (re-validation 1)

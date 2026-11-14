@@ -15,9 +15,9 @@ Each feature's state is an event log in the `factory/state` branch, folded
 by `engine/src/interview/model.ts`. The `stage` event sets the stage to
 any value, so nothing stops an illegal move. What runs next is decided by
 if-chains spread across `engine/src/engine.ts` (startup recovery, the end
-of each Gate 1, readiness and analyst run). Each stuck state in the trial
+of each Security and Testability Review, readiness and analyst run). Each stuck state in the trial
 was a combination of stage, run status and waiting item that no branch
-handled: the analyst idle in the interview, Gate 1 parked with no item, a
+handled: the analyst idle in the interview, Security and Testability Review parked with no item, a
 delivered reply not acted on after a restart. FR-13 and F-016 FR-7 each
 patched one such combination.
 

@@ -87,7 +87,7 @@ export const DOCUMENT_LIMITS = {
   name: 200,
 } as const;
 
-/** The secrets scanner, pinned by Gate 1 component review 5. */
+/** The secrets scanner, pinned by Security and Testability Review component review 5. */
 export const GITLEAKS_VERSION = "8.30.1";
 export const GITLEAKS_BINARY_SHA256: Readonly<Record<string, string>> = {
   "linux-x64": "88f91962aa2f93ac6ab281d553b9e125f5197bbbce38f9f2437f7299c32e5509",
@@ -112,7 +112,7 @@ export const MANIFEST_FILE = "factory-project.yaml";
 export const ENGINE_JSON = "engine.json";
 export const CREDENTIAL_SERVICE = "software-factory-engine";
 export const INTERVIEW_STAGE = "requirements_interview";
-export const AFTER_INTERVIEW_STAGE = "security_gate_1";
+export const AFTER_INTERVIEW_STAGE = "security_testability_review";
 export const BUILD_STAGE = "build_and_test_prep";
 
 /** The lowest maturity level, as the manifest spells it (docs/maturity-levels.md). */

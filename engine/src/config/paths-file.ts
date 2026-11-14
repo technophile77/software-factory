@@ -108,7 +108,7 @@ export async function checkProjectPath(p: string, masterRepo: string, git: Git):
       return null;
     }
   };
-  // undefined: the read failed; null: the master has no origin. A failed read isn't cached (Gate 2 L5).
+  // undefined: the read failed; null: the master has no origin. A failed read isn't cached (Code Review L5).
   const masterOrigin = async (dir: string) => {
     const r = await git.run(dir, ["remote", "get-url", "origin"], { okCodes: [2] }).catch(() => undefined);
     return r === undefined ? undefined : r.code === 0 ? normUrl(r.stdout.toString("utf8")) : null;

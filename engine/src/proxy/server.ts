@@ -184,7 +184,7 @@ export interface ProxyOptions {
 const HOP = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "host"]);
 
 /**
- * The router reply headers the gateway passes to the agent (F-013 Gate 2 M2).
+ * The router reply headers the gateway passes to the agent (F-013 Code Review M2).
  * LiteLLM adds `x-litellm-*` headers and `llm_provider-*` copies of the
  * endpoint's own headers, some holding the endpoint's `api_base`; an allow list
  * keeps all of them from the agent (SR-2). What stays is what Claude Code uses:
@@ -201,7 +201,7 @@ export const ROUTER_ERROR_TEXT = "the model endpoint returned an error";
 const NOT_AN_ENDPOINT = "(not a pinned endpoint)";
 
 /**
- * The request paths the router may use at an endpoint (F-013 Gate 2 L2): the
+ * The request paths the router may use at an endpoint (F-013 Code Review L2): the
  * ones SR-1 lists plus OpenAI chat completions, which LiteLLM calls for
  * `api: openai` endpoints. Paths below the endpoint's own base path are
  * allowed too, since LiteLLM appends its route to the `api_base` it is given.
@@ -241,7 +241,7 @@ export function routerReplyHeaders(headers: http.IncomingHttpHeaders, hide: read
 }
 
 /**
- * The `anthropic-beta` values the gateway passes on (Security Gate 2, M1;
+ * The `anthropic-beta` values the gateway passes on (Code Review, M1;
  * owner decision of 2026-11-11, card 23:12Z: allow-list the header). A beta
  * can switch on a feature that runs on Anthropic's side, outside the
  * container's egress rules. These are what Claude Code 2.1.311 sends for a
@@ -263,7 +263,7 @@ export const ALLOWED_BETAS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Why a Messages API body must not go out, or null (Security Gate 2, M1;
+ * Why a Messages API body must not go out, or null (Code Review, M1;
  * owner decision: block them). A tool with a `type` other than `custom` is a
  * server-side tool (web_search_*, web_fetch_*, code_execution_*, computer_*,
  * the bash_* and text_editor_* variants, and any added later): Anthropic runs

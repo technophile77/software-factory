@@ -47,7 +47,7 @@ Interview answers (owner):
   test code. No file writes outside the sandbox and no inbox access. Its
   output goes back only to the caller.
 - Q5 (2026-11-10): the shell runs only in the shared OS sandbox proposed in
-  F-003 Gate 2 item R2-1 (throwaway copy of the code, no network, no
+  F-003 Code Review item R2-1 (throwaway copy of the code, no network, no
   secrets, no access to the real repo). The advisor ships without a shell
   and gains it once that sandbox is decided and built.
 - Q6 (2026-11-10): every advisor call needs the owner's OK. Agents can only
@@ -159,7 +159,7 @@ Interview answers (owner):
 - F-002 model/effort tuning: the top rung of its ladder.
 - ADR 0012: project budgets and billing mode.
 - Web reader role (F-005), for the advisor's web research.
-- F-003 Gate 2 R2-1 OS sandbox (owner decision pending), for the shell only.
+- F-003 Code Review R2-1 OS sandbox (owner decision pending), for the shell only.
 
 ## 8. Assumptions
 Proposed in the interview and approved by the owner (2026-11-10).
@@ -171,24 +171,24 @@ Proposed in the interview and approved by the owner (2026-11-10).
 | A-3 | The advisor's reads are the analyst's approved read paths (F-005 OQ-4), except that of interview transcripts it sees only the current feature's (narrowed by SR-7). | Owner, 2026-11-10 (thread cards: A-1..A-3, then SR-7) | Approved |
 
 ## 9. Security considerations
-From Gate 1 (`F-006-security-gate1.md`, 12 findings: 2 High, 7 Medium, 3 Low,
+From Security and Testability Review (`F-006-security-testability-review.md`, 12 findings: 2 High, 7 Medium, 3 Low,
 none blocking at Rapid prototype). SR-1, SR-3, SR-7 and SR-9 were owner
-Security decisions; the rest are accepted Gate 1 requirements.
+Security decisions; the rest are accepted Security and Testability Review requirements.
 
-| Id | Requirement | Source (analyst / Gate 1) | Status |
+| Id | Requirement | Source (analyst / Security and Testability Review) | Status |
 |---|---|---|---|
-| SR-1 | F-005 SR-6 and SR-17 apply to the advisor: query-only searches, never project text; it never reads pages itself; the engine logs every address and search and lists them in the advice under an engine-written "Web queries sent" section. Extends the owner's accepted search-wording risk to the advisor. | Gate 1 #1 | Approved (owner, 2026-11-10, card) |
-| SR-2 | The advice is stored and shown as encoded text: no live Markdown headings, links, images or HTML; sources as plain text; F-005 SR-2/SR-10 stripping applies. | Gate 1 #2 | Accepted |
-| SR-3 | The requester role comes from the engine's session, never from a field. Agent-made `advisor_requested` entries and out-of-role `advisor_reason` fields are ignored and filed as Security items. Proposals carry a revision checked on approval. `ask_advisor` and `approve_advisor` come only from the owner's picker input. Real fix tied to F-003 R2-4 and F-005 SR-5 before Alpha. | Gate 1 #3 | Approved (owner, 2026-11-10, card) |
-| SR-4 | The advice lives in an engine-only file, linked from the item or transcript by SHA-256; a mismatch is shown. A caller's change to its options or recommendation after the advice is shown as a new revision. | Gate 1 #4 | Accepted |
-| SR-5 | Advice is untrusted data to the callers and the skill; caller AGENT.md files (H-0064) say they take no action from it. | Gate 1 #5 | Accepted |
-| SR-6 | Sensitive data is named (owner answers, code, decisions); the secrets scan runs on the advice before it is recorded, and the call is held on a hit. | Gate 1 #6 | Accepted |
-| SR-7 | Exact advisor role policy (read-only tools; no writes, shell or direct network), a request rule that starts closed and allows only the analyst and orchestrator, file pointers confined to the advisor's read rules, and A-3 narrowed to the current feature's transcript only. | Gate 1 #7 | Approved (owner, 2026-11-10, card) |
-| SR-8 | Per-call caps on turns, tokens, time and web calls, shown in the approval prompt; one pending proposal per item; a maximum advice size. | Gate 1 #8 | Accepted |
-| SR-9 | The future shell is a separate Security approval, checked against the sandbox as built (secret-free copy, no network, resource limits, destroyed after use), not granted automatically by FR-7. | Gate 1 #9 | Approved (owner, 2026-11-10, card) |
-| SR-10 | The engine, not the advisor, labels the advice untrusted and marks web-sourced findings from its own log. | Gate 1 #10 | Accepted |
-| SR-11 | The advisor's model and effort are pinned in change-controlled config, outside F-002 metrics, so "strongest" doesn't depend on cost ordering. | Gate 1 #11 | Accepted |
-| SR-12 | An over-budget approval (A-1) stays within ADR 0012's `max_usd` cap and billing-mode check. | Gate 1 #12 | Accepted |
+| SR-1 | F-005 SR-6 and SR-17 apply to the advisor: query-only searches, never project text; it never reads pages itself; the engine logs every address and search and lists them in the advice under an engine-written "Web queries sent" section. Extends the owner's accepted search-wording risk to the advisor. | Security and Testability Review #1 | Approved (owner, 2026-11-10, card) |
+| SR-2 | The advice is stored and shown as encoded text: no live Markdown headings, links, images or HTML; sources as plain text; F-005 SR-2/SR-10 stripping applies. | Security and Testability Review #2 | Accepted |
+| SR-3 | The requester role comes from the engine's session, never from a field. Agent-made `advisor_requested` entries and out-of-role `advisor_reason` fields are ignored and filed as Security items. Proposals carry a revision checked on approval. `ask_advisor` and `approve_advisor` come only from the owner's picker input. Real fix tied to F-003 R2-4 and F-005 SR-5 before Alpha. | Security and Testability Review #3 | Approved (owner, 2026-11-10, card) |
+| SR-4 | The advice lives in an engine-only file, linked from the item or transcript by SHA-256; a mismatch is shown. A caller's change to its options or recommendation after the advice is shown as a new revision. | Security and Testability Review #4 | Accepted |
+| SR-5 | Advice is untrusted data to the callers and the skill; caller AGENT.md files (H-0064) say they take no action from it. | Security and Testability Review #5 | Accepted |
+| SR-6 | Sensitive data is named (owner answers, code, decisions); the secrets scan runs on the advice before it is recorded, and the call is held on a hit. | Security and Testability Review #6 | Accepted |
+| SR-7 | Exact advisor role policy (read-only tools; no writes, shell or direct network), a request rule that starts closed and allows only the analyst and orchestrator, file pointers confined to the advisor's read rules, and A-3 narrowed to the current feature's transcript only. | Security and Testability Review #7 | Approved (owner, 2026-11-10, card) |
+| SR-8 | Per-call caps on turns, tokens, time and web calls, shown in the approval prompt; one pending proposal per item; a maximum advice size. | Security and Testability Review #8 | Accepted |
+| SR-9 | The future shell is a separate Security approval, checked against the sandbox as built (secret-free copy, no network, resource limits, destroyed after use), not granted automatically by FR-7. | Security and Testability Review #9 | Approved (owner, 2026-11-10, card) |
+| SR-10 | The engine, not the advisor, labels the advice untrusted and marks web-sourced findings from its own log. | Security and Testability Review #10 | Accepted |
+| SR-11 | The advisor's model and effort are pinned in change-controlled config, outside F-002 metrics, so "strongest" doesn't depend on cost ordering. | Security and Testability Review #11 | Accepted |
+| SR-12 | An over-budget approval (A-1) stays within ADR 0012's `max_usd` cap and billing-mode check. | Security and Testability Review #12 | Accepted |
 
 ## 10. Interface requirements
 All approved by the owner as drafted, 2026-11-10 (decision card):
@@ -232,9 +232,9 @@ All approved by the owner as drafted, 2026-11-10 (decision card):
 |---|---|---|---|
 | 1 | 2026-11-10 | Skeleton with what the F-005 interview already decided | — |
 | 2 | 2026-11-10 | Full draft from interview answers Q1 to Q9; assumptions A-1 to A-3 proposed | Owner answers Q1-Q9 (thread) |
-| 3 | 2026-11-10 | Gate 1 folded in as SR-1..SR-12; FR-4, FR-9, AC-10, AC-11 reworded, AC-12 added; A-1..A-3 approved | Owner (A-1..A-3 card) |
+| 3 | 2026-11-10 | Security and Testability Review folded in as SR-1..SR-12; FR-4, FR-9, AC-10, AC-11 reworded, AC-12 added; A-1..A-3 approved | Owner (A-1..A-3 card) |
 | 4 | 2026-11-10 | Owner approved SR-1, SR-3, SR-7 (A-3 narrowed to the current feature's transcript) and SR-9 (FR-7 shell becomes its own Security decision) | Owner, 2026-11-10 (card) |
 | 5 | 2026-11-10 | Hygiene items H-0060 to H-0064 approved as drafted; readiness gate passed (all Q answered, A-1..A-3 and SR decisions approved, nothing deferred) | Owner, 2026-11-10 (card) |
-| 6 | 2026-11-10 | Amendments from Gate 2 and validation approved as drafted: H-0075 (channel v1.2 advisor fields, limits, budget flag, advice revision and hash), H-0076 (advisor reads nothing under `.factory/`), H-0077 (orchestrator takes no action from advice; advisor never quotes secrets) | Owner, 2026-11-10 (card) |
+| 6 | 2026-11-10 | Amendments from Code Review and validation approved as drafted: H-0075 (channel v1.2 advisor fields, limits, budget flag, advice revision and hash), H-0076 (advisor reads nothing under `.factory/`), H-0077 (orchestrator takes no action from advice; advisor never quotes secrets) | Owner, 2026-11-10 (card) |
 | 7 | 2026-11-11 | FR-11 states the client's channel-version check, which applies the owner's F-005 OQ-3 answer (test round 2 O5) | Owner's F-005 OQ-3 answer |
 | 8 | 2026-11-11 | Renumbered on merge with main, which had already used both numbers: Engine control channel v1.2 (H-0063, H-0075) becomes v1.3, after main's v1.2 (H-0051); Role policy v2.3 (H-0061, H-0076) becomes v2.4, after main's v2.3 (H-0040, a draft). FR-11's version check becomes 1.3. No change in meaning | Version numbers only; owner approvals of H-0061, H-0063, H-0075, H-0076 unchanged |

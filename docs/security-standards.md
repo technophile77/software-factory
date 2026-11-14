@@ -80,7 +80,7 @@ to any product feature that runs an agent.
 - S9.4 Only the data a task needs leaves the factory. Secrets, credentials, and repo content the task does not need are never sent in URLs, query strings, request bodies, prompts or tool arguments. Where data is sent comes from the spec or the role policy, never from external content.
 - S9.5 Tools and MCP servers are external components (S4): reviewed before approval, pinned, and run with least privilege (S8). Their descriptions and outputs are untrusted data. A change to an approved tool's description, permissions or version is a new review.
 - S9.6 Agents never hold a GitHub credential or the owner's signed-in sessions; they act only through the engine. The engine acts under scoped credentials (S8.2): in `owner_token` mode a fine-grained token of the owner's (ADR 0017, F-011 OQ-7), in `machine_account` mode the factory account's token (ADR 0006). Each external action is logged with agent, action, target, time and approval id, without secrets (S3.3).
-- S9.7 A feature with external interactions has a threat model at Gate 1: STRIDE for the system, checked against the OWASP Top 10 for Agentic Applications for agent-specific threats (prompt injection, tool misuse, data leaks, identity abuse).
+- S9.7 A feature with external interactions has a threat model at Security and Testability Review: STRIDE for the system, checked against the OWASP Top 10 for Agentic Applications for agent-specific threats (prompt injection, tool misuse, data leaks, identity abuse).
 
 ## Severity
 
@@ -124,11 +124,11 @@ promotion to the next level.
 
 This table's one machine-readable copy is
 `plugins/software-factory/skills/onboard-repo/scripts/security-blocking.json` (H-0235); the engine's
-Gate 1 and the onboarding checker read it, and the two must stay the same.
+Security and Testability Review and the onboarding checker read it, and the two must stay the same.
 A reviewer grades severity only. Code decides what blocks, from the severity
 and the project's maturity level.
 
-## Gate 1 (requirements) checklist
+## Security and Testability Review (requirements) checklist
 
 - Does the feature touch input, auth, secrets, sensitive data, dependencies, or external systems?
 - What permissions does it need (files, network, tokens, CI, agent tools)? Is each one the minimum (S8)?
@@ -138,7 +138,7 @@ and the project's maturity level.
 - What are the abuse cases? Are they in the edge cases?
 - What needs the owner's decision? File it as Security.
 
-## Gate 2 (implementation) checklist
+## Code Review (implementation) checklist
 
 - Run the approved static analysis first (ADR 0024: Semgrep Community
   Edition on project repos, CodeQL on the master repo) and give its

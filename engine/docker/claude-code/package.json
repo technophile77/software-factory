@@ -1,7 +1,7 @@
 {
   "name": "factory-agent-claude-code",
   "private": true,
-  "description": "Claude Code for the agent image only; installed in the image build stage (Gate 1 review 3).",
+  "description": "Claude Code for the agent image only; installed in the image build stage (Security and Testability Review review 3).",
   "dependencies": {
     "@anthropic-ai/claude-code": "2.1.311"
   }

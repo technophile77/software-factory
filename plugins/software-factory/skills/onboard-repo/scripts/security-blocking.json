@@ -1,5 +1,5 @@
 {
-  "description": "Which finding severities block at each maturity level: the one copy of the table in security-standards.md, 'What blocks a PR, by maturity level' (H-0235). A severity blocks from the level named in blocks_from and every level after it; null never blocks. The engine's Gate 1 (F-016 FR-19) and the onboarding checker read it; code decides what blocks, never a reviewer.",
+  "description": "Which finding severities block at each maturity level: the one copy of the table in security-standards.md, 'What blocks a PR, by maturity level' (H-0235). A severity blocks from the level named in blocks_from and every level after it; null never blocks. The engine's Security and Testability Review (F-016 FR-19) and the onboarding checker read it; code decides what blocks, never a reviewer.",
   "version": 1,
   "levels": ["rapid-prototype", "alpha", "beta", "release", "production-ready"],
   "blocks_from": {

@@ -79,7 +79,7 @@ Windows machine, run Claude Code inside a WSL2 distribution"
    process limits).
 5. **Approved specs lose their guarantees.** These approved requirements say
    "own container" or "no network but the model API" and would no longer hold:
-   F-007 (container rules, SR-18 limits), F-008 FR-2, AC-3 and SR-6 (Gate 1
+   F-007 (container rules, SR-18 limits), F-008 FR-2, AC-3 and SR-6 (Security and Testability Review
    reviewer), F-010 FR-4 and AC-5 (triager with no network and no writable
    mount), F-013 AC-17 (LiteLLM reachable only through the proxy), F-016
    SR-11 (readiness session), F-015 FR-3 and OQ-6 (draft).
@@ -144,7 +144,7 @@ wording of the rows marked † with the H-0202 text in proposal 0031."
 | F-007 | SR-9 | Unchanged except "container" reads "session": the session gets the proxy as its API base URL and a dummy key. |
 | F-007 | SR-18 | Session caps unchanged. The container limits on CPU, memory, pids and temp size are suspended until Beta (accepted risk 4, ADR 0026). |
 | F-008 | FR-2 | The reviewer runs as an Agent SDK session on the owner's PC under the project's `security-reviewer` role policy and the "until Beta" rule. The tool gate allows its one write, its named report. The end-of-session check rejects any other worktree change. |
-| F-008 | AC-3 | Given a Gate 1 session, its tools are only `Read`, `Grep`, `Glob`, `Write` and `Skill`, and its model traffic goes to the proxy. |
+| F-008 | AC-3 | Given a Security and Testability Review session, its tools are only `Read`, `Grep`, `Glob`, `Write` and `Skill`, and its model traffic goes to the proxy. |
 | F-008 | SR-6 | Same caps and billing check as the analyst (F-007 SR-18 as above). |
 | F-008 | SR-8 | "After the container is gone" reads "after the session has ended". The rest is unchanged. |
 | F-010 | FR-4, AC-5, SR-2 | The triager runs as a session on the owner's PC with one tool, `submit_triage`, and no file tools, so it reads only its input. No network and no write still hold, through the tool list rather than the container. |

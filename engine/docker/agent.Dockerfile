@@ -1,4 +1,4 @@
-# The agent image (ADR 0015, FR-8). Base pinned by index digest (Gate 1
+# The agent image (ADR 0015, FR-8). Base pinned by index digest (Security and Testability Review
 # review 4); Claude Code 2.1.311 checked against the Agent SDK 0.3.311
 # manifest (review 3). The engine builds it with `docker buildx build`; the base
 # image digest is passed in so the engine's pin is the only one.

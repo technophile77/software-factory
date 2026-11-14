@@ -2,7 +2,7 @@ import * as crypto from "node:crypto";
 import { Clock, iso } from "../clock";
 import { MAX_RESUMES } from "../constants";
 import type { EndpointRateReport } from "../agent/endpoint-service";
-import type { MatchRate } from "../gate1/advisory";
+import type { MatchRate } from "../st-review/advisory";
 import type { InterviewState } from "../interview/model";
 import type { Change } from "./state-repo";
 import { EngineRecord, RunRecord } from "./record";

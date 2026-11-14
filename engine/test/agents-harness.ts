@@ -6,7 +6,7 @@ import type { AgentRuntime } from "../src/agent/runtime";
 import type { AgentSdk, FactoryTool, SdkMessage, SessionOptions } from "../src/agent/sdk";
 import type { DockerCli } from "../src/docker/cli";
 import type { EngineHandle, EngineOptions } from "../src/engine";
-import { parseStandards } from "../src/gate1/standards";
+import { parseStandards } from "../src/st-review/standards";
 import { SECRET_DENIES } from "../src/policy/role-policy";
 import { EngineRecord } from "../src/state/record";
 import { parseTranscript } from "../src/state/transcript";
@@ -154,7 +154,7 @@ export function world(masterExtra: Record<string, string | null> = {}, o: { orch
     }
   }
   git(w.master, "add", "-A");
-  git(w.master, "commit", "-qm", "gate 1 files");
+  git(w.master, "commit", "-qm", "security and testability review files");
   git(w.master, "tag", "-f", "v0.1.0");
   return w;
 }
@@ -183,7 +183,7 @@ export function spec(feature: string, version: number, srs: string[] = ["| SR-1 
     "## 6. Edge cases", "An empty date range gives an empty CSV.", "",
     "## 7. Dependencies", "None.", "",
     "## 8. Assumptions", "| Id | Assumption | Decision link | Status |", "|---|---|---|---|", "",
-    "## 9. Security considerations", "| Id | Requirement | Source (analyst / Gate 1) | Status |", "|---|---|---|---|", ...srs, "",
+    "## 9. Security considerations", "| Id | Requirement | Source (analyst / Security and Testability Review) | Status |", "|---|---|---|---|", ...srs, "",
     "## 10. Interface requirements", "None.", "",
     "## 11. Readiness gate", "- [ ] Clear objective", "",
     "## 12. Change log", "| Version | Date | Change | Approved by |", "|---|---|---|---|", "",
@@ -197,7 +197,7 @@ export function spec(feature: string, version: number, srs: string[] = ["| SR-1 
  */
 export function reportDir(d: FakeDocker): string {
   const run = [...d.calls].reverse().find((x) => x.args[0] === "run" && x.args.includes("factory.role=security-reviewer"))!.args;
-  const mount = run.filter((a, i) => run[i - 1] === "--mount").find((m) => m.includes("security_gate_1"));
+  const mount = run.filter((a, i) => run[i - 1] === "--mount").find((m) => m.includes("security_testability_review"));
   return mount ? /source=([^,]+)/.exec(mount)![1]! : reportBox();
 }
 
@@ -208,7 +208,7 @@ export function orchestratorDir(_d?: FakeDocker): string {
 
 export function report(feature: string, commit: string, findings: unknown[] = []): string {
   return JSON.stringify({
-    schema: "agent-report/1.0", role: "security-reviewer", feature, stage: "security_gate_1", commit, outcome: "complete",
+    schema: "agent-report/1.0", role: "security-reviewer", feature, stage: "security_testability_review", commit, outcome: "complete",
     summary: findings.length ? "Gaps found." : "No gaps: section 9 covers it.",
     body: {
       gate: 1, findings,
@@ -218,8 +218,8 @@ export function report(feature: string, commit: string, findings: unknown[] = []
   });
 }
 
-/** The analyst: asks one question, then writes the spec and reports it ready. A later session handles Gate 1 questions. */
-export function analyst(w: World, feature: () => string, onGate1?: (s: Script) => Promise<void>) {
+/** The analyst: asks one question, then writes the spec and reports it ready. A later session handles Security and Testability Review questions. */
+export function analyst(w: World, feature: () => string, onStReview?: (s: Script) => Promise<void>) {
   return async function* (s: Script, n: number): AsyncGenerator<SdkMessage> {
     const first = await s.next();
     if (n === 1) {
@@ -230,8 +230,8 @@ export function analyst(w: World, feature: () => string, onGate1?: (s: Script) =
       fs.writeFileSync(path.join(wt, "docs", "features", `${feature()}-export.md`), spec(feature(), 3));
       await s.call("interview_spec_ready", { spec_path: `docs/features/${feature()}-export.md`, spec_version: 3 });
     } else {
-      expect(first).toContain("GATE 1 FINDINGS");
-      await onGate1?.(s);
+      expect(first).toContain("SECURITY AND TESTABILITY REVIEW FINDINGS");
+      await onStReview?.(s);
     }
     expect(await s.next()).toBeNull();
     yield { type: "result", subtype: "success", session_id: `a-${n}`, result: "done", num_turns: 2 };

@@ -92,7 +92,7 @@ and they do not limit reads or network
    |---|---|---|
    | Role policy contract v2.6 | Container per agent session (mounts, credentials, image, network, write rules, fail closed) | Container boundary (H-0201 drafts the change) |
    | F-007 | FR-8, AC-16, SR-6, SR-9, SR-18 (container limits) | Analyst and web reader in containers on an internal network |
-   | F-008 | FR-2, AC-3, SR-6, SR-8 | Gate 1 reviewer in a container; report read after the container is gone |
+   | F-008 | FR-2, AC-3, SR-6, SR-8 | Security and Testability Review reviewer in a container; report read after the container is gone |
    | F-010 | FR-4, AC-5, SR-2, SR-25; A-2 | Triager and confirmation with no network and no writable mount; reproduction in the agent container |
    | F-016 (draft) | SR-11, AC-14 | Readiness session under the reviewer's container rules |
    | F-015 (draft) | FR-3, FR-6, OQ-6 | Developer, test engineer and the engine's test run in containers |

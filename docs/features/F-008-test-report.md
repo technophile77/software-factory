@@ -1,4 +1,4 @@
-# F-008 test report: Security Gate 1 on the engine
+# F-008 test report: Security and Testability Review on the engine
 
 Report per `docs/testing-strategy.md` § Run report. The plan, with the full
 criteria-to-test map, the edge cases and what is out of scope, is
@@ -8,14 +8,14 @@ criteria-to-test map, the edge cases and what is out of scope, is
 
 | | |
 |---|---|
-| Commit tested | `8f3a566` (Gate 2 fixes), with the test engineer's uncommitted files on top: `engine/test/acceptance/gate1.test.ts`, `support/gate1.ts`, a one-line role check in `support/agents.ts`, and these two documents. No product file was changed |
+| Commit tested | `8f3a566` (Code Review fixes), with the test engineer's uncommitted files on top: `engine/test/acceptance/st-review.test.ts`, `support/st-review.ts`, a one-line role check in `support/agents.ts`, and these two documents. No product file was changed |
 | Command | `cd engine && npm run typecheck && npx vitest run --coverage --coverage.reportsDirectory=<scratch folder outside the repo> --coverage.reportOnFailure=true` |
 | Environment | Linux container, Node 22.23.4, system git, as root. No Docker |
 | Typecheck | Clean (engine and `test/acceptance`) |
-| Test files | 36: 33 passed, 1 failed (`acceptance/gate1.test.ts`), 2 skipped (real Docker) |
+| Test files | 36: 33 passed, 1 failed (`acceptance/st-review.test.ts`), 2 skipped (real Docker) |
 | Tests run | 614 |
 | Passed | 595 |
-| Failed | 5, all in `gate1.test.ts`, all product (one of them a spec/code disagreement waiting on the owner) |
+| Failed | 5, all in `stReview.test.ts`, all product (one of them a spec/code disagreement waiting on the owner) |
 | Skipped | 14, each with its reason below |
 
 The suite was run twice in full with the same result.
@@ -23,7 +23,7 @@ The suite was run twice in full with the same result.
 | Project | Tests | Passed | Failed | Skipped |
 |---|---|---|---|---|
 | Acceptance (`test/acceptance/`) | 305 | 291 | 5 | 9 |
-| of which F-008 `gate1.test.ts` | 66 | 61 | 5 | 0 |
+| of which F-008 `stReview.test.ts` | 66 | 61 | 5 | 0 |
 | Unit (`test/*.test.ts`, the developer's) | 309 | 304 | 0 | 5 |
 
 **Result: fail.** Three product failures (AC-13/SR-12, AC-17/SR-11 through
@@ -87,7 +87,7 @@ engine; 5 (S id in any Markdown form) by G1-33 ×3, pass.
 
 ### F-1. AC-13 / SR-12: other files in the report folder are ignored, and the report is accepted
 
-- **Tests:** G1-28 ×3, `engine/test/acceptance/gate1.test.ts:677`.
+- **Tests:** G1-28 ×3, `engine/test/acceptance/st-review.test.ts:677`.
 - **Spec:** AC-13 "given … any path other than the named one is changed,
   then … the report is invalid or the session's changes are rejected";
   SR-12 "The write check accepts exactly the run's named report path, not
@@ -100,27 +100,27 @@ engine; 5 (S id in any Markdown form) by G1-33 ×3, pass.
 - **Actual:** the report is accepted, the rendering is committed and the
   feature moves to `readiness_gate`
   (`AssertionError: expected 'readiness_gate' not to be 'readiness_gate'`).
-  Log: `F-001: Gate 1 run R-… filed 0 finding(s); the feature is at readiness_gate.`
+  Log: `F-001: Security and Testability Review run R-… filed 0 finding(s); the feature is at readiness_gate.`
 - **Where:** `engine/src/engine.ts:1039-1040`: the check reads only the
   named file (`readReportFile(reportDir, reportName, …)`,
-  `engine/src/gate1/report.ts:75`); nothing looks at what else is in
+  `engine/src/st-review/report.ts:75`); nothing looks at what else is in
   `reportDir`, and the worktree check (`verify`) doesn't see that folder.
 
-### F-2. AC-17 / SR-11 (and FR-1): a second Gate 1 run for the same feature can't start: "an internal error"
+### F-2. AC-17 / SR-11 (and FR-1): a second Security and Testability Review run for the same feature can't start: "an internal error"
 
-- **Test:** G1-36, `gate1.test.ts:847` (waiting for the second run).
-- **Spec:** FR-1 (at engine start a feature at `security_gate_1` gets a
+- **Test:** G1-36, `stReview.test.ts:847` (waiting for the second run).
+- **Spec:** FR-1 (at engine start a feature at `security_testability_review` gets a
   run), FR-10, SR-11 (three runs, then a Security item), AC-17.
 - **Expected:** after run 1 fails (report invalid twice), the next engine
-  start runs Gate 1 again; after three failed runs the fourth doesn't start
+  start runs Security and Testability Review again; after three failed runs the fourth doesn't start
   and a Security item is filed.
 - **Actual:** after the restart no second run is recorded; the log says
-  `F-001: Gate 1 stopped: an internal error`, and the feature sits at
-  `security_gate_1` with nothing in the transcript about why. Timed out
+  `F-001: Security and Testability Review stopped: an internal error`, and the feature sits at
+  `security_testability_review` with nothing in the transcript about why. Timed out
   after 40 s waiting for 2 settled reviewer runs.
 - **Likely cause (not confirmed in product code, which I didn't change):**
   `engine/src/engine.ts:980` calls `prepareWorktree` for the fixed
-  `<feature>-gate1` folder with no `git_dir` for a new run;
+  `<feature>-st-review` folder with no `git_dir` for a new run;
   `engine/src/agent/runtime.ts:106-108` runs `git worktree prune` *before*
   removing the old folder, then `git worktree add` on a path git still
   has registered. Git refuses that: reproduced by hand,
@@ -134,20 +134,20 @@ engine; 5 (S id in any Markdown form) by G1-33 ×3, pass.
 
 ### F-3. AC-7 / FR-9: an Approved SR with the owner's own wording doesn't resolve the finding (spec and code disagree; owner decision pending)
 
-- **Test:** G1-15, `gate1.test.ts:452`.
+- **Test:** G1-15, `stReview.test.ts:452`.
 - **Spec as written:** §2 step 6 "the owner approves, changes or rejects
   it in the spec interview"; FR-9 "a security requirement in the spec's
   section 9 that cites the finding, with status Approved and text matching
   the owner's approved answer in the transcript"; AC-7.
-- **Expected:** the owner answers the Gate 1 question with their own
+- **Expected:** the owner answers the Security and Testability Review question with their own
   wording; the analyst writes that wording, word for word, as an Approved
-  SR citing `Gate 1 #1`; the spec passes the checks; the feature reaches
+  SR citing `Security and Testability Review #1`; the spec passes the checks; the feature reaches
   `readiness_gate`.
-- **Actual:** the feature stays at `security_gate_1`, the engine files the
-  FR-13 risk item and records `gate1_blocked`. Log: `F-001: Gate 1 findings
-  not resolved: Gate 1 #1: the owner's answer to Q-001 isn't the suggested
-  requirement and no Gate 1 assumption asks to record it.`
-- **Where:** `engine/src/gate1/flow.ts:160` (change 2 of `8f3a566`, built
+- **Actual:** the feature stays at `security_testability_review`, the engine files the
+  FR-13 risk item and records `st_review_blocked`. Log: `F-001: Security and Testability Review findings
+  not resolved: Security and Testability Review #1: the owner's answer to Q-001 isn't the suggested
+  requirement and no Security and Testability Review assumption asks to record it.`
+- **Where:** `engine/src/st-review/flow.ts:160` (change 2 of `8f3a566`, built
   as recommended while the spec update waits on the owner). If the owner
   approves that change, the spec and this test change together; until then
   it is a failure against spec v12.
@@ -160,7 +160,7 @@ rendering landed; markers with hyphens that the engine's plain-text
 escaping turned into `\-` (the tests now use letters and digits, so
 "engine text only" can't pass by accident); a wait that matched the
 question text instead of the check's evidence; and G1-35's first version,
-whose premise (a linked additions file reaching Gate 1) can't happen,
+whose premise (a linked additions file reaching Security and Testability Review) can't happen,
 because F-007's worktree rule already stops any feature whose branch holds
 a link. G1-35 now checks what SR-10 needs: nothing from the link's target
 reaches a session.
@@ -198,7 +198,7 @@ the result above: **pass**. F-1 to F-3 no longer fail.
 | Typecheck | Clean (engine and `test/acceptance`) |
 | Test files | 36: 34 passed, 2 skipped (real Docker) |
 | Tests | 616: 602 passed, 0 failed, 14 skipped (the same 14, for the same reasons as above) |
-| F-008 `gate1.test.ts` | 67: 67 passed (G1-15b is new) |
+| F-008 `stReview.test.ts` | 67: 67 passed (G1-15b is new) |
 | Other acceptance | 239: 230 passed, 9 skipped |
 | Unit (developer's) | 310: 305 passed, 5 skipped |
 | Coverage | Lines 88.22% (4,167 / 4,723), branches 79.66% (3,346 / 4,200), statements 84.01%, functions 84.4% |
@@ -208,14 +208,14 @@ the result above: **pass**. F-1 to F-3 no longer fail.
 | Failure | Now | Why |
 |---|---|---|
 | F-1, G1-28 ×3 (AC-13, SR-12) | Pass | Product fix in `0618d9f`: any file in the report folder besides the named report rejects the session |
-| F-2, G1-36 (AC-17, SR-11, FR-1) | Pass | Product fix in `0618d9f`: a Gate 1 worktree left by an earlier run is removed before git prunes, so a later run can start |
-| F-3, G1-15 (AC-7, FR-9) | Pass, as rewritten for spec v13 | The owner decided (spec v13, Gate 2 M1): an answer in other words counts only once the owner approves the analyst's "Gate 1 #n: <requirement>" assumption. G1-15 now tests that, and the new G1-15b tests the refusal |
+| F-2, G1-36 (AC-17, SR-11, FR-1) | Pass | Product fix in `0618d9f`: a Security and Testability Review worktree left by an earlier run is removed before git prunes, so a later run can start |
+| F-3, G1-15 (AC-7, FR-9) | Pass, as rewritten for spec v13 | The owner decided (spec v13, Code Review M1): an answer in other words counts only once the owner approves the analyst's "Security and Testability Review #n: <requirement>" assumption. G1-15 now tests that, and the new G1-15b tests the refusal |
 
 ### Criteria map changes
 
 | Criterion | Tests | Status |
 |---|---|---|
-| AC-7 | G1-12, G1-13, G1-14, G1-15 (v13: own words with an approved Gate 1 assumption) | Pass |
+| AC-7 | G1-12, G1-13, G1-14, G1-15 (v13: own words with an approved Security and Testability Review assumption) | Pass |
 | AC-13 | G1-25 to G1-28 | Pass |
 | AC-17 | G1-12, G1-36, G1-37, G1-38, G1-40 | Pass |
 | AC-18 (v13 adds the own-words clause) | G1-15, G1-15b, G1-37, G1-38, G1-39 | Pass |
@@ -227,7 +227,7 @@ AC-3's network route on a real daemon is still not run here.
 
 ### Review of the edits others made to my test files
 
-I read every change to `gate1.test.ts` and `support/gate1.ts` from
+I read every change to `stReview.test.ts` and `support/st-review.ts` from
 `0618d9f` to `db1d01d`:
 
 | Edit | Verdict |
@@ -235,7 +235,7 @@ I read every change to `gate1.test.ts` and `support/gate1.ts` from
 | `waitStage`: 90 s limit on Windows; a failed `engine.status` poll counts as "not there yet", with 200 ms between polls (`ef8c761`, `2649568`) | **Accepted.** The test still asserts the same stage. A channel that keeps failing still times out and fails, and the error still reports the last stage seen |
 | G1-7 and G1-20 wait up to 30 s for the transcript and the log instead of reading them after a fixed pause (`ce34d63`) | **Accepted.** The same texts are required; only the timing is looser, and the tests still fail if the text never appears |
 | `dropSection` keeps the final line break (`623337f`) | **Accepted.** It's a fixture fix for CRLF checkouts and asserts nothing |
-| `AnalystStep.assume` (the analyst proposes an assumption after the owner's reply) and G1-15 rewritten for v13 | **Accepted.** It follows spec v13 FR-9 and AC-18: own words, then the "Gate 1 #1: <wording>" assumption approved by the owner, then the Approved SR, then `readiness_gate` |
+| `AnalystStep.assume` (the analyst proposes an assumption after the owner's reply) and G1-15 rewritten for v13 | **Accepted.** It follows spec v13 FR-9 and AC-18: own words, then the "Security and Testability Review #1: <wording>" assumption approved by the owner, then the Approved SR, then `readiness_gate` |
 | New G1-15b | **Accepted with a reservation.** Its owner answer is "No.", so it shows that a refusal files the risk item, which G1-37 already covers. It doesn't show what its title says: a real alternative wording copied into section 9 without an approved assumption. Using a real wording (as in G1-15) would close that gap. Its check is also loose: any new Security item that names the feature counts, not the FR-13 risk item specifically. I haven't changed it, since I was asked to edit only this report |
 
 No edit skips, deletes or weakens a check on product behaviour.

@@ -1,6 +1,6 @@
 import { INTERVIEW_STAGE } from "../constants";
-import { READINESS_STAGE } from "../gate1/flow";
-import { GATE1_STAGE } from "../gate1/report";
+import { READINESS_STAGE } from "../st-review/flow";
+import { ST_REVIEW_STAGE } from "../st-review/report";
 import type { ItemStatus } from "./model";
 
 /**
@@ -21,7 +21,7 @@ export function activityOf(o: { stage: string; paused: boolean; running: boolean
     if (o.decisions?.length) return "waiting_for_decision";
     if (waiting) return "waiting_for_owner";
   }
-  if (o.stage === GATE1_STAGE) return "security_reviewing";
+  if (o.stage === ST_REVIEW_STAGE) return "security_reviewing";
   if (o.stage === READINESS_STAGE) return "readiness_check";
   if (o.stage !== INTERVIEW_STAGE) return "idle";
   if (o.statuses.includes("researching")) return "analyst_researching";

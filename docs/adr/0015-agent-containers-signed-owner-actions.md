@@ -3,7 +3,7 @@
 - **Status:** Accepted; decision 3 amended for phone actions by ADR 0018; decision 1 suspended until Beta by [ADR 0026](0026-agents-on-host-until-beta.md)
 - **Date:** 2026-11-10
 - **Decided by:** owner
-- **Decision item:** proposal 0017 (F-003 Gate 2 R2-1, R2-2, R2-4; H-0045, H-0046, H-0047, H-0052), decision cards 2026-11-10
+- **Decision item:** proposal 0017 (F-003 Code Review R2-1, R2-2, R2-4; H-0045, H-0046, H-0047, H-0052), decision cards 2026-11-10
 
 ## Problem
 ADR 0004 enforces the role policy in the engine, not at the OS. Any program

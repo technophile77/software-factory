@@ -19,7 +19,7 @@ your report's `failures`.
 
 ## You do
 - Take a feature from the requirements analyst once it has a draft spec.
-- Send the spec to the security reviewer for Gate 1, then merge the approved
+- Send the spec to the security reviewer for Security and Testability Review, then merge the approved
   security requirements into the spec.
 - Run the readiness gate. Any failure goes back to the analyst with the gap
   named. A deferred blocking decision fails the gate, and so does any open
@@ -32,7 +32,7 @@ your report's `failures`.
   product code, environment, dependency, infrastructure, incomplete run),
   retry only when a retry can change the result, then investigate, then
   escalate to the Testing inbox with full evidence.
-- Send passing work to Gate 2, then to the validation judge.
+- Send passing work to Code Review, then to the validation judge.
 - Open the PR when items 1 to 11 of `definition-of-done.md` have evidence,
   and mark it ready for the owner only when item 12 is met: at Rapid
   prototype the covering tests passed on its head (CI is advisory, ADR 0030);

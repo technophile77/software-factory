@@ -1,4 +1,5 @@
 import template from "../../../docs/features/feature-template.structure.json";
+import { SECTION9_SOURCE_HEADERS } from "../legacy-names";
 
 /**
  * F-016 FR-17: the spec's headings and table header rows must match
@@ -16,6 +17,12 @@ interface Section {
 export const SPEC_SECTIONS: readonly Section[] = (template as { sections: Section[] }).sections;
 
 const row = (cells: string[]) => `| ${cells.join(" | ")} |`;
+
+/** The template's header row, and section 9's pre-rename form, which specs written before it keep. */
+const headerRows = (table: string[]): string[] => {
+  const [now, old] = SECTION9_SOURCE_HEADERS;
+  return table.includes(now!) ? [row(table), row(table.map((c) => (c === now ? old! : c)))] : [row(table)];
+};
 
 /** The structure as the analyst's instructions state it. */
 export function structureText(): string {
@@ -58,7 +65,7 @@ export function structureProblems(spec: string): string[] {
       const body = lines.slice(at + 1, next ? next.i : lines.length);
       const header = body.findIndex((l) => l.trim().startsWith("|"));
       if (header < 0) problems.push(`section "${s.heading}" has no table; its header row must be ${row(s.table)}`);
-      else if (row(cells(body[header]!)) !== row(s.table)) problems.push(`line ${at + 2 + header}: the first table under "${s.heading}" must have the header row ${row(s.table)}`);
+      else if (!headerRows(s.table).includes(row(cells(body[header]!)))) problems.push(`line ${at + 2 + header}: the first table under "${s.heading}" must have the header row ${row(s.table)}`);
     }
   });
 

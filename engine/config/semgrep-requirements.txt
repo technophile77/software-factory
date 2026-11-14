@@ -1,4 +1,4 @@
-# Semgrep CE for the engine's Gate 2 step (ADR 0024 amendment 2026-11-14,
+# Semgrep CE for the engine's Code Review step (ADR 0024 amendment 2026-11-14,
 # F-015 FR-8, H-0196). Change-controlled. Installed only with
 #   pip install --require-hashes --only-binary :all: -r semgrep-requirements.txt
 # into a venv under the engine home. Resolved for every platform with

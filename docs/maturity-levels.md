@@ -16,7 +16,7 @@ A jump past a level needs the evidence for every level in between.
 | Move | Testing required | Other evidence |
 |---|---|---|
 | → Prototype | Builds and a smoke test runs | Purpose written down |
-| Prototype → Alpha | Every acceptance criterion of core features has a passing test; unit tests on core logic; failure paths for core features | Gate 2 security on the whole codebase; known issues listed |
+| Prototype → Alpha | Every acceptance criterion of core features has a passing test; unit tests on core logic; failure paths for core features | Code Review of the whole codebase; known issues listed |
 | Alpha → Beta | All acceptance criteria tested, including edge cases; contract tests for every interface; integration tests; coverage, regression and stochastic bars in `testing-strategy.md` | No open security findings above an agreed severity; user-facing docs; tester feedback channel |
 | Beta → Release | Full regression suite green on a clean environment; performance/load tests against stated targets; upgrade and rollback tested | Dependency audit; no open blocking bugs; release notes |
 | Release → Production ready | Tests pass in a production-like environment; backup/restore tested; failure/recovery tested | Monitoring and alerting; runbook; full security review; owner sign-off |
@@ -29,7 +29,7 @@ Every level runs every gate. Only the bar changes.
 |---|---|---|---|---|
 | Requirements interview | Short; assumptions allowed if approved | Full | Full | Full |
 | Test engineer | Happy path for each acceptance criterion; unit tests on core logic | All acceptance criteria + core failure paths; unit, regression and stochastic tests to the Alpha bar | Plus edge cases and contract tests; Beta bar | Plus non-functional tests; Release bar (Production ready: every test type) |
-| Security gates 1 and 2 (approved) | Critical blocks | Critical and High block | Critical and High block | Critical, High, and Medium block |
+| Security and Testability Review and Code Review (approved) | Critical blocks | Critical and High block | Critical and High block | Critical, High, and Medium block |
 | Required CI jobs (approved) | None required; every job runs and reports (ADR 0030) | Build, smoke test, unit, acceptance tests, secret scan, static analysis (ADR 0024) | + contract, integration tests, dependency audit | + full regression, performance tests, coverage report |
 | Validation judge (approved) | Full checklist; any number of Major findings (logged) | Full checklist; up to 3 Major | Full checklist; up to 1 Major | Full checklist; no Major |
 | Tests before a PR opens (approved) | The tests covering the change pass locally (ADR 0030) | Same | Same | Same |

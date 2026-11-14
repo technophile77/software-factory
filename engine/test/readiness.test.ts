@@ -59,7 +59,7 @@ describe("interview_spec_ready (FR-12, AC-10)", () => {
     await c.ok("interview.reply", { session, item: "A-001", revision: 0, reply_id: "a", kind: "approve_assumption", text: "" });
     await c.ok("interview.reply", { session, item: "Q-001", revision: 0, reply_id: "q", kind: "answer", text: "ok" });
     const rel = writeSpec(w, feature, spec(feature, ["| A-1 | CSV is  enough. | Interview A-001, owner 2026-11-11 | Approved |"]));
-    // Gate 2, L2: the worktree's .git is the agent's to rewrite; the report's commit doesn't come from it.
+    // Code Review, L2: the worktree's .git is the agent's to rewrite; the report's commit doesn't come from it.
     const decoy = path.join(w.root, "decoy");
     initRepo(decoy, { "x.md": "decoy" });
     fs.rmSync(path.join(w.worktree, ".git"), { recursive: true, force: true });
@@ -76,7 +76,7 @@ describe("interview_spec_ready (FR-12, AC-10)", () => {
     const branch = e.feature(feature)!.state.branch;
     expect(report.commit).toBe(git(w.config, "rev-parse", `refs/heads/${branch}`));
     expect(report.commit).not.toBe(git(decoy, "rev-parse", "HEAD"));
-    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "security_gate_1", active_agents: 0, activity: expect.any(String) }]);
+    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "security_testability_review", active_agents: 0, activity: expect.any(String) }]);
     void e;
   });
 

@@ -1,7 +1,7 @@
 # F-005 first Windows run
 
 The interview client's Windows transport (SR-7) had never run before this
-(test report "Not run"; orchestrator review; Gate 2 #9; validation n5). This
+(test report "Not run"; orchestrator review; Code Review #9; validation n5). This
 is that run. There is still no engine, so stand-in engines served the pipe.
 
 **Machine:** the owner's PC, Windows 11 (build 26200), Python 3.10.11,

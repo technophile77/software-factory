@@ -31,8 +31,8 @@ Also during review: `npm audit` found ReDoS issues in markdown-it 14.1.0 and a s
 | SR-1, SR-3, SR-4, SR-5 | CSP, link schemes, id validation, unknown-field and body preservation |
 | SR-2 | Not automated (extension host): by code inspection; integration test required before Alpha |
 
-## After Gate 2 and validation
-Fixes for Gate 2 findings and the validation judge's findings added 7 developer unit tests (git lookup, time ordering, `__proto__`, misnamed and unreadable files). The independent acceptance tests were not changed and all still pass.
+## After Code Review and validation
+Fixes for Code Review findings and the validation judge's findings added 7 developer unit tests (git lookup, time ordering, `__proto__`, misnamed and unreadable files). The independent acceptance tests were not changed and all still pass.
 
 ## Open spec ambiguities (for the owner, not blocking)
 - Link `kind` values are not listed in the Inbox item contract.

@@ -28,16 +28,18 @@ export const LIMIT_KEYS = {
   research_result: { summary_chars: "int", max_sources: "int" },
   worktree_commit: { max_files: "int", max_total_mib: "num", max_file_mib: "num" },
   security_reviewer: SESSION,
-  security_gate_1: { runs_per_feature: "int", report_kib: "int", additions_kib: "int" },
+  security_testability_review: { runs_per_feature: "int", report_kib: "int", additions_kib: "int" },
   orchestrator: SESSION,
   readiness_gate: { runs_per_feature: "int", report_kib: "int" },
 } as const satisfies Record<string, Record<string, Kind>>;
 
 /**
  * Sections a factory version from before F-008 doesn't have. Without them the
- * project still runs, but no Gate 1 session starts (F-008 AC-10).
+ * project still runs, but no Security and Testability Review session starts (F-008 AC-10).
  */
-export const OPTIONAL_SECTIONS = ["security_reviewer", "security_gate_1", "orchestrator", "readiness_gate"] as const;
+const LEGACY_ST_REVIEW_SECTION = "security_gate_1";
+
+export const OPTIONAL_SECTIONS = ["security_reviewer", "security_testability_review", "orchestrator", "readiness_gate"] as const;
 type Optional = (typeof OPTIONAL_SECTIONS)[number];
 
 type Keys = typeof LIMIT_KEYS;
@@ -60,11 +62,18 @@ const own = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k)
  */
 export function parseLimits(doc: unknown, where: string, full: true): Limits;
 export function parseLimits(doc: unknown, where: string, full: false): PartialLimits;
-export function parseLimits(doc: unknown, where: string, full: boolean): Limits | PartialLimits {
+export function parseLimits(raw: unknown, where: string, full: boolean): Limits | PartialLimits {
   const bad = (m: string): never => {
     throw new LimitsError(`${where}: ${m}`);
   };
-  if (!isObj(doc)) return bad("must be a mapping");
+  if (!isObj(raw)) return bad("must be a mapping");
+  let doc = raw;
+  // A factory version or project manifest from before the gate rename names the section security_gate_1.
+  if (own(doc, LEGACY_ST_REVIEW_SECTION)) {
+    if (own(doc, "security_testability_review")) bad(`names both '${LEGACY_ST_REVIEW_SECTION}' and 'security_testability_review'`);
+    const { [LEGACY_ST_REVIEW_SECTION]: sec, ...rest } = doc;
+    doc = { ...rest, security_testability_review: sec };
+  }
   const out: Record<string, Record<string, number>> = {};
   for (const s of Object.keys(doc)) if (!own(LIMIT_KEYS, s)) bad(`unknown section '${s}'`);
   for (const [s, keys] of Object.entries(LIMIT_KEYS) as Array<[string, Record<string, Kind>]>) {
@@ -182,21 +191,21 @@ export function roleContainerLimits(l: Limits): Record<string, ContainerLimits> 
   };
 }
 
-/** F-008 FR-11, SR-6, SR-8, SR-10, SR-11: the Gate 1 values, or null when this factory version has none. */
-export interface Gate1Limits {
+/** F-008 FR-11, SR-6, SR-8, SR-10, SR-11: the Security and Testability Review values, or null when this factory version has none. */
+export interface StReviewLimits {
   caps: SessionCaps;
   runsPerFeature: number;
   reportBytes: number;
   additionsBytes: number;
 }
 
-export function gate1Limits(l: Limits, billing: Manifest["billingMode"]): Gate1Limits | null {
-  if (!l.security_reviewer || !l.security_gate_1) return null;
+export function stReviewLimits(l: Limits, billing: Manifest["billingMode"]): StReviewLimits | null {
+  if (!l.security_reviewer || !l.security_testability_review) return null;
   return {
     caps: sessionCaps(l.security_reviewer, billing),
-    runsPerFeature: l.security_gate_1.runs_per_feature,
-    reportBytes: l.security_gate_1.report_kib * 1024,
-    additionsBytes: l.security_gate_1.additions_kib * 1024,
+    runsPerFeature: l.security_testability_review.runs_per_feature,
+    reportBytes: l.security_testability_review.report_kib * 1024,
+    additionsBytes: l.security_testability_review.additions_kib * 1024,
   };
 }
 

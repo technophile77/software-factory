@@ -8,7 +8,7 @@ criteria-to-test map, the abuse cases and what can't be unit-tested, is
 
 | | |
 |---|---|
-| Code tested | `9ae4c85` plus the developer's uncommitted Gate 2 fixes that were in the working tree during the run (`engine/src/interview/document.ts`, `readiness.ts`, `tools.ts`, `interview_client.py`). The F-009 acceptance files were run a second time on the same tree with the same result |
+| Code tested | `9ae4c85` plus the developer's uncommitted Code Review fixes that were in the working tree during the run (`engine/src/interview/document.ts`, `readiness.ts`, `tools.ts`, `interview_client.py`). The F-009 acceptance files were run a second time on the same tree with the same result |
 | Commands | `cd engine && npm run typecheck && npx vitest run`; `python3 -m unittest discover -s plugins/software-factory/skills/spec-interview/tests` |
 | Environment | Linux container, Node 22.23.4, Python 3.13.18, system git, running as root (so the device-node test ran). No Docker |
 | Typecheck | Clean (engine and `test/acceptance`) |
@@ -120,7 +120,7 @@ both readings.
 Read after the tests above were written. Nothing the spec asks for is
 covered only by the developer's tests. Things the developer tests and this
 suite doesn't, because the spec doesn't ask for them: tag-block characters
-and invisible HTML entities (Gate 2 additions), HTML inside code (Gate 2
+and invisible HTML entities (Code Review additions), HTML inside code (Code Review
 H1), relative document paths resolved from the repo, and a file swapped
 between the check and the open. Things this suite adds that the developer's
 don't: AC-9 through the whole engine with an analyst session that writes,
@@ -152,7 +152,7 @@ is fooled, and the version rule (E-1, C-1).
 ## Addendum 1: spec v11 on `acd6e9e` (validation round 1, M2)
 
 The run above tested `9ae4c85` against spec v7 and ended **fail** (E-1, C-1,
-E-2). Since then the owner decided v8 to v11 and the developer fixed Gate 2
+E-2). Since then the owner decided v8 to v11 and the developer fixed Code Review
 and validation round 1 (B1, M1). This addendum re-runs everything on the
 final commit, confirms or corrects the developer's edits to these tests, and
 adds tests for v9, v10 and v11 from the spec and the contracts (Engine
@@ -543,7 +543,7 @@ the shortcut form, where the link text is the label itself.
 - **Renders** (all three) as `<a href="#" title="M">`U+FE0F`</a>`: a
   variation selector with no character before it is default-ignorable and
   draws nothing, so the link has no visible text. The engine allows U+FE0E
-  and U+FE0F anywhere (Gate 2 M1 kept them for emoji), so they don't count
+  and U+FE0F anywhere (Code Review M1 kept them for emoji), so they don't count
   as hidden characters; the link-text check then treats them as visible.
   An emoji followed by U+FE0F, and a digit followed by U+FE0E, are visible
   and accepted (LNK-12 controls).

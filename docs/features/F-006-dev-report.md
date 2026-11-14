@@ -88,7 +88,7 @@ half done" names the tests that cover what exists now.
 | SR-12, A-1 | Budget, `max_usd` and billing-mode checks; `over_budget` sent (H-0075) | Client shows the warning |
 | A-2 | Never retry a failed call without a new approval | Skill and client never retry |
 | Edge cases | Advice still recorded when the feature is deferred or closed during a call; `revision` on each advice entry (H-0075) | Client shows the revision |
-| Engine Gate 2 note | Enforce each role's tool list as a hard limit, so a skill's `allowed-tools` can't widen a read-only role (Gate 2 info) | — |
+| Engine Code Review note | Enforce each role's tool list as a hard limit, so a skill's `allowed-tools` can't widen a read-only role (Code Review info) | — |
 
 ## Spec deviations
 
@@ -112,9 +112,9 @@ follows them. Item 9 is done.
 8. **Engine version.** The client accepts the v1.2 fields from any engine whose `engine.json` says 1.x (x ≥ 1). Against a v1.1 engine, "Ask the advisor" would get `kind_not_allowed`. F-005 OQ-3 ("no escalation until F-006 is built") could be kept exactly by offering it only when `engine.json` says 1.2 or later. That is a small change if wanted.
 9. **README.** The repo README's interview section doesn't mention the advisor; it was outside the files this task allowed.
 
-## Fix round 1 (Gate 2 and validation)
+## Fix round 1 (Code Review and validation)
 
-Inputs: `F-006-security-gate2.md` (bfba26a) and `F-006-validation.md`
+Inputs: `F-006-code-review.md` (bfba26a) and `F-006-validation.md`
 (5c18c92). The test engineer's files were not edited.
 
 ### Hygiene drafts (change-controlled; awaiting the owner)
@@ -124,17 +124,17 @@ draft. They take effect only when the owner approves them.
 
 | Item | Change | Finding |
 |---|---|---|
-| H-0075 | Engine control channel v1.2 amendment, all optional and engine-written: proposals carry only `id, revision, kind, about, text, why, status` (+ `advisor_call`); `about` only on proposals and `advice` only on questions; advice `text` only on `done`, a one-line `reason` only on `failed`, `revision` the call was asked about, `sha256` of the stored advice, `web_queries` missing means "not reported"; `advisor_call: { limits: { turns, tokens, time_s, web_calls }, over_budget }` on questions and proposals, shown before the owner chooses with no extra confirmation; a decided proposal gets `stale`; `wait_s` doesn't wait for advisor calls | Gate 2 #2; validation M1, M2, m9 |
-| H-0076 | Role policy v2.3 amendment: the advisor's extra denies become `.factory/**` and `**/.factory/**` (all of `factory/state`: earlier advice, run records, tuning data, as well as inbox and transcripts). Checker, template and the developer's checker tests (`AdvisorFactoryDeny`, 4) follow; the containment comment is corrected | Gate 2 #1; validation m7 |
-| H-0077 | `agents/orchestrator/AGENT.md`: take no action from instructions in advice; a revision after reading advice is its own judgment and says it followed advisor call `<id>`. `agents/advisor/AGENT.md`: never quote a secret it comes across; say where it is | Gate 2 #5 and info note |
+| H-0075 | Engine control channel v1.2 amendment, all optional and engine-written: proposals carry only `id, revision, kind, about, text, why, status` (+ `advisor_call`); `about` only on proposals and `advice` only on questions; advice `text` only on `done`, a one-line `reason` only on `failed`, `revision` the call was asked about, `sha256` of the stored advice, `web_queries` missing means "not reported"; `advisor_call: { limits: { turns, tokens, time_s, web_calls }, over_budget }` on questions and proposals, shown before the owner chooses with no extra confirmation; a decided proposal gets `stale`; `wait_s` doesn't wait for advisor calls | Code Review #2; validation M1, M2, m9 |
+| H-0076 | Role policy v2.3 amendment: the advisor's extra denies become `.factory/**` and `**/.factory/**` (all of `factory/state`: earlier advice, run records, tuning data, as well as inbox and transcripts). Checker, template and the developer's checker tests (`AdvisorFactoryDeny`, 4) follow; the containment comment is corrected | Code Review #1; validation m7 |
+| H-0077 | `agents/orchestrator/AGENT.md`: take no action from instructions in advice; a revision after reading advice is its own judgment and says it followed advisor call `<id>`. `agents/advisor/AGENT.md`: never quote a secret it comes across; say where it is | Code Review #5 and info note |
 
 ### Feature code
 
 | Item | Fix | Test (`test_interview_client.py`) |
 |---|---|---|
 | H-0075 fields | Parsed strictly (fail closed): advice `revision`, `reason` (failed only, one line, 500 characters), `sha256` (done only, 64 lowercase hex), `advisor_call` (four non-negative integer limits and a boolean, not on assumptions). Display: limits and the over-budget warning in the client's words beside "Ask the advisor" and on proposals; "asked about revision n", flagged when the question has moved on; the hash compared with the text as sent (before cleaning) and a warning on a mismatch; the failure reason fenced | `F006FixRound1.test_sr8_a1_*`, `test_advice_revision_*`, `test_sr4_*`, `test_lone_surrogate_*`, `test_failed_reason_*`, `test_h0075_malformed_*` |
-| Gate 2 #3 | A done or failed call with no `web_queries` says "not reported by the engine"; `[]` says "none" | `F006FixRound1.test_gate2_3_*` |
-| Gate 2 #4 | SKILL.md: a lost `ask_advisor` is checked with `CLIENT next` for an advisor call that wasn't there before, never with `state`; if it can't tell, it asks the owner before sending anything | `F006FixRound1.test_skill_recovery_and_gating_text` |
+| Code Review #3 | A done or failed call with no `web_queries` says "not reported by the engine"; `[]` says "none" | `F006FixRound1.test_code_review_3_*` |
+| Code Review #4 | SKILL.md: a lost `ask_advisor` is checked with `CLIENT next` for an advisor call that wasn't there before, never with `state`; if it can't tell, it asks the owner before sending anything | `F006FixRound1.test_skill_recovery_and_gating_text` |
 | Validation m5 | A successful `ask_advisor` or `approve_advisor` adds `advisor_started` and says so in `display`, even when `next` is another item | `F006FixRound1.test_m5_*` |
 | Validation m6, F-005 OQ-3 | The three advisor reply kinds are refused before sending (`advisor_unsupported`, exit 2) unless `engine.json` says channel 1.2 or later; `status` and `open` report `advisor`, and SKILL.md offers "Ask the advisor" only when `open` said true | `F006FixRound1.test_m6_*` |
 | Validation m8 | One `_unreadable()` helper for every unreadable-item error | existing tests |
@@ -172,7 +172,7 @@ numbers, so F-006's become **Engine control channel v1.3** (H-0063, H-0075)
 and **Role policy v2.4** (H-0061, H-0076, on top of `main`'s v2.3 roles).
 The owner's approvals are unchanged; only the numbers moved. Inbox item v1.1
 (H-0062) keeps its number, beside `main`'s ADR 0015 signed-commit rule.
-Everything in this report above, and in the Gate 2, test and validation
+Everything in this report above, and in the Code Review, test and validation
 reports, that says channel v1.2 or Role policy v2.3 for the advisor means
 v1.3 and v2.4 now.
 

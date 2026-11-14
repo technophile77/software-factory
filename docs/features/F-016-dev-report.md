@@ -29,30 +29,30 @@
 - `engine/scripts/migrate-inbox-once.ts` (new) and `npm run migrate-inbox` (FR-16, SR-20):
   - Moves each open item file to a record and body, removing the old file in the same commit.
   - Owner actions in the old files are dropped and noted.
-  - Engine Gate 1 and pins items keep their effect.
+  - Engine Security and Testability Review and pins items keep their effect.
   - The script is to be deleted after the owner's projects are migrated (H-0164).
 
 ### Effects of answers (F-016 FR-1 to FR-6, H-0182)
 - `onAnswer` in `engine.ts`:
-  - Gate 1 choice: `gate1_decided`, then back to the interview with the choice as data.
-  - Gate 1 risk: Accept records `accepted_risk`; any other action re-asks.
+  - Security and Testability Review choice: `st_review_decided`, then back to the interview with the choice as data.
+  - Security and Testability Review risk: Accept records `accepted_risk`; any other action re-asks.
   - pins: re-pin, and the owner is told to restart.
   - chain: the transcript is read again and reopened if intact.
   - breach: restart within the run caps.
-  - gate1cap: one more Gate 1 run.
+  - streviewcap: one more Security and Testability Review run.
   - spec_signoff: Approve on the same commit moves the feature to `build_and_test_prep`; changes go back to the interview.
   - Everything else, and every option B, is record only.
   - The feature's entries and the record's `effect_done` land in one commit (SR-7).
 - `engine/src/interview/model.ts`:
-  - New transcript entries: `gate1_decided`, `gate1_risk_accepted`, `gate1_reask`, `gate1_extra_run`, `returned`, `readiness_run`, `readiness_result`, `readiness_session`, `signoff_filed`, `spec_signed_off`, `signoff_withdrawn`.
+  - New transcript entries: `st_review_decided`, `st_review_risk_accepted`, `st_review_reask`, `st_review_extra_run`, `returned`, `readiness_run`, `readiness_result`, `readiness_session`, `signoff_filed`, `spec_signed_off`, `signoff_withdrawn`.
   - A re-asked choice finding is then settled by an interview question.
-- `engine/src/gate1/flow.ts`: `gate1Resolution` checks accepted risks and decided choices against section 9 (SR-6). `analystReturnTurn` gives the analyst what came back, as JSON data after the instructions.
+- `engine/src/st-review/flow.ts`: `stReviewResolution` checks accepted risks and decided choices against section 9 (SR-6). `analystReturnTurn` gives the analyst what came back, as JSON data after the instructions.
 
 ### Readiness gate (F-016 FR-7, FR-8, FR-11, OQ-1 (c))
 - `engine/src/readiness/checks.ts` (new): the structural code checks. Sections 1 to 5 must be present and filled. FR rows must be in section 3, and AC rows in Given/When/Then form. Every Covers cell must name existing FRs, and every FR must be covered.
 - `engine/src/readiness/report.ts` (new): the orchestrator's turn, report shape, validation and one correction.
 - `engine.ts` `runReadiness`:
-  - Runs the interview checks, Gate 1 resolution and the structural checks. Only if all pass does one orchestrator session run, read-only, writing only its report (SR-11 v11).
+  - Runs the interview checks, Security and Testability Review resolution and the structural checks. Only if all pass does one orchestrator session run, read-only, writing only its report (SR-11 v11).
   - A pass files the Spec sign-off item. A failed check returns the feature to the interview with the evidence as data.
   - An invalid report, or a write outside the report, fails closed.
 - `engine/src/agent/reviewer.ts`: `orchestratorPolicy`. `engine/src/config/limits.ts`, `models.ts`: the `orchestrator` and `readiness_gate` sections, optional, so a factory version without them runs no session.
@@ -65,26 +65,26 @@ The AC-11 trial on F-002 in `factory-e2e-trial` found these. Each one has a test
 |---|---|---|
 | v13 FR-13, FR-14 (issues #64, #65) | An analyst stopped at its 4-hour cap left the feature stuck, and the skill said "still working". | `analyststop` item offers a new run, filed at stop and at start; `active_agents` is real; the skill's "where is it" answer is honest. |
 | v13 H-0187, H-0188 (#63, #66) | The device link wasn't clickable; the picker hid what was being approved. | Markdown link; the picker quotes the item word for word. |
-| v14 FR-15 | Gate 1 findings taken up only as assumptions dead-ended. | Unresolved findings go back to the analyst once, then a `gate1unresolved` item. |
-| v15 FR-16 | Risk items were filed for findings the spec took up under another section title. | Either title is read for Gate 1; open risk items are withdrawn when Gate 1 passes. |
+| v14 FR-15 | Security and Testability Review findings taken up only as assumptions dead-ended. | Unresolved findings go back to the analyst once, then a `streviewunresolved` item. |
+| v15 FR-16 | Risk items were filed for findings the spec took up under another section title. | Either title is read for Security and Testability Review; open risk items are withdrawn when Security and Testability Review passes. |
 | v16 FR-17, H-0189 (#67) | The analyst wrote its own section headings. | `docs/features/feature-template.structure.json` defines the exact headings and table header rows; `spec_structure` check; the analyst's first turn states the structure. |
-| v17 FR-18 | The skill turned a written `\n` into a line break, so a word-for-word answer didn't match. | Gate 1 matching treats written escapes as whitespace. |
+| v17 FR-18 | The skill turned a written `\n` into a line break, so a word-for-word answer didn't match. | Security and Testability Review matching treats written escapes as whitespace. |
 | Bug fixes, no spec change | Duplicate inbox ids; Docker stuck at start; a failed resume swallowed the owner's next reply; the session volume was root-owned, so no conversation survived a restart (#70); a restarted session lost questions' suggested answers. | `file()` serialized; 15 s Docker timeout with advice; turn stream closed per session; image creates `/home/node/.claude` for uid 1000 and rebuilds when its engine files change; the summary keeps suggested answers. |
-| v18 FR-19, H-0235 | Gate 1 asked the owner about Low findings that the approved standards never block at Rapid prototype. | The engine sets `blocks` from severity and maturity using one JSON table (`security-blocking.json`); findings below the bar are recorded as known issues, never asked. The reviewer only grades severity. |
+| v18 FR-19, H-0235 | Security and Testability Review asked the owner about Low findings that the approved standards never block at Rapid prototype. | The engine sets `blocks` from severity and maturity using one JSON table (`security-blocking.json`); findings below the bar are recorded as known issues, never asked. The reviewer only grades severity. |
 | H-0236 (PR #78) | The onboarding checker couldn't find that JSON once the skill was copied into a repo. | The JSON moved into the onboard-repo skill's `scripts/` folder; still one copy. |
-| v19 FR-20 (PR #80) | The analyst filed Gate 1 questions with a placeholder suggestion, and a report written before FR-19 still blocked on its Low findings. | The bar applies whenever a finding is used; `interview_ask` and `interview_revise` refuse a "Gate 1 #n" question whose suggestion isn't the finding's requirement. |
-| No spec change (PR #81) | The Gate 1 run-limit item didn't say option A allows another run. | Reworded. |
+| v19 FR-20 (PR #80) | The analyst filed Security and Testability Review questions with a placeholder suggestion, and a report written before FR-19 still blocked on its Low findings. | The bar applies whenever a finding is used; `interview_ask` and `interview_revise` refuse a "Security and Testability Review #n" question whose suggestion isn't the finding's requirement. |
+| No spec change (PR #81) | The Security and Testability Review run-limit item didn't say option A allows another run. | Reworded. |
 
 ## Tests
 
 - New tests:
   - `test/inbox.test.ts`: 14 tests for F-011 AC-1 to AC-7, AC-12, SR-10, SR-17 and SR-18.
-  - `test/f016-run.test.ts`: 19 tests for F-016 AC-1 to AC-10 and AC-12 to AC-14, Gate 2 M1, SR-8, SR-9, OQ-3, and the `chain` and `gate1cap` effects.
+  - `test/f016-run.test.ts`: 19 tests for F-016 AC-1 to AC-10 and AC-12 to AC-14, Code Review M1, SR-8, SR-9, OQ-3, and the `chain` and `streviewcap` effects.
   - `test/migrate-inbox.test.ts`: 3 tests for F-011 AC-13 and SR-20.
   - `test/inbox-calls.test.ts`: 3 tests for F-011 FR-14 and AC-10.
   - `test/notify.test.ts`: 1 test.
   - `test/limits.test.ts`: H-0184.
-- `test/agents-harness.ts` now holds the fake Docker and scripted SDK shared by the Gate 1 and F-016 engine tests.
+- `test/agents-harness.ts` now holds the fake Docker and scripted SDK shared by the Security and Testability Review and F-016 engine tests.
 - Existing tests now read the new records through `test/inbox-items.ts`.
 - The test engineer added `test/f016-acceptance.test.ts` (30 tests); see `F-016-test-report.md`.
 - Full suite on Linux at `6246b09`: 1,578 passed, 20 skipped, 0 failed (validation judge's run). CI on `6246b09`: every job green.
@@ -92,5 +92,5 @@ The AC-11 trial on F-002 in `factory-e2e-trial` found these. Each one has a test
 
 ## Known gaps
 
-- Agents still run in containers through the current runner. Moving to host sessions (ADR 0026) belongs to the worktree thread. The readiness session follows the Gate 1 reviewer's runner, so it moves with it.
-- Gate 2 M1 is fixed: an answer the engine didn't read from GitHub in the same run is checked on GitHub before its effect, and remote changes under `inbox/` are refused. See the fixes table in `F-016-security-gate2.md`.
+- Agents still run in containers through the current runner. Moving to host sessions (ADR 0026) belongs to the worktree thread. The readiness session follows the Security and Testability Review reviewer's runner, so it moves with it.
+- Code Review M1 is fixed: an answer the engine didn't read from GitHub in the same run is checked on GitHub before its effect, and remote changes under `inbox/` are refused. See the fixes table in `F-016-code-review.md`.

@@ -76,7 +76,7 @@ agent up to a stronger model or higher effort is always the owner's call.
 | Product code | software-developer |
 | Test code | test-engineer |
 | Spec found wrong or incomplete; readiness gate sent back | requirements-analyst |
-| A security finding at Gate 2, in CI, or after merge that Gate 1 should have required | security-reviewer |
+| A security finding at Code Review, in CI, or after merge that Security and Testability Review should have required | security-reviewer |
 | Judge verdict overturned by the owner, or a defect found after a PASS that the checklist covers | validation-judge |
 | Misclassified root cause, or an incomplete run accepted | orchestrator |
 | Environment, infrastructure, dependency, flaky | none |
@@ -199,21 +199,21 @@ agent up to a stronger model or higher effort is always the owner's call.
 | Id | Requirement | Source | Status |
 |---|---|---|---|
 | SR-1 | Calibration answers (hidden checks, accepted outputs of transcripts) are not readable by the agent under test (separate worktree and role policy), so an agent can't pass by reading the answers. | Analyst (S8 least privilege) | Accepted |
-| SR-2 | Calibration and replay runs use the same role policy as real runs, never wider. Replay worktrees get no factory token or other credentials beyond the role's own; replays never push, open PRs, or file inbox items. | Analyst (S8); Gate 1 #2 | Accepted |
+| SR-2 | Calibration and replay runs use the same role policy as real runs, never wider. Replay worktrees get no factory token or other credentials beyond the role's own; replays never push, open PRs, or file inbox items. | Analyst (S8); Security and Testability Review #2 | Accepted |
 | SR-3 | Floors for gate agents (A-3). | Owner, 2026-11-10 | Accepted |
 | SR-4 | Run reviews and history hold no secrets or prompt contents beyond what agent reports already hold; transcripts stay outside Git. | Analyst (S3) | Accepted |
 | SR-5 | Before a transcript is selected, it is scanned for secrets and personal data; a transcript that has any is not selected. | Analyst (S3) | Accepted |
 | SR-6 | Transcript lists and master tasks are untrusted input and are validated before use; a replay's initial context is the recorded one, unchanged. | Analyst (S1) | Accepted |
-| SR-7 | The evaluator's advice can never move a role below its floor (A-3), and is never used for the security reviewer or validation judge below their approved rung. A spec is untrusted text, so an injected "this is trivial" must not be able to weaken a gate. | Gate 1 #1 (S6.1) | Accepted |
-| SR-8 | Only the engine writes `.factory/tuning/**` and run reviews; every agent role is denied write access there, so no agent can edit the metrics that judge it. | Gate 1 #3 (S8.1, S6.2) | Accepted |
-| SR-9 | Every calibration or replay batch has a cost cap: 1.5 × its shown estimate. At the cap it stops, keeps partial results, files a Testing item, and proposes nothing. | Gate 1 #4 (S5.1) | Accepted |
-| SR-10 | The `project-evaluator` role gets read access to specs and run reviews only, and write access only to its own report; no commands, no network. | Gate 1 #5 (S8.1, S8.5) | Accepted |
+| SR-7 | The evaluator's advice can never move a role below its floor (A-3), and is never used for the security reviewer or validation judge below their approved rung. A spec is untrusted text, so an injected "this is trivial" must not be able to weaken a gate. | Security and Testability Review #1 (S6.1) | Accepted |
+| SR-8 | Only the engine writes `.factory/tuning/**` and run reviews; every agent role is denied write access there, so no agent can edit the metrics that judge it. | Security and Testability Review #3 (S8.1, S6.2) | Accepted |
+| SR-9 | Every calibration or replay batch has a cost cap: 1.5 × its shown estimate. At the cap it stops, keeps partial results, files a Testing item, and proposes nothing. | Security and Testability Review #4 (S5.1) | Accepted |
+| SR-10 | The `project-evaluator` role gets read access to specs and run reviews only, and write access only to its own report; no commands, no network. | Security and Testability Review #5 (S8.1, S8.5) | Accepted |
 
-| SR-11 | promptfoo conditions (S4.1, S4.3, S4.4, S4.6; the same ones the owner set for LiteLLM in F-013 OQ-9): exact version pin with a lockfile; a new release is adopted no sooner than 14 days after it is published unless it fixes a CVE in a path the factory uses; OSV-Scanner covers it in CI; transitive packages with known advisories are moved to fixed versions with npm `overrides` (four in 0.125.1, see the review); the engine starts it with `PROMPTFOO_DISABLE_TELEMETRY=1`, `PROMPTFOO_DISABLE_UPDATE=1`, `PROMPTFOO_DISABLE_SHARING=1` and `PROMPTFOO_DISABLE_REMOTE_GENERATION=1`; red-team, cloud and share features are never used. | Gate 1 re-review #1 (v13); owner accepted, 2026-11-13 (OQ-2) | Accepted |
-| SR-12 | promptfoo runs in a separate Node child process that the engine starts with an empty environment except the `PROMPTFOO_*` settings in SR-11, and talks to the engine only over a pipe; the engine runs every trial. It never gets the factory token, the Claude credential or endpoint keys (FR-23, OQ-1). | Gate 1 re-review #2 (v13); owner, 2026-11-13 (OQ-1) | Accepted |
-| SR-13 | promptfoo's working files (FR-25) hold prompts and outputs like transcripts do, so they get SR-4's treatment: outside Git, in an engine-owned folder, never in a run review or hygiene item. | Gate 1 re-review #3 (v13) | Accepted |
+| SR-11 | promptfoo conditions (S4.1, S4.3, S4.4, S4.6; the same ones the owner set for LiteLLM in F-013 OQ-9): exact version pin with a lockfile; a new release is adopted no sooner than 14 days after it is published unless it fixes a CVE in a path the factory uses; OSV-Scanner covers it in CI; transitive packages with known advisories are moved to fixed versions with npm `overrides` (four in 0.125.1, see the review); the engine starts it with `PROMPTFOO_DISABLE_TELEMETRY=1`, `PROMPTFOO_DISABLE_UPDATE=1`, `PROMPTFOO_DISABLE_SHARING=1` and `PROMPTFOO_DISABLE_REMOTE_GENERATION=1`; red-team, cloud and share features are never used. | Security and Testability Review re-review #1 (v13); owner accepted, 2026-11-13 (OQ-2) | Accepted |
+| SR-12 | promptfoo runs in a separate Node child process that the engine starts with an empty environment except the `PROMPTFOO_*` settings in SR-11, and talks to the engine only over a pipe; the engine runs every trial. It never gets the factory token, the Claude credential or endpoint keys (FR-23, OQ-1). | Security and Testability Review re-review #2 (v13); owner, 2026-11-13 (OQ-1) | Accepted |
+| SR-13 | promptfoo's working files (FR-25) hold prompts and outputs like transcripts do, so they get SR-4's treatment: outside Git, in an engine-owned folder, never in a run review or hygiene item. | Security and Testability Review re-review #3 (v13) | Accepted |
 
-Gate 1: [F-002-security-gate1.md](F-002-security-gate1.md), 2026-11-10. Five findings, all resolved by SR-2 and SR-7 to SR-10. No owner decision needed.
+Security and Testability Review: [F-002-security-testability-review.md](F-002-security-testability-review.md), 2026-11-10. Five findings, all resolved by SR-2 and SR-7 to SR-10. No owner decision needed.
 
 ### Open questions for the owner (v13)
 | Id | Question | Recommendation | Status |
@@ -248,7 +248,7 @@ All changes are additive (A-8):
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit and approved (A-1 to A-13; A-7 v13 change and A-13 approved 2026-11-13)
-- [x] Blocking decisions resolved (v13: OQ-1 to OQ-3 decided; Gate 1 re-review done)
+- [x] Blocking decisions resolved (v13: OQ-1 to OQ-3 decided; Security and Testability Review re-review done)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -263,6 +263,6 @@ All changes are additive (A-8):
 | 8 | 2026-11-10 | A-10 approved | Owner, 2026-11-10 |
 | 9 | 2026-11-10 | Evaluator extended to per-task complexity advice for the orchestrator once reliable (A-11 b, c; FR-20, FR-21; A-12 added) | — |
 | 10 | 2026-11-10 | A-11 approved; A-12 approved with the stricter bar (90% of last 30) | Owner, 2026-11-10 |
-| 11 | 2026-11-10 | Gate 1 security review: SR-2 tightened, SR-7 to SR-10 added, abuse cases added; readiness gate passed | Owner, 2026-11-10 (PR #8 merged) |
+| 11 | 2026-11-10 | Security and Testability Review security review: SR-2 tightened, SR-7 to SR-10 added, abuse cases added; readiness gate passed | Owner, 2026-11-10 (PR #8 merged) |
 | 12 | 2026-11-10 | A-1: on a subscription plan, cost is plan usage used; calibration counts against the budget (ADR 0012) | Owner, 2026-11-10 (decision card) |
-| 13 | 2026-11-13 | Calibration and replays run on promptfoo (ADR 0023): A-7 revised; FR-1, FR-3 cost sources (A-13 new); FR-22 to FR-25, AC-21 to AC-24; constraints, edge cases, dependencies; Gate 1 re-review adds SR-11 to SR-13; OQ-1 to OQ-3 decided (child process, review accepted, local viewer) | Owner, 2026-11-13 (decision cards) |
+| 13 | 2026-11-13 | Calibration and replays run on promptfoo (ADR 0023): A-7 revised; FR-1, FR-3 cost sources (A-13 new); FR-22 to FR-25, AC-21 to AC-24; constraints, edge cases, dependencies; Security and Testability Review re-review adds SR-11 to SR-13; OQ-1 to OQ-3 decided (child process, review accepted, local viewer) | Owner, 2026-11-13 (decision cards) |

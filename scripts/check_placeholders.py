@@ -39,7 +39,7 @@ ADDRESS_ALLOWED = (
     "engine/test/proxy.test.ts",  # fixtures that prove the proxy refuses private ranges
     "docs/features/F-007-test-plan.md",  # AC-15 lists the refused addresses
     "docs/features/F-007-test-report.md",  # reports the same AC-15 run
-    "docs/features/F-007-security-gate1.md",  # finding 3 names a private address the web reader must refuse
+    "docs/features/F-007-security-testability-review.md",  # finding 3 names a private address the web reader must refuse
 )
 
 # Literal example values the tests use. A new test value goes here, so a

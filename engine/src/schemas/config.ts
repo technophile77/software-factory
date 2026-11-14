@@ -23,10 +23,14 @@ const limitSection = (keys: Record<string, "int" | "num">, full: boolean) =>
   })));
 
 const limits = (full: boolean) =>
-  z.strictObject(Object.fromEntries(Object.entries(LIMIT_KEYS).map(([s, keys]) => {
-    const sec = limitSection(keys, full);
-    return [s, full && !(OPTIONAL_SECTIONS as readonly string[]).includes(s) ? sec : sec.optional()];
-  })));
+  z.strictObject({
+    ...Object.fromEntries(Object.entries(LIMIT_KEYS).map(([s, keys]) => {
+      const sec = limitSection(keys, full);
+      return [s, full && !(OPTIONAL_SECTIONS as readonly string[]).includes(s) ? sec : sec.optional()];
+    })),
+    // The section's name before the gate rename; parseLimits reads it as security_testability_review.
+    security_gate_1: limitSection(LIMIT_KEYS.security_testability_review, full).optional(),
+  });
 
 /** `engine/config/limits.yaml` in the master repo. */
 export const limitsFile = limits(true);

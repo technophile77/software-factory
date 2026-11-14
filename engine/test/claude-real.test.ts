@@ -1,4 +1,4 @@
-// H1 (Security Gate 2): the tool gate against the real Claude Code binary
+// H1 (Code Review): the tool gate against the real Claude Code binary
 // from the SDK package. In permissionMode "default" Claude Code approves
 // reads inside its working folder and read-only Bash without asking
 // canUseTool, so only a run of the real binary shows that the engine's

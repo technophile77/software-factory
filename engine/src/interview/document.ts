@@ -47,7 +47,7 @@ export const SOURCE_PATH_RE = /^docs\/features\/F-\d{3,6}-source\.(md|txt)$/i;
 // C0 controls other than tab, LF and CR, DEL, and C1 controls (SR-9).
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
 // Characters a reader can't see but a model reads (SR-8), by Unicode property
-// rather than a hand list (Gate 2 M1): every format character (bidi controls,
+// rather than a hand list (Code Review M1): every format character (bidi controls,
 // zero-width characters and joiners, tags, Arabic number signs, interlinear
 // annotation, musical formatting), private use, unassigned and surrogate code
 // points, plus the invisible characters in visible classes: the combining
@@ -85,7 +85,7 @@ function hiddenEntity(line: string): boolean {
  * refused even inside code: renderers disagree on where code starts and ends
  * (escaped backticks, indented and list-item fences, info strings), so a
  * check that skips code can be led past HTML that a renderer shows as HTML
- * (Gate 2 H1). The owner can write `&lt;` for a literal `<`.
+ * (Code Review H1). The owner can write `&lt;` for a literal `<`.
  */
 export function hiddenMarkdownLines(lines: string[]): number[] {
   const hits = new Set<number>();
@@ -108,12 +108,12 @@ export function hiddenMarkdownLines(lines: string[]): number[] {
   return [...hits].sort((a, b) => a - b);
 }
 
-// Markdown's own ways to hide text (SR-8 as extended by the owner, Gate 2 M2).
+// Markdown's own ways to hide text (SR-8 as extended by the owner, Code Review M2).
 // A link reference definition renders as nothing, so one with a title, or one
 // no link uses (the `[//]: # (comment)` idiom), is text only the analyst sees.
 // Block quote and list markers, and any indent, are dropped first: a definition
 // inside a quote or list item renders as nothing too (validation M1), and one
-// in an indented code block is refused like HTML in code (Gate 2 H1).
+// in an indented code block is refused like HTML in code (Code Review H1).
 const CONTAINER = /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*/;
 const TITLE_START = /^["'(]/;
 const SPACE_ENTITIES = /&(nbsp|ensp|emsp|emsp13|emsp14|numsp|puncsp|thinsp|ThinSpace|hairsp|VeryThinSpace|MediumSpace|NonBreakingSpace|ThickSpace|Tab|NewLine);/gi;
@@ -142,7 +142,7 @@ function linkLabel(label: string): string {
 }
 
 /**
- * Lines with Markdown's own ways to hide text (SR-8 as extended, Gate 2 M2).
+ * Lines with Markdown's own ways to hide text (SR-8 as extended, Code Review M2).
  * Link labels and link text may run over several lines in CommonMark, so the
  * checks run on the whole text, with block quote and list markers dropped
  * from each line, and a hit names every line it covers (validation round 2 M1).
@@ -324,7 +324,7 @@ const plainCell = (c: string) => collapse(c.replace(/[*_`]/g, ""));
  * whose first cell is the ref, a line that opens with it (`FR-3:`,
  * `- **FR-3** ...`), or a heading that starts with it (`## 4. Behaviour`).
  * Null when the spec has none. The owner sees this line beside its quote, and
- * the confirmation is bound to it (Gate 2 M3, owner decision 2026-11-12).
+ * the confirmation is bound to it (Code Review M3, owner decision 2026-11-12).
  */
 export function specLine(spec: string, ref: string): string | null {
   const want = collapse(ref).replace(/^\u00a7\s*/, "");
@@ -365,7 +365,7 @@ interface DocSection {
 /**
  * The document's headings, each with the blocks under it. A block ends at a
  * blank line, a heading, a list item, a table row or a code fence, so a quote
- * can't be stitched together across structure (Gate 2 M3).
+ * can't be stitched together across structure (Code Review M3).
  */
 function documentSections(text: string): DocSection[] {
   const lines = text.split(/\r\n|\r|\n/);
@@ -408,7 +408,7 @@ const words = (s: string) => s.split(" ").filter((w) => /[\p{L}\p{N}]/u.test(w))
 
 /**
  * Problems with the table against the stored document and the spec (SR-7,
- * Gate 2 M3): each row needs a spec ref the spec has a line for, a Section
+ * Code Review M3): each row needs a spec ref the spec has a line for, a Section
  * that is one of the document's headings ("-" when it has none), and a quote
  * of at least 5 words or 25 characters that sits in one block under that
  * heading, matching after runs of whitespace are collapsed.

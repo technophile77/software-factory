@@ -1,6 +1,6 @@
 ---
 name: security-review
-description: Apply the factory's security criteria to a spec or code change. Used by the software developer while implementing and by the security reviewer at Gates 1 and 2.
+description: Apply the factory's security criteria to a spec or code change. Used by the software developer while implementing and by the security reviewer at the Security and Testability Review and the Code Review.
 ---
 
 # Security review
@@ -15,5 +15,5 @@ you can. Anything you cannot fix, or that needs a decision, goes in your
 completion report.
 
 ## When the security reviewer uses this
-Follow the Gate 1 or Gate 2 checklist in the standards doc and report every
+Follow the Security and Testability Review or Code Review checklist in the standards doc and report every
 finding with its criterion id.
