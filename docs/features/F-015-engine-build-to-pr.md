@@ -22,9 +22,9 @@ owner specs and nothing else.
 
 This increment runs stages 5 to 9 for real and ends with a pull request in
 the project's code repo, CI green on its head, for the owner to merge. It
-also ends the F-007 v41 exception: feature work (branches, and wherever
-OQ-2 puts specs, transcripts and agent reports) moves out of the config repo
-and into the project's code repos, as ADR 0005 and ADR 0009 intend.
+also ends the F-007 v41 exception for code: feature branches for code and
+tests move to the project's code repos, while specs, transcripts, reports and
+records stay in the private config repo (OQ-2, ADR 0028).
 
 ## 2. Expected behavior
 1. A feature passes the readiness gate (increment 3). Its project is
@@ -62,7 +62,6 @@ and into the project's code repos, as ADR 0005 and ADR 0009 intend.
     record and the engine log say why a stage didn't run or didn't finish.
 
 ## 3. Functional requirements
-Draft. Each will be refined by section 12.
 
 | Id | Requirement |
 |---|---|
@@ -85,10 +84,30 @@ Draft. Each will be refined by section 12.
 | FR-17 | Commits the engine makes in code repos are authored and committed as the project's owner, whoever that is: nothing about the identity is in the master repo or the engine code (owner, 2026-11-13). The engine derives it per project from the private config repo's pinned `owner.github_id`: the name is that GitHub account's profile name (its login if the name is empty), read from GitHub's API at engine start; the email is the account's noreply address `<id>+<login>@users.noreply.github.com`. An optional `owner.commit_name` in the project manifest overrides the name (H-0193). No trailer or message text names an AI tool. Commits are not signed (residual risk stated to the owner: anyone can write commits with that name and address; GitHub shows them unverified). Engine commits in the config repo keep the engine identity. |
 
 ## 4. Acceptance criteria
-To be written once section 12 is answered; each FR gets at least one.
+| Id | Given / When / Then | Covers |
+|---|---|---|
+| AC-1 | Given a feature whose Spec sign-off is approved, when the engine sees `build_and_test_prep`, then `feature/F-nnn-name`, `feature/F-nnn/dev` and `feature/F-nnn/test` exist in the spec's target code repo, made from its `main`, and exactly one developer and one test engineer session start. | FR-1, FR-2, FR-15, FR-16 |
+| AC-2 | Given a build in progress, then the code repo's branches hold only code and test changes, and no spec, transcript, report or record file is committed to the code repo; the config repo's `factory/state` holds the agent reports. | FR-2 |
+| AC-3 | Given the test engineer's session, when it tries to read the developer's branch, report or transcript through any file tool, then the read is refused; its input names the spec at the `spec_signed_off` commit only. | FR-3 |
+| AC-4 | Given a developer session that changes a path its write rules deny, when it ends, then its changes are rejected and a Security item is filed. | FR-4 |
+| AC-5 | Given both agents done, then the feature branch has both branches merged and the engine runs the repo's declared test command on that commit with no model session. | FR-5, FR-6 |
+| AC-6 | Given a test command that writes no JUnit XML file, or a results file with an unexplained skip, then the run is `incomplete`, gets 1 rerun, then a Testing item. | FR-6, FR-7 |
+| AC-7 | Given a run with a failing test, then exactly one read-only orchestrator session classifies it; given cause `product code`, the developer gets a fix cycle; given `environment`, the engine reruns up to 2 times; given a fourth product-code failure, a Testing item with the spec section 5 fields is filed and no fourth fix cycle starts. | FR-7 |
+| AC-8 | Given a run where every test passes, then no orchestrator session starts. | FR-7 |
+| AC-9 | Given a Gate 2 finding that blocks at the repo's maturity level, then the feature returns to the developer and then to stage 6; given none, it moves to validation. | FR-8 |
+| AC-10 | Given judge verdict FAIL, then the feature goes to the role the finding names; NEEDS_HUMAN_REVIEW files a Decision item and the feature is `blocked`; PASS moves it to `pull_request`. | FR-9 |
+| AC-11 | Given items 1 to 11 met, then the engine pushes the feature branch and opens a draft PR with the owner's token; given required checks green on its head, then the PR is marked ready, its title and description updated, and the definition-of-done comment posted; given a red check, then the failure enters stage 6 and the PR stays draft. | FR-10, FR-14 |
+| AC-12 | Given engine code calling a merge API outside `engine/src/inbox/auto-merge.ts`, then the CI test fails. | FR-11, FR-14 |
+| AC-13 | Given the owner merges or closes the PR in GitHub, then the feature's record shows `merged_on_github` with the merge commit or `closed_on_github`; given an owner `/changes <note>` comment, the note reaches the orchestrator as review feedback; a comment by anyone else is ignored. | FR-14 |
+| AC-14 | Given an approved hygiene item applied as a PR with the identical diff, then the engine merges it; with one changed line, it merges nothing and comments. | FR-14 |
+| AC-15 | Given a feature that depends on another whose PR is open, then it doesn't start stage 5 until that PR merges. | FR-16 |
+| AC-16 | Given a project owned by account A, then every engine commit in its code repo has author and committer A's GitHub profile name (or `owner.commit_name`) and A's noreply address, and no message names an AI tool; the master repo and engine code hold no name or address. | FR-17 |
+| AC-17 | Given the engine killed during any stage 5 to 9 run, when it restarts, then the run is `interrupted`, resumes, and no retry or fix cycle is counted. | FR-12 |
+| AC-18 | Given `models.yaml` or `limits.yaml` without an entry for a new role, then that role's session doesn't start and the project stops with a Security item. | FR-13 |
 
 ## 5. Constraints
-- TypeScript on Node (ADR 0001); Windows, macOS and Linux; Docker Desktop.
+- TypeScript on Node (ADR 0001); Windows, macOS and Linux. No Docker for
+  agents until Beta (ADR 0026).
 - Every new tool or image gets an S4.1 review and an Architecture decision,
   is pinned and CVE-checked in CI (S4.1, S4.3, S4.4).
 - Reuses the worktree, policy, commit, scan and report code of F-007 and
