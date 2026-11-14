@@ -35,7 +35,7 @@ level. The percentages below are coverage only. "New code" means lines the
 change adds or edits. Security-critical code is code that parses outside
 input, resolves paths, checks permissions, or runs external commands.
 
-| | Prototype | Alpha | Beta | Release | Production ready |
+| | Rapid prototype | Alpha | Beta | Release | Production ready |
 |---|---|---|---|---|---|
 | Unit tests | Core logic | All modules | All modules | All modules | All modules |
 | Coverage, whole repo (line / branch) | Reported | 60% / 50% | 75% / 65% | 85% / 75% | 85% / 75% |
