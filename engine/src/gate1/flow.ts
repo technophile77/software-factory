@@ -165,6 +165,13 @@ export function citesFinding(source: string, n: number): boolean {
  * approved assumptions must, F-005 SR-11). A choice finding needs its Security item decided, which this
  * engine can't read yet, so it waits. Evidence names ids only.
  */
+/**
+ * F-016 FR-18: the text Gate 1 matches word for word. A written escape (`\n`, `\t`, `\r`) counts as
+ * whitespace, since a chat surface may turn it into a real line break on the way, and a spec
+ * table row can only hold the written form.
+ */
+const same = (s: string) => norm(s.replace(/\\[nrt]/g, " "));
+
 export function gate1Resolution(spec: string, state: InterviewState): Resolution {
   const rows = specSecurityRequirements(spec);
   const problems: string[] = [];
@@ -194,7 +201,7 @@ export function gate1Resolution(spec: string, state: InterviewState): Resolution
     }
     // Only a question asked after the report, that carries this finding's requirement as its suggestion, is the finding's question.
     const asked = state.order.slice(state.gate1.itemsAtReport).map((id) => state.items.get(id)!).filter((i) => i.kind === "question");
-    const q = asked.filter((i) => (norm(i.text).startsWith(`${ref}:`) || norm(i.text).startsWith(`${ref} `)) && i.suggested !== undefined && norm(i.suggested) === norm(f.fix)).pop();
+    const q = asked.filter((i) => (norm(i.text).startsWith(`${ref}:`) || norm(i.text).startsWith(`${ref} `)) && i.suggested !== undefined && same(i.suggested) === same(f.fix)).pop();
     if (!q) {
       problems.push(`${ref} has no interview question asked after the report with its suggested requirement`);
       continue;
@@ -204,11 +211,11 @@ export function gate1Resolution(spec: string, state: InterviewState): Resolution
       continue;
     }
     const reply = [...state.replies.values()].filter((r) => r.item === q.id && r.kind === "answer" && r.revision === q.revision).pop();
-    const answer = reply ? norm(reply.text) : null;
+    const answer = reply ? same(reply.text) : null;
     // The suggested requirement, answered word for word, is the requirement. Any other answer could as well be a refusal,
     // so the wording becomes a requirement only once the owner approves it as an assumption asked after the question.
     let wording = answer;
-    if (answer !== null && answer !== norm(f.fix)) {
+    if (answer !== null && answer !== same(f.fix)) {
       const after = state.order.slice(state.order.indexOf(q.id) + 1).map((id) => state.items.get(id)!);
       const a = after.filter((i) => i.kind === "assumption" && (norm(i.text).startsWith(`${ref}:`) || norm(i.text).startsWith(`${ref} `))).pop();
       if (!a || a.status === "rejected") {
@@ -221,13 +228,13 @@ export function gate1Resolution(spec: string, state: InterviewState): Resolution
         problems.push(`${ref}: ${a.id} is ${a.status}`);
         continue;
       }
-      wording = norm(a.text).slice(ref.length + 1).trim();
+      wording = same(norm(a.text).slice(ref.length + 1));
     }
     const citing = rows.filter((r) => citesFinding(r.source, f.n));
     if (!citing.length) {
       rejected.push(f.n);
       problems.push(`${ref}: no requirement in section 9 cites it after the owner answered ${q.id}`);
-    } else if (!citing.some((r) => r.status.startsWith("approved") && wording !== null && norm(r.text) === wording)) {
+    } else if (!citing.some((r) => r.status.startsWith("approved") && wording !== null && same(r.text) === wording)) {
       problems.push(`${ref}: ${citing.map((r) => `line ${r.line}`).join(", ")} cite${citing.length === 1 ? "s" : ""} it, but none is Approved with the requirement the owner approved word for word`);
     }
   }

@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until I
   can start onboarding some of my existing projects?"; chose to build engine
   increment 3 next, decision card)
-- **Spec version:** 16
+- **Spec version:** 17
 
 This is the rest of the engine's increment 3 ("Requirements to ready", F-007
 section 13). F-008 built Security Gate 1 and said that reading inbox answers
@@ -79,6 +79,7 @@ signs the spec off, and the feature is handed to development
 | FR-15 | Gate 1 findings not resolved after the interview, with none waiting on the owner and none refused (so no risk item is filed): the feature returns to `requirements_interview` and the analyst gets a return `gate1_unresolved` with the check's evidence as data, telling it to take up each named finding as an interview question with the suggested requirement. This happens once per Gate 1 report. If the check fails the same way again, the engine files a Security item `gate1unresolved` (section 10, H-0182) instead: option A sends the feature back to the analyst again, option B leaves it at Security Gate 1. Before this, the engine recorded "not resolved" and stopped with no analyst and no item. |
 | FR-16 | The engine reads the spec's section 9 table under either title, "Security considerations" (the template's) or "Security requirements", for Gate 1 (F-008 FR-9) and the readiness gate. A feature blocked at Security Gate 1 is checked again at engine start; when Gate 1 passes, the engine withdraws (closes, with a comment saying why) that feature's open Gate 1 risk items, since the spec now takes their findings up. |
 | FR-17 | The spec's exact structure is defined in `docs/features/feature-template.structure.json`: the twelve level-2 headings of the template, word for word and in order, each once, and the header row of the first table in sections 3, 4, 8, 9 and 12. Any other level-2 section goes after section 12; level-3 and lower headings may appear inside any section. The engine states this structure in the analyst's first turn, and `interview_spec_ready` adds a `spec_structure` check that fails on any difference, naming each missing, repeated, misplaced or unknown heading and each wrong header row by line number and the template's exact text (never spec text). The readiness gate and Gate 1's resolution run the same check, so FR-16's second title no longer passes; the engine's table reader still accepts it. |
+| FR-18 | When Gate 1 matches the owner's answer, the finding's suggested requirement and the spec's section 9 row word for word (F-008 FR-9, FR-15), a written escape `\n`, `\t` or `\r` counts as whitespace, the same as a real line break, tab or space. Any other difference still fails. |
 | FR-12 | Existing open item files on `factory/state` are moved to issues by F-011's one-time migration script (F-011 FR-16); an item whose effect is defined here gets that effect when answered on its issue. |
 
 ## 4. Acceptance criteria
@@ -102,6 +103,7 @@ signs the spec off, and the feature is handed to development
 | AC-17 | Given a spec whose Gate 1 findings were taken up only as assumptions, when the interview checks pass, then the feature returns to the interview, the analyst's first turn names the unresolved findings as data, and no item is filed; given the same result a second time for the same report, then one `gate1unresolved` item is filed; option A sends the feature back with an analyst run, and option B leaves it at Security Gate 1. | FR-15 |
 | AC-18 | Given a spec whose section 9 has an Approved row citing a Gate 1 finding and the owner's answer, then Gate 1 passes; given such a feature already blocked on a risk item for that finding, then at the next engine start it reaches `readiness_gate` and the risk item and its issue are closed with the engine's reason. | FR-16 |
 | AC-19 | Given a spec whose security table sits under "## 6. Security and privacy" / "### Security requirements", then `interview_spec_ready` fails `spec_structure`, its evidence names the missing "## 9. Security considerations" heading and the unknown heading's line, and the feature stays in the interview; given the same spec with the template's headings and header rows, the check passes; extra sections after section 12 and level-3 headings inside a section pass. | FR-17 |
+| AC-20 | Given a finding whose suggested requirement contains the written escape `\n`, and an owner answer with a real line break in its place, then the answer counts as the suggestion word for word and an Approved row with the written escape resolves the finding; an answer that drops the escape and its whitespace still fails. | FR-18 |
 | AC-12 | Given a feature waiting on items, then `engine.status` lists its stage and the open item ids. | FR-10 |
 
 ## 5. Constraints
@@ -260,6 +262,7 @@ Checked 2026-11-13 against spec v10.
 | 14 | 2026-11-14 | FR-15, AC-17 and the `gate1unresolved` row in H-0182 added after the live trial stopped at Security Gate 1 with findings taken up only as assumptions | Owner, 2026-11-14 (decision card and in thread) |
 | 15 | 2026-11-14 | FR-16 and AC-18 added after the live trial filed risk items for findings the spec took up under the title "Security requirements" | Owner, 2026-11-14 (decision card and in thread) |
 | 16 | 2026-11-14 | FR-17, AC-19 and H-0189 added after the live trial's analyst put the security table under its own headings: the spec's structure is defined in JSON and checked exactly (option A), so FR-16's second title no longer passes and AC-18 drops it | Owner, 2026-11-14 (decision card and in thread) |
+| 17 | 2026-11-14 | FR-18 and AC-20 added after the live trial's interview skill turned a written `\n` in a Gate 1 suggestion into a real line break, so the owner's word-for-word answer didn't match (option A) | Owner, 2026-11-14 (decision card and in thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
