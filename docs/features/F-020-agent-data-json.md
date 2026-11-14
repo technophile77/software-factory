@@ -1,7 +1,7 @@
 # Feature: The rest of the agents' data moves to JSON, with schemas
 
 - **Id:** F-020
-- **Status:** In review
+- **Status:** Approved
 - **Requested by / date:** owner, 2026-11-14 ("I would like the default format for any data, reports, etc. that an agent interacts with to be in json, unless there is a specific reason that it should be something different"; proposal 0034 decision 3, "Start F-020, full scope", decision card 08:53Z)
 - **Spec version:** 4
 
@@ -125,7 +125,7 @@ Each change is an Interfaces decision, applied with the build once approved:
 
 ## 11. Readiness gate
 
-Checked 2026-11-14 on v4: every FR has at least one AC (AC-15 added for FR-5), A-1 to A-3 approved, SR-1 to SR-11 accepted (SR-12 withdrawn), OQ-1 answered, no deferred items. Passed; waiting on the owner's sign-off.
+Checked 2026-11-14 on v4: every FR has at least one AC (AC-15 added for FR-5), A-1 to A-3 approved, SR-1 to SR-11 accepted (SR-12 withdrawn), OQ-1 answered, no deferred items. Passed.
 
 
 - [x] Clear objective
@@ -141,7 +141,7 @@ Checked 2026-11-14 on v4: every FR has at least one AC (AC-15 added for FR-5), A
 | 1 | 2026-11-14 | Draft from proposal 0034 (decisions 2 and 3) | (pending) |
 | 2 | 2026-11-14 | Security Gate 1 filed; SR-4 to SR-12 proposed | (pending) |
 | 3 | 2026-11-14 | OQ-1 answered (no editor check): FR-12 and AC-13 rewritten, SR-12 withdrawn | owner, decision card (OQ-1) |
-| 4 | 2026-11-14 | A-1 to A-3 approved, SR-1 to SR-11 accepted; AC-15 added for FR-5; readiness gate passed | owner, 09:03Z (in thread), AC-15 pending sign-off |
+| 4 | 2026-11-14 | A-1 to A-3 approved, SR-1 to SR-11 accepted; AC-15 added for FR-5; readiness gate passed | owner, 09:03Z (in thread); v4 signed off 09:04Z (decision card) |
 
 ## 13. Open questions
 
