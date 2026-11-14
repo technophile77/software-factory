@@ -733,6 +733,20 @@ describe("project paths file and manifest (SR-13, H-0080, H-0081)", () => {
     expect(comparePin({ ...pinnedKeys(hourly), pinned_at: "t", commit: "c" }, hourly)).toEqual({ status: "match" });
   });
 
+  it("pins each repo's recorded visibility; a pin made before it matches a manifest without one (F-015 SR-6, H-0249)", () => {
+    const m = validateManifest(YAML.parse(manifestYaml()), "c");
+    const { repo_visibility: _, ...old } = { ...pinnedKeys(m), pinned_at: "t", commit: "c" };
+    expect(comparePin(old, m)).toEqual({ status: "match" });
+    const pub = { ...m, repos: m.repos.map((r) => ({ ...r, visibility: "public" as const })) };
+    expect(comparePin(old, pub)).toEqual({ status: "changed", keys: ["repos[].visibility"] });
+    expect(comparePin({ ...pinnedKeys(pub), pinned_at: "t", commit: "c" }, pub)).toEqual({ status: "match" });
+    const doc = YAML.parse(manifestYaml());
+    doc.repos[0].visibility = "public";
+    expect(validateManifest(doc, "c").repos[0]!.visibility).toBe("public");
+    doc.repos[0].visibility = "internal";
+    expect(() => validateManifest(doc, "c")).toThrow(/visibility must be private or public/);
+  });
+
   it("reads settings.interview_sign_in, defaults it by level, and allows never only at Rapid prototype (F-018 FR-15)", () => {
     const read = (extra: string, level = "alpha") => validateManifest(YAML.parse(manifestYaml({ extra }).replace("maturity: prototype", `maturity: ${level}`)), "c");
     expect(interviewSignIn(read(""))).toEqual({ every: "session" });

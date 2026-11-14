@@ -851,13 +851,14 @@ section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.8
+## Project manifest — v1.9
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014);
   v1.3 approved (H-0080); v1.4 approved (H-0087); v1.5 approved (H-0135);
   v1.6 approved (F-013 OQ-11, owner, decision card, 2026-11-13); v1.7
   approved (F-015 H-0193, owner, decision card, 2026-11-14); v1.8 approved
-  (F-018 H-0227, owner, decision card, 2026-11-14)
+  (F-018 H-0227, owner, decision card, 2026-11-14); v1.9 approved (F-015
+  SR-6 H-0249, owner, decision card and thread, 2026-11-14)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
   adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
   `complexity` and `settings.agents` (F-002 A-6, A-8); v1.3 adds `enabled`,
@@ -880,7 +881,7 @@ the preset used only for initial calibration) and
 ladder; the engine refuses a rung that doesn't exist in the pinned factory
 version or is below the role's floor). Both change only through hygiene
 items (F-002). The manifest is the only record of repo and project maturity
-levels. `schema` stays `factory-project/1.0`: v1.1 to v1.8 only add optional keys.
+levels. `schema` stays `factory-project/1.0`: v1.1 to v1.9 only add optional keys.
 
 From v1.5, optional `settings.endpoints`: a list of model endpoint names
 (Model endpoints file v1.0) this project's code may be sent to; default
@@ -935,6 +936,17 @@ otherwise. Without the key the level's default applies: `never` at
 `rapid-prototype`, `session` above it. The key is pinned with `owner.*`,
 `allowed_repo_owners` and `enabled` (F-007 SR-5). Onboarding (F-003) asks
 for it on a new project and always writes it.
+
+From v1.9 (F-015 SR-6, H-0249), optional `repos[].visibility`: `private`
+or `public`, the repo's visibility when it was onboarded. Onboarding (F-003)
+writes it from GitHub's answer, and writes `public` only after the owner
+confirms that the factory may publish code to that repo. Before each push the
+engine reads the repo's visibility from GitHub: a repo with no `visibility`
+may only be private, and a repo whose visibility differs from the recorded
+value gets nothing pushed and a Security item. The key is pinned with
+`owner.*`, `allowed_repo_owners`, `enabled` and
+`settings.interview_sign_in` (F-007 SR-5), so changing it needs the owner's
+confirmation.
 
 From v1.4, optional `limits`: the same keys as the master factory's
 `engine/config/limits.yaml` (H-0087). For each key the engine uses the lower

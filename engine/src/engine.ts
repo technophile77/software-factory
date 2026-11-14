@@ -25,7 +25,7 @@ import { type BuildRole, type FixFrom, buildPolicy, buildTestResults, buildTurn,
 import { HttpPulls, type PullsApi } from "./build/pulls";
 import { HttpTokenCheck, type TokenCheckApi, tokenProblems } from "./build/token-check";
 import { HttpMerge, type MergeApi, autoMergeHygiene } from "./inbox/auto-merge";
-import { checksVerdict, doneComment, prText, prWorkflowProblems, verbatimMatch } from "./build/stage9";
+import { checksVerdict, doneComment, prText, prWorkflowProblems, publishRefusal, verbatimMatch } from "./build/stage9";
 import { PR_RECORD_SCHEMA, type PrRecord } from "./schemas/pr-record";
 import { type CodeReviewFinding, type JudgeOutcome, checkCodeReview, judgeOutcome } from "./build/review";
 import { type Run as SemgrepRun, type SemgrepFinding, SemgrepError, runSemgrep, semgrepVenv } from "./build/semgrep";
@@ -2621,10 +2621,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       }
       tokenChecked.add(tokenKey);
     }
-    // SR-6: no confirmation of publishing is recorded at onboarding yet, so only a private repo gets code.
+    // SR-6, H-0249: a public repo gets code only when onboarding recorded the owner's confirmation, and the visibility still matches the record.
     const info = await github.repo(ctx.target.owner, ctx.target.repo, p.token!);
-    if (info.status !== 200 || info.private !== true) {
-      await prRefused(p, f, `public:${repo}`, `${repo} isn't a private repo the engine may push to`, `${repo} is ${info.status !== 200 ? `unreadable (HTTP ${info.status})` : "public"}, and publishing to it hasn't been confirmed (F-015 SR-6)`);
+    const refusal = publishRefusal(info, ctx.target.visibility);
+    if (refusal) {
+      await prRefused(p, f, `visibility:${repo}`, `${repo} isn't a repo the engine may push to`, `${repo} ${refusal} (F-015 SR-6)`);
       return;
     }
     // SR-13: workflows a pull request triggers, as they are on main.

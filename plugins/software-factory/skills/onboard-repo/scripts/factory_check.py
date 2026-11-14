@@ -1315,6 +1315,9 @@ def validate_manifest(data, master=None, config_root=None):
                 errors.append(f"repos[{i}].maturity must be one of {', '.join(LEVELS)}")
             elif r.get("maturity"):
                 repo_levels.append(r["maturity"])
+            # F-015 SR-6 (H-0249): public only after the owner confirmed publishing there.
+            if "visibility" in r and r["visibility"] not in ("private", "public"):
+                errors.append(f"repos[{i}].visibility must be private or public")
     errors += _check_owner_keys(data)
     errors += _check_limits(data)
     maturity = data.get("maturity")

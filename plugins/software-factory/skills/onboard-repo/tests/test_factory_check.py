@@ -337,6 +337,13 @@ notes: |
         self.assertEqual(data["notes"], "Free-form context.\nSecond line.\n")
         self.assertEqual(fc.validate_manifest(data), [])
 
+    def test_repo_visibility(self):
+        # F-015 SR-6, H-0249: private or public; public only after the owner's confirmation.
+        for value, ok in (("private", True), ("public", True), ("internal", False)):
+            data = fc.parse_yaml(self.VALID.replace("maturity: beta", f"maturity: beta\n    visibility: {value}"))
+            errors = fc.validate_manifest(data)
+            self.assertEqual(errors == [], ok, errors)
+
     def test_ac11_template_parses(self):
         text = read(os.path.join(SKILL, "templates", "factory-project.yaml"))
         self.assertIsInstance(fc.parse_yaml(text), dict)

@@ -210,6 +210,15 @@ item's `history` (`by: owner`) per the Inbox item v1.0 contract.
   ask the owner which project it belongs to.
 - The repo's entry under `repos` carries the level the owner approved in
   step 3; the manifest is the only record of repo and project levels.
+- The repo's entry also records its `visibility` (Project manifest v1.9,
+  F-015 SR-6), read from `gh api repos/<owner>/<repo> --jq .private`. For
+  a private repo write `visibility: private`. For a public repo, first ask
+  the owner whether the factory may publish code there: pushed code,
+  commits, branch names and pull request text become public at once and
+  can't be taken back. Write `visibility: public` only after their yes;
+  otherwise write nothing for it, and the engine will refuse to push. The
+  key is pinned, so the owner confirms the change with
+  `factory-engine confirm` before the engine runs the project.
 - The manifest also holds the role policy (`policy:`), which the engine
   enforces (ADR 0004). A new project gets the template's project policy;
   each repo gets a `policy:` override with its stack's source and test

@@ -54,8 +54,8 @@ export async function confirmProject(o: {
   o.io.say(cmp.status === "new_path" ? `New project path: ${real}` : `Changed keys: ${cmp.keys.join(", ")}`);
   o.io.say(`Manifest on main at ${m.commit}:`);
   const signIn = (v: InterviewSignIn | null | undefined) => (v ? JSON.stringify(v) : "level default");
-  if (pin) o.io.say(`  pinned:  owner ${JSON.stringify(pin.owner)}, allowed_repo_owners ${JSON.stringify(pin.allowed_repo_owners)}, enabled ${pin.enabled}, interview sign-in ${signIn(pin.interview_sign_in)}`);
-  o.io.say(`  on main: owner ${JSON.stringify(now.owner)}, allowed_repo_owners ${JSON.stringify(now.allowed_repo_owners)}, enabled ${now.enabled}, interview sign-in ${signIn(now.interview_sign_in)}`);
+  if (pin) o.io.say(`  pinned:  owner ${JSON.stringify(pin.owner)}, allowed_repo_owners ${JSON.stringify(pin.allowed_repo_owners)}, enabled ${pin.enabled}, interview sign-in ${signIn(pin.interview_sign_in)}, repo visibility ${JSON.stringify(pin.repo_visibility ?? {})}`);
+  o.io.say(`  on main: owner ${JSON.stringify(now.owner)}, allowed_repo_owners ${JSON.stringify(now.allowed_repo_owners)}, enabled ${now.enabled}, interview sign-in ${signIn(now.interview_sign_in)}, repo visibility ${JSON.stringify(now.repo_visibility)}`);
   const typed = (await o.io.ask(`If you made this change, type the project name (${m.name}) to confirm: `)).trim();
   if (typed !== m.name) {
     o.io.say("Not confirmed; nothing changed.");
