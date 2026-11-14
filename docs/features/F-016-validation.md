@@ -166,3 +166,144 @@ Carried from Gate 2, not graded again: L5 (agent-chosen paths and manifest text 
 3. **Orchestrator (M1):** record H-0185's approval, or take the edit out.
 4. **Security reviewer (M2):** re-review the Gate 2 M1 fix (`ee52303`) and `5740e0c`.
 5. **Optional (m1 to m9).** Any code change after this verdict needs the suites re-run.
+
+## Round 2
+
+- **Feature:** F-016, spec v19 (FR-13 to FR-20, AC-15 to AC-22, SR-13, H-0185 to H-0189, H-0235, H-0236). Round 1's open lines are re-checked here.
+- **Judge:** validation-judge
+- **Date:** 2026-11-14
+- **Round:** 2
+- **Commit:** `d9de268` (`claude/project-thread-mszazz`). Its engine tree is the same as `origin/main` `e306c2c`; the branch adds only report changes (`git diff --stat e306c2c HEAD` touches only `F-016-dev-report.md` and `F-016-test-report.md`). The delta judged is `6246b09..d9de268` for F-016: PR #60 (`9ed861c`), then #75, #78, #80 and #81. The same range also holds F-018 and F-020 work, judged here only where F-016 depends on it.
+- **Maturity level:** Rapid prototype. Any number of Major findings is allowed if each is logged; a Not met line or a Blocking finding fails.
+- **Verdict:** **FAIL**
+  - **Not met: 2 lines** (FR-15: B1; FR-20: M3). **Needs owner: 0.**
+  - Blocking: 1 (B1). Major: 4 (M3 to M6). Minor: 13 (m2 to m7 and m9 carried; m10 to m15 new).
+  - Round 1's list is done. AC-11 has the owner's live run. N1 is settled by spec v13 ("the project runs at the next engine start"). H-0185's approval is recorded. Gate 2 was re-reviewed. Round 1's m1 is fixed by the re-review's R2.
+  - What fails now is new code from the trial fixes:
+    - B1: a `gate1unresolved` item answered with option A never leads to another item, so the feature can get stuck.
+    - M3: FR-20's level-change clause isn't implemented.
+    - Both are reproduced below. Main's engine CI has also been red since the F-016 merge.
+
+### My own run
+
+On `d9de268`, Linux container, Node 22. Owner rule: only the suites for the changed areas.
+
+| Step | Result |
+|---|---|
+| `cd engine && npx tsc --noEmit -p .` | Clean |
+| `npx vitest run --maxWorkers=3 test/gate1.test.ts test/f016-run.test.ts test/f016-acceptance.test.ts test/spec-structure.test.ts test/readiness.test.ts test/interview.test.ts test/analyst-run.test.ts test/units.test.ts test/limits.test.ts` | **9 files passed. 213 tests: 211 passed, 2 skipped, 0 failed** (139 s). The two skips are `units.test.ts:141` and `:156`, which run only on Windows or macOS |
+| `npx vitest run --project acceptance test/acceptance/mcp-f005.test.ts -t "F-016 AC-16\|nothing_waiting"` | 2 passed (the AC-16 test lives in the acceptance suite) |
+| Python plugin tests (`factory_check.py`, H-0186) | Not run: gitleaks and zizmor aren't installed here. Not counted against F-016 |
+| Probe 1 (scratch copy, AC-17 harness): option A on `gate1unresolved`, the analyst fails again, then an engine restart | Stage stays `security_gate_1`; still one item (`D-0001`); the transcript ends `gate1_resolved` false, twice; no job. **B1** |
+| Probe 2 (scratch unit test): a High finding passed through `records(..., "rapid-prototype")`, then used at `alpha` | `recorded: true`; `analystGate1Turn(..., "alpha")` returns `null`; `gate1QuestionProblem` refuses the question as "below the project's level bar". **M3** |
+
+### CI
+
+| Run | Head | Result |
+|---|---|---|
+| `engine` 43584675396 | `e306c2c` (main, the final engine tree) | **Failure.** Linux 1/2 and 2/2, checks and supply-chain pass. Windows 1/6, 2/6 and 3/6, and macOS 2/3 and 3/3, fail. The F-016 tests among the failures: `f016-acceptance` "AC-1 …" (afterEach hook timeout in `engine.stop()`) and "section 6: two items …" (timed out waiting for both effects); `f016-run` "chain, option A …" (60 s timeout), "gate1cap, option A …" (its regex for `limits.yaml` expects LF line endings) and "SR-9 …" (hook timeout). Also `notify.test.ts` on macOS (300 ms wait) and F-018 terminal tests |
+| `engine` 43576251696 to 43582800746 | `9ed861c` to `cf6e75c` (every main push since PR #60) | **Failure**, with the same F-016 tests failing on the full Windows shards, plus "SR-8" and "OQ-3" on `cf6e75c`. The PR runs only the platform subset on Windows and macOS, so these first showed on main |
+| `engine` 43555390470 | `7d3c54d` (before PR #60) | Success on every shard |
+| `codeql`, `docs-checks` | `e306c2c` | Success |
+
+### Evidence checklist
+
+Only lines that changed or were open after round 1. `run` is `engine/test/f016-run.test.ts`; `acc` is `engine/test/f016-acceptance.test.ts`. Line numbers are at `d9de268`. Every test named here passed in my run.
+
+#### Functional requirements
+
+| Id | Status | Evidence |
+|---|---|---|
+| FR-6 (round 1 N1) | Met | Spec v13 rewords the `pins` effect: "re-pins the changed keys, and the project runs at the next engine start". The code matches: `engine.ts:1673-1686` pins the named manifest commit, only from the pinned owner, and notifies "Restart the engine to run the project." Test: run "F-016 OQ-3 …" (`:618`). For the `gate1unresolved` row of FR-6's resume rule, see B1 |
+| FR-13 | Met | `engine.ts:1041-1064` (a stopped run files `analyststop` through `offerRerun`; a breach or a secret keeps its own item, `:1053`); `:1724-1731` (option A: one `launchAnalyst` if still in the interview with no job, SR-13); `:2188-2192` (filed at start for a failed last run); `:908-910` (the new run gets the transcript summary). Tests: run "AC-15, AC-16 …" (`:792`), "AC-15: an engine start files the item once …" (`:833`). See m10 |
+| FR-14 | Met | `engine.ts:1513` (`active_agents` from `jobs`); `mcp/operations.ts:338-358` (`whereIs`: names only ids that match `INBOX_ID_RE`). Tests: run `:792`; `acceptance/mcp-f005.test.ts` "F-016 AC-16 …" |
+| FR-15 | **Not met** | The first send-back and the first item work: `engine.ts:1159-1175`; run "AC-17 …" (`:873`). After option A, `engine.ts:1717-1721` appends a `returned` that carries `item`. `model.ts:258` counts only returns without `item`, so `unresolvedSent` stays 1. The key `gate1unresolved:<f>:<reportAt>:1` (`engine.ts:1168`) is already in `record.alert`, so the next failure files nothing. Probe 1 shows the feature stuck, also after a restart. See B1 |
+| FR-16 | Met | `interview/readiness.ts:126` (either title); `engine.ts:1091-1092` (a blocked feature is checked again at start); `:1127-1133` (open `gate1_risk` items withdrawn). Test: run "FR-16, AC-18 …" (`:371`) |
+| FR-17 | Met | `interview/structure.ts` reads `docs/features/feature-template.structure.json`; `interview/readiness.ts:198` (`spec_structure`); `engine.ts:907` (`structureText()` in the analyst's first turn); `branchSpec` runs the checks before Gate 1 resolution and readiness (`engine.ts:1110-1112`). Tests: `spec-structure.test.ts` (4) |
+| FR-18 | Met | `gate1/flow.ts:205` (`same`). Test: `gate1.test.ts:319` "FR-18, AC-20 …" |
+| FR-19 | Met | `gate1/flow.ts:84-114` (`blocksAt` from `security-blocking.json`; an unknown level or severity blocks); `gate1/render.ts:28` (known issues); `engine.ts:1366` (`validateReport` with maturity). Tests: `gate1.test.ts:368`, `:384`, `:399` (Markdown table and JSON agree); run `:305`, `:321` |
+| FR-20 | **Not met** (one clause) | Met for a report without `recorded` flags and for the question check: `flow.ts:105`, `:212-222`; `interview/tools.ts:204`, `:230`. Tests: `gate1.test.ts:335`, `:356`. Not met: "or before the project's level changed, follows the bar for the project's current maturity". `belowBar` returns true for any `recorded` finding whatever the current level (probe 2). See M3 |
+
+#### Acceptance criteria
+
+| Id | Status | Evidence |
+|---|---|---|
+| AC-11 | **Met** (from recorded evidence) | Test report § "AC-11 live trial": the owner's PC (Windows), engine at `51b6e7f` (same tree as `cf6e75c`; `git diff --stat cf6e75c 51b6e7f` is empty). It differs from the final engine tree only in PR #81's `gate1cap` wording (`engine.ts:1214-1216`). Timeline: Gate 1 resolved 10:12; `gate1cap` D-0004 (issue #7) answered A 10:22; readiness passed and S-0001 filed (issue #8) 10:24; confirmed Approve gives `build_and_test_prep` 10:33. I can't reach `technophile77/factory-e2e-trial` and judge from the record only. Under FR-19 the final round's Gate 1 items were answered in the terminal interview, not as inbox choice or risk items. The inbox path that ran live is a Security item (`gate1cap`) and the sign-off. Earlier trial rounds filed risk items (FR-16). The choice and risk effects are covered by AC-1 to AC-5's tests |
+| AC-15 | Met | run `:792`, `:833`. See m10 |
+| AC-16 | Met | `acceptance/mcp-f005.test.ts` "F-016 AC-16 …"; run `:792` (`active_agents` 0, then 1, then 0; `waiting_on: ["D-0001"]`). The "interview skill" is now F-018's terminal command, which prints the same operation's `display` (m12) |
+| AC-17 | Met | run `:873`. Probe 1 shows option A sends the feature back with an analyst run. What follows a later failure is B1, which AC-17 doesn't state |
+| AC-18 | Met | run `:371` |
+| AC-19 | Met | `spec-structure.test.ts` (4 tests) |
+| AC-20 | Met | `gate1.test.ts:319` |
+| AC-21 | Met | run `:305`; `gate1.test.ts:384` (a reviewer report without `blocks` is valid; the reviewer's own value is ignored) |
+| AC-22 | Met | `gate1.test.ts:335`, `:356`; the refusal is wired at `tools.ts:204-205` and `:230-231` before `f.create`. See m11 |
+
+#### Other lines
+
+| Area | Status | Evidence |
+|---|---|---|
+| Change-controlled files (round 1 M1) | Met | H-0185's approval is recorded (spec section 10, `:210-213`: "owner, 2026-11-14 02:26Z, decision card"; dev report line 8). H-0186 to H-0189, H-0235 and H-0236 are each recorded with the owner's approval (`:214-249`). Change log v12 to v19 names the owner's approval for each version. The touched files (`plugins/…/security-blocking.json`, `factory_check.py`, both AGENT.md files, `security-standards.md`, `interface-contracts.md:243`) match those entries |
+| Security (round 1 M2) | Met, with finding | Gate 2 re-review at `3bfa23a` (PASS; R1 and R2 Medium, R3 and R4 Low). R1 to R3 fixed in `e8fa693`; R4 logged. My reading of `Inbox.verify` (`inbox/store.ts:283-321`) agrees: current revision only, markers checked on GitHub, replays refused, and the confirm window measured from GitHub's own time. That closes round 1's m1. No gate covers the v13 to v19 code (M5) |
+| Code quality | Met, with findings | New effects follow the round 1 pattern (one `done(...)` commit each). Findings: B1, M3, m6, m14, m15 |
+| Comments | Met, with finding | New comments say why and cite the rule (`engine.ts:910`, `:1091`, `:1127`, `:1159`, `:1725`, `:2190`; `flow.ts:201-204`, `:207-211`). One misplaced and outdated doc comment (m13) |
+| Test tools | Met | New tests use Vitest 5.1.0 and the engine harness, as the test report's tool choice table says |
+| Documentation | Met, with findings | Dev report "Live trial fixes" table; test report AC-11 section. Stale parts: m7, m9, m12; no test engineer coverage of the new ACs (M4) |
+| CI | Met, with finding | Advisory at Rapid prototype (ADR 0030), but red on main since `9ed861c` (M6) |
+
+### Findings
+
+#### Blocking
+
+| # | Location | Finding |
+|---|---|---|
+| B1 | `engine/src/engine.ts:1159-1175`, `:1717-1721`; `engine/src/interview/model.ts:258` | **After option A on a `gate1unresolved` item, the feature can get stuck again with no item.** Option A appends `{why: "gate1_unresolved", item}`. `model.ts:258` counts only returns without `item`, so `unresolvedSent` stays 1, and the key at `:1168` repeats and is deduped by `record.alert`. When the analyst again fails to take the findings up, `resolveGate1` logs "not resolved again" and returns. The feature then sits at `security_gate_1` with no analyst and no item, and it stays there after a restart (probe 1). This is the dead end FR-15 was added to remove ("Before this, the engine recorded 'not resolved' and stopped with no analyst and no item"). It breaks FR-6's resume rule ("if the check fails again, a new item is filed"). The trial showed analysts do skip these findings. Fix (developer): make the key change on every send-back, for example count option A's returns too or key on the item count, and add probe 1 as a test |
+
+#### Major (allowed at Rapid prototype; logged)
+
+| # | Location | Finding |
+|---|---|---|
+| M3 | `engine/src/gate1/flow.ts:105` (`belowBar`) | **A finding recorded at a lower level stays below the bar after the level rises.** `belowBar` is `!!f.recorded \|\| …`, so the flag set when the report was written wins over the current `maturity`. FR-20 says a report "written … before the project's level changed, follows the bar for the project's current maturity". Probe 2: a High finding recorded at `rapid-prototype` is neither asked nor needed once the project is `alpha`. Partly offset because known issues must be fixed before promotion, but nothing enforces that here. Fix (developer): decide from severity and current maturity only, and treat `recorded` as history. Add a test |
+| M4 | `docs/features/F-016-test-report.md` | **No test engineer coverage of AC-15 to AC-22.** The report's AC table stops at AC-14, its final commit is still `ee52303`, and every test for the new ACs is the developer's own. They pass in my run, and I read each against its AC, but no tests were written independently from the spec. m10 and m11 are the gaps that leaves, and B1 sits in one of them. Fix (test engineer): tests from the spec for AC-15 to AC-22, and a run on the final commit |
+| M5 | `F-016-security-gate1.md`, `F-016-security-gate2.md` | **No security review covers the v13 to v19 code.** That code adds two resume effects that start agent runs (`analyststop`, `gate1unresolved`), SR-13 (owner-written, not through Gate 1), code deciding what blocks (FR-19), automatic withdrawal of risk items (FR-16), and the `interview_ask` refusal (FR-20). The developer's R1 to R3 fixes (`e8fa693`) weren't re-reviewed either. Not required at Rapid prototype. Fix (security reviewer): a Gate 2 pass on `6246b09..e306c2c -- engine/src` before Alpha, or before more trial runs if the owner wants |
+| M6 | CI `engine` on main, runs 43576251696 to 43584675396 | **Main has been red since the F-016 merge, with F-016 tests failing on Windows and macOS.** The full Windows shards fail several F-016 tests:<br>- f016-run "chain, option A" (60 s timeout)<br>- f016-run "gate1cap, option A" (its regex expects LF line endings, a test defect)<br>- f016-run "SR-9", "SR-8" and "OQ-3"<br>- f016-acceptance "AC-1" (afterEach `engine.stop()` hook timeout)<br>- f016-acceptance "section 6" (effects timeout)<br>macOS fails `notify.test.ts` (300 ms wait). PR runs use only the platform subset, so this first showed on main. CLAUDE.md rule 7 says to fix forward or revert at once; seven merges have gone in since. The owner runs the engine on Windows. The `engine.stop()` hook timeouts may come from `stop` waiting for OS notifications (`e8fa693`), so they may not be test-only. Fix (orchestrator): classify each failure per `testing-strategy.md`, then fix forward |
+
+#### Minor (logged; never block)
+
+| # | Location | Finding |
+|---|---|---|
+| m2 | `engine/src/readiness/checks.ts:70` | Carried. "When" isn't required, but the evidence says "Given/When/Then" |
+| m3 | `engine/src/agent/reviewer.ts` (`reportOnlyPolicy`) | Carried. An orchestrator role without `Write` isn't refused up front |
+| m4 | `engine/src/gate1/flow.ts:165` | Carried. The framing line still calls reviewer labels and orchestrator evidence "the owner's own words and the engine's checks" |
+| m5 | `docs/interface-contracts.md:159` | Carried. "carried out when the engine next starts, once" no longer matches the code |
+| m6 | `engine/src/engine.ts` (2,198 lines; `onAnswer` `:1585-1741`) | Carried and growing: `gate1unresolved` and `analyststop` were added to the same switch |
+| m7 | `docs/features/F-016-dev-report.md`, Tests | Carried. "19 tests" in `f016-run.test.ts`; there are 25 |
+| m9 | `docs/features/F-016-test-report.md:5`, "What didn't run" | Carried. The final commit is still `ee52303`, and the report still says `chain` and `gate1cap` have no test; they do (run `:480`, `:528`) |
+| m10 | `engine/test/f016-run.test.ts:792`, `:873` | The AC-15 test stops the run with `error_max_turns`, not the wall-time cap AC-15 names, and doesn't check that undelivered replies reach the new run (FR-13). The AC-17 test covers only option B and a skipped question, not "taken up only as assumptions" or option A (B1) |
+| m11 | `engine/src/interview/tools.ts:204-205`, `:230-231` | AC-22's "refused with `invalid` and nothing is recorded" is tested only through `gate1QuestionProblem`. No test calls `interview_ask` or `interview_revise` |
+| m12 | F-016 spec: header Status, section 11, FR-14, AC-16, H-0187, H-0188, section 9 | Status and section 11 still say v10 and AC-1 to AC-14. FR-14, AC-16 and H-0188 name the `spec-interview` skill F-018 retired. H-0187's Markdown link was replaced by a bare URL (`mcp/operations.ts:141`). SR-13 sits between SR-11 and SR-10. Fixing these is a spec edit and needs the owner's OK |
+| m13 | `engine/src/gate1/flow.ts:191-198` | `gate1Resolution`'s doc comment is now detached above `same`, and says a Security item decision is something "this engine can't read yet", which F-016 changed |
+| m14 | `engine/src/engine.ts:1168-1170`; `engine/src/state/inbox.ts:20-21` | The `gate1unresolved` item's Context includes Gate 1 evidence, which can quote a reviewer's option label (`flow.ts:249`), in an engine-text section. `fileSecurityItem` promises engine text only. Same class as Gate 2 L5. Reasoned, not reproduced |
+| m15 | `plugins/software-factory/skills/onboard-repo/scripts/security-blocking.json` | A policy table with `version` but no versioned `schema` field or JSON Schema (CLAUDE.md rule 9, H-0240). Possibly left for F-020 |
+
+Round 1's m1 is fixed (Gate 2 re-review R2). m8 is replaced by M6. Carried from Gate 2 and not graded again: L5 and L7 (logged) and R4 (logged).
+
+### Counts
+
+- Blocking: 1 (B1). Major: 4 (M3 to M6). Minor: 13 (m2 to m7, m9 to m15).
+- Lines: 2 Not met (FR-15: B1; FR-20: M3). 0 Needs owner.
+- Round 1: AC-11 Met; N1 closed (FR-6 Met); M1 closed; M2 closed (re-review done; M5 covers what came after); m1 fixed.
+
+### To pass round 3
+
+1. **Developer (B1):** file a new `gate1unresolved` item whenever the check fails after a send-back, option A included. Add probe 1 (option A, fail again, restart) as a test.
+2. **Developer (M3):** apply FR-20's bar from severity and the current `maturity`, whatever `recorded` says, and add a test. The other way out is the owner rewording FR-20, which is a spec change.
+3. **Orchestrator (M6):** classify and fix forward the Windows and macOS failures on main (rule 7).
+4. **Test engineer (M4):** tests for AC-15 to AC-22 from the spec, including option A for AC-17 and the refusal through `interview_ask` for AC-22; update the report's final commit and counts.
+5. **Security reviewer (M5):** a Gate 2 pass on the v13 to v19 engine code and `e8fa693`, before Alpha or sooner if the owner wants.
+6. **Optional (m2 to m15).** Any code change after this verdict needs the affected suites run again.
+
+### After round 2 (developer, 2026-11-14)
+
+- **B1:** fixed in `0c758eb`. The `gate1unresolved` key counts every send-back since the report, option A included (`unresolvedRounds`), so each later failure files its own item. Test: `f016-run.test.ts` "FR-15 (validation round 2 B1) …", which fails without the fix.
+- **M3:** fixed in `0c758eb`. `belowBar` decides from severity and the current level whenever the level is known; the stored `recorded` flag is used only when it isn't. Test: `gate1.test.ts` "FR-20 (validation round 2 M3) …".
+- **M6:** being fixed forward on the same branch.
