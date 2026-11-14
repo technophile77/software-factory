@@ -110,8 +110,7 @@ didn't find.
 On an onboarded repo, skip this step (see "Re-running").
 
 - **Starting level:** show the owner the recommended level and the evidence
-  table from the assessment. The promotion criteria are still draft, so say
-  so. The owner picks; their pick is recorded as the approved decision in
+  table from the assessment. The owner picks; their pick is recorded as the approved decision in
   step 6.
 - **Complexity preset** (new projects only, F-002): if the master factory
   has a `project-evaluator` agent, run it on the project's spec and use its
