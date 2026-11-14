@@ -900,8 +900,9 @@ class Properties(unittest.TestCase):
                 # Keys sit next to separators in real files; the rule needs a word boundary.
                 word = "".join(r.choice(string.ascii_letters) for _ in range(r.randint(0, 12)))
                 sep = r.choice([" = ", "='", '"', ": ", "\t", ","])
+                # gitleaks skips a file starting with a binary signature such as "MZ" (H-0186).
                 with open(os.path.join(root, f"f{i}.txt"), "w") as f:
-                    f.write(f"{word}{sep}{key}{sep[::-1]}{word}\n")
+                    f.write(f"key{word}{sep}{key}{sep[::-1]}{word}\n")
                 a = fc.assess(root)
                 out = json.dumps(a) + fc.to_markdown(a)
                 self.assertNotIn(key, out)
