@@ -1,7 +1,7 @@
 # Feature: Isolation evaluation for every onboarded model
 
 - **Id:** F-017
-- **Status:** In review (readiness gate passed 2026-11-14; awaiting owner sign-off)
+- **Status:** Approved (owner, 2026-11-14; readiness gate passed)
 - **Requested by / date:** Alex, 2026-11-14 ("each model that is onboarded
   needs to be evaluated for how it enforces isolation, and what
   configuration turns it on. documentation is not sufficient, testing should
@@ -208,6 +208,7 @@ Checked 2026-11-14 against spec v9.
 | 7 | 2026-11-14 | Gate 1 decisions: D1 (b) shell roles Part 1 only until Beta (SR-4); D2 (a) production attempt monitor (SR-12); D3 (a) report-only endpoint roles need Part 1 (SR-15); D4 (a) record-forgery risk accepted until Beta (SR-9); SR-4 to SR-17 approved | Owner, 2026-11-14 (decision cards; recording confirmed in the thread) |
 | 8 | 2026-11-14 | Section 10: H-0210 to H-0213 drafted | — |
 | 9 | 2026-11-14 | SR-1 to SR-3 and H-0210 to H-0213 approved; readiness gate passed | Owner, 2026-11-14 (decision cards; recording confirmed in the thread) |
+| 9 | 2026-11-14 | Spec v9 signed off; status Approved | Owner, 2026-11-14 (decision card; recording confirmed in the thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
