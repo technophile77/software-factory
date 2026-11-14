@@ -133,6 +133,8 @@ export class FakeEngine {
   adviceQueries: string[] | null = ["sqlite concurrent writers"];
   adviceFails = false;
   version = "1.4";
+  /** Merged into each feature's `engine.status` entry (F-016 FR-14). */
+  statusExtra: Json = {};
   capabilities: string[] = ["document"];
   private server: net.Server;
 
@@ -328,7 +330,7 @@ export class FakeEngine {
 
   m_engine_status(): Json {
     return { version: this.version, capabilities: this.capabilities, uptime_s: Math.floor((Date.now() - this.started) / 1000),
-      features: [...this.features.keys()].map((id) => ({ id, stage: "requirements_interview", active_agents: 1 })) };
+      features: [...this.features.keys()].map((id) => ({ id, stage: "requirements_interview", active_agents: 1, ...this.statusExtra })) };
   }
 
   m_feature_start(p: Json): Json {

@@ -905,6 +905,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const intro = `You are working on ${f.id} on branch ${branch}, in /workspace. Write its spec at docs/features/${slugName}.md. Reach the owner only through your factory tools.`;
       let summary = plan?.mode === "from_commit" ? plan.summary : "";
       if (plan?.mode === "session" && !resumeId) summary = transcriptSummary(f.state);
+      // A new run after one that ended (an analyststop or breach restart) would otherwise start from the request alone (F-016 FR-13).
+      if (!plan && record.runs().some((x) => x.id !== runId && x.feature === f.id && x.project === p.real && x.role === "requirements-analyst")) summary = transcriptSummary(f.state);
       const facts: RunFacts = { model: models["requirements-analyst"] };
       const docText = f.state.document ? await documentText(p, f) : null;
       if (f.state.document && docText === null) throw new SessionRefused("the feature's source document is missing or doesn't match its recorded hash");
@@ -1039,6 +1041,21 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       log.warn(`${p.name}: the report for run ${runId} wasn't committed (${(e as Error).message}).`);
     }
     await noteAnalyst(f, "stopped", `The analyst's run stopped: ${why}.`);
+    await offerRerun(p, f, runId, why);
+  }
+
+  // A breach or a secret already filed its own item, with its own effect (SR-8).
+  const rerunnable = (why: string) => !/outside the role's rules|secrets scan/.test(why);
+
+  /** F-016 FR-13: with no analyst running, only the owner can start another, so ask once per stopped run. */
+  async function offerRerun(p: Project, f: FeatureInterview, runId: string, why: string): Promise<void> {
+    if (!rerunnable(why)) return;
+    await alert(p, `analyststop:${f.id}:${runId}`, {
+      title: `The analyst for ${f.id} stopped`, feature: f.id,
+      context: `Analyst run ${runId} for ${f.id} stopped: ${why}. No analyst works on ${f.id} until this is decided; interview replies wait for the next run.`,
+      impact: `${f.id} stays in the requirements interview with no analyst.`,
+      confirm: "Run the analyst again (a new run with the full limits)", hold: "Keep the feature stopped", recommendation: "A",
+    });
   }
 
   // -- Security Gate 1 (F-008) ---------------------------------------------------
@@ -1453,7 +1470,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       features: projects.filter((p) => p.state === "running").flatMap((p) => [...p.features.values()].filter((f) => !ambiguous.has(f.id)).map((f) => {
         const waiting = p.inbox?.waitingOn(f.id) ?? [];
         // H-0183 (channel v1.5): the items the feature waits on, only when there are any.
-        return { id: f.id, stage: f.stage() || INTERVIEW_STAGE, active_agents: 0, ...(waiting.length ? { waiting_on: waiting } : {}) };
+        return { id: f.id, stage: f.stage() || INTERVIEW_STAGE, active_agents: jobs.has(f.id) ? 1 : 0, ...(waiting.length ? { waiting_on: waiting } : {}) };
       })),
     }),
     pause: (fid) => {
@@ -1650,6 +1667,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       }
       await done("restarted");
       resumeFeature(p, f);
+      return;
+    }
+    if (type === "analyststop" && f) {
+      // The item is filed as the stopped run ends, so a quick answer can arrive before its job slot is free.
+      await jobs.get(f.id)?.done;
+      // SR-13: one run per approval; a feature that moved on, or already has a job, needs none.
+      if (f.stage() !== INTERVIEW_STAGE || jobs.has(f.id)) return done("record_only");
+      await done("restarted");
+      launchAnalyst(p, f);
       return;
     }
     if (type === "gate1cap" && f) {
@@ -2106,6 +2132,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         const since = f.state.gate1.reportAt;
         const tried = record.runs().some((r) => r.feature === f.id && r.project === p.real && r.role === "requirements-analyst" && r.started_at >= since);
         if (!tried) launchAnalyst(p, f);
+      }
+      if (f.stage() === INTERVIEW_STAGE && !jobs.has(f.id)) {
+        // FR-13: a feature whose analyst stopped before this engine (or before this rule) would wait forever.
+        const last = record.runs().filter((r) => r.feature === f.id && r.project === p.real && r.role === "requirements-analyst").sort((a, b) => a.started_at.localeCompare(b.started_at)).at(-1);
+        if (last?.status === "failed") void offerRerun(p, f, last.id, last.reason ?? "the run failed");
       }
     }
   }

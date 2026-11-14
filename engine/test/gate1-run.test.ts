@@ -45,7 +45,8 @@ describe("Security Gate 1 on the engine, with fake Docker and SDK (F-008)", () =
     const branch = e.feature(feature)!.state.branch;
     expect(git(w.config, "show", `${branch}:docs/features/${feature}-security-gate1.md`)).toContain(`# ${feature} Security Gate 1`);
     expect(entries(w, feature).map((x) => x.type)).toEqual(expect.arrayContaining(["gate1_run", "gate1_report"]));
-    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "readiness_gate", active_agents: 0 }]);
+    // The readiness gate may already be running; FR-14 counts it.
+    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "readiness_gate", active_agents: expect.any(Number) }]);
     expect(g1.stage).toBe("security_gate_1");
   });
 

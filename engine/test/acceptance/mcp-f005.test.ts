@@ -469,6 +469,20 @@ unix("AC-5: deferred first", () => {
     expect(out.item).toBeNull();
     expect(out.display.trim().length).toBeGreaterThan(0);
   });
+
+  it("F-016 AC-16: with no analyst running, the answer says so and names the items the feature waits on", async () => {
+    await world();
+    w.engine.addFeature("F-2", "Done", [question("Q1", "answered")]);
+    await w.open("F-2");
+    expect((await w.next({}, "F-2")).display).toContain("The analyst is working on F-2");
+    w.engine.statusExtra = { active_agents: 0, waiting_on: ["D-0003", "not an id <b>"] };
+    const out = await w.next({}, "F-2");
+    expect(out.display).toContain("no analyst is working on F-2");
+    expect(out.display).toContain("D-0003");
+    expect(out.display).not.toContain("not an id");
+    w.engine.statusExtra = { active_agents: 0 };
+    expect((await w.next({}, "F-2")).display).toContain("files an inbox item asking whether to run it again");
+  });
 });
 
 // ---------------------------------------------------------------------------

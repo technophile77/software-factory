@@ -708,3 +708,82 @@ describe("F-016: the full readiness gate", () => {
     await until("its session", () => again.s.count.orchestrator > 0);
   }, 60_000);
 });
+
+describe("F-016 FR-13, FR-14: an analyst run that stopped (issues #64, #65)", () => {
+  it("AC-15, AC-16: a capped run files analyststop; option A starts one new run with the transcript summary; status shows the running session", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const s = scriptedSdk({
+      analyst: async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
+        await sc.next();
+        if (n === 1) {
+          yield { type: "result", subtype: "error_max_turns", session_id: `a-${n}` } as SdkMessage;
+          return;
+        }
+        await held;
+        yield { type: "result", subtype: "success", session_id: `a-${n}` };
+      },
+      reviewer: reviewer(d, () => feature),
+    });
+    const gh = new FakeIssues();
+    const { e, c } = await boot(w, runtime(d, s.sdk), { issues: () => gh });
+    feature = (await c.ok("feature.start", { request: "Export" })).feature as string;
+    await until("the analyststop item", () => items(w).some((i) => i.record.effect?.type === "analyststop"));
+    expect(items(w)).toHaveLength(1);
+    const agents = async () => ((await c.ok("engine.status")).features as Array<{ active_agents: number }>)[0]!.active_agents;
+    for (let i = 0; i < 250 && (await agents()) !== 0; i++) await new Promise((r) => setTimeout(r, 20));
+    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "requirements_interview", active_agents: 0, waiting_on: ["D-0001"] }]);
+    await pollUntil(w, "the issue", () => gh.issues.size === 1);
+    await act(w, gh, 1, "choose:A");
+    await pollUntil(w, "the second run", () => s.count.analyst === 2);
+    expect(effects(w, "D-0001")).toEqual([expect.objectContaining({ effect: "restarted" })]);
+    const second = s.prompts.filter((p) => p.role === "analyst").at(-1)!.text;
+    expect(second).toContain("Summary of the interview so far");
+    for (let i = 0; i < 100 && (await agents()) !== 1; i++) await new Promise((r) => setTimeout(r, 20));
+    expect(await agents()).toBe(1);
+    release();
+    for (let i = 0; i < 250 && (await agents()) !== 0; i++) await new Promise((r) => setTimeout(r, 20));
+    expect(await agents()).toBe(0);
+    expect(s.count.analyst).toBe(2);
+    expect(e.feature(feature)).toBeTruthy();
+  }, 60_000);
+
+  it("AC-15: an engine start files the item once for a feature whose analyst stopped with no item; option B starts nothing", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    const scripts = {
+      analyst: async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
+        await sc.next();
+        yield { type: "result", subtype: "error_max_turns", session_id: `a-${n}` } as SdkMessage;
+      },
+      reviewer: reviewer(d, () => feature),
+    };
+    const first = await start(w, d, scripts);
+    feature = (await first.c.ok("feature.start", { request: "Export" })).feature as string;
+    await until("the first item", () => items(w).length === 1);
+    await first.e.stop();
+    // A run that stopped under an engine without FR-13, as the trial's F-002 did: failed, with no item.
+    const file = path.join(w.home, "record.json");
+    const rec = JSON.parse(fs.readFileSync(file, "utf8"));
+    const last = Object.values(rec.runs as Record<string, any>).find((r) => r.feature === feature)!;
+    rec.runs["R-0ld0ld0ld0l"] = { ...last, id: "R-0ld0ld0ld0l", started_at: "2099-01-01T00:00:00Z", reason: "it reached the wall_time cap" };
+    fs.writeFileSync(file, JSON.stringify(rec));
+
+    const second = await start(w, d, scripts, first.gh);
+    await until("the item at start", () => items(w).length === 2);
+    await second.e.stop();
+    const third = await start(w, d, scripts, first.gh);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(items(w)).toHaveLength(2);
+    expect(items(w)[1]!.record.effect).toMatchObject({ type: "analyststop", feature });
+    await pollUntil(w, "the issues", () => first.gh.issues.size === 2);
+    await act(w, first.gh, 2, "choose:B");
+    await pollUntil(w, "the effect", () => effects(w, "D-0002").length === 1);
+    expect(effects(w, "D-0002")[0]).toMatchObject({ effect: "record_only" });
+    expect(first.s.count.analyst + second.s.count.analyst + third.s.count.analyst).toBe(1);
+  }, 60_000);
+});
