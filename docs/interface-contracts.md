@@ -449,8 +449,8 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 ## Role policy — v2.7
 
 - Status: Approved (v2.2); v2.3 draft, awaiting owner approval (H-0040);
-  v2.4 approved (H-0061, H-0076); v2.5 approved (H-0083); v2.7 draft,
-  awaiting owner approval (H-0201, ADR 0026)
+  v2.4 approved (H-0061, H-0076); v2.5 approved (H-0083); v2.7 approved
+  (H-0201, ADR 0026; owner, 2026-11-14, decision card, as drafted)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);

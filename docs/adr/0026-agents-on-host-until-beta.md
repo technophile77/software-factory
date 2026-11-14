@@ -109,6 +109,10 @@ and they do not limit reads or network
 - Amends ADR 0004 (back to worktree plus engine policy, its own original
   position) and suspends ADR 0015 decision 1 until Beta. ADR 0017's residual
   risk widens to include agent-run code until Beta.
+- Until Beta the engine asks the owner, through the inbox, before any agent
+  runs a command naming a credentialed program such as `gh`, `aws` or
+  `railway` (Role policy v2.7, owner, 2026-11-14). It doesn't cover
+  programs started by code an agent runs.
 - Security standard S8 (least privilege) has a recorded, time-limited
   exception for agent-run code.
 - Rules out running the factory's roles as Claude Code subagents.
