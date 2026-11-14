@@ -526,7 +526,8 @@ describe("F-016 H-0182: chain and Gate 1 run limit items", () => {
   }, 60_000);
 
   it("gate1cap, option A: the feature gets one more Gate 1 run than its limit", async () => {
-    const limits = fs.readFileSync(path.join(__dirname, "..", "config", "limits.yaml"), "utf8").replace(/(security_gate_1:\n\s+runs_per_feature:) \d+/, "$1 1");
+    // A Windows checkout may give the file CRLF line endings.
+    const limits = fs.readFileSync(path.join(__dirname, "..", "config", "limits.yaml"), "utf8").replace(/\r\n/g, "\n").replace(/(security_gate_1:\n\s+runs_per_feature:) \d+/, "$1 1");
     expect(limits).toMatch(/security_gate_1:\n\s+runs_per_feature: 1/);
     const w = world({ "engine/config/limits.yaml": limits });
     const d = new FakeDocker();
