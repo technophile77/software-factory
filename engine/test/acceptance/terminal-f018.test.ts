@@ -352,7 +352,8 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
         features: [{ id: "F-1", stage: "security_gate_1", active_agents: 0, activity: "waiting_for_decision", waiting_on: ["D-0007", "S-0002", "\u001b[2Jfake"] }] }]);
       return true;
     };
-    const { s } = await run(["1"], "F-1");
+    // F-021 FR-11 offers the decisions first; "Not now" goes back to the live status.
+    const { s } = await run(["1", "2"], "F-1");
     expect(s.out).toMatch(/\] Waiting for your decision on D-0007, S-0002/);
     expect(s.out).not.toContain("fake");
     expect(s.out).not.toContain("idle");

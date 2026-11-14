@@ -33,6 +33,9 @@ const USAGE = `factory-engine <command>
           Answers the requirements analyst's questions in this terminal (F-018).
           --project defaults to the current folder, inside the project's repo.
           Started by the software-factory plugin, not by hand.
+  inbox [<item id>] [--project <path>]
+          Lists the project's open inbox items and answers them in this terminal
+          (F-021). Every item is still a GitHub issue; the first answer counts.
 `;
 
 function flags(args: string[]): Record<string, string> {
@@ -158,7 +161,8 @@ function terminalIo(ascii: boolean): TerminalIo & { close(): void } {
   };
 }
 
-async function interview(rest: string[]): Promise<number> {
+/** `interview` (F-018) and `inbox` (F-021) share their checks and their terminal. */
+async function interview(rest: string[], command: "interview" | "inbox" = "interview"): Promise<number> {
   const feature = rest[0] && !rest[0].startsWith("--") ? rest[0] : undefined;
   let f: Record<string, string>;
   try {
@@ -167,13 +171,14 @@ async function interview(rest: string[]): Promise<number> {
     process.stderr.write(USAGE);
     return 2;
   }
-  if (Object.keys(f).some((k) => k !== "project") || (feature !== undefined && !ID_RE.test(feature))) {
+  const idOk = command === "inbox" ? /^[DTHSMN]-\d{4,8}$/ : ID_RE;
+  if (Object.keys(f).some((k) => k !== "project") || (feature !== undefined && !idOk.test(feature))) {
     process.stderr.write(USAGE);
     return 2;
   }
   // A script or a model's shell tool must not type answers for the owner (SR-3).
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    process.stderr.write("factory-engine interview runs only in a terminal, with you typing the answers.\n");
+    process.stderr.write(`factory-engine ${command} runs only in a terminal, with you typing the answers.\n`);
     return 2;
   }
   const ops = new Interview({ os: realOsApi(), projectDir: path.resolve(f.project ?? process.cwd()) });
@@ -182,7 +187,8 @@ async function interview(rest: string[]): Promise<number> {
   const marker = ascii ? "| " : "\u2502 ";
   const io = terminalIo(ascii);
   try {
-    return await new TerminalInterview((op, req) => ops.run(op, req), io, marker).main(feature);
+    const t = new TerminalInterview((op, req) => ops.run(op, req), io, marker);
+    return await (command === "inbox" ? t.inboxMain(feature) : t.main(feature));
   } finally {
     io.close();
   }
@@ -191,6 +197,7 @@ async function interview(rest: string[]): Promise<number> {
 async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   if (cmd === "interview") return interview(rest);
+  if (cmd === "inbox") return interview(rest, "inbox");
   if (cmd === "secret") {
     const [sub, name] = rest;
     if (sub !== "set" || !name || !isSecretName(name)) {

@@ -264,9 +264,10 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
       case "inbox.confirm": {
         only(p, ["session", "item", "rev", "code"]);
         const s = project.sessions.approved(p.session);
-        if (typeof p.code !== "string" || !CODE_RE.test(p.code)) return { refused: "confirm_failed" };
+        // A malformed code is a wrong code: it still ends the attempt (F-021 SR-2).
+        const code = typeof p.code === "string" && CODE_RE.test(p.code) ? p.code : "-";
         try {
-          return consoleWire(await inbox().confirm({ id: inboxItem(p.item), rev: revision(p.rev), code: p.code, session: s.no, signedIn: s.signedIn }));
+          return consoleWire(await inbox().confirm({ id: inboxItem(p.item), rev: revision(p.rev), code, session: s.no, signedIn: s.signedIn }));
         } catch (e) {
           if (e instanceof SecretFound) {
             await project.secretRefused("inbox.confirm", e);
