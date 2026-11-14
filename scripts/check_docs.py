@@ -2,7 +2,8 @@
 
 Catches the mistakes that silently break agents: a renamed doc that other
 docs still link to, invalid workflow YAML, or an agent/skill file missing the
-frontmatter Claude Code needs to load it.
+frontmatter Claude Code needs to load it, including the worktree isolation
+every agent must have.
 """
 import glob
 import os
@@ -43,6 +44,10 @@ for path in glob.glob("agents/*/AGENT.md") + glob.glob("skills/*/SKILL.md"):
     meta = yaml.safe_load(match.group(1)) if match else None
     if not isinstance(meta, dict) or not meta.get("name") or not meta.get("description"):
         errors.append(f"{path}: frontmatter needs name and description")
+    # Owner's rule (H-0203): every agent runs in an isolated worktree when
+    # Claude Code starts it as a subagent; the engine's own runs have their own.
+    if path.startswith("agents/") and isinstance(meta, dict) and meta.get("isolation") != "worktree":
+        errors.append(f"{path}: frontmatter needs isolation: worktree")
 
 print("\n".join(errors) or "All docs checks passed.")
 sys.exit(1 if errors else 0)

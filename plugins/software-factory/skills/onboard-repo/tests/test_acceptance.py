@@ -993,10 +993,15 @@ def filled_manifest(complexity=None):
 
 
 class AC11Manifest(Base):
-    def validate(self, text, master=True):
-        p = os.path.join(self.tmp(), "factory-project.yaml")
+    def validate(self, text, master=True, files=None):
+        root = self.tmp()
+        p = os.path.join(root, "factory-project.yaml")
         with open(p, "w", encoding="utf-8") as f:
             f.write(text)
+        for rel, content in (files or {}).items():
+            os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+            with open(os.path.join(root, rel), "w", encoding="utf-8") as f:
+                f.write(content)
         args = ["validate-manifest", p] + (["--master", MASTER] if master else [])
         return cli(*args)
 
@@ -1056,8 +1061,13 @@ class AC11Manifest(Base):
         text = filled_manifest().replace("agents:\n  custom: []\n  override: []",
                                          "agents:\n  custom: []\n  override:\n    - name: orchestrator\n"
                                          "      reason: stricter\n      path: agents/orchestrator.md\n      decision: D-0004")
-        code, out, _ = self.validate(text)
+        agent = "---\nname: orchestrator\ndescription: d\nisolation: worktree\n---\nbody\n"
+        code, out, _ = self.validate(text, files={"agents/orchestrator.md": agent})
         self.assertEqual(code, 0, out)
+        # H-0205: the project's own AGENT.md needs worktree isolation too.
+        code, out, _ = self.validate(text, files={"agents/orchestrator.md": agent.replace("isolation: worktree\n", "")})
+        self.assertEqual(code, 1, out)
+        self.assertIn("isolation: worktree", out)
 
     def test_ac11_unparseable_manifest_fails_closed(self):
         for name, text in {"tab": "schema:\tx\n\tname: y\n", "anchor": "a: &x 1\nb: *x\n",

@@ -3,7 +3,7 @@
 - **Id:** F-008
 - **Status:** Approved (readiness gate passed 2026-11-12)
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 15
+- **Spec version:** 16
 
 This is part of the engine's increment 3 ("Requirements to ready", F-007
 section 13). The owner chose to build Security Gate 1 on its own first
@@ -62,6 +62,10 @@ approved security requirements are in the spec.
    and engine log say why a gate didn't run or didn't finish.
 
 ## 3. Functional requirements
+Until Beta, FR-2, AC-3, SR-6 and SR-8 read as in section 9,
+"Until Beta: agents on the owner's PC" (ADR 0026). Their text below
+applies again at Beta.
+
 | Id | Requirement |
 |---|---|
 | FR-1 | When a feature of an enabled, running project enters `security_gate_1` from a passing interview and has no unresolved Gate 1 findings, the engine starts one Gate 1 run on that spec commit; at engine start it starts one for a feature at `security_gate_1` that has no Gate 1 report since it last entered the stage. A feature returning from the findings interview gets the FR-9 check, not a new run (Gate 1 #6). One Gate 1 run per feature at a time. |
@@ -154,6 +158,17 @@ approved security requirements are in the spec.
 | SR-11 | At most 3 Gate 1 runs per feature, the correction resume included; a fourth needs the owner and files a Security item (S5.1). The `security_reviewer` caps (turns, output tokens, dollars, wall time) cover a whole run: the correction session and every restart resume get only what the run's earlier sessions left. | Gate 1 #6 | Approved |
 | SR-12 | The write check accepts exactly the run's named report path, not every path the role's write glob allows (S8.1). | Gate 1 #8 | Approved |
 
+### Until Beta: agents on the owner's PC (ADR 0026)
+Reopened on 2026-11-14 because containers are dropped until Beta. Each row
+replaces its requirement until then; the original applies again at Beta.
+
+| Id | Until Beta | Decided |
+|---|---|---|
+| FR-2 | The reviewer runs as an Agent SDK session on the owner's PC, in its own engine worktree, under the project's `security-reviewer` role policy and Role policy v2.7's "until Beta" rule. Its only write is its report, `.factory/runs/<feature>/security_gate_1/security-reviewer-<n>.json` in the worktree, which the engine names in its input. The end-of-session check allows that one changed path and rejects any other. The engine commits the valid report to `factory/state` with the analyst's reports. | Owner, 2026-11-14 (decision card) |
+| AC-3 | Given a Gate 1 session, then its tools are only `Read`, `Grep`, `Glob`, `Write` and `Skill`, and its model traffic goes only to the engine's proxy with its own session token (F-007 SR-6 and SR-9 until Beta). | Owner, 2026-11-14 (decision card) |
+| SR-6 | The Gate 1 session gets the same session caps and billing check as the analyst (F-007 SR-18 until Beta), from its own entries. No container limits until Beta. | Owner, 2026-11-14 (decision card) |
+| SR-8 | The engine reads the report only after the session has ended, only from the named path in the worktree, and only if the end-of-session check found no other changed path: exactly that file, a regular file opened without following links, at most 256 KiB, parsed with a nesting limit (S1.4). | Owner, 2026-11-14 (decision card) |
+
 ## 10. Interface requirements
 - H-0095 (approved: owner, decision card, 2026-11-12, with Sonnet 5.5 in
   place of the drafted Opus 5.5): new entries in the change-controlled
@@ -222,3 +237,4 @@ Asked one at a time. None is assumed.
 | 13 | 2026-11-12 | Security Gate 2 M1: an owner answer other than the suggested requirement counts only once the owner approves its wording as a "Gate 1 #n" assumption; anything else is a rejection (FR-9, AC-18) | Owner, 2026-11-12 (decision card) |
 | 14 | 2026-11-12 | Security Gate 2 L3: the reviewer's caps cover a whole run, correction and restart resumes included (SR-11) | Owner, 2026-11-12 (decision card) |
 | 15 | 2026-11-12 | Validation M3: the standards and Gate 1 checklist in the reviewer's first turn stand in for the `security-review` skill, which Role policy v2.5 doesn't let the reviewer load (FR-3) | Owner, 2026-11-12 (decision card) |
+| 16 | 2026-11-14 | Reopened for ADR 0026 (no containers until Beta): until-Beta wording for FR-2, AC-3, SR-6 and SR-8 in section 9; the report is written in the worktree | Owner, 2026-11-14 (decision cards) |
