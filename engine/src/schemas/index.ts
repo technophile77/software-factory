@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { endpointsFile, engineFile, limitsFile, manifestFile, modelsFile, projectsFile } from "./config";
 import { ROLE_BODIES, modelReport, storedReport } from "./agent-report";
 import { inboxRecord } from "./inbox-record";
 import { prRecord } from "./pr-record";
@@ -18,6 +19,13 @@ export const SCHEMAS: Record<string, z.ZodType> = {
   "run-review-1": runReview,
   "tuning-metrics-1": tuningMetrics,
   "calibration-result-1": calibrationResult,
+  // Hand-edited YAML (FR-11): checked by the engine, published for reference.
+  "factory-project-1": manifestFile,
+  "factory-endpoints-1": endpointsFile,
+  "factory-projects-1": projectsFile,
+  "engine-models": modelsFile,
+  "engine-limits": limitsFile,
+  "engine-home": engineFile,
 };
 
 /** The JSON Schema text for one format, as committed under docs/schemas/. */

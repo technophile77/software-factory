@@ -151,6 +151,15 @@ describe("engine start (FR-1 to FR-4)", () => {
   });
 });
 
+describe("F-020 FR-12: the manifest's outline is checked against its schema", () => {
+  it("AC-13: an unknown key under settings stops the project, naming the file and the key's path", async () => {
+    const w = makeWorld({ manifest: manifestYaml({ extra: "  surprise: 1" }), pinned: false });
+    const e = await boot(w);
+    expect(e.projects[0]!.state).toBe("stopped");
+    expect(e.projects[0]!.reason).toBe("factory-project.yaml: settings is invalid (unknown key 'surprise')");
+  });
+});
+
 describe("F-020 SR-4: inbox records still in YAML", () => {
   it("the project is stopped, nothing is filed, and the owner is told to run the migration", async () => {
     const w = makeWorld();

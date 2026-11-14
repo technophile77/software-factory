@@ -1,0 +1,574 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "factory-project/1.0"
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "factory": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "target_maturity": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "owner": {
+      "type": "object",
+      "properties": {
+        "github_id": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "oauth_client_id": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "commit_name": {
+          "type": "string",
+          "maxLength": 100
+        }
+      },
+      "required": [
+        "github_id",
+        "oauth_client_id"
+      ],
+      "additionalProperties": false
+    },
+    "allowed_repo_owners": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "login": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "id": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "login",
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "repos": {
+      "minItems": 1,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "maturity": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "policy": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "commands": {
+            "type": "object",
+            "properties": {
+              "test": {
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 500
+                }
+              },
+              "test_results": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "build": {
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 500
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "maturity": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "complexity": {
+      "type": "string",
+      "enum": [
+        "simple",
+        "moderate",
+        "complex"
+      ]
+    },
+    "skills": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "agents": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "standards": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "budget": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "endpoints": {
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 32
+          }
+        },
+        "agents": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "concurrency": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 20
+            },
+            {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "retries": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "ci": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "github": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "providers": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "additionalProperties": false
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "policy": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "analyst": {
+          "type": "object",
+          "properties": {
+            "turns": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "output_tokens": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "dollars": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "wall_time_minutes": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "cpus": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "memory_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "pids": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "tmp_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "web_reader": {
+          "type": "object",
+          "properties": {
+            "turns": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "output_tokens": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "dollars": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "wall_time_minutes": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "cpus": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "memory_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "pids": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "tmp_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "proxy": {
+          "type": "object",
+          "properties": {
+            "cpus": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "memory_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "pids": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "tmp_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "research_web": {
+          "type": "object",
+          "properties": {
+            "per_question": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "per_session": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
+        },
+        "fetch_page": {
+          "type": "object",
+          "properties": {
+            "max_download_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "max_chars": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
+        },
+        "research_result": {
+          "type": "object",
+          "properties": {
+            "summary_chars": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max_sources": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
+        },
+        "worktree_commit": {
+          "type": "object",
+          "properties": {
+            "max_files": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max_total_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "max_file_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "security_reviewer": {
+          "type": "object",
+          "properties": {
+            "turns": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "output_tokens": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "dollars": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "wall_time_minutes": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "cpus": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "memory_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "pids": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "tmp_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "security_gate_1": {
+          "type": "object",
+          "properties": {
+            "runs_per_feature": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "report_kib": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "additions_kib": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
+        },
+        "orchestrator": {
+          "type": "object",
+          "properties": {
+            "turns": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "output_tokens": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "dollars": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "wall_time_minutes": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "cpus": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "memory_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "pids": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "tmp_mib": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "readiness_gate": {
+          "type": "object",
+          "properties": {
+            "runs_per_feature": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "report_kib": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "github": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    }
+  },
+  "required": [
+    "schema",
+    "name",
+    "factory",
+    "repos",
+    "maturity"
+  ],
+  "additionalProperties": false
+}

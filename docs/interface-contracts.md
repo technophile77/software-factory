@@ -896,6 +896,12 @@ not the URL text. The engine reads the manifest from the config repo's
 a change to them needs the owner's confirmation and a device approval by
 the previously pinned owner (F-007 SR-5).
 
+**Outline check (F-020 FR-12, H-0244).** The engine also checks the
+manifest against `docs/schemas/factory-project-1.schema.json` when it reads
+it: an unknown key at the top level, in `settings`, `owner`, `factory` or a
+`repos` entry stops the project with the file and the key's path. The Role
+policy and other detailed parts keep their own rules.
+
 **Protected defaults:** `security-review` and the six core agents (orchestrator,
 requirements-analyst, software-developer, test-engineer, security-reviewer,
 validation-judge) may never be excluded; overriding one requires a linked,

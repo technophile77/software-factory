@@ -7,7 +7,10 @@ import { modelReport } from "../src/schemas/agent-report";
 import { prRecord } from "../src/schemas/pr-record";
 import { SchemaError, parseJsonFile } from "../src/schemas/json-file";
 import { agentReport } from "../src/state/runs";
-import { removeTmpdirs, tmpdir } from "./helpers";
+import YAML from "yaml";
+import type { ZodType } from "zod";
+import { endpointsFile, limitsFile, manifestFile, modelsFile } from "../src/schemas/config";
+import { manifestYaml, removeTmpdirs, tmpdir } from "./helpers";
 
 // F-020 FR-1, FR-2, FR-3, FR-5, FR-8, SR-6, SR-7.
 
@@ -82,4 +85,30 @@ describe("F-020 PR records (FR-5, AC-15)", () => {
     const { feature: _f, ...noFeature } = rec;
     expect(() => parseJsonFile("prs/o/app/4.json", JSON.stringify(noFeature), prRecord)).toThrow("prs/o/app/4.json: feature is invalid (invalid_type)");
   });
+});
+
+describe("F-020 hand-edited YAML schemas (FR-11, FR-12, AC-12)", () => {
+  const repoRoot = path.join(__dirname, "..", "..");
+  const read = (p: string) => YAML.parse(fs.readFileSync(path.join(repoRoot, p), "utf8"));
+  const contractEndpoints = () => {
+    const doc = fs.readFileSync(path.join(repoRoot, "docs", "interface-contracts.md"), "utf8");
+    const at = doc.indexOf("## Model endpoints file");
+    const block = /```yaml\n([\s\S]*?)```/.exec(doc.slice(at))![1]!;
+    return YAML.parse(block.replace(/<[^>]+>/g, "x"));
+  };
+  const examples: Array<[string, unknown, ZodType]> = [
+    ["engine/config/limits.yaml", read("engine/config/limits.yaml"), limitsFile],
+    ["engine/config/models.yaml", read("engine/config/models.yaml"), modelsFile],
+    ["onboarding template factory-project.yaml", read("plugins/software-factory/skills/onboard-repo/templates/factory-project.yaml"), manifestFile],
+    ["test manifest", YAML.parse(manifestYaml()), manifestFile],
+    ["contract endpoints example", contractEndpoints(), endpointsFile],
+  ];
+
+  for (const [name, doc, schema] of examples) {
+    it(`${name} validates, and a copy with an unknown top-level key fails`, () => {
+      const ok = schema.safeParse(doc);
+      expect(ok.success, ok.success ? "" : JSON.stringify(ok.error.issues[0])).toBe(true);
+      expect(schema.safeParse({ ...(doc as object), surprise: 1 }).success).toBe(false);
+    });
+  }
 });
