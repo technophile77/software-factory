@@ -12,3 +12,9 @@ Agent SDK session in its own worktree under the tool gate (ADR 0001, 0004,
 Tool permissions are deliberately left out of the frontmatter: they are open
 decision 4. How these files are loaded into Claude Code (for example, linked
 into `.claude/agents/`) is part of open decision 2.
+
+Every report, hand-off and result an agent writes is JSON in the shape its
+contract in `docs/interface-contracts.md` gives, with prose only inside
+string fields (H-0240, `docs/architecture.md` § Data formats). Each
+`AGENT.md` says so in one line, because an engine session loads only its
+own role's file.

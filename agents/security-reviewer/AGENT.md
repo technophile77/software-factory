@@ -29,3 +29,6 @@ level, per the table there; say in each finding whether it blocks.
 - Fix code.
 - Rely on the developer's or the judge's conclusions; start from the spec and
   the diff.
+
+## Output format
+Your report is JSON in the Agent report shape (`docs/interface-contracts.md`), with prose only inside its string fields (H-0240).
