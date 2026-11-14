@@ -530,6 +530,24 @@ the software developer and test engineer have a full shell (F-015, owner,
 2026-11-14): `commands` and the rule against naming a shell or interpreter
 don't apply to them.
 
+**Owner asked before credentialed programs (v2.7, H-0201).** Until Beta,
+before any role runs a command that names a program on the ask list, the
+engine asks the owner. The engine's tool gate holds the command and files a
+Security inbox item naming the role, the feature, the full command and the
+working folder. The owner's approval lets that one command run once. A
+refusal, or no answer within 30 minutes, denies it and tells the agent why.
+The wait doesn't count toward the session's wall-time cap. The ask list is
+`gh`, `aws`, `az`, `gcloud`, `gsutil`, `bq`, `railway`, `vercel`,
+`netlify`, `fly`, `flyctl`, `heroku`, `doppler`, `op`, `vault`, `kubectl`,
+`helm`, `terraform`, `pulumi`, `docker` and `ssh`. A project adds programs
+under `policy.ask` in its manifest but can't remove listed ones. The gate
+matches every word of the command, with any folder path and `.exe`, `.cmd`
+or `.bat` stripped and case ignored. A command it can't split into words
+counts as a match. This catches commands the agent itself runs. It doesn't
+catch a program started by code the agent runs, such as a test or a
+package script, or code that reads a login file directly. Those stay under
+ADR 0026's accepted risks.
+
 **Container per agent session (H-0045 and H-0052, owner, 2026-11-10;
 wording approved by decision card; suspended until Beta by v2.7).** The engine runs every agent
 session, the agent process included, in its own container, so the agent's
