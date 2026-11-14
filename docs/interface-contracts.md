@@ -296,7 +296,7 @@ it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 
 | Method | Params | Result |
 |---|---|---|
-| `engine.status` | none | `{ version, capabilities?, uptime_s, features: [{ id, stage, active_agents }] }` (`capabilities` from v1.4) |
+| `engine.status` | none | `{ version, capabilities?, uptime_s, features: [{ id, stage, active_agents, activity? }] }` (`capabilities` from v1.4; `activity` from F-018: one of `analyst_reviewing`, `analyst_researching`, `analyst_writing_spec`, `security_reviewing`, `readiness_check`, `advisor_working`, `waiting_for_owner`, `paused`, `idle`; clients ignore codes they don't know and treat a missing one as unknown) |
 | `engine.pause` | `{ feature? }` | `{ paused: [feature ids] }` |
 | `engine.resume` | `{ feature? }` | `{ resumed: [feature ids] }` |
 | `engine.shutdown` | none | `{ ok: true }` after agents reach a safe stop |

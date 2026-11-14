@@ -1,10 +1,10 @@
 # Feature: Answer interview questions in a terminal command
 
 - **Id:** F-018
-- **Status:** In review (v7 adds FR-14 live status; v6 was approved)
+- **Status:** Approved (owner, 2026-11-14; readiness gate passed on v8)
 - **Requested by / date:** Alex, 2026-11-14 ("not the analyst, the agent
   that is presenting me the questions"; "Start F-018 option B")
-- **Spec version:** 7
+- **Spec version:** 8
 - **Depends on:** F-005 (interview channel and MCP mode), F-006 (advisor),
   F-009 (start from a document), F-016 (PR #60, engine increment 3)
 
@@ -173,7 +173,7 @@ adds no new channel, file, network or permission.
 | H-0216 | `agents/requirements-analyst/AGENT.md` | "The owner answers through the engine, often from the `spec-interview` skill in Claude Code (F-005)" becomes "The owner answers through the engine, in the `factory-engine interview` terminal command (F-018)" | Approved (owner, 2026-11-14, decision card) |
 | H-0217 | `.github/workflows/plugin-tests.yml` | The `spec-interview` job (skill-text tests) removed; header comment updated | Approved (owner, 2026-11-14, decision card) |
 | H-0218 | `docs/adr/0029-interview-in-a-terminal-command.md` (new), ADR 0025 status, `docs/adr/README.md`, `README.md`, `engine/README.md`, a version note in F-005, F-006 and F-009 pointing their skill steps to F-018 | Record the decision and describe the command in place of the skill | Approved (owner, 2026-11-14, decision card) |
-| H-0225 | `docs/interface-contracts.md` (Engine control channel, `engine.status` row) | Each feature in `engine.status` gains `activity?`, one of `analyst_reviewing`, `analyst_researching`, `analyst_writing_spec`, `security_reviewing`, `readiness_check`, `advisor_working`, `waiting_for_owner`, `paused`, `idle` (F-018 FR-14). Clients ignore codes they don't know and treat a missing `activity` as unknown | Pending |
+| H-0225 | `docs/interface-contracts.md` (Engine control channel, `engine.status` row) | Each feature in `engine.status` gains `activity?`, one of `analyst_reviewing`, `analyst_researching`, `analyst_writing_spec`, `security_reviewing`, `readiness_check`, `advisor_working`, `waiting_for_owner`, `paused`, `idle` (F-018 FR-14). Clients ignore codes they don't know and treat a missing `activity` as unknown | Approved (owner, 2026-11-14, decision card) |
 | H-0219 | `docs/interface-contracts.md` (Engine control channel, "Owner approval" and the `interview.open` row), `docs/adr/0014-owner-approval-github-device-flow.md` (amendment note) | `interview.open` returns no `approval` when the project is at `rapid-prototype` and an earlier session of this engine run was approved (F-018 FR-13); clients treat a missing `approval` as an approved session, as with v1.1. ADR 0014 gains an amendment line pointing to F-018 FR-13 and SR-8 | Approved (owner, 2026-11-14, decision card) |
 
 ## 11. Readiness gate
@@ -182,7 +182,7 @@ adds no new channel, file, network or permission.
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit (A-1, A-2 approved)
-- [ ] Blocking decisions resolved (FR-14 and H-0225 pending)
+- [x] Blocking decisions resolved (OQ-1, OQ-2, SR-1 to SR-8, FR-14, H-0215 to H-0219, H-0225)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -193,7 +193,8 @@ adds no new channel, file, network or permission.
 | 4 | 2026-11-14 | H-0215 to H-0218 approved; readiness gate passed; status Approved | Owner, 2026-11-14 (decision card) |
 | 5 | 2026-11-14 | FR-13, AC-13, SR-8 (accepted risk) from the owner's choice "Once per engine start" for GitHub approval until Alpha; H-0219 drafted | Owner, 2026-11-14 (decision card, choice and risk); H-0219 pending |
 | 6 | 2026-11-14 | H-0219 approved and applied; readiness gate passed | Owner, 2026-11-14 (decision card) |
-| 7 | 2026-11-14 | FR-14 and AC-14 (live status while waiting, owner's request), FR-8 widened for it; H-0225 drafted (claims the next free hygiene id) | Pending |
+| 7 | 2026-11-14 | FR-14 and AC-14 (live status while waiting, owner's request), FR-8 widened for it; H-0225 drafted | Owner, 2026-11-14 (decision card) |
+| 8 | 2026-11-14 | FR-14 (with the spinner) and H-0225 approved; H-0225 applied; readiness gate passed | Owner, 2026-11-14 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
