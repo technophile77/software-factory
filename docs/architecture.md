@@ -66,6 +66,8 @@ Reasons for another format, stated wherever the format is defined:
 2. **Fixed by an outside tool:** `AGENT.md` and `SKILL.md`, GitHub issue and
    PR bodies, JUnit XML, `gitleaks.toml`, `osv-scanner.toml`, GitHub Actions
    workflows, `package.json`.
-3. **Edited by hand, with comments:** the configuration files proposal 0034
-   lists, pending the owner's choice there.
+3. **Edited by hand, with comments:** configuration the owner edits stays
+   YAML (owner, 2026-11-14): `factory-project.yaml`, the `*.local.yaml`
+   files, `engine/config/models.yaml`, `engine/config/limits.yaml` and
+   `engine.yaml` (proposal 0034).
 4. **Append-only streams** use JSON Lines, which counts as JSON.

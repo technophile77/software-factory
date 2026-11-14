@@ -38,3 +38,4 @@ in order, using `template.md`.
 | [0029](0029-interview-in-a-terminal-command.md) | The spec interview runs in a terminal command, with no model relay | Accepted |
 | [0030](0030-rapid-prototype-advisory-ci-claude-merges.md) | At Rapid prototype, CI is advisory and Claude merges PRs once local tests pass | Accepted |
 | [0031](0031-stateful-parts-on-jssm.md) | The engine's stateful parts are modelled with jssm | Accepted |
+| [0032](0032-json-default-for-agent-data.md) | JSON is the default format for agent data | Accepted |
