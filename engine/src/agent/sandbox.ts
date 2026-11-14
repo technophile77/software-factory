@@ -14,7 +14,8 @@ import type { FromProxy, ProxyStart, ToProxy } from "../proxy/main";
 import { PROXY_PORT } from "../proxy/port";
 import type { GrantDeadline, ModelCredential, PinnedEndpoint } from "../proxy/server";
 import { ROUTER_ALIAS, ROUTER_PORT, litellmConfig, litellmEnv } from "./litellm";
-import { AGENT_USER, CONTAINER_FLAGS, WORKSPACE } from "./session";
+import type { SpawnOptions, SpawnedProcess } from "./sdk";
+import { AGENT_USER, CONTAINER_FLAGS, WORKSPACE, containerSpawn } from "./session";
 
 export const PROXY_ALIAS = "factory-proxy";
 /** What agents send as their API key. It is no credential; the proxy swaps in the real one (SR-9). */
@@ -77,8 +78,35 @@ export interface AgentContainer {
   name: string;
   role: string;
   cred: string;
+  /** The session's working folder, as Claude Code sees it. */
   cwd: string;
+  /** Where the worktree appears to Claude Code: the container mount, or the worktree itself on the owner's PC. */
+  workspace: string;
   sessionVolume?: string;
+  /** How the SDK starts this session's Claude Code. */
+  spawn(o: SpawnOptions): SpawnedProcess;
+  /** True for a session on the owner's PC (ADR 0026): the tool gate then applies the ask rule. */
+  host: boolean;
+}
+
+export interface StartAgentOptions {
+  sessionVolume?: boolean | "run";
+  reportDir?: { source: string; target: string };
+  upstream?: string;
+}
+
+/**
+ * What runs one run's agent sessions: containers (`SessionGroup`, back at
+ * Beta and kept for endpoint runs) or sessions on the owner's PC
+ * (`HostGroup`, ADR 0026).
+ */
+export interface AgentGroup {
+  open(): Promise<void>;
+  startAgent(policy: RolePolicy, worktree: string | null, o?: StartAgentOptions): Promise<AgentContainer>;
+  fetch(a: AgentContainer, url: string): ReturnType<ProxyClient["fetch"]>;
+  stopAgent(a: AgentContainer): Promise<void>;
+  close(): Promise<void>;
+  deadlineHit(): boolean;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -100,7 +128,7 @@ export function runVolume(runId: string): string {
 export class ProxyClient {
   private next = 1;
   private readonly pending = new Map<number, (m: Extract<FromProxy, { t: "fetched" }>) => void>();
-  private readyWait: { resolve(v: { address: string }): void; reject(e: Error): void } | null = null;
+  private readyWait: { resolve(v: { address: string; port: number }): void; reject(e: Error): void } | null = null;
 
   constructor(private readonly child: Pick<ChildProcess, "stdin" | "stdout" | "on">, private readonly log: Logger, private readonly onDeadline: () => void = () => undefined) {
     const rl = readline.createInterface({ input: child.stdout!, crlfDelay: Infinity });
@@ -121,7 +149,7 @@ export class ProxyClient {
     }
     if (!isObj(raw)) return;
     const m = raw as unknown as FromProxy;
-    if (m.t === "ready" && typeof m.address === "string") this.readyWait?.resolve({ address: m.address });
+    if (m.t === "ready" && typeof m.address === "string") this.readyWait?.resolve({ address: m.address, port: typeof m.port === "number" ? m.port : PROXY_PORT });
     else if (m.t === "error") this.readyWait?.reject(new DockerError(`proxy: ${String(m.reason).slice(0, 200)}`));
     else if (m.t === "fetched") {
       const r = this.pending.get(m.id);
@@ -139,7 +167,7 @@ export class ProxyClient {
     this.child.stdin!.write(`${JSON.stringify(m)}\n`);
   }
 
-  start(m: ProxyStart, timeoutMs = START_TIMEOUT_MS): Promise<{ address: string }> {
+  start(m: ProxyStart, timeoutMs = START_TIMEOUT_MS): Promise<{ address: string; port: number }> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new DockerError("the proxy didn't start")), timeoutMs);
       this.readyWait = {
@@ -168,7 +196,7 @@ export class ProxyClient {
  * `docker inspect` after it starts and stopped on any mismatch (SR-14).
  * Nothing is shared with another run or project (SR-16).
  */
-export class SessionGroup {
+export class SessionGroup implements AgentGroup {
   readonly internal: string;
   readonly outside: string;
   readonly proxyName: string;
@@ -388,7 +416,7 @@ export class SessionGroup {
    * requests to (F-013 FR-5); it must be one the group's router serves, and
    * the agent can't change it.
    */
-  async startAgent(policy: RolePolicy, worktree: string | null, o: { sessionVolume?: boolean | "run"; reportDir?: { source: string; target: string }; upstream?: string } = {}): Promise<AgentContainer> {
+  async startAgent(policy: RolePolicy, worktree: string | null, o: StartAgentOptions = {}): Promise<AgentContainer> {
     if (!this.proxy) throw new DockerError("the group isn't open");
     const limits = Object.prototype.hasOwnProperty.call(this.c.agentLimits, policy.role) ? this.c.agentLimits[policy.role] : undefined;
     if (!limits) throw new DockerError(`no container limits for the ${policy.role} role`);
@@ -458,7 +486,7 @@ export class SessionGroup {
       this.proxy.send({ t: "revoke", cred });
       throw e;
     }
-    const a: AgentContainer = { name, role: policy.role, cred, cwd, ...(volume ? { sessionVolume: volume } : {}) };
+    const a: AgentContainer = { name, role: policy.role, cred, cwd, workspace: WORKSPACE, spawn: containerSpawn(this.c.docker, name, cwd), host: false, ...(volume ? { sessionVolume: volume } : {}) };
     this.agents.set(name, a);
     return a;
   }

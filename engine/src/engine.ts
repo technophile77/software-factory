@@ -10,11 +10,13 @@ import { EndpointService, type EndpointStatus, estimateTokens } from "./agent/en
 import { AgentRuntime, TurnQueue, populateWorktree, prepareWorktree, sweepLeftovers } from "./agent/runtime";
 import { orchestratorPolicy, runReviewerSessions, reviewerPolicy } from "./agent/reviewer";
 import type { RouterConfig } from "./agent/sandbox";
-import { type GroupConfig, SessionGroup, runVolume } from "./agent/sandbox";
+import type { ModelCredential } from "./proxy/server";
+import { type AgentGroup, SessionGroup, runVolume } from "./agent/sandbox";
+import { HostError, HostGroup, runHome, sweepHomes } from "./agent/host";
 import { WORKSPACE, type SessionOutcome } from "./agent/session";
 import { commitWorktree } from "./agent/worktree-commit";
 import { DockerError } from "./docker/cli";
-import { baseImageId, ensureAgentImage, skillsPluginDir } from "./docker/image";
+import { baseImageId, ensureAgentImage, skillsPluginDir, writeSkillsPlugins } from "./docker/image";
 import { makeCosignVerifier, parseCosignPins } from "./docker/cosign";
 import { type LitellmImage, type LitellmPin, litellmImageId } from "./docker/litellm-image";
 import { DocumentRefused, SourceDocument, documentMeta, lineOfByte, sha256 as sha256Of, sourcePath } from "./interview/document";
@@ -37,7 +39,7 @@ import { Manifest, interviewSignIn, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin, pinnedKeys } from "./config/pins";
 import { ConfirmIo, confirmProject as runConfirm } from "./config/confirm";
-import { CAPABILITIES, ENGINE_JSON, FEATURE_ID_RE, GITHUB_API_BASE, BUILD_STAGE, GITHUB_WEB_BASE, INTERVIEW_STAGE, MAX_RESUMES, SERVED_CHANNEL_VERSION } from "./constants";
+import { CAPABILITIES, CLAUDE_CODE_VERSION, ENGINE_JSON, FEATURE_ID_RE, GITHUB_API_BASE, BUILD_STAGE, GITHUB_WEB_BASE, INTERVIEW_STAGE, MAX_RESUMES, SERVED_CHANNEL_VERSION } from "./constants";
 import { ensureOwnerDir, findOnPath, sha256Hex, writeFileAtomic } from "./fsutil";
 import { Git } from "./git";
 import { GitHubClient, GitHubError, GitHubUnreachable, HttpGitHub, checkBase } from "./github";
@@ -897,7 +899,93 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   let proxyImage: Promise<string> | null = null;
   let shuttingDown = false;
   const worktreeDir = (p: Project, fid: string) => path.join(home, "worktrees", sha256Hex(p.real!).slice(0, 16), fid);
-  const engineWords = (e: unknown) => (e instanceof ConfigError || e instanceof DockerError || e instanceof SessionRefused ? (e as Error).message.slice(0, 300) : "an internal error");
+  const engineWords = (e: unknown) => (e instanceof ConfigError || e instanceof DockerError || e instanceof SessionRefused || e instanceof HostError ? (e as Error).message.slice(0, 300) : "an internal error");
+
+  // -- Where agent sessions run (ADR 0026, H-0204) -------------------------------
+
+  /** Each run's session homes on the owner's PC, kept while the run can resume. */
+  const sessionsRoot = path.join(home, "sessions");
+  const skillDirs = new Map<string, Promise<string>>();
+
+  interface RunAgents {
+    /** For the run's reports (proposal 0013): its image, or the PC it ran on. */
+    artifact: { kind: string; ref: string };
+    skillsDir(role: string): string;
+    /** The run's sessions: on the owner's PC, or in containers for a run that uses a model endpoint (H-0204 decision b). */
+    group(runId: string, router?: RouterConfig): Promise<AgentGroup>;
+  }
+
+  /**
+   * How a project's sessions run. With `rt.host`, Claude Code runs on the
+   * owner's PC and its skills come from an engine-owned folder written from
+   * git objects; only endpoint runs build the agent image. Without it,
+   * every session runs in the project's agent image as before.
+   */
+  async function agentsFor(rt: AgentRuntime, p: Project, credential: ModelCredential): Promise<RunAgents> {
+    const m = p.manifest!;
+    const sources = p.sources!;
+    const limits = p.limits!;
+    const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
+    const container = async (id: string, router?: RouterConfig): Promise<SessionGroup> => {
+      const image = await shared(images, `${ident.project}\0${ident.masterCommit}\0${ident.skillsDigest}`, () => ensureAgentImage(rt.docker, rt.dockerDir, path.join(home, "images"), ident, sources));
+      proxyImage ??= baseImageId(rt.docker);
+      proxyImage.catch(() => (proxyImage = null));
+      const proxyImageId = await proxyImage;
+      return new SessionGroup({
+        docker: rt.docker, runId: id, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt.proxyScript,
+        agentLimits: roleContainerLimits(limits), proxyLimits: containerLimits(limits.proxy), maxPageBytes: maxPageBytes(limits),
+        credential, log, ...(rt.platform ? { platform: rt.platform } : {}), ...(rt.sleep ? { sleep: rt.sleep } : {}), ...(router ? { router } : {}),
+      });
+    };
+    if (!rt.host) {
+      // The image first, so a failed build stops the run before any session (as before H-0204).
+      const image = await shared(images, `${ident.project}\0${ident.masterCommit}\0${ident.skillsDigest}`, () => ensureAgentImage(rt.docker, rt.dockerDir, path.join(home, "images"), ident, sources));
+      return { artifact: { kind: "image", ref: image.tag }, skillsDir: (role) => skillsPluginDir(role), group: (id, router) => container(id, router) };
+    }
+    const host = rt.host;
+    const key = `${m.name.toLowerCase().replace(/[^a-z0-9._-]/g, "-")}-${ident.masterCommit.slice(0, 12)}-${ident.skillsDigest.slice(0, 12)}`;
+    const dir = await shared(skillDirs, key, async () => {
+      const root = path.join(home, "skills");
+      ensureOwnerDir(root);
+      const final = path.join(root, key);
+      if (fs.existsSync(final)) return final;
+      // Written aside and renamed, so a stopped engine never leaves half a skill set under the final name.
+      const tmp = path.join(root, `.${key}.${crypto.randomBytes(4).toString("hex")}`);
+      try {
+        writeSkillsPlugins(tmp, sources);
+        fs.renameSync(tmp, final);
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+      return final;
+    });
+    return {
+      artifact: { kind: "runtime", ref: `Claude Code ${CLAUDE_CODE_VERSION} on the owner's PC (ADR 0026)` },
+      skillsDir: (role) => {
+        skillsPluginDir(role);
+        return path.join(dir, role);
+      },
+      group: async (id, router) => router ? container(id, router) : new HostGroup({
+        host, children, runId: id, project: m.name, proxyScript: rt.proxyScript, homeRoot: sessionsRoot, credential, maxPageBytes: maxPageBytes(limits), env, log,
+        ...(rt.platform ? { platform: rt.platform } : {}),
+      }),
+    };
+  }
+
+  /** Whether a run's SDK session survives for a resume: its home on the PC, or its volume. */
+  async function hasSession(rt: AgentRuntime, runId: string): Promise<boolean> {
+    if (rt.host) return fs.existsSync(path.join(runHome(sessionsRoot, runId), ".claude"));
+    return (await rt.docker.run(["volume", "inspect", runVolume(runId)], { okCodes: [1] })).code === 0;
+  }
+
+  /** A run's SDK session goes when the run ends: its files are sensitive. */
+  async function dropSession(runId: string): Promise<void> {
+    if (o.agents?.host) {
+      fs.rmSync(runHome(sessionsRoot, runId), { recursive: true, force: true });
+      return;
+    }
+    await o.agents?.docker.run(["volume", "rm", "--force", runVolume(runId)], { okCodes: [1] }).catch(() => log.warn(`volume ${runVolume(runId)} wasn't removed`));
+  }
 
   /** Tells the owner, in the transcript, why the analyst isn't working (AC-13). Engine words only. */
   async function noteAnalyst(f: FeatureInterview, status: "stopped" | "waiting", reason: string): Promise<void> {
@@ -957,22 +1045,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (!analystMd) throw new SessionRefused("the requirements-analyst role has no AGENT.md at factory.version or in the project's overrides");
       const readerMd = sources.instructions.get("web-reader");
       const sdk = await rt.sdk();
-      const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
-      const image = await shared(images, `${ident.project}\0${ident.masterCommit}\0${ident.skillsDigest}`, () => ensureAgentImage(rt.docker, rt.dockerDir, path.join(home, "images"), ident, sources));
-      proxyImage ??= baseImageId(rt.docker);
-      proxyImage.catch(() => (proxyImage = null));
-      const proxyImageId = await proxyImage;
+      const agents = await agentsFor(rt, p, credential);
       runArtifacts.set(runId, [
-        { kind: "image", ref: image.tag },
+        agents.artifact,
         ...(sources.skills.get("requirements-analyst") ?? []).map((s) => ({ kind: "skill", ref: `${s.name} (${s.from}: ${s.path})` })),
         { kind: "model", ref: `requirements-analyst: ${models["requirements-analyst"]}` },
         ...(readerMd ? [{ kind: "model", ref: `web-reader: ${models["web-reader"]}` }] : []),
       ]);
-      if (resumeId) {
-        // The SDK session lives on the run's volume; without it the run starts again from its commit.
-        const v = await rt.docker.run(["volume", "inspect", runVolume(runId)], { okCodes: [1] });
-        if (v.code !== 0) resumeId = undefined;
-      }
+      // The SDK session lives in the run's home or volume; without it the run starts again from its commit.
+      if (resumeId && !(await hasSession(rt, runId))) resumeId = undefined;
       const slugName = branch.replace(/^feature\//, "");
       const intro = `You are working on ${f.id} on branch ${branch}, in /workspace. Write its spec at docs/features/${slugName}.md. Reach the owner only through your factory tools.\n\n${structureText()}`;
       let summary = plan?.mode === "from_commit" ? plan.summary : "";
@@ -1016,16 +1097,12 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         if (shuttingDown || dead) turns.close();
         const base = await git.revParse(p.real!, `refs/heads/${branch}`);
         if (!base) throw new SessionRefused(`the branch ${branch} is gone`);
-        const group = new SessionGroup({
-          docker: rt.docker, runId, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt.proxyScript,
-          agentLimits: roleContainerLimits(limits), proxyLimits: containerLimits(limits.proxy), maxPageBytes: maxPageBytes(limits),
-          credential, log, ...(rt.platform ? { platform: rt.platform } : {}), ...(rt.sleep ? { sleep: rt.sleep } : {}),
-        });
+        const group = await agents.group(runId);
         try {
           r = await runAnalystSession({
             sdk, docker: rt.docker, group, manifest: m.raw, worktree: wt.path,
             instructions: { analyst: analystMd.text, ...(readerMd ? { reader: readerMd.text } : {}) },
-            limits: agentLimits(limits, m.billingMode), skillsPluginDir: skillsPluginDir("requirements-analyst"),
+            limits: agentLimits(limits, m.billingMode), skillsPluginDir: agents.skillsDir("requirements-analyst"),
             models: { analyst: models["requirements-analyst"], reader: models["web-reader"] }, ...(resumeId ? { resume: resumeId } : {}), sessionVolume: "run",
             billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
             tools: (research) => handle.interviewTools(f.id, wt.path, facts, research),
@@ -1102,7 +1179,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   /** A run's end: its status, its session volume removed, and for a failure a report and a transcript note (SR-18). */
   async function endRun(p: Project, f: FeatureInterview, runId: string, status: "complete" | "failed", why: string | null, facts: RunFacts): Promise<void> {
     if (status === "failed" || record.run(runId)?.status === "running") runs.finish(runId, status, why ?? undefined);
-    await o.agents?.docker.run(["volume", "rm", "--force", runVolume(runId)], { okCodes: [1] }).catch(() => log.warn(`volume ${runVolume(runId)} wasn't removed`));
+    await dropSession(runId);
     if (status !== "failed" || !why) return;
     try {
       await p.state_repo!.commit([agentReport({
@@ -1327,31 +1404,19 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const policy = reviewerPolicy(m.raw, undefined);
       const filePolicy = reviewerPolicy(m.raw, undefined, reportRel);
       const sdk = await rt.sdk();
-      const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
-      const image = await shared(images, `${ident.project}\0${ident.masterCommit}\0${ident.skillsDigest}`, () => ensureAgentImage(rt.docker, rt.dockerDir, path.join(home, "images"), ident, sources));
-      proxyImage ??= baseImageId(rt.docker);
-      proxyImage.catch(() => (proxyImage = null));
-      const proxyImageId = await proxyImage;
+      const agents = await agentsFor(rt, p, credential);
       runArtifacts.set(runId, [
-        { kind: "image", ref: image.tag },
+        agents.artifact,
         ...(sources.skills.get(REVIEWER_ROLE) ?? []).map((s) => ({ kind: "skill", ref: `${s.name} (${s.from}: ${s.path})` })),
         { kind: "model", ref: `${REVIEWER_ROLE}: ${model}` },
       ]);
-      if (resumeId) {
-        const v = await rt.docker.run(["volume", "inspect", runVolume(runId)], { okCodes: [1] });
-        if (v.code !== 0) resumeId = undefined;
-      }
+      if (resumeId && !(await hasSession(rt, runId))) resumeId = undefined;
       // The report folder is engine-owned and starts empty, so nothing in it predates this run (SR-8).
       fs.rmSync(reportDir, { recursive: true, force: true });
       ensureOwnerDir(reportDir);
       // The mount point inside the read-only worktree; an empty folder is no change to the branch.
       fs.mkdirSync(path.join(wt.path, ...path.posix.dirname(reportRel).split("/")), { recursive: true });
-      const groupFor = (id: string, router?: RouterConfig): GroupConfig => ({
-        docker: rt.docker, runId: id, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt.proxyScript,
-        agentLimits: roleContainerLimits(limits), proxyLimits: containerLimits(limits.proxy), maxPageBytes: maxPageBytes(limits),
-        credential, log, ...(rt.platform ? { platform: rt.platform } : {}), ...(rt.sleep ? { sleep: rt.sleep } : {}), ...(router ? { router } : {}),
-      });
-      const group = new SessionGroup(groupFor(runId));
+      const group = await agents.group(runId);
       let valid: StReviewReport | null = null;
       const turnFor = (reportPath?: string) => reviewerTurn({ feature: f.id, specPath, specVersion, commit, ...(reportPath ? { reportPath } : {}), standards: loaded.standards, transcript: transcriptSummary(f.state) });
       const first = resumeId ? "The engine restarted. Finish your Security and Testability Review report and return it as your structured output." : turnFor();
@@ -1388,7 +1453,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
             ensureOwnerDir(advDir);
             try {
               return await runAdvisorySession({
-                route, group: new SessionGroup(groupFor(advId, route.router)), reportDir: advDir, reportName, maxBytes: g1!.reportBytes,
+                route, group: await agents.group(advId, route.router), reportDir: advDir, reportName, maxBytes: g1!.reportBytes,
                 run: {
                   sdk, docker: rt.docker, policy: filePolicy, worktree: wt.path, reportDir: { source: advDir, target: reportTarget }, instructions: instructions!.text,
                   caps: { ...g1!.caps, wallTimeMs: Math.min(g1!.caps.wallTimeMs, ADVISORY_WALL_MS) }, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), first: turnFor(reportRel),
@@ -1431,7 +1496,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       facts.report_via = "structured_output";
       const result = await runReviewerSessions({
         sdk, docker: rt.docker, group, policy, worktree: wt.path, outputSchema: reportOutputSchema(REVIEWER_ROLE),
-        instructions: instructions!.text, caps: g1!.caps, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), model: model!, first: reviewerFirst,
+        instructions: instructions!.text, caps: g1!.caps, skillsPluginDir: agents.skillsDir(REVIEWER_ROLE), model: model!, first: reviewerFirst,
         ...(resumeId ? { resume: resumeId } : {}),
         ...(known?.used ? { used: known.used } : {}),
         onUsed: (u) => void (dead || runs.update(runId, { used: u })),
@@ -1553,12 +1618,12 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       ...(next !== ST_REVIEW_STAGE ? [{ type: "stage", stage: next }] : []),
     ], `security and testability review: ${findings.length} finding${findings.length === 1 ? "" : "s"}`, [report]));
     runs.finish(a.runId, "complete");
-    await o.agents?.docker.run(["volume", "rm", "--force", runVolume(a.runId)], { okCodes: [1] }).catch(() => undefined);
+    await dropSession(a.runId);
     log.info(`${f.id}: Security and Testability Review run ${a.runId} filed ${findings.length} finding(s); the feature is at ${next}.`);
   }
 
   async function endStReview(p: Project, f: FeatureInterview, runId: string, n: number, status: "failed", why: string, facts: RunFacts, commit: string): Promise<void> {
-    await o.agents?.docker.run(["volume", "rm", "--force", runVolume(runId)], { okCodes: [1] }).catch(() => log.warn(`volume ${runVolume(runId)} wasn't removed`));
+    await dropSession(runId);
     try {
       await p.state_repo!.commit([agentReport({
         feature: f.id, stage: ST_REVIEW_STAGE, role: REVIEWER_ROLE, n, commit, outcome: "failed", summary: `Run ${runId} stopped: ${why}.`,
@@ -1910,17 +1975,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (!credential) throw new SessionRefused("no model credential is stored or set");
       const policy = orchestratorPolicy(m.raw);
       const sdk = await rt!.sdk();
-      const sources = p.sources!;
-      const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
-      const image = await shared(images, `${ident.project}\0${ident.masterCommit}\0${ident.skillsDigest}`, () => ensureAgentImage(rt!.docker, rt!.dockerDir, path.join(home, "images"), ident, sources));
-      proxyImage ??= baseImageId(rt!.docker);
-      proxyImage.catch(() => (proxyImage = null));
-      const proxyImageId = await proxyImage;
-      const group = new SessionGroup({
-        docker: rt!.docker, runId: run.id, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt!.proxyScript,
-        agentLimits: roleContainerLimits(p.limits!), proxyLimits: containerLimits(p.limits!.proxy), maxPageBytes: maxPageBytes(p.limits!),
-        credential, log, ...(rt!.platform ? { platform: rt!.platform } : {}), ...(rt!.sleep ? { sleep: rt!.sleep } : {}),
-      });
+      const group = await (await agentsFor(rt!, p, credential)).group(run.id);
       let valid: ReadinessReport | null = null;
       facts.report_via = "structured_output";
       const result = await runReviewerSessions({
@@ -1994,7 +2049,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       runs.finish(run.id, "failed", engineWords(e));
       throw e;
     } finally {
-      await o.agents?.docker.run(["volume", "rm", "--force", runVolume(run.id)], { okCodes: [1] }).catch(() => undefined);
+      await dropSession(run.id);
     }
   }
 
@@ -2224,9 +2279,12 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   };
 
   if (o.agents) {
-    // What a killed engine left behind goes, except the session volumes of runs that can still resume.
+    // What a killed engine left behind goes, except the session volumes and homes of runs that can still resume.
+    if (o.agents.host) sweepHomes(sessionsRoot, new Set(runs.interrupted().map((r) => r.id)), log);
+    // On the PC, Docker serves only endpoint runs; a PC without endpoints may have no Docker at all.
+    const containers = !o.agents.host || ("endpoints" in endpointConfig && endpointConfig.endpoints.length > 0);
     const keep = new Set(runs.interrupted().map((r) => runVolume(r.id)));
-    await sweepLeftovers(o.agents.docker, keep, log).catch((e) => log.warn(`Leftover containers couldn't be swept: ${engineWords(e)}`));
+    if (containers) await sweepLeftovers(o.agents.docker, keep, log).catch((e) => log.warn(`Leftover containers couldn't be swept: ${engineWords(e)}`));
   }
 
   // FR-14: an interrupted analyst run gets a report saying so, then resumes

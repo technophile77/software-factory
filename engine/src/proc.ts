@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -196,4 +196,30 @@ export function runFixed(binary: string, args: string[], opts: RunOptions, child
     });
     child.stdin.end(opts.input ?? "");
   });
+}
+
+/**
+ * Kills a process and everything it started. On POSIX the child must have
+ * been spawned `detached`, so it leads its own process group; on Windows
+ * `taskkill /T` walks the tree from its pid.
+ */
+export function killTree(child: Pick<ChildProcess, "pid" | "kill" | "exitCode">, platform: NodeJS.Platform = process.platform): void {
+  const pid = child.pid;
+  if (!pid) return;
+  if (platform === "win32") {
+    const root = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? "C:\\Windows";
+    try {
+      const k = spawn(path.join(root, "System32", "taskkill.exe"), ["/T", "/F", "/PID", String(pid)], { shell: false, windowsHide: true, stdio: "ignore" });
+      k.on("error", () => child.kill("SIGKILL"));
+    } catch {
+      child.kill("SIGKILL");
+    }
+    return;
+  }
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    // Not a group leader, or already gone: the process itself is still killed.
+    child.kill("SIGKILL");
+  }
 }
