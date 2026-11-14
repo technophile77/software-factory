@@ -4,8 +4,20 @@ import { DocumentRefused, SourceDocument, validateDocument } from "../interview/
 import { FeatureInterview, InterviewError } from "../interview/feature";
 import { wire } from "../interview/model";
 import { SecretFound } from "../state/state-repo";
+import { bodySections } from "../inbox/render";
 import { Handler, RpcError } from "./framing";
+import type { ConsoleResult } from "../inbox/store";
+import type { InboxRecord } from "../inbox/model";
+import type { PrivateDetail } from "../inbox/local";
 import { SessionManager } from "./sessions";
+
+/** F-021: what the channel needs from the project's inbox to answer items in the console. */
+export interface ConsoleInbox {
+  list(): Promise<InboxRecord[]>;
+  show(id: string): Promise<{ record: InboxRecord; rev: number; body: string; private: PrivateDetail | null; actions: Array<{ action: string; label: string }> } | null>;
+  answer(a: { id: string; rev: number; action: string; note?: string; session: number; signedIn: boolean }): Promise<ConsoleResult>;
+  confirm(a: { id: string; rev: number; code: string; session: number; signedIn: boolean }): Promise<ConsoleResult>;
+}
 
 export interface ProjectChannel {
   name: string;
@@ -16,6 +28,8 @@ export interface ProjectChannel {
   feature(id: string): FeatureInterview | null;
   /** Channel v1.4: `document` has passed validateDocument; the engine scans and stores it (F-009). */
   startFeature(request: string, document?: SourceDocument): Promise<string>;
+  /** F-021: the project's inbox for console answers, or null while it has none. */
+  inbox(): ConsoleInbox | null;
   /** Files the Security item behind a -32008 for a secret the scan found (H-0084). */
   secretRefused(where: string, found: SecretFound, feature?: string): Promise<void>;
 }
@@ -28,6 +42,12 @@ export interface EngineControl {
 }
 
 const MAX_REQUEST_CHARS = 4000;
+const INBOX_ITEM_RE = /^[DTHSMN]-\d{4,8}$/;
+const ACTION_RE = /^(?:choose:[A-D]|step:[1-9]\d?|approve|reject|changes|research|defer|restore|dismiss)$/;
+const CODE_RE = /^[A-Z0-9]{4}$/;
+const MAX_NOTE_CHARS = 4000;
+/** Results of console answers by reply_id, so a resent call after a lost reply gets the first result, not a second answer. */
+const REPLY_KEEP_MS = 30 * 60_000;
 
 function id(v: unknown, what: string): string {
   if (typeof v !== "string" || !ID_RE.test(v)) throw new RpcError(RPC.invalidParams, `${what} must be an id.`);
@@ -44,8 +64,31 @@ function only(params: Record<string, unknown>, keys: string[]): void {
   for (const k of Object.keys(params)) if (!keys.includes(k)) throw new RpcError(RPC.invalidParams, "Unexpected parameter.");
 }
 
-/** Channel v1.1-v1.4 methods for one project's channel. Session state never crosses projects (SR-16). */
+function inboxItem(v: unknown): string {
+  if (typeof v !== "string" || !INBOX_ITEM_RE.test(v)) throw new RpcError(RPC.invalidParams, "item must be an inbox item id.");
+  return v;
+}
+
+function revision(v: unknown): number {
+  if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 1) throw new RpcError(RPC.invalidParams, "rev must be a positive integer.");
+  return v;
+}
+
+/** Engine control channel v1.6 `inbox.answer` / `inbox.confirm` results (H-0245). */
+function consoleWire(r: ConsoleResult): Record<string, unknown> {
+  if ("recorded" in r) return { recorded: true };
+  if ("refused" in r) return { refused: r.refused.replace(/ /g, "_") };
+  return r;
+}
+
+/** Channel v1.1-v1.6 methods for one project's channel. Session state never crosses projects (SR-16). */
 export function methods(project: ProjectChannel, engine: EngineControl, clock: Clock): Handler {
+  const replies = new Map<string, { at: number; result: Record<string, unknown> }>();
+  const inbox = (): ConsoleInbox => {
+    const i = project.inbox();
+    if (!i) throw new RpcError(RPC.unknown, "This project's inbox isn't available.");
+    return i;
+  };
   const feature = (fid: unknown): FeatureInterview => {
     const f = project.feature(id(fid, "feature"));
     if (!f) throw new RpcError(RPC.unknown, "Unknown feature.");
@@ -165,6 +208,73 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
         only(p, ["session"]);
         project.sessions.close(p.session);
         return { ok: true };
+      // Channel v1.6 (F-021, H-0245): the owner answers inbox items in the console too.
+      case "inbox.open":
+        only(p, []);
+        return project.sessions.openConsole();
+      case "inbox.close":
+        only(p, ["session"]);
+        project.sessions.close(p.session);
+        return { ok: true };
+      case "inbox.list": {
+        only(p, ["session"]);
+        project.sessions.approved(p.session);
+        return {
+          items: (await inbox().list()).map((r) => ({
+            id: r.id, kind: r.kind, title: r.title, ...(r.feature ? { feature: r.feature } : {}),
+            priority: r.effective_priority, blocking: r.blocking, rev: r.revisions[r.revisions.length - 1]!.rev,
+          })),
+        };
+      }
+      case "inbox.show": {
+        only(p, ["session", "item"]);
+        project.sessions.approved(p.session);
+        const shown = await inbox().show(inboxItem(p.item));
+        if (!shown) throw new RpcError(RPC.unknown, "Unknown item.");
+        const r = shown.record;
+        return {
+          id: r.id, rev: shown.rev, kind: r.kind, title: r.title, status: r.status, ...(r.feature ? { feature: r.feature } : {}),
+          sections: bodySections(shown.body), ...(shown.private ? { private: shown.private } : {}), actions: shown.actions,
+        };
+      }
+      case "inbox.answer": {
+        only(p, ["session", "item", "rev", "action", "note", "reply_id"]);
+        const s = project.sessions.approved(p.session);
+        const replyId = id(p.reply_id, "reply_id");
+        const item = inboxItem(p.item);
+        const rev = revision(p.rev);
+        if (typeof p.action !== "string" || !ACTION_RE.test(p.action)) throw new RpcError(RPC.invalidParams, "action must be an inbox action.");
+        if (p.note !== undefined && (typeof p.note !== "string" || p.note.length > MAX_NOTE_CHARS)) throw new RpcError(RPC.invalidParams, `note must be text up to ${MAX_NOTE_CHARS} characters.`);
+        const now = clock.now();
+        for (const [k, v] of replies) if (now - v.at > REPLY_KEEP_MS) replies.delete(k);
+        const seen = replies.get(`${s.no}/${replyId}`);
+        if (seen) return seen.result;
+        try {
+          const result = consoleWire(await inbox().answer({ id: item, rev, action: p.action, ...(p.note !== undefined ? { note: p.note } : {}), session: s.no, signedIn: s.signedIn }));
+          replies.set(`${s.no}/${replyId}`, { at: now, result });
+          return result;
+        } catch (e) {
+          if (e instanceof SecretFound) {
+            await project.secretRefused("inbox.answer", e);
+            throw new RpcError(RPC.refused, REFUSED_MESSAGE);
+          }
+          throw e;
+        }
+      }
+      case "inbox.confirm": {
+        only(p, ["session", "item", "rev", "code"]);
+        const s = project.sessions.approved(p.session);
+        if (typeof p.code !== "string" || !CODE_RE.test(p.code)) return { refused: "confirm_failed" };
+        try {
+          return consoleWire(await inbox().confirm({ id: inboxItem(p.item), rev: revision(p.rev), code: p.code, session: s.no, signedIn: s.signedIn }));
+        } catch (e) {
+          if (e instanceof SecretFound) {
+            await project.secretRefused("inbox.confirm", e);
+            throw new RpcError(RPC.refused, REFUSED_MESSAGE);
+          }
+          throw e;
+        }
+      }
       default:
         throw new RpcError(RPC.methodNotFound, "Method not found.");
     }

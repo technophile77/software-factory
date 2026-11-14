@@ -124,3 +124,22 @@ export function priorityLower(p: Priority): Priority {
 export function kindOf(id: string): Kind {
   return ({ D: "decision", T: "testing", H: "hygiene", S: "spec", M: "maturity", N: "notice" } as const)[id[0] as "D"];
 }
+
+/**
+ * F-021 FR-3: a rendered body back into its sections, for the console. The
+ * marker and revision lines are the engine's own and are left out.
+ */
+export function bodySections(body: string): Array<{ name: string; text: string }> {
+  const out: Array<{ name: string; text: string }> = [];
+  for (const line of normalBody(body).split("\n")) {
+    const h = /^## (.+)$/.exec(line);
+    if (h) {
+      out.push({ name: h[1]!, text: "" });
+      continue;
+    }
+    if (!out.length || /^Revision \d+\.$/.test(line)) continue;
+    const cur = out[out.length - 1]!;
+    cur.text = cur.text ? `${cur.text}\n${line}` : line;
+  }
+  return out.map((x) => ({ name: x.name, text: x.text.trim() }));
+}

@@ -12,7 +12,7 @@ import { structuralChecks } from "../src/readiness/checks";
 import { validateReadinessReport } from "../src/readiness/report";
 import type { Entry } from "../src/state/transcript";
 import { FakeDocker } from "./fakes";
-import { GIT_ENV, World, git, manifestYaml, start as startEngine, tmpdir } from "./helpers";
+import { GIT_ENV, OWNER_ID, RpcClient, World, git, manifestYaml, start as startEngine, tmpdir } from "./helpers";
 import { FakeIssues, OTHER, OWNER } from "./inbox-fake";
 import { inboxItems, securityItemsIn } from "./inbox-items";
 import { ORCHESTRATOR, ORCHESTRATOR_MD, POLICY, REVIEWER, Script, boot, entries, interview, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
@@ -779,4 +779,64 @@ describe("F-016 SR-6, SR-10, AC-3: Gate 1 choices and accepted risks in section 
       expect(r.check.evidence, row).toContain("Gate 1 #1");
     }
   });
+});
+
+// ---------- F-021: the same items answered in the console ----------
+
+/** A console session (channel v1.6), signed in as the tests' projects require. */
+async function consoleSession(w: World, c: RpcClient): Promise<string> {
+  const open = await c.ok("inbox.open");
+  w.github.approver = OWNER_ID;
+  await w.clock.advance(5000);
+  w.github.approver = null;
+  for (let i = 0; i < 200; i++) {
+    const r = await c.call("interview.awaitApproval", { session: open.session, wait_s: 0 });
+    if (!r.error || (r.error as { code: number }).code !== -32006) break;
+    await new Promise((res) => setTimeout(res, 10));
+  }
+  return open.session as string;
+}
+
+describe("F-021 acceptance: Gate 1 items answered in the console", () => {
+  it("AC-2, AC-3, FR-9: listed, shown whole, confirmed with the engine's code, carried out at once; the issue closes and a later 👍 does nothing", async () => {
+    const { w, c, gh } = await blockedOnChoice();
+    const session = await consoleSession(w, c);
+    const listed = await c.ok("inbox.list", { session });
+    expect((listed.items as Array<Record<string, unknown>>).map((i) => [i.id, i.kind, i.blocking, i.rev])).toEqual([["D-0001", "decision", true, 1]]);
+    const shown = await c.ok("inbox.show", { session, item: "D-0001" });
+    expect((shown.sections as Array<{ name: string }>).map((x) => x.name)).toEqual(["Context", "Options", "Project impact", "Recommendation", "Cost of delay"]);
+    expect((shown.actions as Array<{ action: string }>).map((a) => a.action)).toContain("choose:B");
+    const a = await c.ok("inbox.answer", { session, item: "D-0001", rev: 1, action: "choose:B", reply_id: "r1" });
+    const confirm = a.confirm as { words: string; code: string };
+    expect(confirm.words).toMatch(/^Confirm: Option B: .* on D-0001: you accept what option B means for the project\.$/);
+    // A resent call after a lost reply gets the same answer, not a new code.
+    expect(await c.ok("inbox.answer", { session, item: "D-0001", rev: 1, action: "choose:B", reply_id: "r1" })).toEqual(a);
+    expect(await c.ok("inbox.confirm", { session, item: "D-0001", rev: 1, code: confirm.code })).toEqual({ recorded: true });
+    // Carried out before the call returned: no poll was needed.
+    expect(effects(w, "D-0001")).toHaveLength(1);
+    expect(ownerEntries(w, "D-0001")).toEqual([expect.objectContaining({ option: "B", source: "console", signed_in: true, confirmed_by: { source: "console" } })]);
+    await pollUntil(w, "the issue to close", () => gh.issues.get(1)!.state === "closed");
+    expect((gh.comments_.get(1) ?? []).filter((x) => x.body.startsWith("Recorded from the console:")).map((x) => x.body)).toHaveLength(1);
+    gh.react(gh.actionComment(1, "choose:A").id, "+1");
+    await polls(w, 2);
+    expect(ownerEntries(w, "D-0001")).toHaveLength(1);
+    expect(effects(w, "D-0001")).toHaveLength(1);
+    expect(await c.ok("inbox.answer", { session, item: "D-0001", rev: 1, action: "choose:A", reply_id: "r2" })).toMatchObject({ already: { by: "console" } });
+  }, 90_000);
+
+  it("SR-3: inbox calls need an approved session and well-formed values", async () => {
+    const { w, c } = await blockedOnChoice();
+    const open = await c.ok("inbox.open");
+    const pending = await c.call("inbox.list", { session: open.session });
+    expect((pending.error as { code: number }).code).toBe(-32006);
+    const session = await consoleSession(w, c);
+    const bad = await c.call("inbox.show", { session, item: "../D-0001" });
+    expect((bad.error as { code: number }).code).toBe(-32602);
+    expect(await c.ok("inbox.confirm", { session, item: "D-0001", rev: 1, code: "ABCD" })).toEqual({ refused: "confirm_failed" });
+    const noAction = await c.call("inbox.answer", { session, item: "D-0001", rev: 1, action: "merge", reply_id: "r1" });
+    expect((noAction.error as { code: number }).code).toBe(-32602);
+    const forged = await c.call("interview.next", { session });
+    // A console session is not an interview session for any feature.
+    expect((forged.error as { code: number }).code).toBe(-32602);
+  }, 60_000);
 });
