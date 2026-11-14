@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
-- **Spec version:** 12
+- **Spec version:** 13
 
 This is engine increment 4, "Build to PR" (F-007 section 13). It is a draft
 written before the owner interview, from the baseline spec, the ADRs and the
@@ -177,11 +177,14 @@ keeps at most this much of the test command's output per run),
 `ci_wait_minutes: 60` (stage 9 treats CI that hasn't finished by then as an
 incomplete run).
 
-### H-0191 (draft): models for the new roles
-`engine/config/models.yaml` gains `software-developer`, `test-engineer`,
-`orchestrator` and `validation-judge`. Proposed: developer and judge
-`claude-opus-5-5`; test engineer and orchestrator `claude-sonnet-5-5`.
-F-002 rungs replace these per project later.
+### H-0191 (approved): models for the new roles
+Approved by the owner 2026-11-14 (decision card, option 0).
+`engine/config/models.yaml` gains `software-developer: claude-opus-5-5`,
+`validation-judge: claude-opus-5-5`, `test-engineer: claude-sonnet-5-5` and
+`orchestrator: claude-sonnet-5-5`. Applied in the build's first milestone,
+together with the engine code that knows these roles: today's engine refuses a
+`models.yaml` naming a role it doesn't run (`config/models.ts`), so adding them
+earlier would stop every project. F-002 rungs replace these per project later.
 
 ### H-0192 (draft): Role policy for code repo worktrees
 - The approved spec and contracts are mounted for reading at a fixed path
@@ -271,3 +274,4 @@ Asked one at a time on decision cards. None is assumed.
 | 10 | 2026-11-14 | Developer and test engineer get a full shell on the owner's PC until Beta, accepted risk under ADR 0026 (FR-3, SR-1). The ADR for OQ-2 is renumbered to 0028 because 0026 went to the no-containers decision | Owner, 2026-11-14 (decision card) |
 | 11 | 2026-11-14 | Gate 2 runs Semgrep from a hash-pinned PyPI venv on the owner's PC, not Docker (FR-8, H-0196); ADR 0024 amended with the S4.1 recheck. Also: acceptance criteria AC-1 to AC-18, ADR 0028, hygiene drafts H-0190 to H-0196 | Owner, 2026-11-14 (decision card, Semgrep); rest drafts |
 | 12 | 2026-11-14 | H-0196 approved and applied: the six Semgrep dependency advisories accepted as unreachable until 2027-02-12 | Owner, 2026-11-14 (decision card) |
+| 13 | 2026-11-14 | H-0191 approved: developer and judge on Opus 5.5, test engineer and failure classifier on Sonnet 5.5; applied with the build | Owner, 2026-11-14 (decision card) |
