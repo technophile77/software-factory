@@ -1219,9 +1219,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (!f.state.gate1.blocked) await f.exclusive(() => f.append([{ type: "gate1_blocked", reason: why }], "gate 1 run limit"));
       await alert(p, `gate1cap:${f.id}:${f.state.gate1.runs}`, {
         title: `Gate 1 for ${f.id} reached its run limit`, feature: f.id,
-        context: `${why}. Another run would cost another reviewer session.`,
-        impact: `${f.id} stays at Security Gate 1.`,
-        confirm: "Look at the Gate 1 reports and the engine log, then decide how to proceed", hold: "Keep the feature where it is", recommendation: "A",
+        context: `${why}. Another run would cost another reviewer session. The Gate 1 reports and the engine log say why the earlier runs didn't pass.`,
+        impact: `${f.id} stays at Security Gate 1 until you allow another run.`,
+        confirm: "Allow one more Gate 1 run: the security reviewer checks the current spec again", hold: "Keep the feature where it is, with no more runs", recommendation: "A",
       });
       return;
     }
