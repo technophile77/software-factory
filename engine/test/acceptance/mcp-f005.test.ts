@@ -1,8 +1,8 @@
-// F-005 v10 AC-17: the F-005 acceptance and contract suite
-// (plugins/software-factory/skills/spec-interview/tests/test_acceptance.py),
-// ported from the Python client script to the engine's `mcp` mode, driven
-// through the MCP SDK's own stdio client against a fake engine that follows
-// Engine control channel v1.1 to v1.4. Test names keep the Python ones'
+// F-005 v10 AC-17: the F-005 acceptance and contract suite, first ported
+// from the Python client script to the engine's `mcp` mode and now run on
+// the interview operations in-process, as `factory-engine interview` (F-018)
+// runs them, against a fake engine that follows Engine control channel v1.1
+// to v1.4. Test names keep the Python ones'
 // criteria tags. The long real-time tests (60 s limits) are in
 // mcp-f005-timing.test.ts.
 //
@@ -18,7 +18,7 @@ import {
   type Json, MIB, ID_RE, assumption, dropBefore, errorHook, nowIso, question, rawHook, recordThenDrop, resultHook,
 } from "./support/mcp-fake-engine";
 import {
-  HOSTILE, INVISIBLE, IS_ROOT, IS_UNIX, Mcp, NOBODY, REPLY_TEXTS, TRICKY, type ToolResult, allStrings, buildEngine,
+  HOSTILE, INVISIBLE, IS_ROOT, IS_UNIX, Ops, NOBODY, REPLY_TEXTS, TRICKY, type ToolResult, allStrings, buildEngine,
   expectCleanFailure, expectNothingSent, expectOk, expectRefused, fencedSpans, git, removeTmp, tmp, traffic, unsafeChars,
 } from "./support/mcp-harness";
 import { McpWorld, type WorldOptions } from "./support/mcp-world";
@@ -62,7 +62,7 @@ unix("AC-1: status through the factory/state worktree", () => {
     await world();
     const sub = path.join(w.repo, "src", "deep");
     fs.mkdirSync(sub, { recursive: true });
-    const fromSub = await Mcp.start(bundle, sub);
+    const fromSub = await Ops.start(bundle, sub);
     try {
       expectOk(await w.call("status", {}, fromSub));
     } finally {
@@ -70,7 +70,7 @@ unix("AC-1: status through the factory/state worktree", () => {
     }
     const feat = path.join(w.root, "feature-wt");
     git(w.repo, "worktree", "add", "-q", "-b", "feature/x", feat);
-    const fromWt = await Mcp.start(bundle, feat);
+    const fromWt = await Ops.start(bundle, feat);
     try {
       expectOk(await w.call("status", {}, fromWt));
     } finally {
@@ -136,7 +136,7 @@ unix("AC-2: engine.json outside the factory/state worktree is refused before con
     const bare = tmp();
     fs.mkdirSync(path.join(bare, ".factory"));
     w.writeEngineJson(w.engine.path, {}, path.join(bare, ".factory"));
-    const m = await Mcp.start(bundle, bare);
+    const m = await Ops.start(bundle, bare);
     try {
       w.expectRefusedBeforeConnecting(await w.call("status", {}, m));
     } finally {
@@ -167,7 +167,7 @@ unix("AC-2: engine.json outside the factory/state worktree is refused before con
     fs.mkdirSync(path.join(w.repo, "conf", ".factory"), { recursive: true });
     w.writeEngineJson(w.engine.path, {}, path.join(w.repo, "conf", ".factory"));
     w.writeEngineJson(w.engine.path, {}, w.repo);
-    const m = await Mcp.start(bundle, path.join(w.repo, "conf"));
+    const m = await Ops.start(bundle, path.join(w.repo, "conf"));
     try {
       w.expectRefusedBeforeConnecting(await w.call("status", {}, m));
     } finally {
@@ -859,11 +859,9 @@ unix("SR-4: nothing on disk", () => {
   it("test_sr4_full_interview_writes_nothing_and_logs_nothing", async () => {
     await world();
     w.engine.addFeature("F-1", "t", [question("Q1"), assumption("A1")]);
-    const home = tmp();
-    const tmpd = tmp();
-    const m = await Mcp.start(bundle, w.repo, { env: { HOME: home, TMPDIR: tmpd, XDG_CACHE_HOME: path.join(home, ".cache") } });
+    const m = await Ops.start(bundle, w.repo);
     try {
-      const before = snapshot(w.repo, home, tmpd);
+      const before = snapshot(w.repo);
       const secret = "my-very-private-answer-31337";
       const runs: ToolResult[] = [await w.call("status", {}, m), await w.call("list", {}, m)];
       await w.open("F-1", {}, m);
@@ -876,9 +874,9 @@ unix("SR-4: nothing on disk", () => {
         expectOk(r);
         expect(r.text).not.toContain(secret);
       }
-      expect(m.stderrText, "the MCP mode logged to stderr").toBe("");
-      const after = snapshot(w.repo, home, tmpd);
-      // The engine (not the MCP mode) is the only writer; its fake keeps everything in memory.
+      expect(m.stderrText, "the operations logged to stderr").toBe("");
+      const after = snapshot(w.repo);
+      // The engine (not the operations) is the only writer; its fake keeps everything in memory.
       expect([...after.keys()].filter((k) => !before.has(k))).toEqual([]);
       expect([...after].filter(([k, v]) => before.get(k) !== v)).toEqual([]);
     } finally {

@@ -1,7 +1,7 @@
-// F-005 v10 AC-17 for F-006 (the advisor), client side: the suite in
-// plugins/software-factory/skills/spec-interview/tests/test_acceptance_f006.py
-// ported to the engine's `mcp` mode, driven through the MCP SDK's stdio client
-// against the fake engine's channel v1.3 (H-0063 as amended by H-0075):
+// F-005 v10 AC-17 for F-006 (the advisor), client side: the suite first
+// ported to the engine's `mcp` mode, now run on the interview operations
+// in-process as `factory-engine interview` (F-018) runs them, against the
+// fake engine's channel v1.3 (H-0063 as amended by H-0075):
 // advisor proposals, advice entries, reply kinds ask_advisor, approve_advisor
 // and decline_advisor. Unix only (the fake engine's socket).
 

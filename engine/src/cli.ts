@@ -14,7 +14,6 @@ import { Git } from "./git";
 import { HttpGitHub } from "./github";
 import { FileLogger } from "./log";
 import { realOsApi } from "./os/ffi";
-import { serveMcp } from "./mcp/server";
 import { Interview } from "./mcp/operations";
 import { ID_RE } from "./mcp/limits";
 import { TerminalInterview, type TerminalIo } from "./terminal/interview";
@@ -33,7 +32,6 @@ const USAGE = `factory-engine <command>
   interview [<feature id>] [--project <path>]
           Answers the requirements analyst's questions in this terminal (F-018).
           --project defaults to the current folder, inside the project's repo.
-  mcp     Serves the spec interview's tools to Claude Code over stdio (ADR 0025).
           Started by the software-factory plugin, not by hand.
 `;
 
@@ -193,14 +191,6 @@ async function interview(rest: string[]): Promise<number> {
 async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   if (cmd === "interview") return interview(rest);
-  if (cmd === "mcp") {
-    if (rest.length) {
-      process.stderr.write(USAGE);
-      return 2;
-    }
-    await serveMcp(realOsApi());
-    return 0;
-  }
   if (cmd === "secret") {
     const [sub, name] = rest;
     if (sub !== "set" || !name || !isSecretName(name)) {
