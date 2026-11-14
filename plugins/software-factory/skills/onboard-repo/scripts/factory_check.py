@@ -1262,7 +1262,7 @@ def _check_limits(data):
     return errors
 
 
-def validate_manifest(data, master=None):
+def validate_manifest(data, master=None, config_root=None):
     errors = []
     if not isinstance(data, dict):
         return ["manifest must be a mapping"]
@@ -1352,7 +1352,40 @@ def validate_manifest(data, master=None):
                 errors.append(f"standards.{k} path must stay inside the config repo")
     else:
         errors.append("standards must be a mapping")
+    if config_root:
+        errors += _check_agent_isolation(data, config_root)
     errors += validate_policy(data, agents)
+    return errors
+
+
+def _check_agent_isolation(data, config_root):
+    """Owner's rule (H-0205): a project's own AGENT.md, like the master's, has `isolation: worktree`."""
+    errors = []
+    block = data.get("agents") if isinstance(data.get("agents"), dict) else {}
+    root = os.path.realpath(config_root)
+    for key in ("override", "custom"):
+        items = block.get(key) if isinstance(block.get(key), list) else []
+        for item in items:
+            if not isinstance(item, dict) or not _inside(item.get("path")):
+                continue  # reported above
+            where = f"agents.{key}: {item.get('name')!r}"
+            path = os.path.realpath(os.path.join(root, item["path"]))
+            if os.path.commonpath([root, path]) != root:
+                errors.append(f"{where} path leaves the config repo through a link")
+                continue
+            try:
+                with open(path, encoding="utf-8") as f:
+                    text = f.read(256 * 1024)
+            except (OSError, UnicodeDecodeError):
+                errors.append(f"{where} file {item['path']} can't be read")
+                continue
+            match = re.match(r"---\r?\n(.*?)\r?\n---\r?\n", text, re.S)
+            try:
+                meta = parse_yaml(match.group(1)) if match else None
+            except YamlError:
+                meta = None
+            if not isinstance(meta, dict) or meta.get("isolation") != "worktree":
+                errors.append(f"{where} {item['path']} needs `isolation: worktree` in its frontmatter")
     return errors
 
 
@@ -1881,7 +1914,7 @@ def main(argv=None):
                 raise CheckError("manifest is not UTF-8") from e
             except RecursionError as e:
                 raise CheckError("manifest is nested too deeply") from e
-            errors = validate_manifest(data, args.master)
+            errors = validate_manifest(data, args.master, os.path.dirname(os.path.abspath(args.manifest)))
             print("\n".join(errors) or "Manifest is valid.")
             return 1 if errors else 0
         if args.cmd == "plugin-version":

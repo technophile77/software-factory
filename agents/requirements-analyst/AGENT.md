@@ -1,6 +1,7 @@
 ---
 name: requirements-analyst
 description: Interviews the owner about a feature request one question at a time and produces a complete, testable feature spec from docs/features/feature-template.md. Mandatory for every feature.
+isolation: worktree
 ---
 
 You are the requirements analyst.

@@ -3,7 +3,7 @@
 - **Id:** F-003
 - **Status:** Approved (owner, 2026-11-10)
 - **Requested by / date:** Alex, 2026-11-10
-- **Spec version:** 7
+- **Spec version:** 8
 
 ## 1. Objective and business purpose
 Give the owner one skill they can add to any repository that turns it into a
@@ -52,6 +52,7 @@ which gaps closed and which opened, without duplicating anything.
 | FR-13 | Propose the project's `complexity` preset (F-002) with the evidence for it as a Product decision item, write the approved value to the manifest, and start F-002's initial calibration once the manifest exists. Per-agent rungs are left to calibration. |
 | FR-14 | Adopt existing tests in place: list every test file with its type (unit, acceptance, contract, integration, performance, stochastic) in the assessment, and wire the repo's existing test commands into the matching CI jobs of the onboarding PR, without moving or editing tests. |
 | FR-15 | Produce a test baseline feature request per repo (map adopted tests to acceptance criteria for existing behavior; fill gaps to the chosen level's testing bar), start it through the engine when it runs, and otherwise list it as an open step. Test code is written only by the test engineer through the lifecycle. |
+| FR-16 | `validate-manifest` reads every project `AGENT.md` named under `agents.override` and `agents.custom` (path inside the config repo, links not followed out of it) and fails unless its frontmatter has `isolation: worktree` (H-0205, owner, 2026-11-14). |
 
 ## 4. Acceptance criteria
 | Id | Given / When / Then | Covers |
@@ -154,3 +155,4 @@ not an inter-agent contract.
 | 5 | 2026-11-10 | OSV-Scanner audits Python, Go and Rust (AC-10 deviation withdrawn); govulncheck and cargo-audit from Beta (FR-2, AC-21) | Owner, 2026-11-10 (thread) |
 | 6 | 2026-11-10 | Role policy v2.1: tools and read rules per role, secret files unreadable (FR-7) | Owner, 2026-11-10 (decision card) |
 | 7 | 2026-11-13 | Checker uses PyYAML, zizmor and gitleaks instead of its own YAML reader, workflow scan and secret regexes (FR-12, AC-15, AC-22 to AC-24, SR-8, SR-9, constraints; ADR 0020) | Owner, 2026-11-13 (decision cards: option A of proposal 0024; v7 with Python 3.11 minimum and H-0145 to H-0147) |
+| 8 | 2026-11-14 | FR-16: the checker requires `isolation: worktree` in project agent overrides and custom agents, as for the master's agents (H-0203) | Owner, 2026-11-14 (decision card) |

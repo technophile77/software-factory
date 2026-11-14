@@ -312,7 +312,7 @@ advisories, each with the unreachability reason in ADR 0024's recheck and a
 ### H-0195 (approved, applied): documents
 Approved by the owner 2026-11-14 (decision card); applied in
 `development-workflow.md`, `workflow.yaml`, the orchestrator's `AGENT.md` and
-F-007's change log (v45).
+F-007's change log (v46).
 `development-workflow.md`, `workflows/feature-development/workflow.yaml` and
 the orchestrator's `AGENT.md` say which steps are engine code and which run
 the orchestrator agent (OQ-4); F-007 v41's exception is marked closed for
@@ -366,6 +366,6 @@ Asked one at a time on decision cards. None is assumed.
 | 15 | 2026-11-14 | H-0193 approved and applied: Project manifest v1.7, `repos[].commands` as argument lists and `owner.commit_name` | Owner, 2026-11-14 (decision card) |
 | 16 | 2026-11-14 | Stage 5 is sequential: the test engineer runs after the developer, on its own branch from the feature branch (FR-3, H-0192); credentialed CLIs follow the role policy's ask rule | Owner, 2026-11-14 (decision card) |
 | 17 | 2026-11-14 | FR-3: credentialed CLIs in the developer's and test engineer's shells follow H-0201's ask rule (held, Security item, 👍 runs once, denied after 30 minutes, wait off the time cap) | Owner, 2026-11-14 (decision card, H-0201) |
-| 18 | 2026-11-14 | H-0192 rest, H-0194 and H-0195 approved; H-0194 (Agent report v1.5) and H-0195 (workflow, orchestrator AGENT.md, F-007 v45) applied | Owner, 2026-11-14 (decision card) |
+| 18 | 2026-11-14 | H-0192 rest, H-0194 and H-0195 approved; H-0194 (Agent report v1.5) and H-0195 (workflow, orchestrator AGENT.md, F-007 v46) applied | Owner, 2026-11-14 (decision card) |
 | 19 | 2026-11-14 | Security Gate 1 folded in: SR-2 (token per project) and SR-6 (confirm once per public repo) chosen, SR-3 to SR-15 approved as worded; S9.1 service table, abuse cases, AC-19 to AC-31. Readiness gate passed | Owner, 2026-11-14 (decision cards); orchestrator (gate) |
 | 19 (sign-off) | 2026-11-14 | Signed off: status Approved; the build waits on increment 3 (F-016) | Owner, 2026-11-14 (decision card) |
