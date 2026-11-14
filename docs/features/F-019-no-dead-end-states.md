@@ -1,7 +1,7 @@
 # Feature: Stateful parts of the engine can't reach a dead end
 
 - **Id:** F-019
-- **Status:** In review
+- **Status:** Approved
 - **Requested by / date:** owner, 2026-11-14 ("is there a use case for a state machine in this project? like jssm?"; "it should also be used to validate that stateful things don't end up in a dead end state like happened with the analyst, security agents, etc.")
 - **Spec version:** 6
 
@@ -99,8 +99,8 @@ Hygiene items applied with the build:
 
 | Id | Target | Change | Status |
 |---|---|---|---|
-| H-0230 | `engine/package.json`, lockfile | Add `jssm` 5.164.1, pinned exactly (ADR 0031) | Proposed |
-| H-0231 | `docs/features/F-011-one-inbox.md`, edge cases | "Owner closes or deletes an issue by hand" gains: closed again after the engine's one reopen, the item is withdrawn and whatever waited on it offers a rerun (F-019 FR-10); only a close by the owner's account counts (F-019 SR-2) | Proposed |
+| H-0230 | `engine/package.json`, lockfile | Add `jssm` 5.164.1, pinned exactly (ADR 0031) | Approved (owner, 2026-11-14 08:07Z); applied with the build |
+| H-0231 | `docs/features/F-011-one-inbox.md`, edge cases | "Owner closes or deletes an issue by hand" gains: closed again after the engine's one reopen, the item is withdrawn and whatever waited on it offers a rerun (F-019 FR-10); only a close by the owner's account counts (F-019 SR-2) | Approved (owner, 2026-11-14 08:07Z); applied |
 
 ## 11. Readiness gate
 
@@ -121,4 +121,4 @@ Checked 2026-11-14 on v6: every FR has at least one AC (FR-9 gained AC-10), both
 | 3 | 2026-11-14 | A-2 answered: inbox items mirror GitHub issue states; OQ-1 raised | owner, card 08:01Z |
 | 4 | 2026-11-14 | OQ-1 answered (FR-10, AC-9, H-0231); Security Gate 1 filed, SR-2 to SR-6 proposed; H-0230 listed | owner, card 08:03Z (OQ-1) |
 | 5 | 2026-11-14 | SR-1 to SR-6 accepted | owner, card 08:04Z |
-| 6 | 2026-11-14 | AC-10 added for FR-9; readiness gate passed | (sign-off pending) |
+| 6 | 2026-11-14 | AC-10 added for FR-9; readiness gate passed; signed off | owner, 2026-11-14 08:07Z (in thread) |
