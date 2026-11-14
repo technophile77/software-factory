@@ -117,6 +117,9 @@ export function analystReturnTurn(feature: string, specPath: string, returns: Re
   if (returns.some((r) => r.why === "gate1_reask")) {
     lines.push(`For each "gate1_reask" below, the owner wants the finding asked again: ask one interview question with interview_ask, its text starting with "Gate 1 #<finding>: ", the finding's suggested requirement (from the earlier Gate 1 findings in the transcript) as suggested, and take the owner's note into account.`);
   }
+  if (returns.some((r) => r.why === "gate1_unresolved")) {
+    lines.push(`For each "gate1_unresolved" below, Security Gate 1's check found findings the interview didn't take up. For each finding its evidence names, ask one interview question with interview_ask, its text starting with "Gate 1 #<finding>: ", with the finding's suggested requirement (from the earlier Gate 1 findings in the transcript) word for word as suggested. An assumption doesn't take up a finding; only such a question, answered by the owner, does.`);
+  }
   if (returns.some((r) => r.why === "readiness_failed")) {
     lines.push(`For each "readiness_failed" below, the readiness gate found a gap in the spec. Fix each gap through the interview: ask the owner where the spec needs their answer, never fill it in yourself.`);
   }

@@ -1141,6 +1141,24 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       filed.push({ n, item });
     }
     const blocked = filed.length || r.waiting.length;
+    if (!blocked) {
+      // F-016 FR-15: nothing waits on the owner and nothing was refused, so the interview missed a step; the analyst gets one more go per report.
+      const back = { type: "returned", return: { why: "gate1_unresolved", evidence: r.check.evidence } };
+      if (f.state.gate1.unresolvedSent === 0) {
+        await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: false, evidence: r.check.evidence }, back, { type: "stage", stage: INTERVIEW_STAGE }], "gate 1: findings not resolved, back to the interview"));
+        log.warn(`${f.id}: Gate 1 findings not resolved: ${r.check.evidence} Back to the interview.`);
+        return;
+      }
+      await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: false, evidence: r.check.evidence }], "gate 1: findings not resolved"));
+      log.warn(`${f.id}: Gate 1 findings not resolved again: ${r.check.evidence}`);
+      await alert(p, `gate1unresolved:${f.id}:${f.state.gate1.reportAt}:${f.state.gate1.unresolvedSent}`, {
+        title: `Gate 1 findings for ${f.id} still not taken up`, feature: f.id,
+        context: `The interview went back to the analyst once already, and Security Gate 1's check still finds: ${r.check.evidence.slice(0, 1500)}`,
+        impact: `${f.id} stays at Security Gate 1 with no analyst.`,
+        confirm: "Send it back to the analyst again", hold: "Keep the feature where it is", recommendation: "A",
+      });
+      return;
+    }
     await f.exclusive(() => f.append([
       blocked
         ? { type: "gate1_blocked", reason: `Waiting on the owner's Security items: ${[...filed.map((x) => x.item), ...r.waiting.map((n) => f.state.gate1.findings.find((x) => x.n === n)?.item ?? findingRef(n))].join(", ")}.`, risk: filed.map((x) => x.n) }
@@ -1667,6 +1685,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       }
       await done("restarted");
       resumeFeature(p, f);
+      return;
+    }
+    if (type === "gate1unresolved" && f) {
+      await jobs.get(f.id)?.done;
+      if (f.stage() !== GATE1_STAGE || jobs.has(f.id)) return done("record_only");
+      await done("restarted", [{ type: "returned", return: { why: "gate1_unresolved", item: r.id } }], INTERVIEW_STAGE);
+      launchAnalyst(p, f);
       return;
     }
     if (type === "analyststop" && f) {

@@ -790,3 +790,36 @@ describe("F-016 FR-13, FR-14: an analyst run that stopped (issues #64, #65)", ()
     expect(first.s.count.analyst + second.s.count.analyst + third.s.count.analyst).toBe(1);
   }, 60_000);
 });
+
+describe("F-016 FR-15: Gate 1 findings the interview didn't take up", () => {
+  const FINDING = { criterion: "S5.2", severity: "Medium", location: "FR-1", explanation: "Errors may show stack traces.", fix: "Errors show no internals.", blocks: false, needs_owner: false };
+
+  it("AC-17: the feature goes back to the analyst once with the evidence; the second time an item is filed; option B leaves it at Gate 1", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    const inputs: string[] = [];
+    // Each later session skips the finding's question and calls the spec ready again.
+    const scripts = {
+      analyst: analyst(w, () => feature, async (s, input, n) => {
+        inputs.push(input);
+        writeSpec(w, feature, spec(feature, 2 + n));
+        await s.call("interview_spec_ready", { spec_path: `docs/features/${feature}-export.md`, spec_version: 2 + n });
+      }),
+      reviewer: reviewer(d, () => feature, [FINDING]),
+    };
+    const { e, c, gh } = await start(w, d, scripts);
+    await interview(w, e, c, () => feature, (f) => (feature = f));
+    await until("the item", () => items(w).some((i) => i.record.effect?.type === "gate1unresolved"));
+    expect(inputs).toHaveLength(2);
+    expect(inputs[1]).toContain("gate1_unresolved");
+    expect(inputs[1]).toContain("Gate 1 #1 has no interview question asked after the report");
+    expect(items(w).filter((i) => i.record.effect?.type === "gate1unresolved")).toHaveLength(1);
+    const item = items(w).find((i) => i.record.effect?.type === "gate1unresolved")!;
+    await pollUntil(w, "the issue", () => !!items(w).find((i) => i.id === item.id)?.record.revisions.at(-1)?.action_comments.length);
+    await act(w, gh, items(w).find((i) => i.id === item.id)!.record.issue, "choose:B");
+    await pollUntil(w, "the effect", () => effects(w, item.id).length === 1);
+    expect(effects(w, item.id)[0]).toMatchObject({ effect: "record_only" });
+    expect(inputs).toHaveLength(2);
+  }, 60_000);
+});
