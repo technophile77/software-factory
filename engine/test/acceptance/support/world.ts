@@ -248,8 +248,10 @@ export interface ProjectSpec {
   /** Allow list; defaults to the repo owner. */
   allowed?: Array<{ login: string; id: number }>;
   enabled?: boolean;
-  /** Project and repo maturity; at rapid-prototype one approval covers an engine run's later sessions (F-018 FR-13). */
+  /** Project and repo maturity; at rapid-prototype interview sessions open without sign-in by default (F-018 FR-13). */
   maturity?: string;
+  /** `settings.interview_sign_in` as YAML flow text, for example `{ every: engine_start }` (F-018 FR-15). */
+  signIn?: string;
   budgetMode?: "subscription" | "tokens";
   /** Edits the generated manifest text. */
   editManifest?: (text: string) => string;
@@ -433,7 +435,9 @@ export class World {
       `skills:\n  custom: []\n  override: []\n  exclude: []\n\n` +
       `agents:\n  custom: []\n  override: []\n\n` +
       `standards: {}\n\n` +
-      `settings:\n  budget:\n    mode: ${s.budgetMode ?? "subscription"}\n\n` +
+      `settings:\n` +
+      (s.signIn ? `  interview_sign_in: ${s.signIn}\n` : "") +
+      `  budget:\n    mode: ${s.budgetMode ?? "subscription"}\n\n` +
       policy +
       `\nnotes: |\n  Fixture.\n`;
     if (s.editManifest) text = s.editManifest(text);

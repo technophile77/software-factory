@@ -8,7 +8,7 @@ import { serve } from "../src/channel/framing";
 import { listenPipe } from "../src/channel/windows";
 import { SessionManager } from "../src/channel/sessions";
 import { credentialKind } from "../src/config/authorize";
-import { validateManifest } from "../src/config/manifest";
+import { type InterviewSignIn, interviewSignIn, validateManifest } from "../src/config/manifest";
 import { ConfigError, readPathsFile } from "../src/config/paths-file";
 import { comparePin, pinnedKeys } from "../src/config/pins";
 import { Git, overrideArgs } from "../src/git";
@@ -429,24 +429,71 @@ describe("GitHub device flow (SR-23, ADR 0014)", () => {
     expect(() => b.get(s.session)).toThrow(/Unknown or expired/);
   });
 
-  it("at Rapid prototype sessions open without sign-in; above it each needs its own (F-018 FR-13)", async () => {
-    const gh = new FakeGitHub();
-    const clock = new FakeClock();
-    const recorded: Array<[string, number, boolean]> = [];
-    const mk = (noSignIn: boolean) => new SessionManager("a", { githubId: OWNER_ID, oauthClientId: CLIENT_ID }, gh, clock, new MemoryLogger(),
-      async (f, no, signIn) => void recorded.push([f, no, signIn]), noSignIn);
-    const m = mk(true);
-    const first = await m.open("F-001", false);
-    expect(first.approval).toBeUndefined();
-    expect(m.approved(first.session).feature).toBe("F-001");
-    expect(recorded).toEqual([["F-001", 1, false]]);
-    const taken = await m.open("F-001", true);
-    expect(taken.approval).toBeUndefined();
-    expect(() => m.approved(first.session)).toThrow();
-    const strict = mk(false);
-    const s1 = await strict.open("F-002", false);
-    expect(s1.approval).toBeDefined();
-    expect(() => strict.approved(s1.session)).toThrow(/approval/);
+  describe("sign-in setting (F-018 FR-13, FR-15)", () => {
+    const setup = (signIn: InterviewSignIn) => {
+      const gh = new FakeGitHub();
+      const clock = new FakeClock();
+      const recorded: Array<[string, number, boolean]> = [];
+      const m = new SessionManager("a", { githubId: OWNER_ID, oauthClientId: CLIENT_ID }, gh, clock, new MemoryLogger(),
+        async (f, no, signedIn) => void recorded.push([f, no, signedIn]), signIn);
+      const approve = async (token: string) => {
+        gh.approver = OWNER_ID;
+        await clock.advance(5000);
+        for (let i = 0; i < 20; i++) await settle();
+        gh.approver = null;
+        return m.approved(token);
+      };
+      return { gh, clock, m, recorded, approve };
+    };
+
+    it("never: every open, takeovers included, is approved with no sign-in and recorded as such", async () => {
+      const { gh, m, recorded } = setup({ every: "never" });
+      const first = await m.open("F-001", false);
+      expect(first.approval).toBeUndefined();
+      expect(m.approved(first.session).feature).toBe("F-001");
+      const taken = await m.open("F-001", true);
+      expect(taken.approval).toBeUndefined();
+      expect(() => m.approved(first.session)).toThrow();
+      expect(recorded).toEqual([["F-001", 1, false], ["F-001", 2, false]]);
+      expect(gh.deviceCalls).toBe(0);
+    });
+
+    it("session: each open, takeovers included, needs its own sign-in", async () => {
+      const { m, approve } = setup({ every: "session" });
+      const s1 = await m.open("F-002", false);
+      expect(s1.approval).toBeDefined();
+      expect(() => m.approved(s1.session)).toThrow(/approval/);
+      await approve(s1.session);
+      const s2 = await m.open("F-002", true);
+      expect(s2.approval).toBeDefined();
+      const s3 = await m.open("F-003", false);
+      expect(s3.approval).toBeDefined();
+    });
+
+    it("engine_start: one sign-in covers later sessions of the run; a failed one covers nothing", async () => {
+      const { gh, m, recorded, approve } = setup({ every: "engine_start" });
+      const s1 = await m.open("F-001", false);
+      expect(s1.approval).toBeDefined();
+      m.close(s1.session);
+      const s2 = await m.open("F-001", false);
+      expect(s2.approval).toBeDefined();
+      await approve(s2.session);
+      const s3 = await m.open("F-002", false);
+      expect(s3.approval).toBeUndefined();
+      expect(m.approved(s3.session).feature).toBe("F-002");
+      expect(recorded).toEqual([["F-001", 2, true], ["F-002", 3, false]]);
+      expect(gh.deviceCalls).toBe(2);
+    });
+
+    it("hours: sessions within the window open without sign-in; the first after it signs in again", async () => {
+      const { clock, m, approve } = setup({ every: "hours", hours: 4 });
+      const s1 = await m.open("F-001", false);
+      await approve(s1.session);
+      await clock.advance(3 * 3_600_000);
+      expect((await m.open("F-002", false)).approval).toBeUndefined();
+      await clock.advance(3_600_000);
+      expect((await m.open("F-003", false)).approval).toBeDefined();
+    });
   });
 });
 
@@ -675,6 +722,33 @@ describe("project paths file and manifest (SR-13, H-0080, H-0081)", () => {
     expect(comparePin(null, m)).toEqual({ status: "new_path" });
     expect(comparePin(pin, { ...m, enabled: false, owner: { ...m.owner, oauth_client_id: "other" } })).toEqual({ status: "changed", keys: ["owner", "enabled"] });
     expect(comparePin(pin, { ...m, allowed_repo_owners: [] })).toEqual({ status: "changed", keys: ["allowed_repo_owners"] });
+  });
+
+  it("pins the interview sign-in setting; a pin made before it matches a manifest without one (F-018 FR-15)", () => {
+    const m = validateManifest(YAML.parse(manifestYaml()), "c");
+    const { interview_sign_in: _, ...old } = { ...pinnedKeys(m), pinned_at: "t", commit: "c" };
+    expect(comparePin(old, m)).toEqual({ status: "match" });
+    const hourly = validateManifest(YAML.parse(manifestYaml({ extra: "  interview_sign_in: { every: hours, hours: 8 }" })), "c");
+    expect(comparePin(old, hourly)).toEqual({ status: "changed", keys: ["settings.interview_sign_in"] });
+    expect(comparePin({ ...pinnedKeys(hourly), pinned_at: "t", commit: "c" }, hourly)).toEqual({ status: "match" });
+  });
+
+  it("reads settings.interview_sign_in, defaults it by level, and allows never only at Rapid prototype (F-018 FR-15)", () => {
+    const read = (extra: string, level = "alpha") => validateManifest(YAML.parse(manifestYaml({ extra }).replace("maturity: prototype", `maturity: ${level}`)), "c");
+    expect(interviewSignIn(read(""))).toEqual({ every: "session" });
+    expect(interviewSignIn(read("", "rapid-prototype"))).toEqual({ every: "never" });
+    expect(read("  interview_sign_in: { every: engine_start }").interviewSignIn).toEqual({ every: "engine_start" });
+    expect(read("  interview_sign_in: { every: hours, hours: 168 }").interviewSignIn).toEqual({ every: "hours", hours: 168 });
+    expect(read("  interview_sign_in: { every: never }", "rapid-prototype").interviewSignIn).toEqual({ every: "never" });
+    for (const [extra, word] of [
+      ["  interview_sign_in: { every: never }", /only at rapid-prototype/],
+      ["  interview_sign_in: { every: daily }", /must be one of/],
+      ["  interview_sign_in: { every: hours }", /from 1 to 168/],
+      ["  interview_sign_in: { every: hours, hours: 169 }", /from 1 to 168/],
+      ["  interview_sign_in: { every: session, hours: 2 }", /only allowed with every: hours/],
+      ["  interview_sign_in: { every: session, minutes: 2 }", /unknown key/],
+      ["  interview_sign_in: session", /must be a mapping/],
+    ] as const) expect(() => read(extra), extra).toThrow(word);
   });
 });
 

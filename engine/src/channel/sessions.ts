@@ -3,6 +3,7 @@ import { Clock, iso } from "../clock";
 import { MAX_APPROVAL_WAIT_S, RPC, SESSION_IDLE_MS, SESSION_MAX_MS, SESSION_RE } from "../constants";
 import { GitHubClient, startDeviceApproval } from "../github";
 import { Logger } from "../log";
+import type { InterviewSignIn } from "../config/manifest";
 import { RpcError } from "./framing";
 
 type State = "pending" | "approved" | "failed" | "ended";
@@ -14,7 +15,7 @@ export interface Session {
   lastCall: number;
   state: State;
   approvedAt?: number;
-  /** Absent when the session opened without sign-in at Rapid prototype (F-018 FR-13). */
+  /** Absent when the session opened without sign-in (F-018 FR-13, FR-15). */
   approval?: { user_code: string; verification_uri: string; expires_at: string };
   abort: AbortController;
   result: Promise<boolean>;
@@ -33,14 +34,17 @@ const hash = (token: string) => crypto.createHash("sha256").update(token).digest
  * Interview sessions of one project (channel v1.1/v1.2, ADR 0014, SR-16).
  * The lock is the session token, not a connection. Tokens are kept only as
  * hashes, and nothing here writes them anywhere. A session takes replies
- * only after the project's pinned owner approves it on GitHub, except at
- * Rapid prototype, where sessions open without sign-in (owner, 2026-11-14,
- * F-018 FR-13); the risk is recorded in F-018 SR-8.
+ * only after the project's pinned owner approves it on GitHub, as often as
+ * the project's sign-in setting asks (F-018 FR-15): never, once per engine
+ * start, every session, or once per so many hours. Sessions opened without
+ * a sign-in are the risk recorded in F-018 SR-8.
  */
 export class SessionManager {
   private readonly byToken = new Map<string, Session>();
   private readonly locks = new Map<string, string>();
   private counter = 0;
+  /** When the owner last signed in during this engine run. */
+  private lastSignIn: number | undefined;
 
   constructor(
     private readonly project: string,
@@ -49,8 +53,23 @@ export class SessionManager {
     private readonly clock: Clock,
     private readonly log: Logger,
     private readonly onApproved: (feature: string, session: number, signIn: boolean) => Promise<void> = async () => undefined,
-    private readonly noSignIn = false,
+    private readonly signIn: InterviewSignIn = { every: "session" },
   ) {}
+
+  /** Whether a new session needs the owner's sign-in under the project's setting. */
+  private needsSignIn(): boolean {
+    const last = this.lastSignIn;
+    switch (this.signIn.every) {
+      case "never":
+        return false;
+      case "engine_start":
+        return last === undefined;
+      case "hours":
+        return last === undefined || this.clock.now() - last >= (this.signIn.hours ?? 0) * 3_600_000;
+      default:
+        return true;
+    }
+  }
 
   private live(s: Session): boolean {
     const now = this.clock.now();
@@ -78,7 +97,7 @@ export class SessionManager {
     }
     const abort = new AbortController();
     const no = ++this.counter;
-    if (this.noSignIn) return this.withoutSignIn(feature, no, abort);
+    if (!this.needsSignIn()) return this.withoutSignIn(feature, no, abort);
     let pending;
     try {
       pending = await startDeviceApproval({
@@ -103,6 +122,7 @@ export class SessionManager {
           if (s.state !== "pending") return false;
           s.state = "approved";
           s.approvedAt = this.clock.now();
+          this.lastSignIn = s.approvedAt;
           // A session approved after it went idle starts its idle clock at approval.
           s.lastCall = s.approvedAt;
           return true;
@@ -130,7 +150,7 @@ export class SessionManager {
     };
     this.byToken.set(th, s);
     this.locks.set(feature, th);
-    this.log.info(`${this.project}: session ${no} for ${feature} opened without sign-in (Rapid prototype).`);
+    this.log.info(`${this.project}: session ${no} for ${feature} opened without sign-in (setting: ${this.signIn.every}).`);
     return { session: token, started_at: iso(now) };
   }
 

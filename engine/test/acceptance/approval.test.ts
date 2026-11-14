@@ -174,6 +174,21 @@ describe("AC-6 / FR-7: a session is pending until the owner approves", () => {
     expect(await w.ok("interview.next", { session: open.session })).toHaveProperty("item");
   });
 
+  it("[AP-10c] F-018 FR-15: with every: engine_start, the run's first session signs in and later ones, takeovers included, don't", async () => {
+    w = await World.create([{ maturity: "alpha", signIn: "{ every: engine_start }" }]);
+    await w.boot();
+    const f = await w.startFeature();
+    await w.approvedSession(f);
+    const devices = w.gh.devices.length;
+    const again = await w.ok("interview.open", { feature: f, takeover: true });
+    expect(again.approval).toBeUndefined();
+    expect(w.gh.devices.length).toBe(devices);
+    expect(await w.ok("interview.next", { session: again.session })).toHaveProperty("item");
+    const text = w.transcriptText(w.project(), f);
+    expect(text).toMatch(/"type":"session_approved"/);
+    expect(text).toMatch(/"type":"session_opened_without_sign_in"[^\n]*"every":"engine_start"/);
+  });
+
   it("[AP-11] channel v1.2: awaitApproval waits at most 900 s of engine time, whatever wait_s says", async () => {
     w = await World.create([{ maturity: "alpha" }]);
     const { open } = await openFeature(w);
