@@ -28,8 +28,11 @@ import sys
 import tempfile
 
 SCHEMA = "onboarding-assessment/1.0"
-LEVELS = ["rapid-prototype", "alpha", "beta", "release", "production-ready"]
-SEVERITY_BLOCKS = {"critical": "rapid-prototype", "high": "alpha", "medium": "release", "low": None}
+# H-0235: the one copy of the blocking table, shipped at the plugin's root and read by the engine too.
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "security-blocking.json"), encoding="utf-8") as _f:
+    _BLOCKING = json.load(_f)
+LEVELS = _BLOCKING["levels"]
+SEVERITY_BLOCKS = _BLOCKING["blocks_from"]
 CORE_AGENTS = [
     "orchestrator", "requirements-analyst", "software-developer",
     "test-engineer", "security-reviewer", "validation-judge",
