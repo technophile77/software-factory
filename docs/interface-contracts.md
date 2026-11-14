@@ -520,12 +520,15 @@ still hold: the tool gate checks every file-tool read and write against
 `read` and `write` (the path-matching rule above, deny wins); the engine
 compares the session's branch with where it started when the session ends,
 and a changed path the role's `write` rules don't allow rejects the whole
-session's changes and files a Security alert; `commands` limits the
-programs `Bash` may run; the model credential stays in the engine's proxy,
+session's changes and files a Security alert; for every role except the
+software developer and test engineer, `commands` limits the programs
+`Bash` may run; the model credential stays in the engine's proxy,
 which the session reaches as its API base URL with a dummy key. Nothing
 limits what a command or the code it runs can read, write or reach on the
-network: the owner accepted that risk until Beta (ADR 0026). Shell access
-for the software developer and test engineer is set by F-015.
+network: the owner accepted that risk until Beta (ADR 0026). Until Beta
+the software developer and test engineer have a full shell (F-015, owner,
+2026-11-14): `commands` and the rule against naming a shell or interpreter
+don't apply to them.
 
 **Container per agent session (H-0045 and H-0052, owner, 2026-11-10;
 wording approved by decision card; suspended until Beta by v2.7).** The engine runs every agent

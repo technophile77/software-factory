@@ -35,7 +35,8 @@ and they do not limit reads or network
 - **Kept:** a worktree and branch per session (ADR 0004); the engine's
   tool gate on every file-tool read and write, including the secret-file and
   change-controlled denies; the end-of-session check of the branch diff
-  against the role's write rules; the command allowlist; per-session turn,
+  against the role's write rules; the command allowlist for every role
+  except the software developer and test engineer; per-session turn,
   token and time caps; the credential proxy, now a host process, so the
   model credential is still never handed to an agent; path matching and
   signed owner actions (ADR 0015 decisions 2 and 3).
