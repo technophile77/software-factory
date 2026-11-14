@@ -425,23 +425,26 @@ describe("F-016 H-0182: chain and Gate 1 run limit items", () => {
     fs.writeFileSync(file, original.replace("Export", "Forged"));
     commit("tidy");
     await e.sync();
-    await until("the chain item", () => items(w).some((i) => i.record.effect?.type === "chain"));
+    // The stopped analyst files its own analyststop item too, so the chain items are found by type, not by number.
+    const chainItem = (n: number) => items(w).filter((i) => i.record.effect?.type === "chain")[n];
+    await until("the chain item", () => !!chainItem(0));
     expect(e.feature(feature)!.chainIntact).toBe(false);
-    await pollUntil(w, "the issue", () => gh.issues.size === 1);
-    await act(w, gh, 1, "choose:A");
-    await pollUntil(w, "the effect", () => effects(w, "D-0001").length === 1);
-    expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "chain_still_broken" });
-    await until("a new chain item", () => items(w).filter((i) => i.record.effect?.type === "chain").length === 2);
+    const bound = (n: number) => !!chainItem(n)?.record.revisions.at(-1)?.action_comments.length;
+    await pollUntil(w, "the issue", () => bound(0));
+    await act(w, gh, chainItem(0)!.record.issue, "choose:A");
+    await pollUntil(w, "the effect", () => effects(w, chainItem(0)!.id).length === 1);
+    expect(effects(w, chainItem(0)!.id)[0]).toMatchObject({ effect: "chain_still_broken" });
+    await until("a new chain item", () => !!chainItem(1));
     expect(e.feature(feature)!.chainIntact).toBe(false);
     // The engine is quiet between polls once the second issue is up, so the hand-made commit below races nothing.
-    await pollUntil(w, "the second issue", () => gh.issues.size === 2);
+    await pollUntil(w, "the second issue", () => bound(1));
 
     fs.writeFileSync(file, original);
     commit("restore");
     await e.sync();
-    await act(w, gh, 2, "choose:A");
-    await pollUntil(w, "the effect", () => effects(w, "D-0002").length === 1);
-    expect(effects(w, "D-0002")[0]).toMatchObject({ effect: "chain_reopened" });
+    await act(w, gh, chainItem(1)!.record.issue, "choose:A");
+    await pollUntil(w, "the effect", () => effects(w, chainItem(1)!.id).length === 1);
+    expect(effects(w, chainItem(1)!.id)[0]).toMatchObject({ effect: "chain_reopened" });
     expect(e.feature(feature)!.chainIntact).toBe(true);
     await until("the analyst ran again", () => s.count.analyst === 2);
   }, 60_000);
