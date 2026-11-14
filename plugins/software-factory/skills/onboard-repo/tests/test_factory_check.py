@@ -358,6 +358,32 @@ notes: |
                 errors = fc.validate_manifest(fc.parse_yaml(text))
                 self.assertTrue(any(expected in e for e in errors), errors)
 
+    def agent_override(self, files, path="agents/dev.md"):
+        text = self.VALID.replace("agents:\n  custom: []",
+                                  f"agents:\n  custom: []\n  override:\n    - name: context-hygiene\n      path: {path}\n      reason: house rules")
+        return fc.validate_manifest(fc.parse_yaml(text), None, self.repo(files, git=False))
+
+    def test_h0205_agent_override_needs_worktree_isolation(self):
+        missing = "---\nname: software-developer\ndescription: d\n---\nbody\n"
+        errors = self.agent_override({"agents/dev.md": missing})
+        self.assertTrue(any("isolation: worktree" in e for e in errors), errors)
+        errors = self.agent_override({"agents/dev.md": missing.replace("isolation", "").replace("description: d", "description: d\nisolation: none")})
+        self.assertTrue(any("isolation: worktree" in e for e in errors), errors)
+        self.assertTrue(any("can't be read" in e for e in self.agent_override({})))
+
+    def test_h0205_agent_override_with_worktree_isolation_passes(self):
+        ok = "---\r\nname: software-developer\r\ndescription: d\r\nisolation: worktree\r\n---\r\nbody\r\n"
+        self.assertEqual(self.agent_override({"agents/dev.md": ok}), [])
+
+    def test_h0205_agent_override_through_link_is_refused(self):
+        outside = self.repo({"AGENT.md": "---\nname: x\ndescription: d\nisolation: worktree\n---\n"}, git=False)
+        root = self.repo({}, git=False)
+        os.symlink(outside, os.path.join(root, "linked"))
+        text = self.VALID.replace("agents:\n  custom: []",
+                                  "agents:\n  custom: []\n  override:\n    - name: context-hygiene\n      path: linked/AGENT.md\n      reason: r")
+        errors = fc.validate_manifest(fc.parse_yaml(text), None, root)
+        self.assertTrue(any("leaves the config repo" in e for e in errors), errors)
+
     def test_protected_override_with_decision_is_allowed(self):
         text = self.VALID.replace("  override: []", "  override:\n    - name: security-review\n      path: s/x.md\n      reason: more rules\n      decision: D-0012")
         self.assertEqual(fc.validate_manifest(fc.parse_yaml(text)), [])

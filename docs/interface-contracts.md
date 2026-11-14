@@ -446,10 +446,11 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
-## Role policy — v2.6
+## Role policy — v2.7
 
 - Status: Approved (v2.2); v2.3 draft, awaiting owner approval (H-0040);
-  v2.4 approved (H-0061, H-0076); v2.5 approved (H-0083)
+  v2.4 approved (H-0061, H-0076); v2.5 approved (H-0083); v2.7 approved
+  (H-0201, ADR 0026; owner, 2026-11-14, decision card, as drafted)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
@@ -478,6 +479,8 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   inbox and transcript denies with the two new entries. v2.5 adds the
   engine tool `fetch_page` and gives it to the web reader in place of
   `WebFetch`; a manifest with a `web-reader` role must make that swap.
+  v2.7 suspends the container rules until Beta (ADR 0026); no manifest
+  changes.
 
 **Location:** the `policy:` key of the project manifest (change-controlled),
 with optional per-repo overrides under `repos[].policy`. Effective policy
@@ -508,8 +511,48 @@ matches the result relative to the worktree with `/` separators, after
 Unicode NFC normalization. Deny globs match case-insensitively on every
 filesystem; allow globs match case-sensitively. A path counts as allowed
 only if an allow glob matches and no deny glob does.
+**Until Beta: no containers (v2.7, H-0201, ADR 0026).** The engine runs
+each agent session on the owner's PC, as the owner's OS user, with the
+session's worktree as its working folder. The container rules below are
+suspended until then and must be back, under a new Security decision,
+before the factory or any project it runs is promoted to Beta. These rules
+still hold: the tool gate checks every file-tool read and write against
+`read` and `write` (the path-matching rule above, deny wins); the engine
+compares the session's branch with where it started when the session ends,
+and a changed path the role's `write` rules don't allow rejects the whole
+session's changes and files a Security alert; for every role except the
+software developer and test engineer, `commands` limits the programs
+`Bash` may run; the model credential stays in the engine's proxy,
+which the session reaches as its API base URL with a dummy key. Nothing
+limits what a command or the code it runs can read, write or reach on the
+network: the owner accepted that risk until Beta (ADR 0026). Until Beta
+the software developer and test engineer have a full shell (F-015, owner,
+2026-11-14): `commands` and the rule against naming a shell or interpreter
+don't apply to them.
+
+**Owner asked before credentialed programs (v2.7, H-0201).** Until Beta,
+before any role runs a command that names a program on the ask list, the
+engine asks the owner. The engine's tool gate holds the command and files a
+Security inbox item naming the role, the feature, the full command and the
+working folder. The owner's approval lets that one command run once. A
+refusal, or no answer within 30 minutes, denies it and tells the agent why.
+The wait doesn't count toward the session's wall-time cap. The ask list is
+`gh`, `aws`, `az`, `gcloud`, `gsutil`, `bq`, `railway`, `vercel`,
+`netlify`, `fly`, `flyctl`, `heroku`, `doppler`, `op`, `vault`, `kubectl`,
+`helm`, `terraform`, `pulumi`, `docker` and `ssh`. A project adds programs
+under `policy.ask` in its manifest but can't remove listed ones. The gate
+matches every word of the command, with any folder path and `.exe`, `.cmd`
+or `.bat` stripped and case ignored. A command it can't split into words
+counts as a match. Every match, and what came of it, is recorded in the
+session's transcript and the run report; a denied step is reported as not
+done. This catches commands the agent itself runs. The engine's own build
+and test commands are not agent tool calls and are not covered. It doesn't
+catch a program started by code the agent runs, such as a test or a
+package script, or code that reads a login file directly. Those stay under
+ADR 0026's accepted risks.
+
 **Container per agent session (H-0045 and H-0052, owner, 2026-11-10;
-wording approved by decision card).** The engine runs every agent
+wording approved by decision card; suspended until Beta by v2.7).** The engine runs every agent
 session, the agent process included, in its own container, so the agent's
 tools, hooks and everything they start stay inside it. Agents would
 otherwise run as the owner's OS user (ADR 0014), so the container is what

@@ -3,7 +3,7 @@
 - **Id:** F-010
 - **Status:** Approved (readiness gate passed 2026-11-12); v31 amendment approved 2026-11-13
 - **Requested by / date:** Alex, 2026-11-12
-- **Spec version:** 31
+- **Spec version:** 32
 
 ## 1. Objective and business purpose
 Issues opened on a project's repos are a second way work reaches the factory,
@@ -124,6 +124,10 @@ The owner's existing rules still hold:
     The owner's merge closes the issue through the PR link.
 
 ## 3. Functional requirements
+Until Beta, FR-4, AC-5, SR-2, SR-25 and A-2 read as in section 9,
+"Until Beta: agents on the owner's PC" (ADR 0026). Their text below
+applies again at Beta.
+
 | Id | Requirement |
 |---|---|
 | FR-1 | Triage is off by default. It is turned on per repo in the project manifest (H-0110), which also holds the check interval and the caps in FR-11. Nothing owner-specific goes in the master repo. |
@@ -282,6 +286,18 @@ Drafted by the analyst; SR-12 to SR-29 come from Gate 1 (`F-010-security-gate1.m
 | SR-29 | The action log adds agent, repo id, issue number and a body hash. Dropped text is never logged. | Gate 1 #18 | Accepted from Gate 1 |
 | SR-10 | A `security_report` gets no public reply or label, and its material stays off every public branch (SR-14). | Analyst, amended by Gate 1 | Accepted |
 | SR-30 | A vulnerability report is made private until it is resolved (owner, 2026-11-12, thread): the engine moves it out of public view as OQ-8 decides, before any other step, and the fix happens only in private. Notification emails GitHub already sent when the issue opened can't be recalled; the Security item says so. | Owner | Approved (owner, 2026-11-12, thread; mechanism OQ-8 (b), decision card) |
+
+### Until Beta: agents on the owner's PC (ADR 0026)
+Reopened on 2026-11-14 because containers are dropped until Beta. Each row
+replaces its requirement until then; the original applies again at Beta.
+
+| Id | Until Beta | Decided |
+|---|---|---|
+| FR-4 | The `issue-triager` role (H-0112) runs as a session on the owner's PC with one tool, `submit_triage`, and no worktree. The engine supplies the redacted snapshot and the repo context at `main` in its input. It has no network and no write because it has no tool for either. | Owner, 2026-11-14 (decision card) |
+| AC-5 | Given a triager session, then its only tool is `submit_triage`, it has no worktree, and its model traffic goes only to the engine's proxy with its own session token (F-007 SR-9 until Beta). | Owner, 2026-11-14 (decision card) |
+| SR-2 | As written, except that "no network, no write and one tool" holds through the tool list rather than a container. | Owner, 2026-11-14 (decision card) |
+| SR-25 | Confirmation writes only its test and fetches nothing named in an issue, and must fail on the new test itself. For an issue opened by the owner or a collaborator on the repo, it runs on the owner's PC without an extra step. For anyone else's issue, the engine shows the owner the test on a decision card before running it, and a declined test counts as "couldn't reproduce". "No network" is not enforced on the PC until Beta (ADR 0026, accepted risk 2). | Owner, 2026-11-14 (decision card) |
+| A-2 | The test engineer can reproduce most bugs on the owner's PC. Bugs that need hardware, an outside service or a specific OS go to the owner as "couldn't reproduce". | Owner, 2026-11-14 (decision card) |
 
 ## 10. Interface requirements
 Drafts below. Each is filed as its own hygiene item in the inbox and applied
@@ -511,6 +527,7 @@ Security. A new ADR (next free number), granting the S9.2 exemption:
 | 29 | 2026-11-12 | H-0114 approved as drafted | Owner, 2026-11-12 (decision card) |
 | 30 | 2026-11-12 | Readiness gate passed; status Approved | Owner approvals as recorded above |
 | 31 | 2026-11-13 | FR-19, AC-27: skip F-012 phone issues (config repo, `github-actions[bot]`, label `factory-inbox`); the label alone never skips (SR-26) | Owner, 2026-11-13 (decision card) |
+| 32 | 2026-11-14 | Reopened for ADR 0026 (no containers until Beta): until-Beta wording for FR-4, AC-5, SR-2, SR-25 and A-2 in section 9; a stranger's reproduction test needs the owner's card before it runs | Owner, 2026-11-14 (decision cards) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
