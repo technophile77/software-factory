@@ -855,3 +855,20 @@ describe("engine.status activity codes (F-018 FR-14, H-0225)", () => {
     expect(a("build_and_test_prep", false, [], ["T-0001"])).toBe("waiting_for_decision");
   });
 });
+
+describe("authorizeProject warnings (F-015 SR-6)", () => {
+  it("a confirmed public code repo is quiet; a public config repo warns that factory/state is public", async () => {
+    const { authorizeProject } = await import("../src/config/authorize");
+    const m = validateManifest(YAML.parse(manifestYaml()), "c");
+    const repos = new Map<string, { status: number; ownerId?: number; private?: boolean }>();
+    const r = m.repos[0]!;
+    repos.set(`${r.owner}/${r.repo}`, { status: 200, ownerId: m.allowed_repo_owners[0]?.id ?? 1, private: false });
+    repos.set("o/config", { status: 200, ownerId: 1, private: false });
+    const github = { repo: async (o: string, n: string) => repos.get(`${o}/${n}`) ?? { status: 404 } } as never;
+    const pub = { ...m, repos: m.repos.map((x) => ({ ...x, visibility: "public" as const })) };
+    const quiet = await authorizeProject(pub, github, "t", new MemoryLogger());
+    expect(quiet).toEqual([]);
+    const loud = await authorizeProject(pub, github, "t", new MemoryLogger(), { owner: "o", repo: "config" });
+    expect(loud).toEqual([expect.stringMatching(/config repo o\/config is public/)]);
+  });
+});

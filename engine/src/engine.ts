@@ -569,7 +569,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (p.state !== "running" || !p.manifest || !p.state_repo) continue;
     try {
       p.token = await credentials.get(factoryTokenName(p.manifest.name));
-      p.warnings.push(...(await authorizeProject(p.manifest, github, p.token, log)));
+      const slug = p.state_repo ? (await configSlug(p).catch(() => "")).split("/") : [];
+      const config = slug.length === 2 ? { owner: slug[0]!, repo: slug[1]! } : undefined;
+      p.warnings.push(...(await authorizeProject(p.manifest, github, p.token, log, config)));
       for (const w of p.warnings) log.warn(`${p.manifest.name}: ${w}`);
     } catch (e) {
       const msg = e instanceof AuthorizationError || e instanceof SecretError ? e.message : "authorization failed";
