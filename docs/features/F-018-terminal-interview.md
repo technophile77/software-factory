@@ -1,10 +1,10 @@
 # Feature: Answer interview questions in a terminal command
 
 - **Id:** F-018
-- **Status:** In review
+- **Status:** In review (readiness gate waits on H-0215 to H-0218)
 - **Requested by / date:** Alex, 2026-11-14 ("not the analyst, the agent
   that is presenting me the questions"; "Start F-018 option B")
-- **Spec version:** 2
+- **Spec version:** 3
 - **Depends on:** F-005 (interview channel and MCP mode), F-006 (advisor),
   F-009 (start from a document), F-016 (PR #60, engine increment 3)
 
@@ -64,13 +64,13 @@ owner's PC only, with no phone support; the owner accepted that.
 | FR-3 | It covers every path the skill covers (F-005 steps 1 to 4, F-006 advisor calls and proposals, F-009 document start and source confirmation): status check and version match, new feature (describe or document, with the provenance pick and the F-009 warning text), list, open, device approval with polling, busy and takeover, next, reply of every kind, `waiting` research, `advice_running`, `advisor_started`, `stale`, `session_expired`, `kind_not_allowed`, `advisor_unsupported`, and close. |
 | FR-4 | Every item is printed whole before its choices, from the operation's `display` text, every time it is shown, with nothing left out. There is no code path that asks for a choice on an item it hasn't just printed. |
 | FR-5 | Choices are numbered. A question's answer choices are its `suggested` answer, then its `options` in order, skipping an option equal to `suggested`; the first is marked "(recommended)" only if it is `suggested`. Picking a number sends that choice's full text as written in the item. |
-| FR-6 | Free-text input (an answer, a feature request, a document title, "more information" text, the spec refs to reopen) is read as the owner types it, over several lines, and sent unchanged. Input is ended as decided in OQ-2. A text that is only a number is treated as a pick, and "Type my own answer" lets the owner send a number as text. |
+| FR-6 | Free-text input (an answer, a feature request, a document title, "more information" text, the spec refs to reopen) is read as the owner types it, over several lines, and sent unchanged. Enter on an empty line ends it (OQ-2), so a typed text can't hold a blank line; leading and trailing empty lines are dropped. A text that is only a number is treated as a pick, and "Type my own answer" lets the owner send a number as text. |
 | FR-7 | It never sends `takeover`, `ask_advisor`, `approve_advisor`, `decline_advisor`, `confirm_sources` or any reply except from the owner's own keystrokes at that prompt. It never retries a reply on its own: after `connection_lost` or `timeout` it shows the item's state and asks; only on the owner's yes does it resend with the failed call's `reply_id` (F-005 FR-13). A lost `ask_advisor` is checked as the skill does (through `next`). |
 | FR-8 | It never polls on its own except for the device approval (each wait up to 120 s, until approved, failed or expired) and the `wait_s` the owner chose by waiting for research. "Check again" is the owner's choice each time. |
 | FR-9 | On Stop, end of input, Ctrl+C or SIGTERM it calls `close` for the open feature before exiting; if that fails the engine still releases the lock after 30 minutes idle (F-005 SR-13). |
 | FR-10 | At start it reminds the owner, once, not to type secrets into answers, because the transcript is committed to the config repo and sent to the model provider (F-005 SR-4). |
 | FR-11 | Exit codes: 0 when the owner stopped or the interview finished, 1 when the engine couldn't be reached or refused, 2 on bad arguments. |
-| FR-12 | The engine README and the root README describe the command in place of the skill. What happens to the skill, the plugin's interview MCP server and the engine's `mcp` mode is decided in OQ-1. |
+| FR-12 | The same build retires the `spec-interview` skill, the plugin's interview MCP server (`.mcp.json`, `engine_path` setting), `factory-engine mcp`, `engine/src/mcp/server.ts` and the `@modelcontextprotocol/sdk` dependency (OQ-1, ADR 0029). The MCP acceptance tests that drive the operations move to the command (AC-11); the operations code stays. The engine README and the root README describe the command in place of the skill. |
 
 ## 4. Acceptance criteria
 Run against the MCP acceptance tests' fake engine
@@ -136,19 +136,19 @@ through its input and output streams.
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | The owner runs the command from a terminal on the same PC as the engine, as the same OS user, in a folder inside the project's repo or config repo (the same place the skill needed). | Owner card (pending) | Pending |
-| A-2 | Printing the existing `display` text, with Markdown emphasis shown as plain text and fenced engine text shown with a margin marker, is enough for the owner to read items in a terminal; no new rendering of items is needed. | Owner card (pending) | Pending |
+| A-1 | The owner runs the command from a terminal on the same PC as the engine, as the same OS user, in a folder inside the project's repo or config repo (the same place the skill needed). | Owner, 2026-11-14 (decision card) | Approved |
+| A-2 | Printing the existing `display` text, with Markdown emphasis shown as plain text and fenced engine text shown with a margin marker, is enough for the owner to read items in a terminal; no new rendering of items is needed. | Owner, 2026-11-14 (decision card) | Approved |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | Engine text reaches the terminal only after `clean()` (`engine/src/mcp/text.ts`): ANSI CSI/OSC sequences (including OSC 8 links and OSC 52 clipboard writes), C0/C1 controls, bidi, zero-width, tag and variation-selector characters removed. The command's own colours and bold are added after cleaning and only around its own text. | Analyst (S6.1); Gate 1 #1 | Proposed |
-| SR-2 | Every line of engine-written text is printed with a fixed margin marker (`│ `, or `| ` without Unicode) that the command's own prompts never use, so text in an item can't pass for a menu, a link the command printed, or an approval prompt. The device approval link and code are printed by the command from the checked values only (F-005 `approval()`), never from engine text. | Analyst (S6.1); Gate 1 #2 | Proposed |
-| SR-3 | The command refuses to run unless stdin and stdout are both terminals (TTY), so a script or a model's shell tool can't drive it by piping answers. This narrows, and doesn't replace, F-005 SR-5 (GitHub approval per session) and SR-14 (the engine refuses agent processes it started). **Residual risk:** a program the owner runs could still open a pseudo-terminal; the same residual as F-005 SR-5. | Analyst (S1.1); Gate 1 #3 | Proposed |
-| SR-4 | The session token stays inside the `Interview` object in this process and is never printed, logged or put in an error (F-005 SR-18 holds unchanged). The command writes nothing to disk, keeps no history of answers, and doesn't write to the shell's history (answers are read by the command, never passed as arguments). | Analyst (S3.1); F-005 SR-4, SR-9, SR-18 | Proposed |
-| SR-5 | Only the feature id and `--project` come from the command line; the feature id must match `^[A-Za-z0-9_-]{1,64}$`. Owner text and engine text never go on a command line or through a shell (F-005 SR-9). | Analyst (S1.3) | Proposed |
-| SR-6 | Errors are shown by the operation's `display` only, never the JSON-RPC `data` or the owner's reply text (F-005 SR-16). | F-005 SR-16 | Proposed |
-| SR-7 | Typing a reply that the engine records can't be undone in the transcript. A numbered pick is sent on Enter, not on a single keypress, so a stray key doesn't approve anything. | Analyst (S5.1); Gate 1 #4 | Proposed |
+| SR-1 | Engine text reaches the terminal only after `clean()` (`engine/src/mcp/text.ts`): ANSI CSI/OSC sequences (including OSC 8 links and OSC 52 clipboard writes), C0/C1 controls, bidi, zero-width, tag and variation-selector characters removed. The command's own colours and bold are added after cleaning and only around its own text. | Analyst (S6.1); Gate 1 #1 | Approved (owner, 2026-11-14, decision card) |
+| SR-2 | Every line of engine-written text is printed with a fixed margin marker (`│ `, or `| ` without Unicode) that the command's own prompts never use, so text in an item can't pass for a menu, a link the command printed, or an approval prompt. The device approval link and code are printed by the command from the checked values only (F-005 `approval()`), never from engine text. | Analyst (S6.1); Gate 1 #2 | Approved (owner, 2026-11-14, decision card) |
+| SR-3 | The command refuses to run unless stdin and stdout are both terminals (TTY), so a script or a model's shell tool can't drive it by piping answers. This narrows, and doesn't replace, F-005 SR-5 (GitHub approval per session) and SR-14 (the engine refuses agent processes it started). **Residual risk, accepted by the owner (2026-11-14):** a program the owner runs could still open a pseudo-terminal; the same residual as F-005 SR-5. | Analyst (S1.1); Gate 1 #3 | Approved (owner, 2026-11-14, decision card) |
+| SR-4 | The session token stays inside the `Interview` object in this process and is never printed, logged or put in an error (F-005 SR-18 holds unchanged). The command writes nothing to disk, keeps no history of answers, and doesn't write to the shell's history (answers are read by the command, never passed as arguments). | Analyst (S3.1); F-005 SR-4, SR-9, SR-18 | Approved (owner, 2026-11-14, decision card) |
+| SR-5 | Only the feature id and `--project` come from the command line; the feature id must match `^[A-Za-z0-9_-]{1,64}$`. Owner text and engine text never go on a command line or through a shell (F-005 SR-9). | Analyst (S1.3) | Approved (owner, 2026-11-14, decision card) |
+| SR-6 | Errors are shown by the operation's `display` only, never the JSON-RPC `data` or the owner's reply text (F-005 SR-16). | F-005 SR-16 | Approved (owner, 2026-11-14, decision card) |
+| SR-7 | Typing a reply that the engine records can't be undone in the transcript. A numbered pick is sent on Enter, not on a single keypress, so a stray key doesn't approve anything. | Analyst (S5.1); Gate 1 #4 | Approved (owner, 2026-11-14, decision card) |
 
 All of F-005 SR-1, SR-5, SR-7, SR-8, SR-10 to SR-16 and F-006/F-009 security
 requirements stay in force through the shared `Interview` code; this spec
@@ -159,36 +159,34 @@ adds no new channel, file, network or permission.
 - **Command line:** new `factory-engine interview [<feature id>] [--project <path>]`
   (owner-facing; documented in `engine/README.md`). Not a contract between
   components, so no Interfaces decision is needed.
-- **Plugin and MCP tool set (tools_version 1):** depends on OQ-1. Under the
-  recommended option they are retired, which changes `README.md`, the
-  plugin (`plugins/software-factory/.mcp.json`, `.claude-plugin/plugin.json`,
-  `skills/spec-interview/`), `.github/workflows/plugin-tests.yml` and
-  `agents/requirements-analyst/AGENT.md`, all change-controlled. Hygiene
-  items, to be drafted once OQ-1 is decided:
-  - H-0215: plugin changes (skill, `.mcp.json`, `engine_path` setting, version).
-  - H-0216: `agents/requirements-analyst/AGENT.md` line 12 ("often from the
-    `spec-interview` skill") names the command instead.
-  - H-0217: `.github/workflows/plugin-tests.yml` drops the skill-text job.
-  - H-0218: ADR 0029 (supersedes ADR 0025 if the MCP mode goes), F-005 /
-    F-006 / F-009 spec notes, `README.md`, `engine/README.md`.
-  - H-0219: reserved.
+- **Plugin and MCP tool set (tools_version 1):** retired (OQ-1, ADR 0029).
+  The change-controlled edits, one hygiene item each, applied with the build:
+
+| Id | File(s) | Change | Status |
+|---|---|---|---|
+| H-0215 | `plugins/software-factory/skills/spec-interview/` (removed), `plugins/software-factory/.mcp.json` (removed), `plugins/software-factory/.claude-plugin/plugin.json` | Skill and MCP server removed; `userConfig.engine_path` removed; description names onboarding only; version 0.5.0 to 0.6.0 | Pending |
+| H-0216 | `agents/requirements-analyst/AGENT.md` | "The owner answers through the engine, often from the `spec-interview` skill in Claude Code (F-005)" becomes "The owner answers through the engine, in the `factory-engine interview` terminal command (F-018)" | Pending |
+| H-0217 | `.github/workflows/plugin-tests.yml` | The `spec-interview` job (skill-text tests) removed; header comment updated | Pending |
+| H-0218 | `docs/adr/0029-interview-in-a-terminal-command.md` (new), ADR 0025 status, `docs/adr/README.md`, `README.md`, `engine/README.md`, a version note in F-005, F-006 and F-009 pointing their skill steps to F-018 | Record the decision and describe the command in place of the skill | Pending |
+| H-0219 | Reserved | — | — |
 
 ## 11. Readiness gate
 - [x] Clear objective
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit (A-1, A-2 pending)
-- [ ] Blocking decisions resolved (OQ-1, OQ-2; SR-1 to SR-7 approval)
+- [x] Assumptions explicit (A-1, A-2 approved)
+- [ ] Blocking decisions resolved (OQ-1, OQ-2, SR-1 to SR-7 done; H-0215 to H-0218 pending)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-14 | Draft from the owner's choice of option B | — |
 | 2 | 2026-11-14 | Security Gate 1 ([F-018-security-gate1.md](F-018-security-gate1.md)): 5 findings (0 Critical, 0 High, 3 Medium, 2 Low), none blocking; SR-1 to SR-3 and SR-7 sharpened from it | — |
+| 3 | 2026-11-14 | OQ-1 decided (a): retire skill, plugin MCP server, `mcp` mode and MCP SDK in this build; ADR 0029 supersedes 0025; FR-12 and section 10 rewritten, H-0215 to H-0218 drafted. OQ-2 decided (a): Enter on an empty line ends a typed answer (FR-6). A-1, A-2 and SR-1 to SR-7 approved, SR-3 residual accepted | Owner, 2026-11-14 (decision cards; recording confirmed in the thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
 |---|---|---|---|
-| OQ-1 | What happens to the `spec-interview` skill, the plugin's interview MCP server and the engine's `mcp` mode? (a) **Retire all of it** in the F-018 build, once PR #60 has merged and the command passes its tests: skill, `.mcp.json`, `engine_path` setting, `factory-engine mcp`, `engine/src/mcp/server.ts` and the `@modelcontextprotocol/sdk` dependency; the operations code stays as the command's engine client. ADR 0029 supersedes ADR 0025. (b) Retire the skill only; keep the `mcp` mode and plugin server unused. (c) Keep the skill beside the command as a fallback (for the phone through Remote Control), with issue #66's risk. **Recommended: (a)**: one way to answer, no model relay left to skip text, one dependency fewer to review and pin. | Architecture | Open |
-| OQ-2 | How does the owner finish a typed answer? (a) **Enter on an empty line** ends it, so answers can have several lines; a single-line answer is two Enters. (b) Enter sends; one line only. (c) Opens the owner's editor (Notepad on Windows) for each typed answer. **Recommended: (a)**: answers often run to a few lines, and it needs no editor setup. | Product | Open |
+| OQ-1 | What happens to the `spec-interview` skill, the plugin's interview MCP server and the engine's `mcp` mode? (a) **Retire all of it** in the F-018 build, once PR #60 has merged and the command passes its tests: skill, `.mcp.json`, `engine_path` setting, `factory-engine mcp`, `engine/src/mcp/server.ts` and the `@modelcontextprotocol/sdk` dependency; the operations code stays as the command's engine client. ADR 0029 supersedes ADR 0025. (b) Retire the skill only; keep the `mcp` mode and plugin server unused. (c) Keep the skill beside the command as a fallback (for the phone through Remote Control), with issue #66's risk. **Recommended: (a)**: one way to answer, no model relay left to skip text, one dependency fewer to review and pin. | Architecture | Decided (owner, 2026-11-14, decision card): (a); ADR 0029 |
+| OQ-2 | How does the owner finish a typed answer? (a) **Enter on an empty line** ends it, so answers can have several lines; a single-line answer is two Enters. (b) Enter sends; one line only. (c) Opens the owner's editor (Notepad on Windows) for each typed answer. **Recommended: (a)**: answers often run to a few lines, and it needs no editor setup. | Product | Decided (owner, 2026-11-14, decision card): (a) |

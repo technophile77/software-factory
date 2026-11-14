@@ -32,6 +32,7 @@ in order, using `template.md`.
 | [0022](0022-inbox-on-github-issues.md) | The inbox lives in GitHub issues | Accepted |
 | [0023](0023-tuning-runs-on-promptfoo.md) | F-002 calibration and replays run on promptfoo | Accepted |
 | [0024](0024-static-analysis-in-security-gates.md) | CodeQL and Semgrep in the security gates | Accepted |
-| [0025](0025-interview-tools-over-mcp.md) | The spec interview's tools come from an MCP mode of the engine | Accepted |
+| [0025](0025-interview-tools-over-mcp.md) | The spec interview's tools come from an MCP mode of the engine | Superseded by [0029](0029-interview-in-a-terminal-command.md) |
 | [0026](0026-agents-on-host-until-beta.md) | Agents run on the owner's PC without containers until Beta | Accepted |
 | [0028](0028-code-in-code-repos-records-in-config-repo.md) | Code goes to the code repos; requirements and records stay in the config repo | Accepted |
+| [0029](0029-interview-in-a-terminal-command.md) | The spec interview runs in a terminal command, with no model relay | Accepted |
