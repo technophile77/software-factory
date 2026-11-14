@@ -1,0 +1,19 @@
+{
+  "description": "The exact structure of a feature spec (feature-template.md). The engine checks every draft against it before the spec leaves the interview (F-016 FR-17) and names each heading or table header that differs. Keep it in step with feature-template.md.",
+  "version": 1,
+  "sections": [
+    { "heading": "## 1. Objective and business purpose" },
+    { "heading": "## 2. Expected behavior" },
+    { "heading": "## 3. Functional requirements", "table": ["Id", "Requirement"] },
+    { "heading": "## 4. Acceptance criteria", "table": ["Id", "Given / When / Then", "Covers"] },
+    { "heading": "## 5. Constraints" },
+    { "heading": "## 6. Edge cases" },
+    { "heading": "## 7. Dependencies" },
+    { "heading": "## 8. Assumptions", "table": ["Id", "Assumption", "Decision link", "Status"] },
+    { "heading": "## 9. Security considerations", "table": ["Id", "Requirement", "Source (analyst / Gate 1)", "Status"] },
+    { "heading": "## 10. Interface requirements" },
+    { "heading": "## 11. Readiness gate" },
+    { "heading": "## 12. Change log", "table": ["Version", "Date", "Change", "Approved by"] }
+  ],
+  "extra_sections": "Any other level-2 section (for example ## Sources or ## 13. Open questions) goes after section 12. Level-3 and lower headings may appear inside any section."
+}

@@ -7,7 +7,7 @@ import { SessionRefused, runAnalystSession } from "./agent/analyst";
 import { type EndpointProbe, httpProbe } from "./agent/endpoint-check";
 import { EndpointService, type EndpointStatus, estimateTokens } from "./agent/endpoint-service";
 import { AgentRuntime, TurnQueue, populateWorktree, prepareWorktree, sweepLeftovers } from "./agent/runtime";
-import { runReviewerSessions, reviewerPolicy } from "./agent/reviewer";
+import { orchestratorPolicy, runReviewerSessions, reviewerPolicy } from "./agent/reviewer";
 import type { RouterConfig } from "./agent/sandbox";
 import { type GroupConfig, SessionGroup, runVolume } from "./agent/sandbox";
 import { WORKSPACE, type SessionOutcome } from "./agent/session";
@@ -31,15 +31,19 @@ import { type EndpointLookup } from "./config/endpoint-address";
 import { RoleAssignmentError, manifestAssignments, planAdvisory, planRole } from "./config/endpoint-roles";
 import { type Endpoint, EndpointsError, readEndpointsFile } from "./config/endpoints";
 import { Models, MODELS_FILE, readDefaultModels } from "./config/models";
-import { LIMITS_FILE, Limits, LimitsError, agentLimits, gate1Limits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
+import { LIMITS_FILE, Limits, LimitsError, agentLimits, gate1Limits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, readinessLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
 import { Manifest, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
-import { PinStore, comparePin } from "./config/pins";
+import { PinStore, comparePin, pinnedKeys } from "./config/pins";
 import { ConfirmIo, confirmProject as runConfirm } from "./config/confirm";
-import { CAPABILITIES, ENGINE_JSON, FEATURE_ID_RE, GITHUB_WEB_BASE, INTERVIEW_STAGE, SERVED_CHANNEL_VERSION } from "./constants";
+import { CAPABILITIES, ENGINE_JSON, FEATURE_ID_RE, GITHUB_API_BASE, BUILD_STAGE, GITHUB_WEB_BASE, INTERVIEW_STAGE, MAX_RESUMES, SERVED_CHANNEL_VERSION } from "./constants";
 import { ensureOwnerDir, findOnPath, sha256Hex, writeFileAtomic } from "./fsutil";
 import { Git } from "./git";
-import { GitHubClient, HttpGitHub, checkBase } from "./github";
+import { GitHubClient, GitHubError, GitHubUnreachable, HttpGitHub, checkBase } from "./github";
+import { HttpIssues, IssuesApi } from "./inbox/github-issues";
+import { Inbox, Recorded } from "./inbox/store";
+import type { ItemInput } from "./inbox/model";
+import { osNotifier } from "./os/notify";
 import { Gitleaks, SecretsScanner } from "./gitleaks";
 import { FeatureInterview } from "./interview/feature";
 import { InterviewTools, ResearchConfig, createInterviewTools } from "./interview/tools";
@@ -48,13 +52,16 @@ import { OsApi, realOsApi } from "./os/ffi";
 import { Children, osParent, osStartOrder } from "./proc";
 import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryTokenName } from "./secrets";
 import { SecurityAlert, fileDecisionItem, fileSecurityItem } from "./state/inbox";
-import { READINESS_STAGE, analystGate1Turn, correctionTurn, gate1Resolution, records, reviewerTurn } from "./gate1/flow";
+import { READINESS_STAGE, analystGate1Turn, analystReturnTurn, correctionTurn, gate1Resolution, records, reviewerTurn } from "./gate1/flow";
 import { findingRef, plain, renderReport } from "./gate1/render";
 import { ADVISORY_WALL_MS, type AdvisoryHints, advisoryBlock, matchRate, runAdvisory } from "./gate1/advisory";
 import { runAdvisorySession } from "./gate1/advisory-session";
 import { GATE1_STAGE, Gate1Report, REVIEWER_ROLE, readReportFile, validateReport } from "./gate1/report";
 import { StandardsError, loadStandards } from "./gate1/standards";
-import { readinessChecks, specPathPattern } from "./interview/readiness";
+import { type Check, readinessChecks, specPathPattern } from "./interview/readiness";
+import { structuralChecks } from "./readiness/checks";
+import { structureText } from "./interview/structure";
+import { READINESS_ROLE, type ReadinessReport, orchestratorTurn, readinessCorrection, validateReadinessReport } from "./readiness/report";
 import { PolicyError, type RolePolicy, effectiveRole } from "./policy/role-policy";
 import { EngineRecord, RunRecord } from "./state/record";
 import { ResumePlan, RunBook, RunFacts, RunUsage, agentReport, transcriptSummary } from "./state/runs";
@@ -96,6 +103,14 @@ export interface EngineOptions {
    * Tests replace the real resume through this; without it, the resumed run
    * waits for the next interviewTools call for its feature.
    */
+  /**
+   * F-011: the GitHub issues API for a project's factory token. Absent, the
+   * engine uses GitHub's own API when `push` is set, and otherwise records
+   * inbox items without filing them (tests).
+   */
+  issues?: (token: string) => IssuesApi;
+  /** How often each project's inbox is read; F-011 calls it "one poll". */
+  inboxPollMs?: number;
   resumeAnalyst?: (r: { feature: string; worktree: string; tools: InterviewTools; plan: ResumePlan }) => void;
   /**
    * Docker and the Agent SDK. With it, feature.start and every resume run the
@@ -134,6 +149,9 @@ interface Project extends ProjectStatus {
   listener: Listener | null;
   conns: Set<Conn>;
   token: string | null;
+  inbox: Inbox | null;
+  /** Stopped only because pinned keys changed: the inbox still runs, so the owner can approve the change there (F-016 OQ-3). */
+  pinsWaiting: boolean;
 }
 
 export interface EngineHandle {
@@ -175,6 +193,9 @@ export interface EngineHandle {
   /** F-013 FR-2: why the whole endpoints file was refused (AC-2), or null. */
   endpointsProblem(): string | null;
 }
+
+/** F-011 "one poll": often enough to feel prompt, few enough calls for GitHub's 5,000 an hour. */
+export const INBOX_POLL_MS = 60_000;
 
 export function defaultEngineHome(): string {
   if (process.platform === "win32") {
@@ -280,15 +301,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   const projects: Project[] = listed.map((p) => ({
     path: p, name: null, state: "stopped", warnings: [], real: null, manifest: null, limits: null, sources: null, models: null, state_repo: null,
-    features: new Map(), sessions: null, listener: null, conns: new Set(), token: null,
+    features: new Map(), sessions: null, listener: null, conns: new Set(), token: null, inbox: null, pinsWaiting: false,
   }));
 
+  const notify = osNotifier({ platform: osApi.platform, children, log, cwd: home });
   const alert = async (p: Project, key: string, a: SecurityAlert) => {
-    if (!p.state_repo || dead) return;
+    if (!p.inbox || dead) return;
     const k = sha256Hex(`${p.real}\0${key}`);
     if (record.alert(k)) return;
     try {
-      const id = await fileSecurityItem(p.state_repo, clock, a);
+      const id = await fileSecurityItem(p.inbox, key.split(":", 1)[0]!, a);
       record.setAlert(k, id);
       log.warn(`${p.name ?? p.path}: filed Security item ${id}: ${a.title}`);
     } catch (e) {
@@ -332,6 +354,31 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
    * be resolved, or a value above a default, stops the project and files a
    * Security item.
    */
+  /** F-011: the inbox reads GitHub with the project's factory token, as the pinned owner (SR-2). */
+  async function connectInbox(p: Project): Promise<void> {
+    if (!p.inbox || !p.token || !p.state_repo || !(o.issues || o.push)) return;
+    const pin = pins.get(p.real!);
+    if (!pin) return;
+    try {
+      const url = await p.state_repo.remoteUrl(gitBase, await p.state_repo.refuseRedirectingConfig());
+      const repo = url.slice(gitBase.length + 1).replace(/\.git$/, "");
+      const api = o.issues ? o.issues(p.token) : new HttpIssues(p.token, log, GITHUB_API_BASE);
+      // SR-9: a token without Issues read and write on the config repo is reported, not polled with every minute.
+      try {
+        await api.openIssues(repo);
+      } catch (e) {
+        if (e instanceof GitHubError && !(e instanceof GitHubUnreachable)) {
+          log.warn(`${p.name ?? p.path}: the factory token can't read issues on ${repo}, so the inbox is off: it needs Issues read and write on the config repo (F-016 SR-9).`);
+          notify("Factory inbox off", `${p.name ?? "A project"}: the factory token needs Issues read and write on the config repo.`);
+          return;
+        }
+      }
+      p.inbox.connect({ api, repo, ownerId: pin.owner.github_id });
+    } catch (e) {
+      log.warn(`${p.name ?? p.path}: the inbox can't reach GitHub, so items are recorded but not filed (${e instanceof ConfigError ? e.message.slice(0, 300) : "its address couldn't be read"}).`);
+    }
+  }
+
   async function checkSources(p: Project): Promise<boolean> {
     const m = p.manifest!;
     let reason: string;
@@ -385,6 +432,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       stop(p, `factory/state couldn't be checked out at .factory (${(e as Error).message})`);
       continue;
     }
+    p.inbox = new Inbox({ state: p.state_repo, clock, log, notify });
+    await p.inbox.records().catch(() => []);
     try {
       p.manifest = await readManifest(git, p.real);
       p.name = p.manifest.name;
@@ -402,12 +451,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const cmp = comparePin(pin, p.manifest);
     if (cmp.status !== "match") {
       const what = cmp.status === "new_path" ? "a project path the engine hasn't confirmed before" : `a change to ${cmp.keys.join(", ")}`;
-      stop(p, `${what}; run \`factory-engine confirm --project ${p.real}\``);
+      stop(p, `${what}; run \`factory-engine confirm --project ${p.real}\` or approve the inbox item`);
+      p.pinsWaiting = cmp.status === "changed";
       await alert(p, `pins:${p.manifest.commit}:${cmp.status}`, {
         title: cmp.status === "new_path" ? "New project path needs confirmation" : "Pinned owner keys changed",
         context: `The engine found ${what} (manifest on main at ${p.manifest.commit.slice(0, 12)}). Owner ids, the OAuth client id, the allow list and enabled are pinned until you confirm a change (F-007 SR-5).`,
-        impact: "The project is stopped. It runs again only after you confirm at the engine command and approve a GitHub device sign-in as the previously pinned owner.",
-        confirm: "Confirm with `factory-engine confirm` if you made this change", hold: "Keep the project stopped and find out who changed it", recommendation: "B",
+        impact: `The project is stopped. It runs again after you confirm this change here, or with \`factory-engine confirm\` and a GitHub device sign-in as the previously pinned owner, and restart the engine. A confirm here pins the manifest at ${p.manifest.commit.slice(0, 12)} only.`,
+        confirm: "Confirm the change if you made it", hold: "Keep the project stopped and find out who changed it", recommendation: "B",
+        ...(cmp.status === "changed" ? { effectData: { commit: p.manifest.commit } } : {}),
       });
       continue;
     }
@@ -442,8 +493,18 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       });
       continue;
     }
+    await connectInbox(p);
     await loadFeatures(p);
     await checkRemote(p);
+  }
+
+  // OQ-3: the token is looked up under the pinned name, never the changed manifest's.
+  for (const p of projects) {
+    if (!p.pinsWaiting || !p.real) continue;
+    const pin = pins.get(p.real);
+    if (!pin) continue;
+    p.token = await credentials.get(factoryTokenName(pin.name)).catch(() => null);
+    await connectInbox(p);
   }
 
   async function loadFeatures(p: Project): Promise<void> {
@@ -504,8 +565,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
    * there that the local branch doesn't already hold is refused: nothing of
    * it is adopted, a Security item is filed, and the feature's readiness
    * checks fail. The interview itself goes on, since the engine's own local
-   * transcript is intact. Other changes (an answered inbox item) are adopted
-   * when they fast-forward.
+   * transcript is intact. Inbox records are refused the same way (F-016
+   * Gate 2 M1, owner decision 2026-11-14): only the engine records answers,
+   * from GitHub. Other changes are adopted when they fast-forward.
    */
   async function checkRemote(p: Project): Promise<void> {
     if (!o.push || !p.token || !p.state_repo || dead) return;
@@ -519,7 +581,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const local = await p.state_repo.head();
     if (!remote || remote === local || (await p.state_repo.isAncestor(remote, local))) return;
     const touched = new Set<string>();
-    for (const c of await p.state_repo.changedPaths(local, remote)) {
+    const changed = await p.state_repo.changedPaths(local, remote);
+    for (const c of changed) {
       const m = /^interviews\/([^/]+)\//.exec(c);
       if (m) touched.add(m[1]!);
     }
@@ -534,7 +597,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         confirm: "Investigate and restore factory/state on the remote", hold: "Leave it as it is", recommendation: "A",
       });
     }
-    if (touched.size) return;
+    const inboxChanged = (await p.state_repo.remoteChanges(local, remote)).some((c) => c.startsWith("inbox/"));
+    if (inboxChanged) {
+      await alert(p, `fetch:inbox:${remote}`, {
+        title: "Remote factory/state holds inbox records the engine didn't write",
+        context: `The remote factory/state at ${remote.slice(0, 12)} adds or changes files under inbox/ that this engine has no record of writing (F-016, Gate 2 M1). None of it was adopted, so no answer in it has any effect.`,
+        impact: "The engine's pushes of factory/state fail while the remote holds these commits. Answers you give on GitHub are still read there.",
+        confirm: "Investigate and restore factory/state on the remote", hold: "Leave it as it is", recommendation: "A",
+      });
+    }
+    if (touched.size || inboxChanged) return;
     if (await p.state_repo.isAncestor(local, remote)) {
       await p.state_repo.fastForward(local, remote);
       log.info(`${p.name}: factory/state moved forward to the remote ${remote.slice(0, 12)}`);
@@ -831,9 +903,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         if (v.code !== 0) resumeId = undefined;
       }
       const slugName = branch.replace(/^feature\//, "");
-      const intro = `You are working on ${f.id} on branch ${branch}, in /workspace. Write its spec at docs/features/${slugName}.md. Reach the owner only through your factory tools.`;
+      const intro = `You are working on ${f.id} on branch ${branch}, in /workspace. Write its spec at docs/features/${slugName}.md. Reach the owner only through your factory tools.\n\n${structureText()}`;
       let summary = plan?.mode === "from_commit" ? plan.summary : "";
       if (plan?.mode === "session" && !resumeId) summary = transcriptSummary(f.state);
+      // A new run after one that ended (an analyststop or breach restart) would otherwise start from the request alone (F-016 FR-13).
+      if (!plan && record.runs().some((x) => x.id !== runId && x.feature === f.id && x.project === p.real && x.role === "requirements-analyst")) summary = transcriptSummary(f.state);
       const facts: RunFacts = { model: models["requirements-analyst"] };
       const docText = f.state.document ? await documentText(p, f) : null;
       if (f.state.document && docText === null) throw new SessionRefused("the feature's source document is missing or doesn't match its recorded hash");
@@ -843,12 +917,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         const gate1 = f.state.gate1.pending && f.stage() === INTERVIEW_STAGE && f.state.lastSpecReady
           ? analystGate1Turn(f.id, f.state.lastSpecReady.spec_path, f.state.gate1.findings)
           : null;
+        // F-016 FR-3, FR-8: what the owner's inbox answers or the readiness gate sent back.
+        const returned = f.state.returns.length && f.stage() === INTERVIEW_STAGE && f.state.lastSpecReady
+          ? analystReturnTurn(f.id, f.state.lastSpecReady.spec_path, f.state.returns)
+          : null;
         const first = resumeId
           ? "The engine restarted. Continue where you left off; owner replies, if any, follow as further turns."
-          : gate1
-            ? [intro, ...(sourceDoc ? [sourceDoc] : []), transcriptSummary(f.state), gate1].join("\n\n")
+          : gate1 || returned
+            ? [intro, ...(sourceDoc ? [sourceDoc] : []), transcriptSummary(f.state), ...(gate1 ? [gate1] : []), ...(returned ? [returned] : [])].join("\n\n")
             : [intro, frameRequest(f.id, f.state.request), ...(sourceDoc ? [sourceDoc] : []), ...(summary ? [summary] : [])].join("\n\n");
-        if (gate1) {
+        if (gate1 || returned) {
           // F-008 SR-9: the findings were scanned when recorded; the input built from them is scanned again before it leaves the engine.
           const content = Buffer.from(first, "utf8");
           const scan = await scanner.scan([{ sha: sha256Hex(content), content }]);
@@ -908,6 +986,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
             return;
           }
           throw e;
+        } finally {
+          // A session that ended can still hold a pending read of its turns, which would take an owner reply meant for the next session.
+          turns.close();
         }
         if (dead) return;
         if (r.outcome.status === "error") log.warn(`${f.id}: run ${runId}'s session failed (${r.outcome.reason})${r.outcome.detail ? `; Claude Code said: ${JSON.stringify(r.outcome.detail)}` : ""}`);
@@ -964,6 +1045,21 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       log.warn(`${p.name}: the report for run ${runId} wasn't committed (${(e as Error).message}).`);
     }
     await noteAnalyst(f, "stopped", `The analyst's run stopped: ${why}.`);
+    await offerRerun(p, f, runId, why);
+  }
+
+  // A breach or a secret already filed its own item, with its own effect (SR-8).
+  const rerunnable = (why: string) => !/outside the role's rules|secrets scan/.test(why);
+
+  /** F-016 FR-13: with no analyst running, only the owner can start another, so ask once per stopped run. */
+  async function offerRerun(p: Project, f: FeatureInterview, runId: string, why: string): Promise<void> {
+    if (!rerunnable(why)) return;
+    await alert(p, `analyststop:${f.id}:${runId}`, {
+      title: `The analyst for ${f.id} stopped`, feature: f.id,
+      context: `Analyst run ${runId} for ${f.id} stopped: ${why}. No analyst works on ${f.id} until this is decided; interview replies wait for the next run.`,
+      impact: `${f.id} stays in the requirements interview with no analyst.`,
+      confirm: "Run the analyst again (a new run with the full limits)", hold: "Keep the feature stopped", recommendation: "A",
+    });
   }
 
   // -- Security Gate 1 (F-008) ---------------------------------------------------
@@ -991,7 +1087,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (!rt || dead || shuttingDown || jobs.has(f.id) || !f.chainIntact || p.state !== "running" || ambiguous.has(f.id)) return;
     if (f.stage() !== GATE1_STAGE) return;
     const g = f.state.gate1;
-    if (g.blocked && !resume) return;
+    // F-016 FR-16: a blocked feature is checked again, in case the spec already answers what its items ask.
+    if (g.blocked && !resume && !g.pending) return;
     const job: Job = { turns: null, done: Promise.resolve() };
     jobs.set(f.id, job);
     job.done = (g.pending && !resume ? resolveGate1(p, f) : runGate1(rt, p, f, resume))
@@ -1000,6 +1097,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         jobs.delete(f.id);
         // A report that sent findings back starts the analyst once this job's slot is free.
         if (!dead && !shuttingDown && f.stage() === INTERVIEW_STAGE && f.state.gate1.pending) launchAnalyst(p, f);
+        // F-016 FR-7: a Gate 1 pass goes straight on to the readiness gate.
+        else if (!dead && !shuttingDown && f.stage() === READINESS_STAGE) startReadiness(p, f);
       });
   }
 
@@ -1024,14 +1123,26 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (r.check.passed) {
       await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: true, evidence: r.check.evidence }, { type: "stage", stage: READINESS_STAGE }], "gate 1: findings resolved"));
       log.info(`${f.id}: Gate 1 findings resolved; the feature is at ${READINESS_STAGE}.`);
+      // FR-16: a risk item filed before the spec was read right asks about a finding the spec now takes up.
+      for (const rec of p.inbox ? await p.inbox.records() : []) {
+        if (rec.status === "open" && rec.effect?.type === "gate1_risk" && rec.effect.feature === f.id) {
+          await p.inbox!.withdraw(rec.id, `${f.id}'s spec takes up this Gate 1 finding, so Security Gate 1 passed.`);
+        }
+      }
       return;
     }
+    // FR-16: already waiting on the owner; the items stand until answered or the spec takes them up.
+    if (f.state.gate1.blocked) return;
     const filed: Array<{ n: number; item: string }> = [];
     for (const n of r.rejected.filter((x) => !f.state.gate1.riskFiled.includes(x))) {
       const finding = f.state.gate1.findings.find((x) => x.n === n)!;
-      const item = await fileDecisionItem(p.state_repo!, clock, {
+      const item = await fileDecisionItem(p.inbox!, {
         title: `${findingRef(n)} for ${f.id}: accept the risk or send it back`, feature: f.id,
-        context: `Security Gate 1 found a gap in ${f.id}'s spec (${specPath}) and suggested a requirement. After the interview, no requirement in the spec takes it up, which usually means you said no (F-008 FR-13). The reviewer's words, shown as plain text: ${plain(finding.criterion)}, ${plain(finding.severity)}: ${plain(finding.explanation)} Suggested requirement: ${plain(finding.fix)}`,
+        effect: { type: "gate1_risk", feature: f.id, finding: n },
+        context: [
+          { engine: `Security Gate 1 found a gap in ${f.id}'s spec (${specPath}) and suggested a requirement. After the interview, no requirement in the spec takes it up, which usually means you said no (F-008 FR-13).` },
+          { outside: `${finding.criterion}, ${finding.severity}: ${finding.explanation}\nSuggested requirement: ${finding.fix}`, author: "the security reviewer" },
+        ],
         impact: `${f.id} stays at Security Gate 1 until this is decided.`,
         options: [
           { id: "A", label: "Accept the risk and leave it out of the spec", detail: "The finding is recorded as an accepted risk." },
@@ -1043,6 +1154,24 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       filed.push({ n, item });
     }
     const blocked = filed.length || r.waiting.length;
+    if (!blocked) {
+      // F-016 FR-15: nothing waits on the owner and nothing was refused, so the interview missed a step; the analyst gets one more go per report.
+      const back = { type: "returned", return: { why: "gate1_unresolved", evidence: r.check.evidence } };
+      if (f.state.gate1.unresolvedSent === 0) {
+        await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: false, evidence: r.check.evidence }, back, { type: "stage", stage: INTERVIEW_STAGE }], "gate 1: findings not resolved, back to the interview"));
+        log.warn(`${f.id}: Gate 1 findings not resolved: ${r.check.evidence} Back to the interview.`);
+        return;
+      }
+      await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: false, evidence: r.check.evidence }], "gate 1: findings not resolved"));
+      log.warn(`${f.id}: Gate 1 findings not resolved again: ${r.check.evidence}`);
+      await alert(p, `gate1unresolved:${f.id}:${f.state.gate1.reportAt}:${f.state.gate1.unresolvedSent}`, {
+        title: `Gate 1 findings for ${f.id} still not taken up`, feature: f.id,
+        context: `The interview went back to the analyst once already, and Security Gate 1's check still finds: ${r.check.evidence.slice(0, 1500)}`,
+        impact: `${f.id} stays at Security Gate 1 with no analyst.`,
+        confirm: "Send it back to the analyst again", hold: "Keep the feature where it is", recommendation: "A",
+      });
+      return;
+    }
     await f.exclusive(() => f.append([
       blocked
         ? { type: "gate1_blocked", reason: `Waiting on the owner's Security items: ${[...filed.map((x) => x.item), ...r.waiting.map((n) => f.state.gate1.findings.find((x) => x.n === n)?.item ?? findingRef(n))].join(", ")}.`, risk: filed.map((x) => x.n) }
@@ -1074,7 +1203,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       await noteGate1(f, "waiting", `No Gate 1 session started: ${notReady}.`);
       return;
     }
-    if (!resume && f.state.gate1.runs >= g1!.runsPerFeature) {
+    if (!resume && f.state.gate1.runs >= g1!.runsPerFeature + f.state.gate1.extraRuns) {
       // SR-11: a fourth run needs the owner.
       const why = `${f.id} has had ${f.state.gate1.runs} Gate 1 runs, the most allowed (F-008 SR-11)`;
       // The transcript records the block before the owner is told, so the item never names a state the record lacks.
@@ -1310,11 +1439,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const findings = a.report.findings;
     for (const [i, fd] of findings.entries()) {
       if (!fd.needs_owner) continue;
-      items.set(i + 1, await fileDecisionItem(p.state_repo!, clock, {
+      items.set(i + 1, await fileDecisionItem(p.inbox!, {
         title: `${findingRef(i + 1)} for ${f.id}: the owner's choice`, feature: f.id,
-        context: `Security Gate 1 on ${f.id} (${a.specPath}) found a choice only you can make. The reviewer's words, shown as plain text: ${plain(fd.criterion)}, ${plain(fd.severity)}, at ${plain(fd.location)}: ${plain(fd.explanation)} What the options decide: ${plain(fd.fix)}`,
+        effect: { type: "gate1_choice", feature: f.id, finding: i + 1 },
+        context: [
+          { engine: `Security Gate 1 on ${f.id} (${a.specPath}) found a choice only you can make.` },
+          { outside: `${fd.criterion}, ${fd.severity}, at ${fd.location}: ${fd.explanation}\nWhat the options decide: ${fd.fix}`, author: "the security reviewer" },
+        ],
         impact: `${f.id} waits at Security Gate 1 until this is decided.`,
-        options: fd.options!.map((op) => ({ id: op.id, label: op.label.replace(/\s+/g, " "), shown: plain(op.label) })),
+        options: fd.options!.map((op) => ({ id: op.id, label: op.label })), optionsBy: "the security reviewer",
         recommendation: fd.recommendation!,
         costOfDelay: `${f.id} can't reach the readiness gate.`,
       }));
@@ -1365,7 +1498,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       version: SERVED_CHANNEL_VERSION,
       capabilities: [...CAPABILITIES],
       uptime_s: Math.floor((clock.now() - startedAt) / 1000),
-      features: allFeatures().filter((f) => !ambiguous.has(f.id)).map((f) => ({ id: f.id, stage: f.stage() || INTERVIEW_STAGE, active_agents: 0 })),
+      features: projects.filter((p) => p.state === "running").flatMap((p) => [...p.features.values()].filter((f) => !ambiguous.has(f.id)).map((f) => {
+        const waiting = p.inbox?.waitingOn(f.id) ?? [];
+        // H-0183 (channel v1.5): the items the feature waits on, only when there are any.
+        return { id: f.id, stage: f.stage() || INTERVIEW_STAGE, active_agents: jobs.has(f.id) ? 1 : 0, ...(waiting.length ? { waiting_on: waiting } : {}) };
+      })),
     }),
     pause: (fid) => {
       const fs_ = allFeatures().filter((f) => !fid || f.id === fid);
@@ -1410,6 +1547,465 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   } catch (e) {
     for (const p of projects) await p.listener?.close();
     throw new StartError(`The control channel couldn't be served: ${(e as Error).message}`);
+  }
+
+  // -- Owner answers and the readiness gate (F-016) -----------------------------
+
+  /** The project's open features waiting on Gate 1 items: choices undecided, or risks neither accepted nor sent back. */
+  /** Findings still waiting on a Security item, other than `except`; risk items aren't on the finding, so the name falls back to its ref. */
+  function gate1Waiting(f: FeatureInterview, except?: number): string[] {
+    const g = f.state.gate1;
+    return g.findings
+      .filter((x) => x.n !== except && ((x.needs_owner && !g.decided.has(x.n)) || (g.riskFiled.includes(x.n) && !g.accepted.has(x.n))))
+      .map((x) => x.item ?? findingRef(x.n));
+  }
+
+  /**
+   * F-016 FR-2 to FR-9: carries out one recorded owner action. The effect is
+   * picked by the item's effect type, fixed by the engine when it filed the
+   * item (SR-4), never by its text. The feature's entries and the record's
+   * `effect_done` land in one commit (SR-7); an effect that throws leaves
+   * both unchanged and runs again at the next poll, and the record keeps it
+   * from running twice (SR-5).
+   */
+  async function onAnswer(p: Project, rec: Recorded): Promise<void> {
+    const r = rec.record;
+    const e = rec.entry;
+    const type = String(r.effect?.type ?? "");
+    const fid = typeof r.effect?.feature === "string" ? r.effect.feature : null;
+    const f = fid ? p.features.get(fid) : undefined;
+    const chosen = e.action === "chosen" ? e.option : undefined;
+    const keepsWaiting = e.action === "deferred" || e.action === "restored";
+    const done = async (effect: string, entries: Array<Record<string, unknown>> = [], stage?: string) => {
+      const change = await p.inbox!.effectChange(r.id, effect, stage);
+      if (f && entries.length) {
+        await f.exclusive(() => f.append([...entries, ...(stage ? [{ type: "stage", stage }] : [])] as never, `${r.id}: ${effect}`, [change]));
+      } else {
+        await p.state_repo!.commit([change], `${r.id}: effect ${effect}`);
+      }
+      log.info(`${r.id}: ${effect}${stage ? `; ${fid} is at ${stage}` : ""}.`);
+    };
+    if (keepsWaiting) return done("none");
+    if ((type.startsWith("gate1_") || type === "spec_signoff") && (!f || !f.chainIntact)) return done("feature_unavailable");
+
+    if (type === "gate1_choice" || type === "gate1_risk") {
+      const n = Number(r.effect!.finding);
+      const finding = f!.state.gate1.findings.find((x) => x.n === n);
+      if (!finding) return done("finding_gone");
+      // Gate 2 L1: a choice counts only from the item the engine filed for that finding.
+      if (type === "gate1_choice" && finding.item !== r.id) return done("not_the_findings_item");
+      const note = e.note !== undefined ? { note: e.note } : {};
+      let entries: Array<Record<string, unknown>>;
+      let effect: string;
+      if (type === "gate1_choice" && chosen) {
+        const label = r.options?.find((o) => o.id === chosen)?.label ?? chosen;
+        entries = [
+          { type: "gate1_decided", finding: n, item: r.id, option: chosen, label },
+          { type: "returned", return: { why: "gate1_choice", item: r.id, finding: n, option: chosen, label } },
+        ];
+        effect = "gate1_decided";
+      } else if (type === "gate1_risk" && chosen === "A") {
+        entries = [
+          { type: "gate1_risk_accepted", finding: n, item: r.id },
+          { type: "returned", return: { why: "gate1_risk_accepted", item: r.id, finding: n } },
+        ];
+        effect = "gate1_risk_accepted";
+      } else {
+        // Send it back, Reject, Request changes, Ask for more research: the analyst asks the owner again (FR-4, FR-5).
+        entries = [
+          { type: "gate1_reask", finding: n, item: r.id },
+          { type: "returned", return: { why: "gate1_reask", item: r.id, finding: n, ...note } },
+        ];
+        effect = "gate1_reask";
+      }
+      // The feature goes back to the interview once nothing else of its Gate 1 waits on the owner.
+      const after = gate1Waiting(f!, n);
+      if (after.length) {
+        await done(effect, [...entries, { type: "gate1_blocked", reason: `Waiting on the owner's Security items: ${after.join(", ")}.` }]);
+        return;
+      }
+      await done(effect, [...entries, { type: "gate1_unblocked" }], INTERVIEW_STAGE);
+      launchAnalyst(p, f!);
+      return;
+    }
+
+    if (type === "spec_signoff") {
+      const so = f!.state.readiness.signoff;
+      if (!so || so.item !== r.id) return done("signoff_superseded");
+      if (e.action === "approved") {
+        // SR-3: the sign-off counts only for the commit it named.
+        const head = await git.revParse(p.real!, `refs/heads/${f!.state.branch}`).catch(() => null);
+        if (head !== so.commit) {
+          await done("signoff_stale", [{ type: "signoff_withdrawn", item: r.id, reason: "the feature branch moved after the item was filed" }]);
+          // FR-9: the same item is revised to the new commit once the gate passes again.
+          await p.inbox!.reopen(r.id);
+          startReadiness(p, f!);
+          return;
+        }
+        await done("spec_signed_off", [{ type: "spec_signed_off", item: r.id, commit: so.commit, version: so.version }], BUILD_STAGE);
+        notify(`Factory: ${f!.id} is ready for development`, `Spec v${so.version ?? "?"} is signed off.`);
+        return;
+      }
+      await done("signoff_changes", [
+        { type: "signoff_withdrawn", item: r.id, reason: e.action },
+        { type: "returned", return: { why: "signoff_changes", item: r.id, ...(e.note !== undefined ? { note: e.note } : {}) } },
+      ], INTERVIEW_STAGE);
+      launchAnalyst(p, f!);
+      return;
+    }
+
+    // Engine Security items (H-0182). Option B, and anything but A, only records.
+    if (chosen !== "A") return done("record_only");
+    if (type === "pins") {
+      // OQ-3: the inbox proves the previously pinned owner (the inbox reads only that id), so the change is pinned as `factory-engine confirm` pins it.
+      const m = p.manifest;
+      const pin = p.real ? pins.get(p.real) : null;
+      if (!m || !pin || e.actor_id !== pin.owner.github_id) return done("record_only");
+      // Gate 2 M2: the approval covers the manifest commit the item named, never a later change on main.
+      if (r.effect?.commit !== m.commit) {
+        notify(`Factory: ${m.name} not confirmed`, `${r.id} named another manifest commit. Restart the engine for a new item.`);
+        return done("pins_stale");
+      }
+      pins.set(p.real!, { ...pinnedKeys(m), pinned_at: iso(clock.now()), commit: m.commit });
+      log.action({ agent: "owner", action: "pins.confirm", target: m.name, approval_id: `inbox:${r.id}`, outcome: "pinned" });
+      notify(`Factory: ${m.name} confirmed`, "Restart the engine to run the project.");
+      return done("pinned");
+    }
+    if (type === "chain" && f) {
+      const fresh = newFeature(p, f.id);
+      const t = await readTranscript(p, fresh);
+      if (!t.intact) {
+        await done("chain_still_broken");
+        await tampered(p, fresh, t.why!, `again:${sha256Hex(t.raw ?? "")}`);
+        return;
+      }
+      fresh.load(t.entries, true);
+      p.features.set(f.id, fresh);
+      await done("chain_reopened");
+      resumeFeature(p, fresh);
+      return;
+    }
+    if (type === "breach" && f) {
+      // SR-8: restarts after a breach count against MAX_RESUMES per feature; at the cap the owner gets a Notice instead.
+      const restarts = (await p.inbox!.records()).filter((x) => x.effect?.type === "breach" && x.effect.feature === f.id && x.history.some((h) => h.action === "effect_done" && h.effect === "restarted")).length;
+      if (restarts >= MAX_RESUMES) {
+        await done("restart_capped");
+        await p.inbox!.file({
+          kind: "notice", title: `${f.id} not restarted: ${restarts} restarts after a rules breach`, priority: "high", blocking: false, created_by: "engine", feature: f.id,
+          sections: { Details: [{ engine: `${r.id} asked to restart ${f.id}, but it has already restarted ${restarts} times after the analyst wrote outside its rules, the most allowed (F-016 SR-8). Nothing was restarted. Look at the agent's instructions before starting the feature again.` }] },
+        });
+        return;
+      }
+      await done("restarted");
+      resumeFeature(p, f);
+      return;
+    }
+    if (type === "gate1unresolved" && f) {
+      await jobs.get(f.id)?.done;
+      if (f.stage() !== GATE1_STAGE || jobs.has(f.id)) return done("record_only");
+      await done("restarted", [{ type: "returned", return: { why: "gate1_unresolved", item: r.id } }], INTERVIEW_STAGE);
+      launchAnalyst(p, f);
+      return;
+    }
+    if (type === "analyststop" && f) {
+      // The item is filed as the stopped run ends, so a quick answer can arrive before its job slot is free.
+      await jobs.get(f.id)?.done;
+      // SR-13: one run per approval; a feature that moved on, or already has a job, needs none.
+      if (f.stage() !== INTERVIEW_STAGE || jobs.has(f.id)) return done("record_only");
+      await done("restarted");
+      launchAnalyst(p, f);
+      return;
+    }
+    if (type === "gate1cap" && f) {
+      await done("gate1_extra_run", [{ type: "gate1_extra_run", item: r.id }]);
+      afterInterview(p, f);
+      return;
+    }
+    return done("record_only");
+  }
+
+  /** Starts whatever a feature's stage needs, as at engine start (F-016 H-0182 resume effects). */
+  function resumeFeature(p: Project, f: FeatureInterview): void {
+    if (f.stage() === INTERVIEW_STAGE) launchAnalyst(p, f);
+    else if (f.stage() === GATE1_STAGE) afterInterview(p, f);
+    else if (f.stage() === READINESS_STAGE) startReadiness(p, f);
+  }
+
+  async function nextReadinessReport(p: Project, fid: string): Promise<number> {
+    const existing = await p.state_repo!.list(`runs/${fid}/${READINESS_STAGE}`).catch(() => []);
+    return existing.filter((e) => /\/orchestrator-\d+\.json$/.test(e.path)).length + 1;
+  }
+
+  /** F-016 FR-7: a feature at the readiness gate with no sign-off pending gets the gate, once at a time. */
+  function startReadiness(p: Project, f: FeatureInterview): void {
+    if (dead || shuttingDown || jobs.has(f.id) || !f.chainIntact || p.state !== "running" || ambiguous.has(f.id)) return;
+    if (f.stage() !== READINESS_STAGE || f.state.readiness.signoff) return;
+    const job: Job = { turns: null, done: Promise.resolve() };
+    jobs.set(f.id, job);
+    job.done = runReadiness(p, f)
+      .catch((e) => log.warn(`${f.id}: the readiness gate stopped: ${engineWords(e)}`))
+      .finally(() => {
+        jobs.delete(f.id);
+        if (!dead && !shuttingDown && f.stage() === INTERVIEW_STAGE) launchAnalyst(p, f);
+      });
+  }
+
+  /** The gate failed: back to the interview with each failed check's evidence as data (FR-8). */
+  async function readinessFailed(f: FeatureInterview, commit: string, checks: Check[], extra: Change[] = []): Promise<void> {
+    const failed = checks.filter((c) => !c.passed).map((c) => ({ name: c.name, evidence: c.evidence }));
+    await f.exclusive(() => f.append([
+      { type: "readiness_result", passed: false, commit, checks },
+      { type: "returned", return: { why: "readiness_failed", checks: failed } },
+      { type: "stage", stage: INTERVIEW_STAGE },
+    ], "readiness gate failed", extra));
+    log.warn(`${f.id}: readiness gate failed (${failed.map((c) => c.name).join(", ")}); back to the interview.`);
+  }
+
+  /**
+   * F-016 FR-7, FR-8, OQ-1 (c): code checks first; only if every one passes,
+   * one orchestrator session judges checks 1 to 4, read-only, writing only
+   * its report (SR-11). A pass files the Spec sign-off item.
+   */
+  async function runReadiness(p: Project, f: FeatureInterview): Promise<void> {
+    let spec: string, specPath: string, version: number | null, commit: string;
+    try {
+      ({ spec, path: specPath, version, commit } = await branchSpec(p, f));
+    } catch (e) {
+      if (!(e instanceof SessionRefused)) throw e;
+      const head = (await git.revParse(p.real!, `refs/heads/${f.state.branch}`).catch(() => null)) ?? "unknown";
+      await readinessFailed(f, head, [{ name: "interview_checks", passed: false, evidence: `${e.message}.` }]);
+      return;
+    }
+    const code: Check[] = [
+      ...readinessChecks({ spec, specVersion: version ?? 0, state: f.state, chainIntact: f.chainIntact && !f.remoteRefused }),
+      gate1Resolution(spec, f.state).check,
+      ...structuralChecks(spec),
+    ];
+    if (code.some((c) => !c.passed)) {
+      await readinessFailed(f, commit, code);
+      return;
+    }
+    const m = p.manifest!;
+    const rl = readinessLimits(p.limits!, m.billingMode);
+    const model = p.models!.orchestrator;
+    const instructions = p.sources!.instructions.get(READINESS_ROLE);
+    const rt = o.agents;
+    const notReady = !rt ? "no agent runtime is configured"
+      : !rl || !model ? `this factory version (${m.factoryVersion}) has no orchestrator entry in ${!model ? MODELS_FILE : LIMITS_FILE}`
+      : !instructions ? "the orchestrator role has no AGENT.md at factory.version or in the project's overrides" : null;
+    if (notReady) {
+      log.warn(`${f.id}: no readiness session started: ${notReady}.`);
+      await f.exclusive(() => f.append([{ type: "readiness_session", status: "waiting", reason: `No readiness session started: ${notReady}.` }], "readiness waiting")).catch(() => undefined);
+      return;
+    }
+    if (f.state.readiness.runs >= rl!.runsPerFeature) {
+      await alert(p, `readinesscap:${f.id}:${f.state.readiness.runs}`, {
+        title: `The readiness gate for ${f.id} reached its run limit`, feature: f.id,
+        context: `${f.id} has had ${f.state.readiness.runs} readiness sessions, the most allowed (F-016 H-0184).`,
+        impact: `${f.id} stays at the readiness gate.`, confirm: "Look at the readiness reports and the engine log", hold: "Keep the feature where it is", recommendation: "A",
+      });
+      return;
+    }
+    const n = await nextReadinessReport(p, f.id);
+    const reportName = `${READINESS_ROLE}-${n}.json`;
+    const reportRel = `.factory/runs/${f.id}/${READINESS_STAGE}/${reportName}`;
+    const wt = await prepareWorktree(git, p.real!, path.join(path.dirname(worktreeDir(p, f.id)), `${f.id}-ready`), f.state.branch, undefined, commit);
+    await populateWorktree(git, p.real!, commit, wt.path, wt.gitDir);
+    const run = runs.start({ project: p.real!, feature: f.id, role: READINESS_ROLE, stage: READINESS_STAGE, worktree: wt.path });
+    runs.update(run.id, { git_dir: wt.gitDir, last_commit: commit });
+    await f.exclusive(() => f.append([{ type: "readiness_run", run: run.id, commit }], "readiness gate started"));
+    const reportDir = path.join(home, "readiness", sha256Hex(p.real!).slice(0, 16), run.id);
+    const facts: RunFacts = { model: model! };
+    try {
+      const credential = modelCredentialFor(env, modelCredential);
+      if (!credential) throw new SessionRefused("no model credential is stored or set");
+      const policy = orchestratorPolicy(m.raw, reportRel);
+      const sdk = await rt!.sdk();
+      const sources = p.sources!;
+      const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
+      const image = await shared(images, `${ident.project}\0${ident.masterCommit}\0${ident.skillsDigest}`, () => ensureAgentImage(rt!.docker, rt!.dockerDir, path.join(home, "images"), ident, sources));
+      proxyImage ??= baseImageId(rt!.docker);
+      proxyImage.catch(() => (proxyImage = null));
+      const proxyImageId = await proxyImage;
+      fs.rmSync(reportDir, { recursive: true, force: true });
+      ensureOwnerDir(reportDir);
+      fs.mkdirSync(path.join(wt.path, ...path.posix.dirname(reportRel).split("/")), { recursive: true });
+      const group = new SessionGroup({
+        docker: rt!.docker, runId: run.id, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt!.proxyScript,
+        agentLimits: roleContainerLimits(p.limits!), proxyLimits: containerLimits(p.limits!.proxy), maxPageBytes: maxPageBytes(p.limits!),
+        credential, log, ...(rt!.platform ? { platform: rt!.platform } : {}), ...(rt!.sleep ? { sleep: rt!.sleep } : {}),
+      });
+      let valid: ReadinessReport | null = null;
+      const result = await runReviewerSessions({
+        sdk, docker: rt!.docker, group, policy, worktree: wt.path,
+        reportDir: { source: reportDir, target: `${WORKSPACE}/${path.posix.dirname(reportRel)}` },
+        instructions: instructions!.text, caps: rl!.caps, model: model!,
+        first: orchestratorTurn({ feature: f.id, specPath, specVersion: version, commit, reportPath: reportRel }),
+        onUsed: (u) => void (dead || runs.update(run.id, { used: u })),
+        billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
+        check: async () => {
+          const read = readReportFile(reportDir, reportName, rl!.reportBytes);
+          const errors = "missing" in read ? [`there is no report at /workspace/${reportRel}`]
+            : "refused" in read ? [read.refused]
+            : (() => {
+                const v = validateReadinessReport(read.text, { feature: f.id, commit, maxBytes: rl!.reportBytes });
+                if (v.ok) valid = v.report;
+                return v.ok ? [] : v.errors;
+              })();
+          return errors.length ? readinessCorrection(reportRel, errors) : null;
+        },
+        verify: async (pol: RolePolicy) => {
+          const extra = fs.existsSync(reportDir) ? fs.readdirSync(reportDir).filter((x) => x !== reportName) : [];
+          if (extra.length) return { status: "rejected" as const, breaches: extra.slice(0, 20).map((x) => ({ path: `${path.posix.dirname(reportRel)}/${x}`, reason: "not_allowed" as const })) };
+          return commitWorktree({
+            git, gitDir: wt.gitDir, worktree: wt.path, branch: f.state.branch, base: commit, policy: { ...pol, write: { allow: [], deny: [] } }, scanner, tmpDir,
+            message: `${f.id}: readiness session (run ${run.id})`, limits: worktreeLimits(p.limits!),
+          });
+        },
+        onBreach: async (breaches) => {
+          await alert(p, `breach:${run.id}:${crypto.randomBytes(4).toString("hex")}`, {
+            title: "Orchestrator changed files outside its report", feature: f.id,
+            context: `The engine rejected readiness run ${run.id}: ${breaches.slice(0, 20).map((b) => `${b.path || "(history)"} (${b.reason})`).join(", ")} (F-016 SR-11). Nothing was committed.`,
+            impact: "The readiness run is stopped.", confirm: "Look at the orchestrator's instructions and run the gate again", hold: "Keep the feature stopped", recommendation: "B",
+          });
+        },
+        onSessionId: (id) => void (dead || runs.update(run.id, { session_id: id })),
+        log,
+      });
+      if (dead) return;
+      facts.usage = usage(result.outcome);
+      const got = valid as ReadinessReport | null;
+      if (result.invalid || !got) {
+        // Fails closed (AC-14): nothing from the run is used; the gate runs again at the next engine start.
+        runs.finish(run.id, "failed", result.invalid ?? "its report couldn't be read");
+        log.warn(`${f.id}: the readiness report was refused (${result.invalid ?? "its report couldn't be read"}); nothing from the run is used and the gate runs again at the next start.`);
+        await f.exclusive(() => f.append([{ type: "readiness_session", status: "stopped", reason: `The readiness session failed: ${result.invalid ?? "its report couldn't be read"}.` }], "readiness failed",
+          [agentReport({ feature: f.id, stage: READINESS_STAGE, role: READINESS_ROLE, n, commit, outcome: "failed", summary: `The readiness session failed: ${result.invalid ?? "no report"}.`, body: { gate: "readiness", checks: code }, facts })]));
+        return;
+      }
+      const judged: Check[] = got.checks.map((c) => ({ name: c.name, passed: c.passed, evidence: c.evidence }));
+      const all = [...code, ...judged];
+      const report = agentReport({
+        feature: f.id, stage: READINESS_STAGE, role: READINESS_ROLE, n, commit, outcome: judged.every((c) => c.passed) ? "complete" : "partial",
+        summary: got.summary, body: { gate: "readiness", checks: all }, facts,
+      });
+      runs.finish(run.id, "complete");
+      if (!judged.every((c) => c.passed)) {
+        await readinessFailed(f, commit, all, [report]);
+        return;
+      }
+      const item = await fileSignoff(p, f, { specPath, version, commit, checks: judged });
+      await f.exclusive(() => f.append([
+        { type: "readiness_result", passed: true, commit, checks: all },
+        { type: "signoff_filed", item, commit, version },
+      ], "readiness gate passed", [report]));
+      log.info(`${f.id}: readiness gate passed; Spec sign-off item ${item} filed.`);
+    } catch (e) {
+      if (dead) return;
+      if (e instanceof SecretFound) {
+        await alert(p, `secret:${crypto.randomBytes(8).toString("hex")}`, {
+          title: "Readiness report refused: the secrets scan found a secret", feature: f.id,
+          context: `The engine didn't record readiness run ${run.id}'s report because gitleaks flagged it.`,
+          impact: `${f.id} stays at the readiness gate.`, confirm: "Rotate the secret if it was real", hold: "It was a false positive: no action", recommendation: "A",
+        });
+      }
+      runs.finish(run.id, "failed", engineWords(e));
+      throw e;
+    } finally {
+      fs.rmSync(reportDir, { recursive: true, force: true });
+      await o.agents?.docker.run(["volume", "rm", "--force", runVolume(run.id)], { okCodes: [1] }).catch(() => undefined);
+    }
+  }
+
+  /** F-016 FR-8: the Spec sign-off item; the orchestrator's evidence is outside text (F-011 SR-10). */
+  async function fileSignoff(p: Project, f: FeatureInterview, a: { specPath: string; version: number | null; commit: string; checks: Check[] }): Promise<string> {
+    const accepted = [...f.state.gate1.accepted.entries()].map(([n, item]) => `${findingRef(n)} accepted as a risk in ${item}`);
+    const item: ItemInput = {
+      kind: "spec", key: `signoff:${f.id}`, title: `${f.id} ${f.state.title}, spec v${a.version ?? "?"}`, priority: "high", blocking: true, created_by: "engine", feature: f.id,
+      links: [{ kind: "file", ref: a.specPath }],
+      effect: { type: "spec_signoff", feature: f.id, commit: a.commit, version: a.version },
+      sections: {
+        Summary: [{ engine: `${f.id} spec version ${a.version ?? "?"} (\`${a.specPath}\` at commit \`${a.commit.slice(0, 12)}\` on \`${f.state.branch}\`) passed the readiness gate. Approve starts development on exactly this commit; any later change to the branch needs a new sign-off.` }],
+        Readiness: [
+          { engine: "Every code check passed: interview checks, Gate 1 findings resolved, sections, requirements and criteria. The orchestrator's judgment of checks 1 to 4:" },
+          { outside: a.checks.map((c) => `${c.name}: ${c.passed ? "passed" : "failed"}. ${c.evidence}`).join("\n"), author: "the orchestrator" },
+        ],
+        "Open items": [{ engine: accepted.length ? accepted.join("; ") + "." : "None." }],
+      },
+    };
+    // FR-9: a sign-off item reopened because the branch moved is revised, not filed again.
+    const open = await p.inbox!.openByKey(item.key!);
+    if (open) {
+      await p.inbox!.revise(open.id, item);
+      return open.id;
+    }
+    return p.inbox!.file(item);
+  }
+
+  // F-011 FR-5: each project's inbox is read every poll while the engine runs.
+  const polling = new AbortController();
+  const pollers: Promise<void>[] = [];
+  /** F-016 SR-7: failed effects, by item id; after 3 a Notice is filed and the item is left alone until the engine restarts. */
+  const effectTries = new Map<string, number>();
+  /** Gate 2 M1: answers this run recorded itself, by project, item and entry; any other pending answer is checked on GitHub first. */
+  const recordedHere = new Set<string>();
+  // The whole entry, not its time, so a forged entry beside a real one is never taken for it (Gate 2 re-review R1).
+  const answerKey = (p: Project, r: Recorded): string => `${p.name}/${r.id}/${sha256Hex(JSON.stringify(r.entry))}`;
+
+  /** Carries out every recorded answer without an effect yet: new ones, ones a crash left, and ones that failed before (FR-2, SR-7). */
+  async function applyAnswers(p: Project): Promise<void> {
+    for (const r of await p.inbox!.pendingEffects()) {
+      if (dead || polling.signal.aborted) return;
+      // A stopped project applies only the pins approval; other answers wait for its next start.
+      if (p.state !== "running" && r.record.effect?.type !== "pins") continue;
+      const id = r.record.id;
+      const tries = effectTries.get(id) ?? 0;
+      if (tries >= 3) continue;
+      try {
+        if (!recordedHere.has(answerKey(p, r))) {
+          // Not connected yet: the answer waits, since it can't be checked.
+          if (!p.inbox!.connected) continue;
+          if (!(await p.inbox!.verify(r))) {
+            log.warn(`${id}: the recorded answer doesn't match GitHub, so it was not carried out (Gate 2 M1).`);
+            await alert(p, `unverified:${id}@${r.entry.at}`, {
+              title: `An answer on ${id} in factory/state isn't on GitHub`, ...(r.record.feature ? { feature: r.record.feature } : {}),
+              context: `factory/state records an owner answer on ${id} at ${r.entry.at} that the engine didn't read itself in this run, and the issue on GitHub doesn't show it: the owner's reaction or command, or its confirmation, isn't there (F-016 Gate 2 M1). It was not carried out.`,
+              impact: `Nothing changed. If you did answer ${id}, answer it again on its issue.`,
+              confirm: "Investigate who wrote factory/state", hold: "Leave it as it is", recommendation: "A",
+            });
+            await p.inbox!.effectDone(id, "unverified");
+            continue;
+          }
+          recordedHere.add(answerKey(p, r));
+        }
+        await onAnswer(p, r);
+        effectTries.delete(id);
+      } catch (e) {
+        // An unreachable GitHub during the check isn't a failed effect: the answer waits for the next poll.
+        if (e instanceof GitHubUnreachable) continue;
+        effectTries.set(id, tries + 1);
+        log.warn(`${id}: its effect wasn't applied (${engineWords(e)}); try ${tries + 1} of 3.`);
+        if (tries + 1 === 3) {
+          await p.inbox!.file({
+            kind: "notice", title: `${id}: your answer couldn't be carried out`, priority: "high", blocking: false, created_by: "engine",
+            ...(r.record.feature ? { feature: r.record.feature } : {}),
+            sections: { Details: [{ engine: `The engine recorded your answer on ${id} but failed 3 times to carry it out (F-016 SR-7). Nothing changed: ${r.record.feature ?? "the project"} stays where it is. The engine tries once more when it restarts; the engine log has the reason.` }] },
+          }).catch(() => undefined);
+        }
+      }
+    }
+  }
+
+  async function pollInbox(p: Project): Promise<void> {
+    while (!polling.signal.aborted && !dead && (p.state === "running" || p.pinsWaiting)) {
+      try {
+        for (const r of await p.inbox!.poll()) recordedHere.add(answerKey(p, r));
+        await applyAnswers(p);
+      } catch (e) {
+        log.warn(`${p.name}: the inbox couldn't be read this poll (${engineWords(e)}); it is read again at the next.`);
+      }
+      await clock.sleep(o.inboxPollMs ?? INBOX_POLL_MS, polling.signal);
+    }
   }
 
   const handle: EngineHandle = {
@@ -1465,6 +2061,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     },
     async crash() {
       dead = true;
+      polling.abort();
       for (const j of jobs.values()) j.turns?.close();
       for (const p of projects) {
         p.sessions?.closeAll();
@@ -1503,6 +2100,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       stopping ??= (async () => {
         // Sessions end with their turn streams; their work is committed and the runs stay open to resume (FR-14).
         shuttingDown = true;
+        polling.abort();
+        await Promise.all(pollers);
         for (const j of jobs.values()) j.turns?.close();
         await Promise.all([...jobs.values()].map((j) => j.done));
         for (const p of projects) {
@@ -1511,6 +2110,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           if (p.state_repo) fs.rmSync(path.join(p.state_repo.factoryDir, ENGINE_JSON), { force: true });
         }
         await git.closeReaders();
+        // A notification still showing runs in the engine folder; Windows can't remove a folder a process works in.
+        await notify.settled();
         log.info(`engine stopped at ${iso(clock.now())}`);
         done();
       })();
@@ -1563,12 +2164,20 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     for (const f of p.features.values()) {
       if (ambiguous.has(f.id) || jobs.has(f.id)) continue;
       if (f.stage() === GATE1_STAGE) afterInterview(p, f);
+      // F-016 FR-7: a gate that failed closed, or was cut off by a stop, runs again at start.
+      else if (f.stage() === READINESS_STAGE) startReadiness(p, f);
       else if (f.stage() === INTERVIEW_STAGE && f.state.gate1.pending && f.state.gate1.reportAt) {
         const since = f.state.gate1.reportAt;
         const tried = record.runs().some((r) => r.feature === f.id && r.project === p.real && r.role === "requirements-analyst" && r.started_at >= since);
         if (!tried) launchAnalyst(p, f);
       }
+      if (f.stage() === INTERVIEW_STAGE && !jobs.has(f.id)) {
+        // FR-13: a feature whose analyst stopped before this engine (or before this rule) would wait forever.
+        const last = record.runs().filter((r) => r.feature === f.id && r.project === p.real && r.role === "requirements-analyst").sort((a, b) => a.started_at.localeCompare(b.started_at)).at(-1);
+        if (last?.status === "failed") void offerRerun(p, f, last.id, last.reason ?? "the run failed");
+      }
     }
   }
+  for (const p of projects) if ((p.state === "running" || p.pinsWaiting) && p.inbox?.connected) pollers.push(pollInbox(p));
   return handle;
 }

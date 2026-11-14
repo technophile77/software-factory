@@ -127,6 +127,9 @@ function shown(item: Item | null): Obj {
   return out;
 }
 
+/** F-011 inbox item ids: kind letter, dash, four or more digits. */
+const INBOX_ID_RE = /^[A-Z]-\d{4,6}$/;
+
 function approval(a: unknown): Obj {
   // Shown only in the contract's exact form; anything else could send the
   // owner to a page or code the engine didn't get from GitHub.
@@ -135,8 +138,8 @@ function approval(a: unknown): Obj {
   if (typeof code !== "string" || !USER_CODE_RE.test(code) || uri !== DEVICE_URI || typeof expires !== "string" || !TIMESTAMP_RE.test(expires)) {
     throw new ChannelFailure("bad_response", "The engine sent an invalid GitHub approval code.", { sent: true });
   }
-  // The link stands on a line of its own so every chat surface makes it clickable.
-  const display = `Approve this interview session on GitHub (your phone is fine). Open this link:\n\n${DEVICE_URI}\n\n`
+  // A bare URL isn't made clickable by every chat surface (issue #63); a Markdown link is, and it still reads as the URL where Markdown isn't rendered.
+  const display = `Approve this interview session on GitHub (your phone is fine). Open this link:\n\n[${DEVICE_URI}](${DEVICE_URI})\n\n`
     + `Sign in as yourself and enter the code ${code}. It expires at ${expires}.`;
   return { approval: { user_code: code, verification_uri: uri, expires_at: expires }, approval_display: display };
 }
@@ -331,18 +334,25 @@ export class Interview {
    * "nothing waiting" answer.
    */
   private async whereIs(run: Run, feature: string): Promise<Obj> {
-    let stage: unknown;
+    let entry: Obj | undefined;
     try {
       const feats = result(await run.call("engine.status")).features;
-      stage = Array.isArray(feats) ? feats.find((f) => isObj(f) && f.id === feature)?.stage : undefined;
+      entry = Array.isArray(feats) ? feats.find((f): f is Obj => isObj(f) && f.id === feature) : undefined;
     } catch (e) {
       if (e instanceof ChannelFailure) return {};
       throw e;
     }
+    const stage = entry?.stage;
     if (typeof stage !== "string" || !STAGE_RE.test(stage)) return {};
     if (stage === INTERVIEW_STAGE) {
-      return { stage, display: `Nothing is waiting for you right now. The analyst is still working on ${feature}: it may `
-        + "file another question in a moment, or it is writing the spec." };
+      if (entry!.active_agents !== 0) {
+        return { stage, display: `Nothing is waiting for you right now. The analyst is working on ${feature}: it may `
+          + "file another question in a moment, or it is writing the spec." };
+      }
+      // F-016 FR-14 (issue #65): only engine-checked item ids are named, never engine free text.
+      const items = Array.isArray(entry!.waiting_on) ? entry!.waiting_on.filter((x): x is string => typeof x === "string" && INBOX_ID_RE.test(x)) : [];
+      return { stage, display: `Nothing is waiting for you in this interview, and no analyst is working on ${feature} right now. `
+        + (items.length ? `It waits on ${items.join(", ")} in your inbox; answer there to go on.` : "If its last run stopped, the engine files an inbox item asking whether to run it again.") };
     }
     return { stage, interview_done: true, display: `The interview for ${feature} is finished: the analyst's spec passed the interview checks `
       + `and the feature has moved on to the ${stage} stage. Nothing more is needed from you here.` };

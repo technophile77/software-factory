@@ -1220,6 +1220,9 @@ LIMIT_KEYS = {
     # F-008 Security Gate 1 (H-0095): optional in the master, so a manifest may lower them too.
     "security_reviewer": _SESSION_LIMITS,
     "security_gate_1": {"runs_per_feature": "int", "report_kib": "int", "additions_kib": "int"},
+    # F-016 readiness gate (H-0184, H-0185): optional in the master too.
+    "orchestrator": _SESSION_LIMITS,
+    "readiness_gate": {"runs_per_feature": "int", "report_kib": "int"},
 }
 
 

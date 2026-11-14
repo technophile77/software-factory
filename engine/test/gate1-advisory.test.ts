@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { templateSections } from "./template-spec";
 import * as path from "node:path";
 import YAML from "yaml";
 import { afterEach, describe, expect, it } from "vitest";
@@ -120,8 +121,7 @@ const runsOf = (w: World, feature: string, role: string) => new EngineRecord(w.h
 function spec(feature: string, version: number): string {
   return [
     "# Feature: Export", "", `- **Id:** ${feature}`, `- **Spec version:** ${version}`, "",
-    "## 8. Assumptions", "| Id | Assumption | Decision link | Status |", "|---|---|---|---|", "",
-    "## 9. Security considerations", "| Id | Requirement | Source (analyst / Gate 1) | Status |", "|---|---|---|---|", "| SR-1 | Inputs are validated. | Analyst | Approved |", "",
+    ...templateSections({ 9: ["| SR-1 | Inputs are validated. | Analyst | Approved |"] }),
   ].join("\n");
 }
 

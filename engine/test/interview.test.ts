@@ -6,6 +6,7 @@ import { REFUSED_MESSAGE } from "../src/constants";
 import { EngineRecord } from "../src/state/record";
 import { parseTranscript } from "../src/state/transcript";
 import { OTHER_ID, OWNER_ID, RpcClient, World, advanceSoon, approvedSession, engineJson, git, makeWorld, start } from "./helpers";
+import { securityItemsIn } from "./inbox-items";
 
 let engines: EngineHandle[] = [];
 let clients: RpcClient[] = [];
@@ -31,12 +32,14 @@ function transcript(w: World, feature: string) {
 
 /** The refusal's only commit adds one Security item; nothing else on factory/state changed. Returns the item. */
 function onlyNewSecurityItem(w: World, before: string): string {
-  const changed = git(w.config, "diff-tree", "-r", "--name-only", "--no-commit-id", before, "factory/state").split("\n");
-  expect(changed).toHaveLength(1);
-  expect(changed[0]).toMatch(/^inbox\/decision\/D-\d+\.md$/);
-  const item = git(w.config, "show", `factory/state:${changed[0]}`);
+  // One item: its record and its first rendered body, and nothing else changed.
+  const changed = git(w.config, "diff-tree", "-r", "--name-only", "--no-commit-id", before, "factory/state").split("\n").sort();
+  expect(changed).toHaveLength(2);
+  expect(changed[0]).toMatch(/^inbox\/D-\d+\.rev1\.md$/);
+  expect(changed[1]).toMatch(/^inbox\/D-\d+\.yaml$/);
+  const item = git(w.config, "show", `factory/state:${changed[1]}`);
   expect(item).toMatch(/^category:\s*Security\s*$/m);
-  return item;
+  return `${item}\n${git(w.config, "show", `factory/state:${changed[0]}`)}`;
 }
 
 const err = (r: Record<string, unknown>) => (r.error as { code: number; message: string; data?: unknown }) ?? null;
@@ -354,8 +357,7 @@ describe("restart and tampering (FR-14, SR-17)", () => {
     clients.push(c2);
     expect(err(await c2.call("interview.open", { feature }))).toEqual({ code: -32008, message: REFUSED_MESSAGE });
     expect((await c2.ok("interview.list")).features).toEqual([]);
-    const items = git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", "inbox/decision");
-    expect(git(w.config, "show", `factory/state:${items}`)).toContain(`Transcript of ${feature} changed outside the engine`);
+    expect(securityItemsIn(w.config)[0]!.text).toContain(`Transcript of ${feature} changed outside the engine`);
     fs.mkdirSync(path.join(w.worktree, "docs", "features"), { recursive: true });
     fs.writeFileSync(path.join(w.worktree, "docs", "features", `${feature}-x.md`), "- **Spec version:** 1\n");
     const r = await e2.interviewTools(feature, w.worktree).interview_spec_ready({ spec_path: `docs/features/${feature}-x.md`, spec_version: 1 });

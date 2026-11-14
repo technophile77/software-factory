@@ -29,13 +29,15 @@ export const LIMIT_KEYS = {
   worktree_commit: { max_files: "int", max_total_mib: "num", max_file_mib: "num" },
   security_reviewer: SESSION,
   security_gate_1: { runs_per_feature: "int", report_kib: "int", additions_kib: "int" },
+  orchestrator: SESSION,
+  readiness_gate: { runs_per_feature: "int", report_kib: "int" },
 } as const satisfies Record<string, Record<string, Kind>>;
 
 /**
  * Sections a factory version from before F-008 doesn't have. Without them the
  * project still runs, but no Gate 1 session starts (F-008 AC-10).
  */
-export const OPTIONAL_SECTIONS = ["security_reviewer", "security_gate_1"] as const;
+export const OPTIONAL_SECTIONS = ["security_reviewer", "security_gate_1", "orchestrator", "readiness_gate"] as const;
 type Optional = (typeof OPTIONAL_SECTIONS)[number];
 
 type Keys = typeof LIMIT_KEYS;
@@ -176,6 +178,7 @@ export function roleContainerLimits(l: Limits): Record<string, ContainerLimits> 
     "requirements-analyst": containerLimits(l.analyst),
     "web-reader": containerLimits(l.web_reader),
     ...(l.security_reviewer ? { "security-reviewer": containerLimits(l.security_reviewer) } : {}),
+    ...(l.orchestrator ? { orchestrator: containerLimits(l.orchestrator) } : {}),
   };
 }
 
@@ -195,6 +198,12 @@ export function gate1Limits(l: Limits, billing: Manifest["billingMode"]): Gate1L
     reportBytes: l.security_gate_1.report_kib * 1024,
     additionsBytes: l.security_gate_1.additions_kib * 1024,
   };
+}
+
+/** F-016 H-0184: the readiness session's caps; null when this factory version has no orchestrator sections. */
+export function readinessLimits(l: Limits, billing: Manifest["billingMode"]): { caps: SessionCaps; runsPerFeature: number; reportBytes: number } | null {
+  if (!l.orchestrator || !l.readiness_gate) return null;
+  return { caps: sessionCaps(l.orchestrator, billing), runsPerFeature: l.readiness_gate.runs_per_feature, reportBytes: l.readiness_gate.report_kib * 1024 };
 }
 
 export function maxPageBytes(l: Limits): number {

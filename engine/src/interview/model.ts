@@ -129,6 +129,42 @@ export interface Gate1State {
   reportAt: string | null;
   /** How many items the interview held when that report was recorded: only later questions can answer its findings. */
   itemsAtReport: number;
+  /** F-016 FR-3: choice findings the owner decided in the inbox, by number. */
+  decided: Map<number, { item: string; option: string; label: string }>;
+  /** F-016 FR-5: findings the owner accepted as a risk, by number, with the item. */
+  accepted: Map<number, string>;
+  /** F-016 FR-15: times this report's unresolved findings went back to the analyst without the owner. */
+  unresolvedSent: number;
+  /** F-016 H-0182: extra runs the owner allowed past the run limit. */
+  extraRuns: number;
+}
+
+/**
+ * F-016: why the feature came back to the interview from an owner answer or
+ * the readiness gate. The analyst gets these as data; they last until the
+ * spec next passes the interview checks.
+ */
+export interface Return {
+  why: "gate1_choice" | "gate1_reask" | "gate1_risk_accepted" | "gate1_unresolved" | "readiness_failed" | "signoff_changes" | "owner_note";
+  item?: string;
+  finding?: number;
+  option?: string;
+  label?: string;
+  note?: string;
+  checks?: Array<{ name: string; evidence: string }>;
+  /** F-016 FR-15: what Gate 1's check found missing. */
+  evidence?: string;
+}
+
+/** F-016 FR-7 to FR-9: the readiness gate and spec sign-off. */
+export interface ReadinessState {
+  /** The last result and the spec commit it was for. */
+  last: { passed: boolean; commit: string; at: string } | null;
+  /** Orchestrator runs started (H-0184 caps them per feature). */
+  runs: number;
+  /** The open Spec sign-off item and the commit and version it names. */
+  signoff: { item: string; commit: string; version: number | null } | null;
+  signedOff: { item: string; commit: string; version: number | null } | null;
 }
 
 /** Everything the engine knows about one feature's interview, rebuilt from its transcript. */
@@ -146,7 +182,9 @@ export class InterviewState {
   readonly undelivered: string[] = [];
   researchCalls = 0;
   lastSpecReady: { passed: boolean; at: string; spec_path: string; spec_version: number } | null = null;
-  readonly gate1: Gate1State = { runs: 0, findings: [], pending: false, blocked: null, riskFiled: [], reportAt: null, itemsAtReport: 0 };
+  readonly gate1: Gate1State = { runs: 0, findings: [], pending: false, blocked: null, riskFiled: [], reportAt: null, itemsAtReport: 0, decided: new Map(), accepted: new Map(), extraRuns: 0, unresolvedSent: 0 };
+  readonly readiness: ReadinessState = { last: null, runs: 0, signoff: null, signedOff: null };
+  returns: Return[] = [];
 
   apply(e: Entry): void {
     switch (e.type) {
@@ -211,6 +249,50 @@ export class InterviewState {
       }
       case "spec_ready":
         this.lastSpecReady = { passed: e.passed as boolean, at: e.at, spec_path: e.spec_path as string, spec_version: e.spec_version as number };
+        if (e.passed) this.returns = [];
+        break;
+      case "returned":
+        this.returns.push({ ...(e.return as Return) });
+        if ((e.return as Return).why === "gate1_unresolved" && !(e.return as Return).item) this.gate1.unresolvedSent++;
+        break;
+      case "gate1_decided":
+        this.gate1.decided.set(e.finding as number, { item: e.item as string, option: e.option as string, label: e.label as string });
+        break;
+      case "gate1_risk_accepted":
+        this.gate1.accepted.set(e.finding as number, e.item as string);
+        break;
+      case "gate1_reask": {
+        const n = e.finding as number;
+        this.gate1.riskFiled = this.gate1.riskFiled.filter((x) => x !== n);
+        this.gate1.accepted.delete(n);
+        this.gate1.decided.delete(n);
+        // F-016 H-0182: a re-asked finding is settled by an interview question now, not by its Security item.
+        const rec = this.gate1.findings.find((x) => x.n === n);
+        if (rec) rec.needs_owner = false;
+        break;
+      }
+      case "gate1_unblocked":
+        this.gate1.blocked = null;
+        break;
+      case "gate1_extra_run":
+        this.gate1.extraRuns++;
+        this.gate1.blocked = null;
+        break;
+      case "readiness_run":
+        this.readiness.runs++;
+        break;
+      case "readiness_result":
+        this.readiness.last = { passed: e.passed as boolean, commit: e.commit as string, at: e.at };
+        break;
+      case "signoff_filed":
+        this.readiness.signoff = { item: e.item as string, commit: e.commit as string, version: (e.version as number | null) ?? null };
+        break;
+      case "spec_signed_off":
+        this.readiness.signedOff = { item: e.item as string, commit: e.commit as string, version: (e.version as number | null) ?? null };
+        this.readiness.signoff = null;
+        break;
+      case "signoff_withdrawn":
+        this.readiness.signoff = null;
         break;
       case "stage":
         this.stage = e.stage as string;
@@ -224,6 +306,9 @@ export class InterviewState {
         this.gate1.riskFiled = [];
         this.gate1.reportAt = e.at;
         this.gate1.itemsAtReport = this.order.length;
+        this.gate1.decided.clear();
+        this.gate1.accepted.clear();
+        this.gate1.unresolvedSent = 0;
         break;
       case "gate1_blocked":
         this.gate1.blocked = e.reason as string;

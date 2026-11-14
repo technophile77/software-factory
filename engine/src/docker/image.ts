@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentSources } from "../config/agent-sources";
@@ -33,6 +34,17 @@ export function skillsPluginDir(role: string): string {
 
 /** The engine's own files the build needs; nothing else of the engine's docker folder is copied. */
 const ENGINE_FILES = ["agent.Dockerfile", "claude-code/package.json", "claude-code/package-lock.json", "claude-sha256.json", "verify-claude.cjs"];
+
+/**
+ * The engine's own image files as one digest. An engine update that changes
+ * them must rebuild the image even when the master commit and skills are the
+ * same, as when the trial runs a newer engine under the same factory.version.
+ */
+export function engineFilesDigest(engineDockerDir: string): string {
+  const h = crypto.createHash("sha256");
+  for (const f of ENGINE_FILES) h.update(`${f}\0`).update(fs.readFileSync(path.join(engineDockerDir, f))).update("\0");
+  return h.digest("hex");
+}
 
 /**
  * Assembles a fresh build context: the engine's own image files, and under
@@ -85,12 +97,13 @@ export function agentImageTag(id: ImageIdentity): string {
  * legacy builder leaves TARGETARCH unset and its intermediate containers
  * unlabelled, where the sweep can't find them.
  */
-export function agentBuildArgs(contextDir: string, iidFile: string, id: ImageIdentity): string[] {
+export function agentBuildArgs(contextDir: string, iidFile: string, id: ImageIdentity, engineFiles = ""): string[] {
   if (!path.isAbsolute(contextDir) || !path.isAbsolute(iidFile)) throw new DockerError("absolute paths only");
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(id.project)) throw new DockerError("bad project name");
   if (!/^[0-9a-f]{40,64}$/.test(id.masterCommit) || !/^[0-9a-f]{64}$/.test(id.skillsDigest)) throw new DockerError("bad image identity");
   return ["buildx", "build", "--load", "--build-arg", `BASE_IMAGE=${BASE_IMAGE}`, "--iidfile", iidFile, "--tag", agentImageTag(id),
     "--label", `factory.project=${id.project}`, "--label", `factory.master_commit=${id.masterCommit}`, "--label", `factory.skills_sha256=${id.skillsDigest}`,
+    ...(engineFiles ? ["--label", `factory.engine_files_sha256=${engineFiles}`] : []),
     "--file", path.join(contextDir, "agent.Dockerfile"), contextDir];
 }
 
@@ -107,7 +120,8 @@ export async function ensureAgentImage(docker: DockerCli, engineDockerDir: strin
     const img = Array.isArray(doc) ? doc[0] : doc;
     const labels = isObj(img) && isObj(img.Config) && isObj(img.Config.Labels) ? img.Config.Labels : {};
     if (isObj(img) && typeof img.Id === "string" && ID_RE.test(img.Id) && isObj(img.Config) && img.Config.User === "1000:1000"
-      && labels["factory.master_commit"] === ident.masterCommit && labels["factory.skills_sha256"] === ident.skillsDigest && labels["factory.project"] === ident.project) {
+      && labels["factory.master_commit"] === ident.masterCommit && labels["factory.skills_sha256"] === ident.skillsDigest && labels["factory.project"] === ident.project
+      && labels["factory.engine_files_sha256"] === engineFilesDigest(engineDockerDir)) {
       return { id: img.Id, tag };
     }
   }
@@ -131,7 +145,7 @@ export async function buildAgentImage(docker: DockerCli, engineDockerDir: string
   const iid = path.join(workDir, `agent-image-${ident.project}.iid`);
   fs.rmSync(iid, { force: true });
   try {
-    await docker.run(agentBuildArgs(context, iid, ident), { timeoutMs: 30 * 60_000 });
+    await docker.run(agentBuildArgs(context, iid, ident, engineFilesDigest(engineDockerDir)), { timeoutMs: 30 * 60_000 });
   } finally {
     fs.rmSync(context, { recursive: true, force: true });
   }

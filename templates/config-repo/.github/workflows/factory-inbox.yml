@@ -1,0 +1,52 @@
+# Opens the factory's inbox issues (F-011 FR-4, H-0162). The engine renders
+# every title, body, label and action comment and sends them here with a
+# repository_dispatch; this workflow only posts them, as github-actions[bot],
+# so GitHub notifies the owner (it sends no notification for the owner's own
+# activity). Installed in the project's private config repo by onboarding.
+#
+# SR-12: issues: write only; no third-party action, so nothing to pin; the
+# payload is data passed through environment variables and jq, never run.
+name: factory-inbox
+on:
+  repository_dispatch:
+    types: [factory-inbox]
+permissions:
+  issues: write
+concurrency:
+  group: factory-inbox
+  cancel-in-progress: false
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post the inbox item
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER_LOGIN: ${{ vars.FACTORY_OWNER_LOGIN }}
+          PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          item=$(jq -r '.item // ""' <<<"$PAYLOAD")
+          rev=$(jq -r '.rev // ""' <<<"$PAYLOAD")
+          [[ "$item" =~ ^[DTHSMN]-[0-9]{4,}$ ]] || { echo "malformed item id"; exit 1; }
+          [[ "$rev" =~ ^[1-9][0-9]{0,5}$ ]] || { echo "malformed revision"; exit 1; }
+          [[ "$OWNER_LOGIN" =~ ^[A-Za-z0-9](-?[A-Za-z0-9]){0,38}$ ]] || { echo "FACTORY_OWNER_LOGIN is not set"; exit 1; }
+          marker="<!-- factory-action: $item rev $rev "
+          # Every action comment must carry this item's own marker on its first line.
+          jq -e --arg m "$marker" '.comments | type == "array" and length > 0 and length <= 12 and all(.[]; type == "string" and startswith($m) and length <= 600)' <<<"$PAYLOAD" >/dev/null || { echo "malformed action comments"; exit 1; }
+          issue=$(jq -r '.issue // ""' <<<"$PAYLOAD")
+          if [[ -z "$issue" ]]; then
+            jq -e --arg m "<!-- factory-item: $item rev $rev -->" '(.title | type == "string" and length <= 120) and (.body | type == "string" and startswith($m) and length <= 60000) and (.labels | type == "array" and length <= 6 and all(.[]; type == "string" and test("^(factory-inbox|blocking|kind:[a-z]+|category:[a-z]+|priority:[a-z]+)$")))' <<<"$PAYLOAD" >/dev/null || { echo "malformed issue"; exit 1; }
+            issue=$(jq --arg who "$OWNER_LOGIN" '{title, body, labels, assignees: [$who]}' <<<"$PAYLOAD" \
+              | gh api -X POST "repos/$REPO/issues" --input - --jq .number)
+          else
+            [[ "$issue" =~ ^[1-9][0-9]{0,9}$ ]] || { echo "malformed issue number"; exit 1; }
+            # A new revision's comments go only on this item's own inbox issue.
+            gh api "repos/$REPO/issues/$issue" --jq '[.user.login, ([.labels[].name] | index("factory-inbox") != null), (.body | startswith("<!-- factory-item: '"$item"' rev "))] | @tsv' \
+              | grep -qx $'github-actions\\[bot\\]\ttrue\ttrue' || { echo "issue $issue is not this item's inbox issue"; exit 1; }
+          fi
+          jq -c '.comments[]' <<<"$PAYLOAD" | while IFS= read -r c; do
+            jq '{body: .}' <<<"$c" | gh api -X POST "repos/$REPO/issues/$issue/comments" --input - --silent
+          done

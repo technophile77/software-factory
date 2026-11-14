@@ -38,6 +38,8 @@ H-0135) and Agent report v1.4 (H-0136) for F-013 approved by the owner
 2026-11-13 (decision card). Inbox item v3.0 (F-011 H-0165, ADR 0022: items
 are GitHub issues) approved by the owner 2026-11-13 (decision card); it
 replaces v1.1 and the never-applied v2.0, v2.1 and Phone issue v1.0.
+Inbox item v3.1 (H-0180) and Engine control channel v1.5 (H-0183) for F-016
+approved by the owner 2026-11-13 (decision card).
 Project manifest v1.7 (H-0193) and Agent report v1.5 (H-0194) for F-015
 (build to PR) approved by the owner 2026-11-14 (decision card).
 
@@ -54,10 +56,10 @@ Project manifest v1.7 (H-0193) and Agent report v1.5 (H-0194) for F-015
 
 ---
 
-## Inbox item — v3.0
+## Inbox item — v3.1
 
 - Status: Approved
-- Owner decision: ADR 0022; v3.0 by the owner, 2026-11-13 (F-011 H-0165, decision card). Replaces v1.1, and v2.0 (F-011 H-0120), v2.1 and Phone issue v1.0 (F-012 H-0125), which were approved but never applied.
+- Owner decision: ADR 0022; v3.0 by the owner, 2026-11-13 (F-011 H-0165, decision card); v3.1 (F-016 H-0180, `effect_done` and `accepted_risk`) by the owner, 2026-11-13 (decision card). v3.0 replaces v1.1, and v2.0 (F-011 H-0120), v2.1 and Phone issue v1.0 (F-012 H-0125), which were approved but never applied.
 - Used by: engine (files, reads, records), the config repo workflow (opens issues, posts action comments), Microsoft's GitHub Pull Requests extension and GitHub Mobile (view only)
 - Compatibility: breaking (major) from v1.1: items are issues in the project's private config repo, not files; `pull_request` is not a kind (F-011 OQ-12); owner actions are proven by GitHub (ADR 0018, ADR 0022), not signed commits. Adding a kind, action, label or optional record field is minor; changing a template's fixed text, the marker lines or the command grammar is major.
 
@@ -151,7 +153,15 @@ history:                           # appended, never edited
 
 Engine history actions: `filed`, `revised`, `confirm_requested`,
 `auto_merged` (FR-10, with PR and merge commit), `closed`, `migrated` (FR-16,
-with the old file path and commit).
+with the old file path and commit), and from v3.1 `effect_done` (F-016 FR-2:
+`effect`, the name of what the owner's last action did, and `stage`, the
+feature stage it set, if any). An owner action with no later `effect_done`
+is carried out when the engine next starts, once.
+
+From v3.1, a Gate 1 risk item (`effect.type: gate1_risk`) answered with
+"Accept the risk" leaves its finding in Gate 1 state `accepted_risk`: it no
+longer blocks, and the spec must record it in section 9 with status
+"Accepted risk", citing the finding and the item (F-016 FR-5).
 
 **PR records** (config repo `factory/state`, `prs/<owner>/<repo>/<n>.yaml`):
 `evidence_comment_id`, `feature`, `head` at evidence time, and history
@@ -248,7 +258,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
 
 ---
 
-## Engine control channel — v1.4
+## Engine control channel — v1.5
 
 - Status: Approved
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
@@ -260,7 +270,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
   (F-006, the advisor) approved by the owner, 2026-11-10 (H-0063 and
   amendment H-0075: advisor fields stated exactly, call limits, budget flag,
   advice revision and hash; decision card, as drafted; renumbered from v1.2
-  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted); v1.4 capability list approved by the owner, 2026-11-12 (decision card)
+  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted); v1.4 capability list approved by the owner, 2026-11-12 (decision card); v1.5 (F-016 H-0183, `waiting_on`) approved by the owner, 2026-11-13 (decision card)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -296,7 +306,7 @@ it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 
 | Method | Params | Result |
 |---|---|---|
-| `engine.status` | none | `{ version, capabilities?, uptime_s, features: [{ id, stage, active_agents }] }` (`capabilities` from v1.4) |
+| `engine.status` | none | `{ version, capabilities?, uptime_s, features: [{ id, stage, active_agents, waiting_on? }] }` (`capabilities` from v1.4; `waiting_on` from v1.5: the ids of the inbox items the feature waits on, left out when there are none) |
 | `engine.pause` | `{ feature? }` | `{ paused: [feature ids] }` |
 | `engine.resume` | `{ feature? }` | `{ resumed: [feature ids] }` |
 | `engine.shutdown` | none | `{ ok: true }` after agents reach a safe stop |

@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { templateSections } from "./template-spec";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { EngineHandle } from "../src/engine";
@@ -24,13 +25,7 @@ function spec(feature: string, assumptions: string[] = [], extra = ""): string {
     `- **Id:** ${feature}`,
     "- **Spec version:** 3",
     "",
-    "## 8. Assumptions",
-    "| Id | Assumption | Decision link | Status |",
-    "|---|---|---|---|",
-    ...assumptions,
-    "",
-    "## 9. Security considerations",
-    extra,
+    ...templateSections({ 8: assumptions, 9: [extra] }),
   ].join("\n");
 }
 
@@ -105,8 +100,8 @@ describe("interview_spec_ready (FR-12, AC-10)", () => {
     const c5 = byName(r.result.checks, "check_5_assumptions");
     expect(c5.passed).toBe(false);
     expect(c5.evidence).toContain("pending assumptions: A-001");
-    expect(c5.evidence).toMatch(/line 9: marked approved, but no approve_assumption entry matches it/);
-    expect(c5.evidence).toMatch(/line 10: .*matches A-001, which the owner didn't approve/);
+    expect(c5.evidence).toMatch(/line 32: marked approved, but no approve_assumption entry matches it/);
+    expect(c5.evidence).toMatch(/line 33: .*matches A-001, which the owner didn't approve/);
     expect(c5.evidence).not.toContain("Never asked");
   });
 
@@ -146,7 +141,7 @@ describe("interview_spec_ready (FR-12, AC-10)", () => {
     const { w, feature, tools } = await setup();
     const rel = writeSpec(w, feature, spec(feature, [], "![t](https://evil.example/x.png)\n<img src=x>\n`<b>code</b>`\n```\n<div>\n```"));
     const r = (await tools.interview_spec_ready({ spec_path: rel, spec_version: 4 })) as { result: { checks: Checks } };
-    expect(byName(r.result.checks, "no_remote_images_or_html")).toMatchObject({ passed: false, evidence: expect.stringContaining("lines 11, 12;") });
+    expect(byName(r.result.checks, "no_remote_images_or_html")).toMatchObject({ passed: false, evidence: expect.stringContaining("lines 36, 37;") });
     expect(byName(r.result.checks, "spec_version").passed).toBe(false);
   });
 });
@@ -154,7 +149,7 @@ describe("interview_spec_ready (FR-12, AC-10)", () => {
 describe("readiness helpers", () => {
   it("reads the assumptions table, skipping the header and empty template rows", () => {
     const rows = specAssumptions(spec("F-001", ["| A-1 | | | Pending |", "| A-2 | Uses a \\| pipe | link | Approved by owner |"]));
-    expect(rows).toEqual([{ line: 10, id: "A-2", text: "Uses a | pipe", status: "approved by owner" }]);
+    expect(rows).toEqual([{ line: 33, id: "A-2", text: "Uses a | pipe", status: "approved by owner" }]);
   });
 
   it("finds reference-style remote images", () => {

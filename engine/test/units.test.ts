@@ -679,6 +679,9 @@ describe("runs (FR-14, SR-18)", () => {
     book.markInterrupted();
     expect(book.resume(r2.id, s)).toMatchObject({ mode: "failed", run: { status: "failed" } });
     expect(transcriptSummary(s)).toMatch(/^Summary of the interview so far/);
+    // A reply of "accept the suggestion" means nothing to a new session without the suggestion (live trial, Q-007).
+    s.apply(makeEntry(null, { type: "item_created", item: { id: "Q-002", kind: "question", text: "Limits?", why: "w", suggested: "Linux x86-64; within 5 s." } }, "t"));
+    expect(transcriptSummary(s)).toContain('suggested answer: "Linux x86-64; within 5 s."');
   });
 });
 
