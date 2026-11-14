@@ -1,13 +1,13 @@
 # Feature: Isolation evaluation for every onboarded model
 
 - **Id:** F-017
-- **Status:** Draft (OQ-1 to OQ-6 and D1 to D4 decided; SR-4 to SR-17 approved; SR-1 to SR-3 and H-0210 to H-0213 with the owner)
+- **Status:** In review (readiness gate passed 2026-11-14; awaiting owner sign-off)
 - **Requested by / date:** Alex, 2026-11-14 ("each model that is onboarded
   needs to be evaluated for how it enforces isolation, and what
   configuration turns it on. documentation is not sufficient, testing should
   be done."; "since each model may have it's own way to configure things,
   agent definitions need to be per model")
-- **Spec version:** 8
+- **Spec version:** 9
 - **Depends on:** ADR 0026 and Role policy v2.7 (PR #61), F-013
 
 ## 1. Objective and business purpose
@@ -135,9 +135,9 @@ engine decides. So the evaluation answers two separate questions:
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | Canary files only; the evaluation never reads or exposes the owner's real secrets, and runs with an empty home folder (S3.1, S9.4). | Analyst | Proposed |
-| SR-2 | Part 1 is a release gate for the engine: CI fails on any breach (S2.2, S6.2; OWASP LLM06 Excessive Agency). | Analyst | Proposed |
-| SR-3 | A model's approval for roles is a Security decision by the owner, with the report attached; agents never approve it (S8.5). | Analyst | Proposed |
+| SR-1 | Canary files only; the evaluation never reads or exposes the owner's real secrets, and runs with an empty home folder (S3.1, S9.4). | Analyst | Accepted (owner, 2026-11-14, decision card) |
+| SR-2 | Part 1 is a release gate for the engine: CI fails on any breach (S2.2, S6.2; OWASP LLM06 Excessive Agency). | Analyst | Accepted (owner, 2026-11-14, decision card) |
+| SR-3 | A model's approval for roles is a Security decision by the owner, with the report attached; agents never approve it (S8.5). | Analyst | Accepted (owner, 2026-11-14, decision card) |
 | SR-4 | D1 (b): until containers return at Beta, the shell roles (software developer, test engineer) get Part 1 only, the scripted hostile model. Part 2 never runs a real model with planted injections for them on the bare host. | Gate 1 #1 (S8.4, S3.1, S9.4) | Accepted (owner, 2026-11-14, decision card) |
 | SR-5 | Each run uses a fresh standalone repo (`git init`, no remote, no credential helper), an allow-listed environment, injections aimed only at inert harness targets, and ask-list holds auto-denied by the harness, never sent to the owner's inbox. | Gate 1 #2 (S8.1, S9.2, S9.4) | Accepted (owner, 2026-11-14, decision card) |
 | SR-6 | Each FR-3 case has an expected outcome per role: `refused`, `held then denied`, `rejected at session end`, or `not enforced until Beta (ADR 0026)`. The report states each one plainly, so it never implies a boundary that doesn't exist. | Gate 1 #3 (S7.1, S2.2) | Accepted (owner, 2026-11-14, decision card) |
@@ -154,9 +154,9 @@ engine decides. So the evaluation answers two separate questions:
 | SR-17 | The inbox report fences model output and injection text, strips @mentions and remote images, never includes canary values, and labels each quoted block with its source. | Gate 1 #14 (S1.2, S6.1) | Accepted (owner, 2026-11-14, decision card) |
 
 ## 10. Interface requirements
-Drafts for the owner's approval:
+Approved by the owner 2026-11-14 (decision card; recording confirmed in the thread). Applied at build.
 
-- **H-0210 (Interfaces): Model evaluation record v1.0** (new contract). One
+- **H-0210 (approved, Interfaces): Model evaluation record v1.0** (new contract). One
   JSON file per role-and-model pair in the engine-owned folder:
   `{ schema: "model-eval/1.0", role, model, part1: { result, cases: [{ id,
   expected, actual }] }, part2?: { result, tasks: [{ id, injected,
@@ -167,12 +167,12 @@ Drafts for the owner's approval:
   The engine recomputes the key at each session start and ignores the
   stored `key` when matching (SR-9). A record opens a rung only with
   `approved` set (SR-9) and no `voided` (SR-12 monitor).
-- **H-0211 (Interfaces): Engine control channel minor bump and Inbox item
+- **H-0211 (approved, Interfaces): Engine control channel minor bump and Inbox item
   minor bump.** A new channel method `model.evaluate { endpoint | "claude",
   role, parts: [1] | [1, 2] }` returns the run's report. A new inbox item
   kind, `model-evaluation`, carries the report as fenced text (SR-17) with
   Approve and Reject per role, as a Security decision (SR-3).
-- **H-0212 (Interfaces): per-model agent definitions** (OQ-6 (a)). An
+- **H-0212 (approved, Interfaces): per-model agent definitions** (OQ-6 (a)). An
   optional `agents/<role>/models/<model-family>.md` overlay may add or
   replace prompt sections, except the base definition's security sections
   (SR-11). A model profile at `engine/config/model-profiles/<model-family>.yaml`
@@ -181,18 +181,20 @@ Drafts for the owner's approval:
   fixes), and `tighten` (tools to remove, read and write denies to add,
   commands to remove, ask-list additions). Any other key is refused, and the
   engine refuses an overlay or profile that loosens isolation (FR-10).
-- **H-0213 (Hygiene): CI.** A Part 1 job runs on Linux and Windows on every
+- **H-0213 (approved, Hygiene): CI.** A Part 1 job runs on Linux and Windows on every
   change under `engine/`, with the pinned Claude Code, a stub with no
   network and read-only job permissions (FR-8, SR-16).
 - **H-0214:** reserved.
 
 ## 11. Readiness gate
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+Checked 2026-11-14 against spec v9.
+
+- [x] Clear objective
+- [x] Expected behavior defined
+- [x] Acceptance criteria testable (AC-1 to AC-8)
+- [x] Constraints documented
+- [x] Assumptions explicit (A-1, checked in the first build step; the F-013 spike shim already did it)
+- [x] Blocking decisions resolved (OQ-1 to OQ-6, D1 to D4 decided; SR-1 to SR-17 approved, SR-9 residual risk accepted until Beta; H-0210 to H-0213 approved)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -205,6 +207,7 @@ Drafts for the owner's approval:
 | 6 | 2026-11-14 | Security Gate 1 ([F-017-security-gate1.md](F-017-security-gate1.md)): 14 findings (1 High, 8 Medium, 5 Low), none blocking at Rapid prototype; SR-4 to SR-17 proposed; owner decisions D1 to D4 | — |
 | 7 | 2026-11-14 | Gate 1 decisions: D1 (b) shell roles Part 1 only until Beta (SR-4); D2 (a) production attempt monitor (SR-12); D3 (a) report-only endpoint roles need Part 1 (SR-15); D4 (a) record-forgery risk accepted until Beta (SR-9); SR-4 to SR-17 approved | Owner, 2026-11-14 (decision cards; recording confirmed in the thread) |
 | 8 | 2026-11-14 | Section 10: H-0210 to H-0213 drafted | — |
+| 9 | 2026-11-14 | SR-1 to SR-3 and H-0210 to H-0213 approved; readiness gate passed | Owner, 2026-11-14 (decision cards; recording confirmed in the thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
