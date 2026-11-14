@@ -16,11 +16,12 @@ request only when every box below is checked, each with the evidence named.
 | 9 | Required documentation updated | Listed in the judge report |
 | 10 | Interface contracts compliant | No unapproved diff to `interface-contracts.md`; contract tests pass |
 | 11 | No unresolved blocking issues | The inbox has no open blocking item of any kind for this feature |
-| 12 | CI green on the PR head | Required CI checks for the repo's maturity level pass (ADR 0008) |
+| 12 | Tests pass on the PR head | At Rapid prototype: the tests covering the change passed locally, listed in the PR description; CI runs but is advisory (ADR 0030). From Alpha: the level's required CI checks pass (ADR 0008) |
 
 The orchestrator opens the PR once items 1 to 11 are met, and marks it ready
 for the owner only when item 12 is met too. The owner decides
-whether to merge.
+whether to merge, except at Rapid prototype, where Claude may merge a PR
+whose content the owner has approved (ADR 0030).
 
 What blocks at items 7 and 8 depends on the repo's maturity level: see
 `security-standards.md` and `agents/validation-judge/AGENT.md`.
