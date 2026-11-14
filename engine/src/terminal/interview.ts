@@ -47,7 +47,8 @@ export const ACTIVITY: Record<string, string> = {
 };
 
 /** Stages from which the interview can still send the owner items, so the command keeps waiting. */
-const WAIT_STAGES = new Set(["requirements_interview", "security_gate_1", "readiness_gate"]);
+// security_gate_1: an engine from before the gate rename reports the old stage name.
+const WAIT_STAGES = new Set(["requirements_interview", "security_testability_review", "security_gate_1", "readiness_gate"]);
 
 const POLL_MS = 2000;
 const NEXT_EVERY_MS = 15_000;
@@ -330,7 +331,7 @@ export class TerminalInterview {
   private async handle(feature: string, r: Obj): Promise<Obj | null> {
     if (r.ok !== true) return this.failed(feature, r);
     const item = (r.item ?? r.next ?? null) as Item | null;
-    // Gate 1 and the readiness check can still send the feature back with new questions.
+    // Security and Testability Review and the readiness check can still send the feature back with new questions.
     if (item === null && typeof r.stage === "string" && WAIT_STAGES.has(r.stage)) return this.waitForItem(feature);
     this.show(r);
     if (r.advice_running === true) this.say("The advisor is still working on this question. You can reply now, or check for its advice.");

@@ -89,7 +89,7 @@ const DACL_FLAGS = /^(?:P|AI|AR)*$/;
 const ACE_FLAGS = new Set(["OI", "CI", "NP", "IO", "ID"]);
 
 /**
- * Parses an owner-and-DACL descriptor, failing closed (Security Gate 2, M2):
+ * Parses an owner-and-DACL descriptor, failing closed (Code Review, M2):
  * a NULL DACL (`NO_ACCESS_CONTROL`, which grants everyone everything), an
  * unknown DACL flag, any ACE type other than plain allow (`A`) and deny
  * (`D`), an object or conditional ACE, an unknown ACE flag, and any text

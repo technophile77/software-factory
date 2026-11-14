@@ -49,7 +49,7 @@
   - The acceptance test's copy of the contract list is updated.
 - `agents/requirements-analyst/AGENT.md` (H-0108) was merged with PR #29.
 
-## Gate 2 fixes (`F-009-security-gate2.md`)
+## Code Review fixes (`F-009-code-review.md`)
 - H1: the hidden-content check no longer trusts code spans or fences, and covers entities and plain text.
 - H2: the client refuses any mix of two leading slashes or backslashes and the `\??\` prefix.
 - M1: the invisible-character set now covers all format, private-use, unassigned and surrogate code points, plus the fillers and variation selectors.
@@ -59,7 +59,7 @@
 - L3: closed by the capability list (owner decision 2026-11-12).
 - M2: SR-8 extended by the owner (2026-11-12). `hiddenLinkLines` refuses link reference definitions with a title (on the same or the next line) or that no link uses, and links or images with empty text, in code and plain text too, as for H1.
 - M3: the owner chose to show and lock the spec lines (2026-11-12). Each source row carries `spec_line`, copied by the engine, and the confirmation's hash covers those lines, so rewording a confirmed requirement fails `sources_confirmed`. Quotes need 5 words or 25 characters, Section must be a document heading (`-` without headings), and a quote must sit in one paragraph, list item or table row under that heading. The item text no longer says "word for word".
-- All Gate 2 findings are now fixed or decided.
+- All Code Review findings are now fixed or decided.
 
 ## Validation round 1 fixes
 - B1: the acceptance-test `engineJson()` type carries `capabilities`.
@@ -87,8 +87,8 @@ A document inside the owner's repo is named by its repo path and read from the w
 - Docs checks and placeholder check pass.
 
 ## Interpretations and deviations
-1. **Capability, not version.** The engine still reports channel 1.2, because it doesn't serve v1.3's advisor. The owner chose a capability list (2026-11-12): engine.json and `engine.status` carry `capabilities: ["document"]`, and the client refuses a document before reading it when the list lacks `"document"`. This closes Gate 2 L3 and fixes DOC-7 and C-1. A -32602 from an engine that lists the capability but refuses the key is still reported as `document_unsupported`.
-2. **Hidden Markdown.** "Raw HTML" follows CommonMark: a tag name must follow `<` directly, so `a < b` is text. After Gate 2 (H1), HTML comments, tags, declarations, processing instructions and entities that decode to invisible characters are refused everywhere, inside code and in plain text documents too, because the tracking of code spans could be fooled and a plain text file can still be rendered as Markdown.
+1. **Capability, not version.** The engine still reports channel 1.2, because it doesn't serve v1.3's advisor. The owner chose a capability list (2026-11-12): engine.json and `engine.status` carry `capabilities: ["document"]`, and the client refuses a document before reading it when the list lacks `"document"`. This closes Code Review L3 and fixes DOC-7 and C-1. A -32602 from an engine that lists the capability but refuses the key is still reported as `document_unsupported`.
+2. **Hidden Markdown.** "Raw HTML" follows CommonMark: a tag name must follow `<` directly, so `a < b` is text. After Code Review (H1), HTML comments, tags, declarations, processing instructions and entities that decode to invisible characters are refused everywhere, inside code and in plain text documents too, because the tracking of code spans could be fooled and a plain text file can still be rendered as Markdown.
 3. **Secret refusals.** A document holding a secret gets -32009 `secret`, with lines and rule, and no Security item. The document never left the owner's machine, unlike a secret in a request, which keeps H-0084's -32008 and Security item.
 4. **Status words.** A confirmed source list is `approved` and a reopened one is `rejected`, reusing the contract's status values rather than adding new ones.
 

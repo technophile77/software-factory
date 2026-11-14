@@ -1,4 +1,4 @@
-// Security Gate 2, H2: the branch tree written into an analyst worktree on
+// Code Review, H2: the branch tree written into an analyst worktree on
 // the host can't steer a write outside it, through a link, a name the file
 // system reads as another, or a folder that turns out to be a link.
 

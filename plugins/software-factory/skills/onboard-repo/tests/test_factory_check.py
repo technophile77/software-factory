@@ -467,7 +467,7 @@ class Portability(Base):
 
 
 class ReviewRegressions(Base):
-    """One test per finding fixed from Gate 2 and validation (testing-strategy.md, Regression)."""
+    """One test per finding fixed from Code Review and validation (testing-strategy.md, Regression)."""
 
     def test_b1_same_action_in_two_jobs(self):
         wf = ("permissions: {}\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@v4\n"
@@ -499,7 +499,7 @@ class ReviewRegressions(Base):
         wf = GOOD_WORKFLOW.replace('"0 6 * * 1"', "'0 0 * * *'")
         self.assertNotIn("cve-audit-not-weekly", ids(self.assess({".github/workflows/ci.yml": wf})))
 
-    def test_gate2_hidden_uses_and_risky_triggers(self):
+    def test_code_review_hidden_uses_and_risky_triggers(self):
         wf = ("on: [pull_request_target]\npermissions: write-all\njobs:\n  a:\n    runs-on: x\n    steps:\n"
               "      - {uses: evil/act@main}\n      - \"uses\": other/act@v1\n")
         a = self.assess({".github/workflows/ci.yml": wf})
@@ -520,7 +520,7 @@ class ReviewRegressions(Base):
         self.assertIn(f"secret:{AWS_RULE}:build/out.js:1", ids(a))
         self.assertEqual(a["stacks"], [])
 
-    def test_gate2_more_secret_types(self):
+    def test_code_review_more_secret_types(self):
         npm = "npm_" + "a1B2" * 9
         a = self.assess({".env": "DB_PASSWORD=hunter22secret\nDEBUG=1\n", ".env.example": "DB_PASSWORD=changeme123\n",
                          "ci.sh": f"echo {npm}\n"})
@@ -583,7 +583,7 @@ class ReviewRegressions(Base):
 
 
 class SecondReviewRegressions(Base):
-    """Findings from the Gate 2 re-review and the test engineer's run."""
+    """Findings from the Code Review re-review and the test engineer's run."""
 
     def test_apostrophe_does_not_hide_a_comment(self):
         wf = "permissions: {}\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: echo don't # npm audit gitleaks e2e\n"
@@ -753,7 +753,7 @@ class ManifestPolicy(Base):
                 self.assertTrue(any("outside the worktree" in e for e in errs), errs)
 
     def test_globs_use_one_dialect(self):
-        # H-0046 (Gate 2 R2-2): only literal segments, `*` and `**`.
+        # H-0046 (Code Review R2-2): only literal segments, `*` and `**`.
         for glob in ("src/?.py", "src/[ab]/**", "src/[[:alpha:]]/**", "src/{a,b}/**", "src/@(a|b)/**", ".factory/?./CLAUDE.md"):
             with self.subTest(glob=glob):
                 errs = self.errors(self.manifest(dev_deny=self.CC).replace('allow: ["src/**"]', f'allow: [{json.dumps(glob)}]'))
@@ -774,7 +774,7 @@ class Protection(unittest.TestCase):
                                                   "require_last_push_approval": True, "require_code_owner_reviews": True},
                 "required_status_checks": {"strict": True, "contexts": ["build"]}, "enforce_admins": {"enabled": True}}
         self.assertEqual(fc._protection(full)[0], "ok")
-        # Gate 2 #1: a weaker rule would let the factory token push after approval and merge.
+        # Code Review #1: a weaker rule would let the factory token push after approval and merge.
         # R2-10: without code owner review, the machine account's approval counts on owner-authored PRs.
         for key, value in (("dismiss_stale_reviews", False), ("require_last_push_approval", False),
                            ("require_code_owner_reviews", False)):
@@ -806,7 +806,7 @@ class UnenforceableProtection(Base):
 
 
 class PluginVersion(unittest.TestCase):
-    """H-0048 (Gate 2 R2-8): the skill stops unless it runs from the pinned release."""
+    """H-0048 (Code Review R2-8): the skill stops unless it runs from the pinned release."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -914,7 +914,7 @@ class Properties(unittest.TestCase):
 
 
 class F005GateRegressions(Base):
-    """F-005 Gate 2 #2 and #10: host values and the project-level policy."""
+    """F-005 Code Review #2 and #10: host values and the project-level policy."""
 
     mp = ManifestPolicy()
 
@@ -945,7 +945,7 @@ class F005GateRegressions(Base):
         self.assertTrue(any("requirements-analyst in the project allows any host" in e for e in errs), errs)
 
 class AdvisorFactoryDeny(unittest.TestCase):
-    """H-0076 (F-006 Gate 2 #1): the advisor reads nothing on factory/state."""
+    """H-0076 (F-006 Code Review #1): the advisor reads nothing on factory/state."""
 
     FILL = (("<project-name>", "p"), ("<one line on what the project is>", "d"),
             ("<tag or commit of the master factory>", "v1"), ("<repo-name>", "a"), ("<owner>/<repo>", "o/a"),
@@ -1036,7 +1036,7 @@ class StackAudits(Base):
 
 
 class SecondGateRegressions(Base):
-    """Gate 2 re-review 2 (1890675..543c9ae)."""
+    """Code Review re-review 2 (1890675..543c9ae)."""
 
     mp = ManifestPolicy()
 
@@ -1119,7 +1119,7 @@ class SecondGateRegressions(Base):
 
 
 class ThirdGateRegressions(Base):
-    """Gate 2 re-review 3 (543c9ae..ee6be85)."""
+    """Code Review re-review 3 (543c9ae..ee6be85)."""
 
     mp = ManifestPolicy()
 

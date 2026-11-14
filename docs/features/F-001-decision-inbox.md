@@ -85,11 +85,11 @@ records the action in Git.
 ## 9. Security considerations
 | Id | Requirement | Source | Status |
 |---|---|---|---|
-| SR-1 | Item bodies are untrusted: render Markdown with raw HTML disabled, under a webview content security policy that allows no scripts except the extension's own (nonce) and no remote resources. | Analyst; Gate 1 (S1.2, S6.1) | Accepted |
+| SR-1 | Item bodies are untrusted: render Markdown with raw HTML disabled, under a webview content security policy that allows no scripts except the extension's own (nonce) and no remote resources. | Analyst; Security and Testability Review (S1.2, S6.1) | Accepted |
 | SR-2 | The extension never runs commands or opens links from an item without the owner clicking them. | Analyst (S6.1) | Accepted |
-| SR-3 | File links resolve only inside the item's repo; URL links open only for `https:`. Anything else is refused. | Gate 1 (S1.4) | Accepted |
-| SR-4 | Git is invoked with an argument list, never through a shell; item ids must match `^[DTH]-\d{4,}$` before use in paths or commit messages. | Gate 1 (S1.3) | Accepted |
-| SR-5 | Writes are atomic (write to a temp file, then rename) and preserve unknown frontmatter fields. | Gate 1 (S5.1) | Accepted |
+| SR-3 | File links resolve only inside the item's repo; URL links open only for `https:`. Anything else is refused. | Security and Testability Review (S1.4) | Accepted |
+| SR-4 | Git is invoked with an argument list, never through a shell; item ids must match `^[DTH]-\d{4,}$` before use in paths or commit messages. | Security and Testability Review (S1.3) | Accepted |
+| SR-5 | Writes are atomic (write to a temp file, then rename) and preserve unknown frontmatter fields. | Security and Testability Review (S5.1) | Accepted |
 
 ## 10. Interface requirements
 Uses Inbox item v1.0 unchanged.
@@ -106,6 +106,6 @@ Uses Inbox item v1.0 unchanged.
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-08 | Draft | — |
-| 2 | 2026-11-08 | Assumptions resolved; Gate 1 security requirements added | Owner, 2026-11-09 |
+| 2 | 2026-11-08 | Assumptions resolved; Security and Testability Review security requirements added | Owner, 2026-11-09 |
 | 2.1 | 2026-11-09 | Evidence rule for AC-7 recorded (inspection now, integration test before Alpha); no requirement changed | Owner, 2026-11-09 |
 | 3 | 2026-11-13 | Superseded by F-011 v20 for ADR 0022 (proposal 0026); requirements carried or withdrawn as listed at the top | Owner, 2026-11-13 (F-011 v29 sign-off, decision card) |

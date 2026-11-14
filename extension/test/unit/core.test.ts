@@ -73,7 +73,7 @@ describe("links", () => {
   });
 });
 
-describe("security fixes from Gate 2", () => {
+describe("security fixes from Code Review", () => {
   it("keeps a __proto__ frontmatter key through a round trip", () => {
     const r = parseItem(file(`${base}\n__proto__:\n  polluted: true`), "x.md");
     if (!r.ok) throw new Error(r.error.message);
@@ -83,7 +83,7 @@ describe("security fixes from Gate 2", () => {
   });
 });
 
-describe("store hardening from Gate 2", () => {
+describe("store hardening from Code Review", () => {
   it("lists a misnamed file and an unreadable entry as errors without hiding valid items", async () => {
     const { mkdtemp, mkdir, writeFile } = await import("node:fs/promises");
     const { tmpdir } = await import("node:os");
@@ -100,7 +100,7 @@ describe("store hardening from Gate 2", () => {
   });
 });
 
-describe("git lookup (Gate 2 finding 1)", async () => {
+describe("git lookup (Code Review finding 1)", async () => {
   const { findGitOnPath, isWithin } = await import("../../src/core/git");
   it("skips PATH entries inside a workspace folder, case-insensitively on Windows", () => {
     const found = findGitOnPath(

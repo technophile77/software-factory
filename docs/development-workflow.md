@@ -3,15 +3,22 @@
 The nine-stage lifecycle every feature follows, including small ones. The
 machine-readable version lives in `workflows/feature-development/`.
 
+Stages 3 and 7 are named for what they check (owner, 2026-11-14, H-0249). The
+baseline spec and records written before then call them Security Gate 1 and
+Security Gate 2. Today both are run by the security reviewer and check
+security only; F-022 adds the testability check to stage 3 and a general code
+review to stage 7. The engine still reads the old ids (`security_gate_1`,
+`gate1_*`, "Gate 1 #n") in records written before the rename.
+
 | Stage | Owner | Gate to leave the stage |
 |---|---|---|
 | 1. Feature request | Owner | Request recorded; analyst assigned |
 | 2. Requirements interview | Requirements analyst | Spec drafted; assumptions submitted |
-| 3. Security requirements review (Gate 1) | Security reviewer | Report filed; approved security requirements merged into spec |
+| 3. Security and testability review | Security reviewer | Report filed; approved security requirements merged into spec |
 | 4. Readiness gate | Orchestrator | All six readiness checks pass (below) |
 | 5. Development and test prep | Developer, then test engineer (sequential, F-015) | Developer reports done; test suite ready |
 | 6. Orchestrator review | Orchestrator | Tests pass and the run was complete |
-| 7. Final security review (Gate 2) | Security reviewer | No blocking findings |
+| 7. Code review | Security reviewer | No blocking findings |
 | 8. Validation | Validation judge | PASS |
 | 9. Pull request | Orchestrator | Items 1 to 11 of `definition-of-done.md` met; PR open; marked ready once item 12 is met (at Rapid prototype by the local test run, ADR 0030) |
 

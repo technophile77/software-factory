@@ -153,7 +153,7 @@ describe("secrets (SR-20, OQ-7)", () => {
     }
   });
 
-  it.runIf(process.platform === "win32")("Windows ranks a child and a grandchild strictly after their parents (Gate 2 L10)", async () => {
+  it.runIf(process.platform === "win32")("Windows ranks a child and a grandchild strictly after their parents (Code Review L10)", async () => {
     const win = realOsApi().windows();
     const script = "const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},20000)']);console.log(c.pid);setTimeout(()=>c.kill(),20000)";
     const child = spawn(process.execPath, ["-e", script], { stdio: ["ignore", "pipe", "ignore"] });
@@ -497,7 +497,7 @@ describe("GitHub device flow (SR-23, ADR 0014)", () => {
   });
 });
 
-describe("gitleaks (Gate 1 component review 5)", () => {
+describe("gitleaks (Security and Testability Review component review 5)", () => {
   it("runs dir mode with exactly the approved flags, from an empty folder, without GITLEAKS_* variables", async () => {
     const root = tmpdir();
     const fake = fakeGitleaks(path.join(root, "bin"));
@@ -819,7 +819,7 @@ describe("engine.status activity codes (F-018 FR-14, H-0225)", () => {
     expect(a("requirements_interview", true, ["answered", "open"])).toBe("analyst_reviewing");
     expect(a("requirements_interview", true, ["researching"])).toBe("analyst_researching");
     expect(a("requirements_interview", true, ["answered"])).toBe("analyst_writing_spec");
-    expect(a("security_gate_1", true, [])).toBe("security_reviewing");
+    expect(a("security_testability_review", true, [])).toBe("security_reviewing");
     expect(a("readiness_gate", true, [])).toBe("readiness_check");
     expect(a("requirements_interview", false, ["open"])).toBe("waiting_for_owner");
     expect(a("build_and_test_prep", false, [])).toBe("idle");

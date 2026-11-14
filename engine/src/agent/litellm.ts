@@ -78,7 +78,7 @@ export function litellmConfig(endpoints: Endpoint[], pins: LitellmPin[]): string
  * These values are visible to `docker inspect` on this PC and to every
  * process LiteLLM starts. FR-3 asks for the way the Claude credential is
  * handed over (stdin); the owner has not yet decided whether environment
- * delivery is acceptable (Gate 2 L3). Until then they go nowhere else: not the
+ * delivery is acceptable (Code Review L3). Until then they go nowhere else: not the
  * config file, not a log, not an argument.
  *
  * The settings after NO_PROXY keep LiteLLM from reaching out or serving more

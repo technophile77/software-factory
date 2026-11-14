@@ -192,7 +192,7 @@ export class EndpointService {
     if (s.problem) o.log.warn(`No model endpoint is available: ${s.problem}`);
     // AC-16: the pinned image is checked now, not at first use, so a wrong one shows in the status from the start.
     const imageProblem = s.endpoints.length > 0 && o.image ? await s.checkImage(o.image) : null;
-    // Concurrent, each under its own hard limit, so one slow or hostile endpoint can't hold the engine's start (Gate 2 L5).
+    // Concurrent, each under its own hard limit, so one slow or hostile endpoint can't hold the engine's start (Code Review L5).
     await Promise.all(s.endpoints.map(async (e) => {
       const reason = imageProblem ?? (await s.checkWithin(e, o.probeTimeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS));
       s.status.set(e.name, { name: e.name, model: e.model, available: reason === null, ...(reason ? { reason } : {}) });

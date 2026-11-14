@@ -1,4 +1,4 @@
-# Proposal 0017: Close the open F-003 Gate 2 security items
+# Proposal 0017: Close the open F-003 Code Review security items
 
 **Status:** all decided by the owner on 2026-11-10 (decision cards). R2-1:
 first option A, then changed to option B, a container per agent session,
@@ -7,7 +7,7 @@ wording (H-0045 with H-0052) approved by the owner as drafted (card).
 R2-2 A, R2-4 A, H-0048 and H-0049 approved as drafted. Recorded as ADR 0015
 and in the Role policy and Inbox item contracts.
 
-The F-003 Gate 2 review (`docs/features/F-003-security-gate2.md`) left five
+The F-003 Code Review review (`docs/features/F-003-code-review.md`) left five
 findings that only the owner can close. All are Security decisions; R2-2 is
 also an Interfaces change (Role policy). Hygiene ids: H-0045 to H-0049.
 
@@ -41,7 +41,7 @@ an OS sandbox", and named containers as a later step.
 |---|---|---|---|
 | **A. Claude Code's sandbox per agent session (recommended)** | The engine turns each role's policy into the session's sandbox settings: `filesystem.allowRead`/`denyRead`, `allowWrite`/`denyWrite` from `read` and `write` (deny wins), `network.allowedDomains` from `network`. It sets `failIfUnavailable: true`, `allowUnsandboxedCommands: false` and no `excludedCommands`, and loads only the settings it generates, never the repo's `.claude/` settings, hooks or MCP servers. File tools keep using permission rules built from the same lists. On Windows the engine runs agent sessions inside WSL2, because the sandbox does not run on native Windows | OS-enforced for every child process; one source of rules; little extra software on macOS and Linux | Needs WSL2 on Windows; only Bash is sandboxed, so the engine must keep hooks and MCP servers out of agent sessions; residuals below |
 | B. A container per agent session | Each session runs in a container with the worktree mounted; read-only mounts and a firewall stand in for the rules | Whole-process boundary, including hooks | Needs Docker Desktop; slower; per-file denies inside the worktree become coarse mounts; more upkeep |
-| C. No sandbox; the contract says file rules bind the file tools only | Rely on 0016's separate OS user to protect the owner's own files, and on review gates and branch protection for the rest | No new work | Inside the worktree a misbehaving agent can still read secret files and write change-controlled files; Gate 2 R2-1 stays open |
+| C. No sandbox; the contract says file rules bind the file tools only | Rely on 0016's separate OS user to protect the owner's own files, and on review gates and branch protection for the rest | No new work | Inside the worktree a misbehaving agent can still read secret files and write change-controlled files; Code Review R2-1 stays open |
 
 **Residuals of A**, to record as known limits: a secret already committed
 can still be read through git objects (`git show`), so `assess` keeps
@@ -74,7 +74,7 @@ libraries read `?`, `[...]`, braces and extglobs differently, which let
 |---|---|---|---|
 | **A. One fixed rule (recommended, drafted)** | Resolve the real path (following symlinks), refuse it outside the worktree, match it relative to the worktree after Unicode NFC normalization. Deny globs match case-insensitively everywhere; allow globs case-sensitively. Dialect: literal segments, `*` within a segment, `**` across segments; `?`, classes, braces and extglobs refused | Same answer on every OS; a deny can only get wider; simplest dialect to implement identically in TypeScript and Python | A rule that used `?` or `[...]` must be rewritten (no manifest uses them today) |
 | B. Same, but fold case only on case-insensitive filesystems | Engine detects the filesystem | Exact on Linux | A repo moved between machines behaves differently; more code |
-| C. Leave matching to the engine implementation | Status quo | None | Gate 2 R2-2 stays open |
+| C. Leave matching to the engine implementation | Status quo | None | Code Review R2-2 stays open |
 
 **Drafted here:** the Role policy text in `docs/interface-contracts.md`, and
 the validator now refuses `?`, `[` and `]` as well as braces and extglobs

@@ -69,7 +69,7 @@ class Addresses(unittest.TestCase):
         self.assertTrue(cp.check_addresses(DOC, text))
         self.assertEqual(cp.check_addresses("engine/src/proxy/rules.ts", text), [])
         self.assertEqual(cp.check_addresses("engine/test/proxy.test.ts", text), [])
-        # Files are listed one by one (Gate 2 L8): a new file beside an allowed one is checked.
+        # Files are listed one by one (Code Review L8): a new file beside an allowed one is checked.
         self.assertTrue(cp.check_addresses("engine/test/acceptance/x.test.ts", text))
         self.assertTrue(cp.check_addresses("engine/src/proxy/new-file.ts", text))
         self.assertTrue(cp.check_addresses("engine/test/new.test.ts", text))

@@ -25,7 +25,7 @@ rebasing would rewrite the engine's per-edit checkpoints (ADR 0012).
   its agent report.
 - Change-controlled files are never resolved by an agent; the conflict
   becomes a Configuration hygiene item.
-- Verification after resolving: the full test suite and CI, Security Gate 2
+- Verification after resolving: the full test suite and CI, Code Review
   on the resolved hunks, and, if the feature had already passed validation,
   the judge on the resolved hunks. All at the repo's maturity level.
 - Escalation goes to the existing inboxes and categories, with titles

@@ -58,7 +58,7 @@ function inCidr(bits: bigint, c: Cidr): boolean {
  * SR-8: loopback, private, CGNAT, link-local, unique-local, multicast and
  * unspecified addresses, in IPv4, IPv6 and the IPv6 forms that carry an
  * IPv4 address. Reserved and broadcast IPv4 are refused too: nothing public
- * lives there. So are the other special-purpose ranges (Security Gate 2,
+ * lives there. So are the other special-purpose ranges (Code Review,
  * L6): IETF protocol assignments, documentation, benchmarking and discard
  * space, and the 6to4 and Teredo tunnel prefixes, which carry an IPv4
  * address (Teredo's obfuscated) a plain low-32-bit check wouldn't see.

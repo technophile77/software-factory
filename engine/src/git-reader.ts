@@ -135,7 +135,7 @@ export class CatFileReader {
     const pid = child.pid;
     if (pid) this.o.children.add(pid);
     child.stdout.on("data", (d: Buffer) => {
-      // Output of a reader already given up on must never reach the next one (Gate 2 M2).
+      // Output of a reader already given up on must never reach the next one (Code Review M2).
       if (this.child !== child) return;
       this.buf = this.buf.length ? Buffer.concat([this.buf, d]) : d;
       this.wake?.();
@@ -291,7 +291,7 @@ export function parseTree(body: Buffer, idBytes: number): TreeEntry[] {
     }
     if (seen.has(name)) throw new TreeError("a tree names the same entry twice");
     seen.add(name);
-    // Out of git's order, plain git would miss an entry the engine finds (Gate 2 L2, SR-5 v7).
+    // Out of git's order, plain git would miss an entry the engine finds (Code Review L2, SR-5 v7).
     const key = mode.type === "tree" ? Buffer.concat([nameBuf, SLASH]) : nameBuf;
     if (prev && Buffer.compare(prev, key) >= 0) throw new TreeError("a tree's entries aren't in git's order");
     prev = key;

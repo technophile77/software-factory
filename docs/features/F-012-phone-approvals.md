@@ -144,7 +144,7 @@ owner already uses for the interview device approval (ADR 0014).
 | A-2 | GitHub's merge confirm step in GitHub Mobile counts as the confirmation for a merge (FR-8, FR-9). | OQ-1 | Approved (owner, 2026-11-13, decision card) |
 
 ## 9. Security considerations
-| Id | Requirement | Source (analyst / Gate 1) | Status |
+| Id | Requirement | Source (analyst / Security and Testability Review) | Status |
 |---|---|---|---|
 | SR-1 | External service (S9.1): GitHub only. Workflow, as `github-actions[bot]`, in the config repo: create issue, add label, create comment. Engine, with the owner's token: list issue comments, list reactions on them, create comment, update its own comments (to mark them stale), update issue body, close issue, read PR state, read the config repo's visibility and collaborators (SR-9), send `repository_dispatch` to the config repo. No other call. | Analyst (S9.1) | Accepted (owner, 2026-11-13, decision card) |
 | SR-2 | The owner is proven by GitHub: a reaction counts only if its user id is the owner's. It is recorded with the action comment URL instead of an SSH signature, which a phone can't make (ADR 0018, amending ADR 0015 decision 3 for phone actions). | Analyst (S8, ADR 0015) | Accepted (owner, 2026-11-13, OQ-2) |
@@ -153,12 +153,12 @@ owner already uses for the interview device approval (ADR 0014).
 | SR-5 | Item content goes only to the private config repo, never to a public repo or a third-party service (owner rule, 2026-11-12: sensitive info never in a public repo). This replaces F-011's draft rule that phone alerts carry only counts: the phone has to show enough to decide, and the config repo is as private as the rest of the project. | Analyst | Accepted (owner, 2026-11-13, decision card) |
 | SR-6 | Residual risk, to state to the owner: anyone holding the owner's GitHub session or token can comment as the owner, so a stolen phone with GitHub signed in, or the engine's token used by something else, could approve items. The confirm tap doesn't stop that; it guards against a mis-tap, not a stolen account. GitHub's own sign-in and 2FA are the control. Agents can't: they run in containers without tokens (ADR 0015). | Analyst | Stated to the owner and accepted 2026-11-13 (OQ-2) |
 | SR-7 | No secrets or tokens in issue bodies, comments or logs (S3.1); the item's text passes the secrets scan before it is rendered. | Analyst (S3.1) | Accepted (owner, 2026-11-13, decision card) |
-| SR-8 | The engine stores each action comment's id and text hash, and the issue body's hash, when posted; a tap on an edited action or confirm comment, or on an issue whose body was edited by anyone but the engine, records nothing. | Gate 1 #1 (S2.1, S6.2) | Accepted (owner, 2026-11-13, decision card) |
-| SR-9 | Turning phone notifications on also checks that the owner is the config repo's only collaborator; otherwise it refuses and says why. | Gate 1 #2 (S8.1, owner rule 2026-11-12) | Accepted (owner, 2026-11-13, decision card) |
-| SR-10 | Fields that can carry outside text are rendered in fenced code blocks, with @mentions and remote images stripped, under an engine-written line naming their author. | Gate 1 #3 (S6.1, S9.3) | Accepted (owner, 2026-11-13, decision card) |
-| SR-11 | A CI test fails if engine code calls GitHub's create-reaction endpoint (REST or GraphQL `addReaction`); the engine only reads reactions. | Gate 1 #4 (S2.1, LLM06) | Accepted (owner, 2026-11-13, decision card) |
-| SR-12 | The config repo workflow has `permissions: issues: write` only, actions pinned by SHA, and runs only on `repository_dispatch` from the engine, executing nothing from the payload. | Gate 1 #5 (S4, S8.2) | Accepted (owner, 2026-11-13, decision card) |
-| SR-13 | A phone history entry also records the reacting user id, reaction id and time, so it stands if the issue is deleted. | Gate 1 #6 (S3.3) | Accepted (owner, 2026-11-13, decision card) |
+| SR-8 | The engine stores each action comment's id and text hash, and the issue body's hash, when posted; a tap on an edited action or confirm comment, or on an issue whose body was edited by anyone but the engine, records nothing. | Security and Testability Review #1 (S2.1, S6.2) | Accepted (owner, 2026-11-13, decision card) |
+| SR-9 | Turning phone notifications on also checks that the owner is the config repo's only collaborator; otherwise it refuses and says why. | Security and Testability Review #2 (S8.1, owner rule 2026-11-12) | Accepted (owner, 2026-11-13, decision card) |
+| SR-10 | Fields that can carry outside text are rendered in fenced code blocks, with @mentions and remote images stripped, under an engine-written line naming their author. | Security and Testability Review #3 (S6.1, S9.3) | Accepted (owner, 2026-11-13, decision card) |
+| SR-11 | A CI test fails if engine code calls GitHub's create-reaction endpoint (REST or GraphQL `addReaction`); the engine only reads reactions. | Security and Testability Review #4 (S2.1, LLM06) | Accepted (owner, 2026-11-13, decision card) |
+| SR-12 | The config repo workflow has `permissions: issues: write` only, actions pinned by SHA, and runs only on `repository_dispatch` from the engine, executing nothing from the payload. | Security and Testability Review #5 (S4, S8.2) | Accepted (owner, 2026-11-13, decision card) |
+| SR-13 | A phone history entry also records the reacting user id, reaction id and time, so it stands if the issue is deleted. | Security and Testability Review #6 (S3.3) | Accepted (owner, 2026-11-13, decision card) |
 
 ## 10. Interface requirements
 Approved by the owner 2026-11-13 (decision card). H-0127 is withdrawn
@@ -258,7 +258,7 @@ skips `factory-inbox` issues (FR-13) before either feature's build.
 | 3 | 2026-11-13 | OQ-3 decided with F-011 FR-15: the confirm list adds Security decisions and Spec sign-off | Owner, 2026-11-13 (decision card, F-011 thread) |
 | 4 | 2026-11-13 | OQ-2 decided: a tap from the owner's GitHub account proves a phone action (ADR 0018); SR-6 risk accepted | Owner, 2026-11-13 (decision card) |
 | 5 | 2026-11-13 | OQ-4 decided: no quiet hours in this feature (FR-12, AC-9 removed) | Owner, 2026-11-13 (decision card) |
-| 6 | 2026-11-13 | Security Gate 1: 6 findings, none blocking; SR-8 to SR-13 proposed | — |
+| 6 | 2026-11-13 | Security and Testability Review: 6 findings, none blocking; SR-8 to SR-13 proposed | — |
 | 7 | 2026-11-13 | SR-8 to SR-13 approved | Owner, 2026-11-13 (decision card) |
 | 8 | 2026-11-13 | A-1 and A-2 approved; A-1 checked in a spike before build, and a failed check sends the spec back to the owner | Owner, 2026-11-13 (decision card) |
 | 9 | 2026-11-13 | SR-1, SR-3, SR-4, SR-5, SR-7 approved; section 10: drafts of H-0125, H-0126, H-0128; H-0129 applied | Owner, 2026-11-13 (decision card) for the SRs |

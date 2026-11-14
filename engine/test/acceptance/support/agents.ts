@@ -109,7 +109,7 @@ export class FakeSdk {
   query(p: { prompt: AsyncIterable<any>; options: any }): AsyncIterable<any> {
     const tools: FactoryTool[] = p.options.mcpServers?.factory?.fakeTools ?? [];
     // The reader's only factory tool is fetch_page (Role policy v2.5); the analyst's are the interview tools;
-    // the Gate 1 security reviewer (F-008) has none, as it only returns its report.
+    // the Security and Testability Review security reviewer (F-008) has none, as it only returns its report.
     const role: Role = tools.some((t) => t.name === "fetch_page") ? "reader" : tools.some((t) => t.name.startsWith("interview_")) ? "analyst" : "reviewer";
     const s = new FakeSession(role, p.options, tools, p.prompt[Symbol.asyncIterator](), this.docker);
     this.sessions.push(s);

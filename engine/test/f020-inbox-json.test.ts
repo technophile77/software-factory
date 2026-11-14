@@ -41,7 +41,7 @@ function v3(id: string): string {
     schema: "inbox-record/3.0", id, kind: "decision", title: `Item ${id}`, category: "Security", priority: "high", effective_priority: "high",
     blocking: true, status: "open", repo: "project", feature: "F-012", created_by: "engine", created_at: "2026-11-13T10:00:00Z", issue: 7,
     options: [{ id: "A", label: "Yes" }, { id: "B", label: "No" }], recommendation: "A", links: [],
-    effect: { type: "gate1_risk", feature: "F-012", finding: 2 },
+    effect: { type: "st_review_risk", feature: "F-012", finding: 2 },
     revisions: [{ rev: 1, body_sha256: "a".repeat(64), action_comments: [{ id: 11, action: "choose:A", sha256: "b".repeat(64) }], dispatched: true }],
     engine_comments: [12],
     history: [{ at: "2026-11-13T10:00:00Z", by: "engine", action: "filed" }, { at: "2026-11-13T11:00:00Z", by: "owner", action: "deferred", source: "command", actor_id: 1, comment_id: 13 }],
@@ -109,7 +109,7 @@ describe("F-020 one-time migration to JSON (FR-4, SR-5, AC-5)", () => {
     w.state.forgetHead();
     const rec = (await w.inbox.read("D-0001"))!;
     expect(rec.schema).toBe("inbox-record/4.0");
-    expect(rec.effect).toEqual({ type: "gate1_risk", feature: "F-012", finding: 2 });
+    expect(rec.effect).toEqual({ type: "st_review_risk", feature: "F-012", finding: 2 });
     expect(rec.history.map((h) => h.action)).toEqual(["filed", "deferred", "migrated"]);
     expect(rec.history[2]).toMatchObject({ by: "engine", from: "inbox/D-0001.yaml" });
     expect(rec.history[2]!.note).toMatch(/^from inbox\/D-0001\.yaml at factory\/state [0-9a-f]{40} \(F-020\)$/);

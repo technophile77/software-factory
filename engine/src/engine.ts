@@ -1,4 +1,5 @@
 import * as crypto from "node:crypto";
+import { LEGACY_ST_REVIEW_STAGE, currentType, legacyAlertKey } from "./legacy-names";
 import { lookup as dnsLookup } from "node:dns/promises";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -31,7 +32,7 @@ import { type EndpointLookup } from "./config/endpoint-address";
 import { RoleAssignmentError, manifestAssignments, planAdvisory, planRole } from "./config/endpoint-roles";
 import { type Endpoint, EndpointsError, readEndpointsFile } from "./config/endpoints";
 import { Models, MODELS_FILE, readDefaultModels } from "./config/models";
-import { LIMITS_FILE, Limits, LimitsError, agentLimits, gate1Limits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, readinessLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
+import { LIMITS_FILE, Limits, LimitsError, agentLimits, stReviewLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, readinessLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
 import { Manifest, interviewSignIn, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin, pinnedKeys } from "./config/pins";
@@ -53,14 +54,14 @@ import { OsApi, realOsApi } from "./os/ffi";
 import { Children, osParent, osStartOrder } from "./proc";
 import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryTokenName } from "./secrets";
 import { SecurityAlert, fileDecisionItem, fileSecurityItem } from "./state/inbox";
-import { READINESS_STAGE, analystGate1Turn, analystReturnTurn, correctionTurn, gate1Resolution, recordedOnly, records, reviewerTurn } from "./gate1/flow";
-import { findingRef, plain, renderReport } from "./gate1/render";
-import { ADVISORY_WALL_MS, type AdvisoryHints, advisoryBlock, matchRate, runAdvisory } from "./gate1/advisory";
-import { runAdvisorySession } from "./gate1/advisory-session";
-import { GATE1_STAGE, Gate1Report, REVIEWER_ROLE, validateReport } from "./gate1/report";
+import { READINESS_STAGE, analystStReviewTurn, analystReturnTurn, correctionTurn, stReviewResolution, recordedOnly, records, reviewerTurn } from "./st-review/flow";
+import { findingRef, plain, renderReport } from "./st-review/render";
+import { ADVISORY_WALL_MS, type AdvisoryHints, advisoryBlock, matchRate, runAdvisory } from "./st-review/advisory";
+import { runAdvisorySession } from "./st-review/advisory-session";
+import { ST_REVIEW_STAGE, StReviewReport, REVIEWER_ROLE, validateReport } from "./st-review/report";
 import { modelReport, reportOutputSchema } from "./schemas/agent-report";
 import { schemaErrors } from "./schemas/json-file";
-import { StandardsError, loadStandards } from "./gate1/standards";
+import { StandardsError, loadStandards } from "./st-review/standards";
 import { type Check, readinessChecks, specPathPattern } from "./interview/readiness";
 import { structuralChecks } from "./readiness/checks";
 import { structureText } from "./interview/structure";
@@ -314,6 +315,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (!p.inbox || dead) return;
     const k = sha256Hex(`${p.real}\0${key}`);
     if (record.alert(k)) return;
+    const old = legacyAlertKey(key);
+    if (old && record.alert(sha256Hex(`${p.real}\0${old}`))) return;
     try {
       const id = await fileSecurityItem(p.inbox, key.split(":", 1)[0]!, a);
       record.setAlert(k, id);
@@ -579,7 +582,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
    * it is adopted, a Security item is filed, and the feature's readiness
    * checks fail. The interview itself goes on, since the engine's own local
    * transcript is intact. Inbox records are refused the same way (F-016
-   * Gate 2 M1, owner decision 2026-11-14): only the engine records answers,
+   * Code Review M1, owner decision 2026-11-14): only the engine records answers,
    * from GitHub. Other changes are adopted when they fast-forward.
    */
   async function checkRemote(p: Project): Promise<void> {
@@ -614,7 +617,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (inboxChanged) {
       await alert(p, `fetch:inbox:${remote}`, {
         title: "Remote factory/state holds inbox records the engine didn't write",
-        context: `The remote factory/state at ${remote.slice(0, 12)} adds or changes files under inbox/ that this engine has no record of writing (F-016, Gate 2 M1). None of it was adopted, so no answer in it has any effect.`,
+        context: `The remote factory/state at ${remote.slice(0, 12)} adds or changes files under inbox/ that this engine has no record of writing (F-016, Code Review M1). None of it was adopted, so no answer in it has any effect.`,
         impact: "The engine's pushes of factory/state fail while the remote holds these commits. Answers you give on GitHub are still read there.",
         confirm: "Investigate and restore factory/state on the remote", hold: "Leave it as it is", recommendation: "A",
       });
@@ -856,8 +859,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       .catch((e) => log.warn(`${f.id}: the analyst run stopped: ${engineWords(e)}`))
       .finally(() => {
         jobs.delete(f.id);
-        // F-008 FR-1: a spec that passed the interview checks goes on to Gate 1 once the analyst's work is committed.
-        if (f.stage() === GATE1_STAGE) afterInterview(p, f);
+        // F-008 FR-1: a spec that passed the interview checks goes on to Security and Testability Review once the analyst's work is committed.
+        if (f.stage() === ST_REVIEW_STAGE) afterInterview(p, f);
       });
   }
 
@@ -927,8 +930,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const sourceDoc = f.state.document && docText !== null ? frameDocument(f.id, f.state.document, docText) : null;
       let r: Awaited<ReturnType<typeof runAnalystSession>>;
       for (;;) {
-        const gate1 = f.state.gate1.pending && f.stage() === INTERVIEW_STAGE && f.state.lastSpecReady
-          ? analystGate1Turn(f.id, f.state.lastSpecReady.spec_path, f.state.gate1.findings, maturityOf(p.manifest!))
+        const stReview = f.state.stReview.pending && f.stage() === INTERVIEW_STAGE && f.state.lastSpecReady
+          ? analystStReviewTurn(f.id, f.state.lastSpecReady.spec_path, f.state.stReview.findings, maturityOf(p.manifest!))
           : null;
         // F-016 FR-3, FR-8: what the owner's inbox answers or the readiness gate sent back.
         const returned = f.state.returns.length && f.stage() === INTERVIEW_STAGE && f.state.lastSpecReady
@@ -936,20 +939,20 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           : null;
         const first = resumeId
           ? "The engine restarted. Continue where you left off; owner replies, if any, follow as further turns."
-          : gate1 || returned
-            ? [intro, ...(sourceDoc ? [sourceDoc] : []), transcriptSummary(f.state), ...(gate1 ? [gate1] : []), ...(returned ? [returned] : [])].join("\n\n")
+          : stReview || returned
+            ? [intro, ...(sourceDoc ? [sourceDoc] : []), transcriptSummary(f.state), ...(stReview ? [stReview] : []), ...(returned ? [returned] : [])].join("\n\n")
             : [intro, frameRequest(f.id, f.state.request), ...(sourceDoc ? [sourceDoc] : []), ...(summary ? [summary] : [])].join("\n\n");
-        if (gate1 || returned) {
+        if (stReview || returned) {
           // F-008 SR-9: the findings were scanned when recorded; the input built from them is scanned again before it leaves the engine.
           const content = Buffer.from(first, "utf8");
           const scan = await scanner.scan([{ sha: sha256Hex(content), content }]);
           if (!scan.clean) {
             await alert(p, `secret:${crypto.randomBytes(8).toString("hex")}`, {
-              title: "Gate 1 findings not sent: the secrets scan found a secret", feature: f.id,
-              context: `The engine didn't start the analyst with ${f.id}'s Gate 1 findings because gitleaks flagged them (F-008 SR-9).`,
+              title: "Security and Testability Review findings not sent: the secrets scan found a secret", feature: f.id,
+              context: `The engine didn't start the analyst with ${f.id}'s Security and Testability Review findings because gitleaks flagged them (F-008 SR-9).`,
               impact: "The analyst's run is stopped.", confirm: "Rotate the secret if it was real", hold: "It was a false positive: no action", recommendation: "A",
             });
-            await endRun(p, f, runId, "failed", "the secrets scan found a secret in its Gate 1 input", facts);
+            await endRun(p, f, runId, "failed", "the secrets scan found a secret in its Security and Testability Review input", facts);
             return;
           }
         }
@@ -1075,42 +1078,46 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     });
   }
 
-  // -- Security Gate 1 (F-008) ---------------------------------------------------
+  // -- Security and Testability Review (F-008) ---------------------------------------------------
 
-  /** One Gate 1 job per feature at a time (FR-1); it shares the analyst's job slot, so the two never overlap. */
-  const gate1Words = (e: unknown) => (e instanceof ConfigError || e instanceof DockerError || e instanceof SessionRefused || e instanceof StandardsError ? (e as Error).message.slice(0, 300) : "an internal error");
+  /** One Security and Testability Review job per feature at a time (FR-1); it shares the analyst's job slot, so the two never overlap. */
+  const stReviewWords = (e: unknown) => (e instanceof ConfigError || e instanceof DockerError || e instanceof SessionRefused || e instanceof StandardsError ? (e as Error).message.slice(0, 300) : "an internal error");
 
-  async function noteGate1(f: FeatureInterview, status: "stopped" | "waiting" | "blocked", reason: string): Promise<void> {
+  async function noteStReview(f: FeatureInterview, status: "stopped" | "waiting" | "blocked", reason: string): Promise<void> {
     if (dead || !f.chainIntact) return;
-    await f.exclusive(() => f.append([{ type: "gate1_session", status, reason }], `gate 1 ${status}`)).catch(() => undefined);
+    await f.exclusive(() => f.append([{ type: "st_review_session", status, reason }], `security and testability review ${status}`)).catch(() => undefined);
   }
 
-  async function nextGate1Report(p: Project, fid: string): Promise<number> {
-    const existing = await p.state_repo!.list(`runs/${fid}/${GATE1_STAGE}`).catch(() => []);
+  async function nextStReviewReport(p: Project, fid: string): Promise<number> {
+    // Reports filed before the gate rename sit under the old stage name and keep their numbers.
+    const existing = [
+      ...(await p.state_repo!.list(`runs/${fid}/${ST_REVIEW_STAGE}`).catch(() => [])),
+      ...(await p.state_repo!.list(`runs/${fid}/${LEGACY_ST_REVIEW_STAGE}`).catch(() => [])),
+    ];
     return existing.filter((e) => /\/security-reviewer-\d+\.json$/.test(e.path)).length + 1;
   }
 
   /**
-   * What a feature at `security_gate_1` needs next (FR-1, FR-9): the FR-9
+   * What a feature at `security_testability_review` needs next (FR-1, FR-9): the FR-9
    * check when it comes back from the findings interview, nothing while it
    * waits on the owner, else a reviewer run.
    */
   function afterInterview(p: Project, f: FeatureInterview, resume?: ResumePlan): void {
     const rt = o.agents;
     if (!rt || dead || shuttingDown || jobs.has(f.id) || !f.chainIntact || p.state !== "running" || ambiguous.has(f.id)) return;
-    if (f.stage() !== GATE1_STAGE) return;
-    const g = f.state.gate1;
+    if (f.stage() !== ST_REVIEW_STAGE) return;
+    const g = f.state.stReview;
     // F-016 FR-16: a blocked feature is checked again, in case the spec already answers what its items ask.
     if (g.blocked && !resume && !g.pending) return;
     const job: Job = { turns: null, done: Promise.resolve() };
     jobs.set(f.id, job);
-    job.done = (g.pending && !resume ? resolveGate1(p, f) : runGate1(rt, p, f, resume))
-      .catch((e) => log.warn(`${f.id}: Gate 1 stopped: ${gate1Words(e)}`))
+    job.done = (g.pending && !resume ? resolveStReview(p, f) : runStReview(rt, p, f, resume))
+      .catch((e) => log.warn(`${f.id}: Security and Testability Review stopped: ${stReviewWords(e)}`))
       .finally(() => {
         jobs.delete(f.id);
         // A report that sent findings back starts the analyst once this job's slot is free.
-        if (!dead && !shuttingDown && f.stage() === INTERVIEW_STAGE && f.state.gate1.pending) launchAnalyst(p, f);
-        // F-016 FR-7: a Gate 1 pass goes straight on to the readiness gate.
+        if (!dead && !shuttingDown && f.stage() === INTERVIEW_STAGE && f.state.stReview.pending) launchAnalyst(p, f);
+        // F-016 FR-7: a Security and Testability Review pass goes straight on to the readiness gate.
         else if (!dead && !shuttingDown && f.stage() === READINESS_STAGE) startReadiness(p, f);
       });
   }
@@ -1130,33 +1137,33 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   /** FR-9 and FR-13 after the findings interview: readiness, or the owner's call, or the gap named. */
-  async function resolveGate1(p: Project, f: FeatureInterview): Promise<void> {
+  async function resolveStReview(p: Project, f: FeatureInterview): Promise<void> {
     const { spec, path: specPath } = await branchSpec(p, f);
-    const r = gate1Resolution(spec, f.state, maturityOf(p.manifest!));
+    const r = stReviewResolution(spec, f.state, maturityOf(p.manifest!));
     if (r.check.passed) {
-      await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: true, evidence: r.check.evidence }, { type: "stage", stage: READINESS_STAGE }], "gate 1: findings resolved"));
-      log.info(`${f.id}: Gate 1 findings resolved; the feature is at ${READINESS_STAGE}.`);
+      await f.exclusive(() => f.append([{ type: "st_review_resolved", passed: true, evidence: r.check.evidence }, { type: "stage", stage: READINESS_STAGE }], "security and testability review: findings resolved"));
+      log.info(`${f.id}: Security and Testability Review findings resolved; the feature is at ${READINESS_STAGE}.`);
       // FR-16: a risk item filed before the spec was read right asks about a finding the spec now takes up.
       for (const rec of p.inbox ? await p.inbox.records() : []) {
-        if (rec.status === "open" && rec.effect?.type === "gate1_risk" && rec.effect.feature === f.id) {
-          await p.inbox!.withdraw(rec.id, `${f.id}'s spec takes up this Gate 1 finding, so Security Gate 1 passed.`);
+        if (rec.status === "open" && currentType(String(rec.effect?.type ?? "")) === "st_review_risk" && rec.effect?.feature === f.id) {
+          await p.inbox!.withdraw(rec.id, `${f.id}'s spec takes up this Security and Testability Review finding, so Security and Testability Review passed.`);
         }
       }
       return;
     }
     // FR-16: already waiting on the owner; the items stand until answered or the spec takes them up.
-    if (f.state.gate1.blocked) return;
+    if (f.state.stReview.blocked) return;
     const filed: Array<{ n: number; item: string }> = [];
-    for (const n of r.rejected.filter((x) => !f.state.gate1.riskFiled.includes(x))) {
-      const finding = f.state.gate1.findings.find((x) => x.n === n)!;
+    for (const n of r.rejected.filter((x) => !f.state.stReview.riskFiled.includes(x))) {
+      const finding = f.state.stReview.findings.find((x) => x.n === n)!;
       const item = await fileDecisionItem(p.inbox!, {
         title: `${findingRef(n)} for ${f.id}: accept the risk or send it back`, feature: f.id,
-        effect: { type: "gate1_risk", feature: f.id, finding: n },
+        effect: { type: "st_review_risk", feature: f.id, finding: n },
         context: [
-          { engine: `Security Gate 1 found a gap in ${f.id}'s spec (${specPath}) and suggested a requirement. After the interview, no requirement in the spec takes it up, which usually means you said no (F-008 FR-13).` },
+          { engine: `Security and Testability Review found a gap in ${f.id}'s spec (${specPath}) and suggested a requirement. After the interview, no requirement in the spec takes it up, which usually means you said no (F-008 FR-13).` },
           { outside: `${finding.criterion}, ${finding.severity}: ${finding.explanation}\nSuggested requirement: ${finding.fix}`, author: "the security reviewer" },
         ],
-        impact: `${f.id} stays at Security Gate 1 until this is decided.`,
+        impact: `${f.id} stays at Security and Testability Review until this is decided.`,
         options: [
           { id: "A", label: "Accept the risk and leave it out of the spec", detail: "The finding is recorded as an accepted risk." },
           { id: "B", label: "Send it back to the interview", detail: "The analyst asks about it again." },
@@ -1169,41 +1176,41 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const blocked = filed.length || r.waiting.length;
     if (!blocked) {
       // F-016 FR-15: nothing waits on the owner and nothing was refused, so the interview missed a step; the analyst gets one more go per report.
-      const back = { type: "returned", return: { why: "gate1_unresolved", evidence: r.check.evidence } };
-      if (f.state.gate1.unresolvedSent === 0) {
-        await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: false, evidence: r.check.evidence }, back, { type: "stage", stage: INTERVIEW_STAGE }], "gate 1: findings not resolved, back to the interview"));
-        log.warn(`${f.id}: Gate 1 findings not resolved: ${r.check.evidence} Back to the interview.`);
+      const back = { type: "returned", return: { why: "st_review_unresolved", evidence: r.check.evidence } };
+      if (f.state.stReview.unresolvedSent === 0) {
+        await f.exclusive(() => f.append([{ type: "st_review_resolved", passed: false, evidence: r.check.evidence }, back, { type: "stage", stage: INTERVIEW_STAGE }], "security and testability review: findings not resolved, back to the interview"));
+        log.warn(`${f.id}: Security and Testability Review findings not resolved: ${r.check.evidence} Back to the interview.`);
         return;
       }
-      await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: false, evidence: r.check.evidence }], "gate 1: findings not resolved"));
-      log.warn(`${f.id}: Gate 1 findings not resolved again: ${r.check.evidence}`);
-      await alert(p, `gate1unresolved:${f.id}:${f.state.gate1.reportAt}:${f.state.gate1.unresolvedRounds}`, {
-        title: `Gate 1 findings for ${f.id} still not taken up`, feature: f.id,
-        context: `The interview went back to the analyst once already, and Security Gate 1's check still finds: ${r.check.evidence.slice(0, 1500)}`,
-        impact: `${f.id} stays at Security Gate 1 with no analyst.`,
+      await f.exclusive(() => f.append([{ type: "st_review_resolved", passed: false, evidence: r.check.evidence }], "security and testability review: findings not resolved"));
+      log.warn(`${f.id}: Security and Testability Review findings not resolved again: ${r.check.evidence}`);
+      await alert(p, `streviewunresolved:${f.id}:${f.state.stReview.reportAt}:${f.state.stReview.unresolvedRounds}`, {
+        title: `Security and Testability Review findings for ${f.id} still not taken up`, feature: f.id,
+        context: `The interview went back to the analyst once already, and the Security and Testability Review check still finds: ${r.check.evidence.slice(0, 1500)}`,
+        impact: `${f.id} stays at Security and Testability Review with no analyst.`,
         confirm: "Send it back to the analyst again", hold: "Keep the feature where it is", recommendation: "A",
       });
       return;
     }
     await f.exclusive(() => f.append([
       blocked
-        ? { type: "gate1_blocked", reason: `Waiting on the owner's Security items: ${[...filed.map((x) => x.item), ...r.waiting.map((n) => f.state.gate1.findings.find((x) => x.n === n)?.item ?? findingRef(n))].join(", ")}.`, risk: filed.map((x) => x.n) }
-        : { type: "gate1_resolved", passed: false, evidence: r.check.evidence },
-    ], blocked ? "gate 1: waiting on the owner" : "gate 1: findings not resolved"));
-    log.warn(`${f.id}: Gate 1 findings not resolved: ${r.check.evidence}`);
+        ? { type: "st_review_blocked", reason: `Waiting on the owner's Security items: ${[...filed.map((x) => x.item), ...r.waiting.map((n) => f.state.stReview.findings.find((x) => x.n === n)?.item ?? findingRef(n))].join(", ")}.`, risk: filed.map((x) => x.n) }
+        : { type: "st_review_resolved", passed: false, evidence: r.check.evidence },
+    ], blocked ? "security and testability review: waiting on the owner" : "security and testability review: findings not resolved"));
+    log.warn(`${f.id}: Security and Testability Review findings not resolved: ${r.check.evidence}`);
   }
 
   /**
-   * One Gate 1 run, start to end (FR-1 to FR-8, FR-10, FR-11, SR-11): the
+   * One Security and Testability Review run, start to end (FR-1 to FR-8, FR-10, FR-11, SR-11): the
    * checks before any session, the reviewer's sessions, the report's check,
    * then the rendering on the feature branch and the report, items, findings
    * and stage on factory/state in one transcript commit.
    */
-  async function runGate1(rt: AgentRuntime, p: Project, f: FeatureInterview, resume?: ResumePlan): Promise<void> {
+  async function runStReview(rt: AgentRuntime, p: Project, f: FeatureInterview, resume?: ResumePlan): Promise<void> {
     const m = p.manifest!;
     const sources = p.sources!;
     const limits = p.limits!;
-    const g1 = gate1Limits(limits, m.billingMode);
+    const g1 = stReviewLimits(limits, m.billingMode);
     const model = p.models!["security-reviewer"];
     const instructions = sources.instructions.get("security-reviewer");
     const notReady = !g1 || !model
@@ -1211,37 +1218,39 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       : !instructions ? "the security-reviewer role has no AGENT.md at factory.version or in the project's overrides" : null;
     if (notReady) {
       // AC-10: no session, and the owner is told why.
-      log.warn(`${f.id}: no Gate 1 session started: ${notReady}.`);
+      log.warn(`${f.id}: no Security and Testability Review session started: ${notReady}.`);
       // Not a block: a later factory version or override fixes it, and the next engine start tries again.
-      await noteGate1(f, "waiting", `No Gate 1 session started: ${notReady}.`);
+      await noteStReview(f, "waiting", `No Security and Testability Review session started: ${notReady}.`);
       return;
     }
-    if (!resume && f.state.gate1.runs >= g1!.runsPerFeature + f.state.gate1.extraRuns) {
+    if (!resume && f.state.stReview.runs >= g1!.runsPerFeature + f.state.stReview.extraRuns) {
       // SR-11: a fourth run needs the owner.
-      const why = `${f.id} has had ${f.state.gate1.runs} Gate 1 runs, the most allowed (F-008 SR-11)`;
+      const why = `${f.id} has had ${f.state.stReview.runs} Security and Testability Review runs, the most allowed (F-008 SR-11)`;
       // The transcript records the block before the owner is told, so the item never names a state the record lacks.
-      if (!f.state.gate1.blocked) await f.exclusive(() => f.append([{ type: "gate1_blocked", reason: why }], "gate 1 run limit"));
-      await alert(p, `gate1cap:${f.id}:${f.state.gate1.runs}`, {
-        title: `Gate 1 for ${f.id} reached its run limit`, feature: f.id,
-        context: `${why}. Another run would cost another reviewer session. The Gate 1 reports and the engine log say why the earlier runs didn't pass.`,
-        impact: `${f.id} stays at Security Gate 1 until you allow another run.`,
-        confirm: "Allow one more Gate 1 run: the security reviewer checks the current spec again", hold: "Keep the feature where it is, with no more runs", recommendation: "A",
+      if (!f.state.stReview.blocked) await f.exclusive(() => f.append([{ type: "st_review_blocked", reason: why }], "security and testability review run limit"));
+      await alert(p, `streviewcap:${f.id}:${f.state.stReview.runs}`, {
+        title: `Security and Testability Review for ${f.id} reached its run limit`, feature: f.id,
+        context: `${why}. Another run would cost another reviewer session. The Security and Testability Review reports and the engine log say why the earlier runs didn't pass.`,
+        impact: `${f.id} stays at Security and Testability Review until you allow another run.`,
+        confirm: "Allow one more Security and Testability Review run: the security reviewer checks the current spec again", hold: "Keep the feature where it is, with no more runs", recommendation: "A",
       });
       return;
     }
     const { spec, path: specPath, version: specVersion, commit } = await branchSpec(p, f);
-    const n = await nextGate1Report(p, f.id);
+    const n = await nextStReviewReport(p, f.id);
     const reportName = `security-reviewer-${n}.json`;
-    const reportRel = `.factory/runs/${f.id}/${GATE1_STAGE}/${reportName}`;
-    const wtDir = path.join(path.dirname(worktreeDir(p, f.id)), `${f.id}-gate1`);
+    const reportRel = `.factory/runs/${f.id}/${ST_REVIEW_STAGE}/${reportName}`;
+    const wtDir = path.join(path.dirname(worktreeDir(p, f.id)), `${f.id}-st-review`);
     const known = resume?.run;
     const wt = await prepareWorktree(git, p.real!, known?.worktree ?? wtDir, f.state.branch, known?.git_dir, commit);
     await populateWorktree(git, p.real!, commit, wt.path, wt.gitDir);
-    const run = known ?? runs.start({ project: p.real!, feature: f.id, role: REVIEWER_ROLE, stage: GATE1_STAGE, worktree: wt.path });
+    const run = known ?? runs.start({ project: p.real!, feature: f.id, role: REVIEWER_ROLE, stage: ST_REVIEW_STAGE, worktree: wt.path });
     const runId = run.id;
     runs.update(runId, { git_dir: wt.gitDir, last_commit: commit });
-    if (!known) await f.exclusive(() => f.append([{ type: "gate1_run", run: runId, commit }], "gate 1 started"));
-    const reportDir = path.join(home, "gate1", sha256Hex(p.real!).slice(0, 16), runId);
+    if (!known) await f.exclusive(() => f.append([{ type: "st_review_run", run: runId, commit }], "security and testability review started"));
+    const reportBase = (dir: string) => path.join(home, dir, sha256Hex(p.real!).slice(0, 16), runId);
+    // A run started before the gate rename keeps the report folder it was given.
+    const reportDir = known && fs.existsSync(reportBase("gate1")) ? reportBase("gate1") : reportBase("st-review");
     let resumeId = resume?.mode === "session" ? resume.sessionId : undefined;
     const facts: RunFacts = { model };
     try {
@@ -1252,9 +1261,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       });
       if (loaded.additionsRefused) {
         await alert(p, `additions:${m.commit}:${loaded.additionsRefused}`, {
-          title: "Project security additions were not used at Gate 1", feature: f.id,
-          context: `The project's standards.security file was refused: ${loaded.additionsRefused}. Gate 1 runs on the factory's security standards alone (F-008 SR-10).`,
-          impact: "Gate 1 checks only the factory's criteria until the additions file is fixed on main.",
+          title: "Project security additions were not used at Security and Testability Review", feature: f.id,
+          context: `The project's standards.security file was refused: ${loaded.additionsRefused}. Security and Testability Review runs on the factory's security standards alone (F-008 SR-10).`,
+          impact: "Security and Testability Review checks only the factory's criteria until the additions file is fixed on main.",
           confirm: "Fix the additions file on main", hold: "Find out who changed it", recommendation: "A",
         });
       }
@@ -1287,9 +1296,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         credential, log, ...(rt.platform ? { platform: rt.platform } : {}), ...(rt.sleep ? { sleep: rt.sleep } : {}), ...(router ? { router } : {}),
       });
       const group = new SessionGroup(groupFor(runId));
-      let valid: Gate1Report | null = null;
+      let valid: StReviewReport | null = null;
       const turnFor = (reportPath?: string) => reviewerTurn({ feature: f.id, specPath, specVersion, commit, ...(reportPath ? { reportPath } : {}), standards: loaded.standards, transcript: transcriptSummary(f.state) });
-      const first = resumeId ? "The engine restarted. Finish your Gate 1 report and return it as your structured output." : turnFor();
+      const first = resumeId ? "The engine restarted. Finish your Security and Testability Review report and return it as your structured output." : turnFor();
       const reportTarget = `${WORKSPACE}/${path.posix.dirname(reportRel)}`;
       // The worktree and the report folder are checked after every reviewer session, whether it ran on Claude or on an endpoint (SR-12, AC-4).
       const verifyIn = (dir: string) => async (pol: RolePolicy) => {
@@ -1297,14 +1306,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         if (extra.length) return { status: "rejected" as const, breaches: extra.slice(0, 20).map((x) => ({ path: `${path.posix.dirname(reportRel)}/${x}`, reason: "not_allowed" as const })) };
         return commitWorktree({
           git, gitDir: wt.gitDir, worktree: wt.path, branch: f.state.branch, base: commit, policy: { ...pol, write: { allow: [], deny: [] } }, scanner, tmpDir,
-          message: `${f.id}: Gate 1 reviewer session (run ${runId})`, limits: worktreeLimits(limits),
+          message: `${f.id}: security reviewer session (run ${runId})`, limits: worktreeLimits(limits),
         });
       };
       const onBreachOf = (id: string, who: string) => async (breaches: Array<{ path: string; reason: string }>) => {
         await alert(p, `breach:${id}:${crypto.randomBytes(4).toString("hex")}`, {
           title: `Security reviewer${who} changed files outside its report`, feature: f.id,
           context: `The engine rejected run ${id}: ${breaches.slice(0, 20).map((b) => `${b.path || "(history)"} (${b.reason})`).join(", ")} (F-008 AC-4). Nothing was committed.`,
-          impact: "The Gate 1 run is stopped.", confirm: "Look at the reviewer's instructions and run Gate 1 again", hold: "Keep the feature stopped", recommendation: "B",
+          impact: "The Security and Testability Review run is stopped.", confirm: "Look at the reviewer's instructions and run Security and Testability Review again", hold: "Keep the feature stopped", recommendation: "B",
         });
       };
       // F-013 FR-10: an endpoint may give the Claude reviewer unverified hints first; the gate result is only the Claude report.
@@ -1372,7 +1381,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         onUsed: (u) => void (dead || runs.update(runId, { used: u })),
         billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
         check: async (structured) => {
-          // SR-7: the model's schema first, so a report that sets an engine-filled field is refused; then the Gate 1 rules.
+          // SR-7: the model's schema first, so a report that sets an engine-filled field is refused; then the Security and Testability Review rules.
           const shape = schemaErrors(structured, modelReport(REVIEWER_ROLE));
           const errors = shape.length ? shape : (() => {
             const v = validateReport(JSON.stringify(structured), { feature: f.id, commit, standards: loaded.standards, spec, maxBytes: g1!.reportBytes, maturity: maturityOf(p.manifest!) });
@@ -1380,7 +1389,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
             return v.ok ? [] : v.errors;
           })();
           if (!errors.length) return null;
-          log.warn(`${f.id}: Gate 1 report refused: ${errors.slice(0, 5).join("; ")}`);
+          log.warn(`${f.id}: Security and Testability Review report refused: ${errors.slice(0, 5).join("; ")}`);
           return correctionTurn(undefined, errors);
         },
         // SR-12: the report folder may hold the named report and nothing else.
@@ -1394,27 +1403,27 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (shuttingDown && result.invalid) return;
       if (result.invalid || !valid) {
         await populateWorktree(git, p.real!, commit, wt.path, wt.gitDir).catch(() => undefined);
-        await endGate1(p, f, runId, n, "failed", result.invalid ?? "its report couldn't be read", facts, commit);
+        await endStReview(p, f, runId, n, "failed", result.invalid ?? "its report couldn't be read", facts, commit);
         return;
       }
-      if (hints && facts.advisory) facts.advisory.match = matchRate((valid as Gate1Report).findings, hints);
-      await acceptGate1(p, f, { runId, n, commit, wt, report: valid, specPath, specVersion, facts, limits });
+      if (hints && facts.advisory) facts.advisory.match = matchRate((valid as StReviewReport).findings, hints);
+      await acceptStReview(p, f, { runId, n, commit, wt, report: valid, specPath, specVersion, facts, limits });
     } catch (e) {
       if (dead) return;
       if (e instanceof SecretFound) {
         // SR-9: reviewer text with a secret in it goes nowhere.
         await alert(p, `secret:${crypto.randomBytes(8).toString("hex")}`, {
-          title: "Gate 1 report refused: the secrets scan found a secret", feature: f.id,
-          context: `The engine didn't record run ${runId}'s Gate 1 report, its rendering or its items because gitleaks flagged them (F-008 SR-9).`,
-          impact: `${f.id} stays at Security Gate 1.`, confirm: "Rotate the secret if it was real, then run Gate 1 again", hold: "It was a false positive: no action", recommendation: "A",
+          title: "Security and Testability Review report refused: the secrets scan found a secret", feature: f.id,
+          context: `The engine didn't record run ${runId}'s Security and Testability Review report, its rendering or its items because gitleaks flagged them (F-008 SR-9).`,
+          impact: `${f.id} stays at Security and Testability Review.`, confirm: "Rotate the secret if it was real, then run Security and Testability Review again", hold: "It was a false positive: no action", recommendation: "A",
         });
-        await endGate1(p, f, runId, n, "failed", "the secrets scan found a secret in its report", facts, commit);
+        await endStReview(p, f, runId, n, "failed", "the secrets scan found a secret in its report", facts, commit);
         return;
       }
-      const why = gate1Words(e);
+      const why = stReviewWords(e);
       if (record.run(runId)?.status === "running") runs.interrupt(runId, why);
-      log.warn(`${f.id}: no Gate 1 session started: ${e instanceof DockerError ? e.message : why}`);
-      await noteGate1(f, "waiting", `No Gate 1 session started: ${why}. The run resumes at the next engine start.`);
+      log.warn(`${f.id}: no Security and Testability Review session started: ${e instanceof DockerError ? e.message : why}`);
+      await noteStReview(f, "waiting", `No Security and Testability Review session started: ${why}. The run resumes at the next engine start.`);
     } finally {
       fs.rmSync(reportDir, { recursive: true, force: true });
     }
@@ -1426,8 +1435,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   };
 
   /** A valid report: rendering on the branch, then report, items, findings and stage in one factory/state commit. */
-  async function acceptGate1(p: Project, f: FeatureInterview, a: {
-    runId: string; n: number; commit: string; wt: { path: string; gitDir: string }; report: Gate1Report;
+  async function acceptStReview(p: Project, f: FeatureInterview, a: {
+    runId: string; n: number; commit: string; wt: { path: string; gitDir: string }; report: StReviewReport;
     specPath: string; specVersion: number | null; facts: RunFacts; limits: Limits;
   }): Promise<void> {
     // SR-9: the reviewer's own text is scanned raw, before anything built from it is written. Escaped or
@@ -1442,7 +1451,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const raw = Buffer.from(strings.join("\n"), "utf8");
     const scan = await scanner.scan([{ sha: sha256Hex(raw), content: raw }]);
     if (!scan.clean) throw new SecretFound([], []);
-    const rendered = `docs/features/${f.id}-security-gate1.md`;
+    const rendered = `docs/features/${f.id}-security-testability-review.md`;
     fs.writeFileSync(path.join(a.wt.path, ...rendered.split("/")), renderReport({
       feature: f.id, title: f.state.title, specVersion: a.specVersion, date: iso(clock.now()).slice(0, 10), runId: a.runId, report: a.report,
       maturity: maturityOf(p.manifest!),
@@ -1450,9 +1459,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const enginePolicy: RolePolicy = { role: "engine", tools: [], read: { allow: [], deny: [] }, write: { allow: [rendered], deny: [] }, commands: [], network: [], mayRequest: [] };
     const c = await commitWorktree({
       git, gitDir: a.wt.gitDir, worktree: a.wt.path, branch: f.state.branch, base: a.commit, policy: enginePolicy, scanner, tmpDir,
-      message: `${f.id}: Security Gate 1 report (run ${a.runId})`, limits: worktreeLimits(a.limits),
+      message: `${f.id}: Security and Testability Review report (run ${a.runId})`, limits: worktreeLimits(a.limits),
     });
-    if (c.status !== "committed") throw new Error(`the Gate 1 rendering wasn't committed (${c.status})`);
+    if (c.status !== "committed") throw new Error(`the Security and Testability Review rendering wasn't committed (${c.status})`);
     runs.update(a.runId, { last_commit: c.commit });
     const items = new Map<number, string>();
     const findings = a.report.findings;
@@ -1460,12 +1469,12 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (!fd.needs_owner || recordedOnly(fd, maturityOf(p.manifest!))) continue;
       items.set(i + 1, await fileDecisionItem(p.inbox!, {
         title: `${findingRef(i + 1)} for ${f.id}: the owner's choice`, feature: f.id,
-        effect: { type: "gate1_choice", feature: f.id, finding: i + 1 },
+        effect: { type: "st_review_choice", feature: f.id, finding: i + 1 },
         context: [
-          { engine: `Security Gate 1 on ${f.id} (${a.specPath}) found a choice only you can make.` },
+          { engine: `Security and Testability Review on ${f.id} (${a.specPath}) found a choice only you can make.` },
           { outside: `${fd.criterion}, ${fd.severity}, at ${fd.location}: ${fd.explanation}\nWhat the options decide: ${fd.fix}`, author: "the security reviewer" },
         ],
-        impact: `${f.id} waits at Security Gate 1 until this is decided.`,
+        impact: `${f.id} waits at Security and Testability Review until this is decided.`,
         options: fd.options!.map((op) => ({ id: op.id, label: op.label })), optionsBy: "the security reviewer",
         recommendation: fd.recommendation!,
         costOfDelay: `${f.id} can't reach the readiness gate.`,
@@ -1475,34 +1484,34 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const toAnalyst = recs.some((r) => !r.needs_owner && !r.recorded);
     const choices = [...items.values()];
     const report = agentReport({
-      feature: f.id, stage: GATE1_STAGE, role: REVIEWER_ROLE, n: a.n, commit: a.commit, outcome: choices.length ? "blocked" : "complete",
+      feature: f.id, stage: ST_REVIEW_STAGE, role: REVIEWER_ROLE, n: a.n, commit: a.commit, outcome: choices.length ? "blocked" : "complete",
       summary: a.report.summary, itemsFiled: choices,
       body: { gate: 1, findings: a.report.findings, checklist: a.report.checklist, permissions_added: a.report.permissions_added, abuse_cases: a.report.abuse_cases, not_applicable: a.report.not_applicable },
       facts: a.facts, artifacts: [...(runArtifacts.get(a.runId) ?? []), { kind: "report", ref: rendered }],
     });
-    const next = recs.every((r) => r.recorded) ? READINESS_STAGE : toAnalyst ? INTERVIEW_STAGE : GATE1_STAGE;
+    const next = recs.every((r) => r.recorded) ? READINESS_STAGE : toAnalyst ? INTERVIEW_STAGE : ST_REVIEW_STAGE;
     await f.exclusive(() => f.append([
-      { type: "gate1_report", run: a.runId, report: a.n, commit: a.commit, rendered: c.commit, findings: recs },
-      ...(choices.length && !toAnalyst ? [{ type: "gate1_blocked", reason: `Waiting on the owner's Security items: ${choices.join(", ")}.` }] : []),
-      ...(next !== GATE1_STAGE ? [{ type: "stage", stage: next }] : []),
-    ], `gate 1: ${findings.length} finding${findings.length === 1 ? "" : "s"}`, [report]));
+      { type: "st_review_report", run: a.runId, report: a.n, commit: a.commit, rendered: c.commit, findings: recs },
+      ...(choices.length && !toAnalyst ? [{ type: "st_review_blocked", reason: `Waiting on the owner's Security items: ${choices.join(", ")}.` }] : []),
+      ...(next !== ST_REVIEW_STAGE ? [{ type: "stage", stage: next }] : []),
+    ], `security and testability review: ${findings.length} finding${findings.length === 1 ? "" : "s"}`, [report]));
     runs.finish(a.runId, "complete");
     await o.agents?.docker.run(["volume", "rm", "--force", runVolume(a.runId)], { okCodes: [1] }).catch(() => undefined);
-    log.info(`${f.id}: Gate 1 run ${a.runId} filed ${findings.length} finding(s); the feature is at ${next}.`);
+    log.info(`${f.id}: Security and Testability Review run ${a.runId} filed ${findings.length} finding(s); the feature is at ${next}.`);
   }
 
-  async function endGate1(p: Project, f: FeatureInterview, runId: string, n: number, status: "failed", why: string, facts: RunFacts, commit: string): Promise<void> {
+  async function endStReview(p: Project, f: FeatureInterview, runId: string, n: number, status: "failed", why: string, facts: RunFacts, commit: string): Promise<void> {
     await o.agents?.docker.run(["volume", "rm", "--force", runVolume(runId)], { okCodes: [1] }).catch(() => log.warn(`volume ${runVolume(runId)} wasn't removed`));
     try {
       await p.state_repo!.commit([agentReport({
-        feature: f.id, stage: GATE1_STAGE, role: REVIEWER_ROLE, n, commit, outcome: "failed", summary: `Run ${runId} stopped: ${why}.`,
+        feature: f.id, stage: ST_REVIEW_STAGE, role: REVIEWER_ROLE, n, commit, outcome: "failed", summary: `Run ${runId} stopped: ${why}.`,
         body: { gate: 1, findings: [] }, facts, artifacts: runArtifacts.get(runId) ?? [],
-      })], `${f.id}: Gate 1 run ${runId} stopped`);
+      })], `${f.id}: Security and Testability Review run ${runId} stopped`);
       await pushState(p);
     } catch (e) {
-      log.warn(`${p.name}: the report for Gate 1 run ${runId} wasn't committed (${(e as Error).message}).`);
+      log.warn(`${p.name}: the report for Security and Testability Review run ${runId} wasn't committed (${(e as Error).message}).`);
     }
-    await noteGate1(f, "stopped", `The Gate 1 run stopped: ${why}.`);
+    await noteStReview(f, "stopped", `The Security and Testability Review run stopped: ${why}.`);
     // Last, so a run shown as ended already has its report and its transcript note (FR-10).
     runs.finish(runId, status, why);
   }
@@ -1577,10 +1586,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   // -- Owner answers and the readiness gate (F-016) -----------------------------
 
-  /** The project's open features waiting on Gate 1 items: choices undecided, or risks neither accepted nor sent back. */
+  /** The project's open features waiting on Security and Testability Review items: choices undecided, or risks neither accepted nor sent back. */
   /** Findings still waiting on a Security item, other than `except`; risk items aren't on the finding, so the name falls back to its ref. */
-  function gate1Waiting(f: FeatureInterview, except?: number): string[] {
-    const g = f.state.gate1;
+  function stReviewWaiting(f: FeatureInterview, except?: number): string[] {
+    const g = f.state.stReview;
     return g.findings
       .filter((x) => x.n !== except && ((x.needs_owner && !g.decided.has(x.n)) || (g.riskFiled.includes(x.n) && !g.accepted.has(x.n))))
       .map((x) => x.item ?? findingRef(x.n));
@@ -1597,7 +1606,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   async function onAnswer(p: Project, rec: Recorded): Promise<void> {
     const r = rec.record;
     const e = rec.entry;
-    const type = String(r.effect?.type ?? "");
+    const type = currentType(String(r.effect?.type ?? ""));
     const fid = typeof r.effect?.feature === "string" ? r.effect.feature : null;
     const f = fid ? p.features.get(fid) : undefined;
     const chosen = e.action === "chosen" ? e.option : undefined;
@@ -1612,45 +1621,45 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       log.info(`${r.id}: ${effect}${stage ? `; ${fid} is at ${stage}` : ""}.`);
     };
     if (keepsWaiting) return done("none");
-    if ((type.startsWith("gate1_") || type === "spec_signoff") && (!f || !f.chainIntact)) return done("feature_unavailable");
+    if ((type.startsWith("st_review_") || type === "spec_signoff") && (!f || !f.chainIntact)) return done("feature_unavailable");
 
-    if (type === "gate1_choice" || type === "gate1_risk") {
+    if (type === "st_review_choice" || type === "st_review_risk") {
       const n = Number(r.effect!.finding);
-      const finding = f!.state.gate1.findings.find((x) => x.n === n);
+      const finding = f!.state.stReview.findings.find((x) => x.n === n);
       if (!finding) return done("finding_gone");
-      // Gate 2 L1: a choice counts only from the item the engine filed for that finding.
-      if (type === "gate1_choice" && finding.item !== r.id) return done("not_the_findings_item");
+      // Code Review L1: a choice counts only from the item the engine filed for that finding.
+      if (type === "st_review_choice" && finding.item !== r.id) return done("not_the_findings_item");
       const note = e.note !== undefined ? { note: e.note } : {};
       let entries: Array<Record<string, unknown>>;
       let effect: string;
-      if (type === "gate1_choice" && chosen) {
+      if (type === "st_review_choice" && chosen) {
         const label = r.options?.find((o) => o.id === chosen)?.label ?? chosen;
         entries = [
-          { type: "gate1_decided", finding: n, item: r.id, option: chosen, label },
-          { type: "returned", return: { why: "gate1_choice", item: r.id, finding: n, option: chosen, label } },
+          { type: "st_review_decided", finding: n, item: r.id, option: chosen, label },
+          { type: "returned", return: { why: "st_review_choice", item: r.id, finding: n, option: chosen, label } },
         ];
-        effect = "gate1_decided";
-      } else if (type === "gate1_risk" && chosen === "A") {
+        effect = "st_review_decided";
+      } else if (type === "st_review_risk" && chosen === "A") {
         entries = [
-          { type: "gate1_risk_accepted", finding: n, item: r.id },
-          { type: "returned", return: { why: "gate1_risk_accepted", item: r.id, finding: n } },
+          { type: "st_review_risk_accepted", finding: n, item: r.id },
+          { type: "returned", return: { why: "st_review_risk_accepted", item: r.id, finding: n } },
         ];
-        effect = "gate1_risk_accepted";
+        effect = "st_review_risk_accepted";
       } else {
         // Send it back, Reject, Request changes, Ask for more research: the analyst asks the owner again (FR-4, FR-5).
         entries = [
-          { type: "gate1_reask", finding: n, item: r.id },
-          { type: "returned", return: { why: "gate1_reask", item: r.id, finding: n, ...note } },
+          { type: "st_review_reask", finding: n, item: r.id },
+          { type: "returned", return: { why: "st_review_reask", item: r.id, finding: n, ...note } },
         ];
-        effect = "gate1_reask";
+        effect = "st_review_reask";
       }
-      // The feature goes back to the interview once nothing else of its Gate 1 waits on the owner.
-      const after = gate1Waiting(f!, n);
+      // The feature goes back to the interview once nothing else of its Security and Testability Review waits on the owner.
+      const after = stReviewWaiting(f!, n);
       if (after.length) {
-        await done(effect, [...entries, { type: "gate1_blocked", reason: `Waiting on the owner's Security items: ${after.join(", ")}.` }]);
+        await done(effect, [...entries, { type: "st_review_blocked", reason: `Waiting on the owner's Security items: ${after.join(", ")}.` }]);
         return;
       }
-      await done(effect, [...entries, { type: "gate1_unblocked" }], INTERVIEW_STAGE);
+      await done(effect, [...entries, { type: "st_review_unblocked" }], INTERVIEW_STAGE);
       launchAnalyst(p, f!);
       return;
     }
@@ -1687,7 +1696,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const m = p.manifest;
       const pin = p.real ? pins.get(p.real) : null;
       if (!m || !pin || e.actor_id !== pin.owner.github_id) return done("record_only");
-      // Gate 2 M2: the approval covers the manifest commit the item named, never a later change on main.
+      // Code Review M2: the approval covers the manifest commit the item named, never a later change on main.
       if (r.effect?.commit !== m.commit) {
         notify(`Factory: ${m.name} not confirmed`, `${r.id} named another manifest commit. Restart the engine for a new item.`);
         return done("pins_stale");
@@ -1726,10 +1735,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       resumeFeature(p, f);
       return;
     }
-    if (type === "gate1unresolved" && f) {
+    if (type === "streviewunresolved" && f) {
       await jobs.get(f.id)?.done;
-      if (f.stage() !== GATE1_STAGE || jobs.has(f.id)) return done("record_only");
-      await done("restarted", [{ type: "returned", return: { why: "gate1_unresolved", item: r.id } }], INTERVIEW_STAGE);
+      if (f.stage() !== ST_REVIEW_STAGE || jobs.has(f.id)) return done("record_only");
+      await done("restarted", [{ type: "returned", return: { why: "st_review_unresolved", item: r.id } }], INTERVIEW_STAGE);
       launchAnalyst(p, f);
       return;
     }
@@ -1742,8 +1751,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       launchAnalyst(p, f);
       return;
     }
-    if (type === "gate1cap" && f) {
-      await done("gate1_extra_run", [{ type: "gate1_extra_run", item: r.id }]);
+    if (type === "streviewcap" && f) {
+      await done("st_review_extra_run", [{ type: "st_review_extra_run", item: r.id }]);
       afterInterview(p, f);
       return;
     }
@@ -1753,7 +1762,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   /** Starts whatever a feature's stage needs, as at engine start (F-016 H-0182 resume effects). */
   function resumeFeature(p: Project, f: FeatureInterview): void {
     if (f.stage() === INTERVIEW_STAGE) launchAnalyst(p, f);
-    else if (f.stage() === GATE1_STAGE) afterInterview(p, f);
+    else if (f.stage() === ST_REVIEW_STAGE) afterInterview(p, f);
     else if (f.stage() === READINESS_STAGE) startReadiness(p, f);
   }
 
@@ -1804,7 +1813,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     }
     const code: Check[] = [
       ...readinessChecks({ spec, specVersion: version ?? 0, state: f.state, chainIntact: f.chainIntact && !f.remoteRefused }),
-      gate1Resolution(spec, f.state, maturityOf(p.manifest!)).check,
+      stReviewResolution(spec, f.state, maturityOf(p.manifest!)).check,
       ...structuralChecks(spec),
     ];
     if (code.some((c) => !c.passed)) {
@@ -1934,7 +1943,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   /** F-016 FR-8: the Spec sign-off item; the orchestrator's evidence is outside text (F-011 SR-10). */
   async function fileSignoff(p: Project, f: FeatureInterview, a: { specPath: string; version: number | null; commit: string; checks: Check[] }): Promise<string> {
-    const accepted = [...f.state.gate1.accepted.entries()].map(([n, item]) => `${findingRef(n)} accepted as a risk in ${item}`);
+    const accepted = [...f.state.stReview.accepted.entries()].map(([n, item]) => `${findingRef(n)} accepted as a risk in ${item}`);
     const item: ItemInput = {
       kind: "spec", key: `signoff:${f.id}`, title: `${f.id} ${f.state.title}, spec v${a.version ?? "?"}`, priority: "high", blocking: true, created_by: "engine", feature: f.id,
       links: [{ kind: "file", ref: a.specPath }],
@@ -1942,7 +1951,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       sections: {
         Summary: [{ engine: `${f.id} spec version ${a.version ?? "?"} (\`${a.specPath}\` at commit \`${a.commit.slice(0, 12)}\` on \`${f.state.branch}\`) passed the readiness gate. Approve starts development on exactly this commit; any later change to the branch needs a new sign-off.` }],
         Readiness: [
-          { engine: "Every code check passed: interview checks, Gate 1 findings resolved, sections, requirements and criteria. The orchestrator's judgment of checks 1 to 4:" },
+          { engine: "Every code check passed: interview checks, Security and Testability Review findings resolved, sections, requirements and criteria. The orchestrator's judgment of checks 1 to 4:" },
           { outside: a.checks.map((c) => `${c.name}: ${c.passed ? "passed" : "failed"}. ${c.evidence}`).join("\n"), author: "the orchestrator" },
         ],
         "Open items": [{ engine: accepted.length ? accepted.join("; ") + "." : "None." }],
@@ -1962,9 +1971,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const pollers: Promise<void>[] = [];
   /** F-016 SR-7: failed effects, by item id; after 3 a Notice is filed and the item is left alone until the engine restarts. */
   const effectTries = new Map<string, number>();
-  /** Gate 2 M1: answers this run recorded itself, by project, item and entry; any other pending answer is checked on GitHub first. */
+  /** Code Review M1: answers this run recorded itself, by project, item and entry; any other pending answer is checked on GitHub first. */
   const recordedHere = new Set<string>();
-  // The whole entry, not its time, so a forged entry beside a real one is never taken for it (Gate 2 re-review R1).
+  // The whole entry, not its time, so a forged entry beside a real one is never taken for it (Code Review re-review R1).
   const answerKey = (p: Project, r: Recorded): string => `${p.name}/${r.id}/${sha256Hex(JSON.stringify(r.entry))}`;
 
   /** Carries out every recorded answer without an effect yet: new ones, ones a crash left, and ones that failed before (FR-2, SR-7). */
@@ -1981,10 +1990,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           // Not connected yet: the answer waits, since it can't be checked.
           if (!p.inbox!.connected) continue;
           if (!(await p.inbox!.verify(r))) {
-            log.warn(`${id}: the recorded answer doesn't match GitHub, so it was not carried out (Gate 2 M1).`);
+            log.warn(`${id}: the recorded answer doesn't match GitHub, so it was not carried out (Code Review M1).`);
             await alert(p, `unverified:${id}@${r.entry.at}`, {
               title: `An answer on ${id} in factory/state isn't on GitHub`, ...(r.record.feature ? { feature: r.record.feature } : {}),
-              context: `factory/state records an owner answer on ${id} at ${r.entry.at} that the engine didn't read itself in this run, and the issue on GitHub doesn't show it: the owner's reaction or command, or its confirmation, isn't there (F-016 Gate 2 M1). It was not carried out.`,
+              context: `factory/state records an owner answer on ${id} at ${r.entry.at} that the engine didn't read itself in this run, and the issue on GitHub doesn't show it: the owner's reaction or command, or its confirmation, isn't there (F-016 Code Review M1). It was not carried out.`,
               impact: `Nothing changed. If you did answer ${id}, answer it again on its issue.`,
               confirm: "Investigate who wrote factory/state", hold: "Leave it as it is", recommendation: "A",
             });
@@ -2053,7 +2062,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         },
         reportFor: async (r): Promise<Change[]> => {
           const n = await nextReport(p, fid);
-          // Never the worktree's own .git link, which the agent can rewrite (Gate 2, L2): the git dir
+          // Never the worktree's own .git link, which the agent can rewrite (Code Review, L2): the git dir
           // recorded when the worktree was made, else the feature branch in the project repo.
           const gitDir = record.run(runId)?.git_dir;
           const commit = (gitDir
@@ -2149,17 +2158,17 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const f = p?.features.get(r.feature);
     if (!p || !f || ambiguous.has(f.id)) continue;
     if (r.role === REVIEWER_ROLE) {
-      // F-008 FR-10: a Gate 1 run resumes as an analyst run does.
+      // F-008 FR-10: a Security and Testability Review run resumes as an analyst run does.
       const plan = runs.resume(r.id);
       if (plan.mode === "failed") {
-        log.warn(`Run ${r.id} (${f.id}, Gate 1) failed: ${plan.run.reason}.`);
+        log.warn(`Run ${r.id} (${f.id}, Security and Testability Review) failed: ${plan.run.reason}.`);
         // FR-10: the failure is also recorded in the agent report and the transcript.
-        if (f.stage() === GATE1_STAGE) {
-          await endGate1(p, f, r.id, await nextGate1Report(p, f.id), "failed", plan.run.reason ?? "it was interrupted too often", { model: p.models?.["security-reviewer"] ?? "" }, r.last_commit ?? "")
-            .catch((e) => log.warn(`${f.id}: Gate 1 run ${r.id}'s failure wasn't recorded (${engineWords(e)}).`));
+        if (f.stage() === ST_REVIEW_STAGE) {
+          await endStReview(p, f, r.id, await nextStReviewReport(p, f.id), "failed", plan.run.reason ?? "it was interrupted too often", { model: p.models?.["security-reviewer"] ?? "" }, r.last_commit ?? "")
+            .catch((e) => log.warn(`${f.id}: Security and Testability Review run ${r.id}'s failure wasn't recorded (${engineWords(e)}).`));
         }
-      } else if (f.stage() === GATE1_STAGE) afterInterview(p, f, plan);
-      else runs.finish(r.id, "failed", "the feature left Security Gate 1");
+      } else if (f.stage() === ST_REVIEW_STAGE) afterInterview(p, f, plan);
+      else runs.finish(r.id, "failed", "the feature left Security and Testability Review");
       continue;
     }
     if (r.role !== "requirements-analyst") continue;
@@ -2175,16 +2184,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       o.resumeAnalyst({ feature: f.id, worktree: r.worktree, tools: handle.interviewTools(f.id, r.worktree), plan });
     }
   }
-  // F-008 FR-1: features parked at Gate 1 start it; one sent back with findings gets its analyst, once.
+  // F-008 FR-1: features parked at Security and Testability Review start it; one sent back with findings gets its analyst, once.
   for (const p of projects) {
     if (p.state !== "running") continue;
     for (const f of p.features.values()) {
       if (ambiguous.has(f.id) || jobs.has(f.id)) continue;
-      if (f.stage() === GATE1_STAGE) afterInterview(p, f);
+      if (f.stage() === ST_REVIEW_STAGE) afterInterview(p, f);
       // F-016 FR-7: a gate that failed closed, or was cut off by a stop, runs again at start.
       else if (f.stage() === READINESS_STAGE) startReadiness(p, f);
-      else if (f.stage() === INTERVIEW_STAGE && f.state.gate1.pending && f.state.gate1.reportAt) {
-        const since = f.state.gate1.reportAt;
+      else if (f.stage() === INTERVIEW_STAGE && f.state.stReview.pending && f.state.stReview.reportAt) {
+        const since = f.state.stReview.reportAt;
         const tried = record.runs().some((r) => r.feature === f.id && r.project === p.real && r.role === "requirements-analyst" && r.started_at >= since);
         if (!tried) launchAnalyst(p, f);
       }

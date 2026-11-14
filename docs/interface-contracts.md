@@ -26,7 +26,7 @@ by the owner 2026-11-10 (decision card, as drafted); the channel and policy
 versions were renumbered from v1.2 and v2.3 when F-006 merged with main.
 Project manifest v1.3 (H-0080), Role policy v2.5 (H-0083) and the new
 Interview tools v1.0 (H-0082) for F-007 approved by the owner 2026-11-11
-(decision card, as drafted after Security Gate 1). Channel v1.3 amendment
+(decision card, as drafted after Security and Testability Review). Channel v1.3 amendment
 H-0084 (error code -32008 `refused`) approved by the owner 2026-11-11
 (decision card). Project manifest v1.4 (`limits`, H-0087) approved by the
 owner 2026-11-11 (decision card). Engine control channel v1.4 (H-0105),
@@ -167,8 +167,8 @@ with the old file path and commit), and from v3.1 `effect_done` (F-016 FR-2:
 feature stage it set, if any). An owner action with no later `effect_done`
 is carried out when the engine next starts, once.
 
-From v3.1, a Gate 1 risk item (`effect.type: gate1_risk`) answered with
-"Accept the risk" leaves its finding in Gate 1 state `accepted_risk`: it no
+From v3.1, a Security and Testability Review risk item (`effect.type: st_review_risk`) answered with
+"Accept the risk" leaves its finding in Security and Testability Review state `accepted_risk`: it no
 longer blocks, and the spec must record it in section 9 with status
 "Accepted risk", citing the finding and the item (F-016 FR-5).
 
@@ -191,7 +191,7 @@ The engine never reads its own comments as commands (F-011 SR-17).
 ## Agent report — v1.6
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0041);
-  v1.3 Gate 1 fields approved (H-0096, owner, decision card, 2026-11-12);
+  v1.3 Security and Testability Review fields approved (H-0096, owner, decision card, 2026-11-12);
   v1.4 endpoint rungs approved (H-0136, owner, decision card, 2026-11-13);
   v1.5 location and build-stage bodies approved (F-015 H-0194, owner,
   decision card, 2026-11-14); v1.6 report fields and schemas approved
@@ -250,7 +250,7 @@ FR-7). Tuning metrics and Calibration result group rungs by the full
 | requirements-analyst | `spec_path`, `spec_version`, `open_assumptions` (item ids) |
 | software-developer | `files_changed`, `spec_deviations`, `not_done`; from v1.6 `docs_updated` (path) |
 | test-engineer | `tests_run`, `passed`, `failed`, `skipped`, `criteria_map` (AC id → test ids), `failures` (test, expected, actual, log ref), `not_run` (with reason); from v1.6 `tool_choices` (test type, tool, reason, approval ref or null) |
-| security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks (from F-016 v18 set by the engine from severity and maturity, never by the reviewer; from v1.6 a report that sets it is refused); from v1.3 optional `needs_owner`, `options` (id, label), `recommendation`); from v1.3 optional for Gate 1: `checklist` (question, answer), `permissions_added`, `abuse_cases`, `not_applicable` (criterion, reason) |
+| security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks (from F-016 v18 set by the engine from severity and maturity, never by the reviewer; from v1.6 a report that sets it is refused); from v1.3 optional `needs_owner`, `options` (id, label), `recommendation`); from v1.3 optional for Security and Testability Review: `checklist` (question, answer), `permissions_added`, `abuse_cases`, `not_applicable` (criterion, reason) |
 | validation-judge | `verdict` (PASS, FAIL, NEEDS_HUMAN_REVIEW), `checklist` (area, status, evidence), `findings` (grade, location, explanation) |
 | orchestrator | `gate`, `checks` (name, passed, evidence); from v1.5, for the stage 6 failure classifier (F-015), `failures` (test, cause, evidence), where cause is one of the failure causes in `testing-strategy.md` |
 | project-evaluator | `scope` (project or feature), `complexity` (simple, moderate, complex), `predictions` (role → rung, reason), and from v1.2 `proposed_items` |
@@ -275,7 +275,7 @@ the report only from the structured result of a successful session, checks
 it, and writes the file itself. A session that ends without one is a failed
 run with the reason "no report". The engine-filled `report_via` is
 `structured_output`, or `file` for a session on a model endpoint, which the
-engine lets write only its one report path (F-020 A-2, SR-11); for the Gate 1
+engine lets write only its one report path (F-020 A-2, SR-11); for the Security and Testability Review
 advisory pass it is `advisory.report_via`.
 
 **`proposed_items` (v1.2).** Items a role with no inbox write access wants
@@ -483,7 +483,7 @@ decision card.)
 `Item.kind` may also be `"source_confirmation"` (v1.4): `{ id, revision,
 kind, sources: [{ spec_ref, section, quote, spec_line }], status }`, built
 by the engine, not the analyst (F-009 SR-7); `spec_line` is the spec's own
-line for `spec_ref`, copied by the engine (F-009 Gate 2 M3). Reply kinds: `confirm_sources` and
+line for `spec_ref`, copied by the engine (F-009 Code Review M3). Reply kinds: `confirm_sources` and
 `reopen_sources`, whose `text` names the `spec_ref`s the owner wants asked
 as questions. A question may carry `type?: "gap" | "conflict" |
 "ambiguity"` (v1.4).
@@ -515,7 +515,7 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   card); v2.4 approved by the owner, 2026-11-10 (H-0061 and amendment
   H-0076, the advisor denied all of `.factory/`; decision card, as drafted;
   renumbered from v2.3 when merged with main); v2.5 approved by the owner,
-  2026-11-11 (H-0083, F-007 Security Gate 1 #20; decision card); v2.6
+  2026-11-11 (H-0083, F-007 Security and Testability Review #20; decision card); v2.6
   (F-009, H-0107) approved by the owner, 2026-11-12 (decision card, as drafted)
 - Used by: engine (enforces it), owner (edits it through the hygiene process)
 - Compatibility: tightening a rule is non-breaking; loosening one needs a
@@ -536,7 +536,7 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   engine tool `fetch_page` and gives it to the web reader in place of
   `WebFetch`; a manifest with a `web-reader` role must make that swap.
   v2.7 suspends the container rules until Beta (ADR 0026); no manifest
-  changes. v2.8 is a tightening (F-020 FR-10): for a Gate 1 run and a
+  changes. v2.8 is a tightening (F-020 FR-10): for a Security and Testability Review run and a
   readiness run the engine takes `Write` and the report write rule away
   from the `security-reviewer` and `orchestrator` roles, whose report is now
   the session's structured result, and mounts no report folder; only an
@@ -1165,10 +1165,10 @@ the reader.
 
 - Status: Approved; v1.2 (F-020 H-0243) approved by the owner, 2026-11-14
   (decision card)
-- Owner decision: F-007 OQ-8, H-0082, tightened by Security Gate 1 #10;
+- Owner decision: F-007 OQ-8, H-0082, tightened by Security and Testability Review #10;
   owner, decision card, 2026-11-11; v1.1 (F-009, H-0106) approved by the
   owner, 2026-11-12 (decision card, as drafted); spec lines shown and
-  locked, source checks tightened (F-009 Gate 2 M3), owner, 2026-11-12
+  locked, source checks tightened (F-009 Code Review M3), owner, 2026-11-12
   (decision card); `source_unchanged` check stated (H-0109), owner, 2026-11-12
   (decision card)
 - Used by: engine (serves them), requirements analyst (calls them)
@@ -1238,7 +1238,7 @@ Rules:
   those spec lines, needs a new confirmation.
 - `interview_spec_ready` adds the check `source_unchanged` whenever the
   feature started from a document: the branch's copy of the document still
-  matches the SHA-256 recorded at the start (F-009 Gate 2 L1).
+  matches the SHA-256 recorded at the start (F-009 Code Review L1).
 - `interview_spec_ready` adds the check `sources_confirmed` when
   `provenance` is `owner`: the latest `source_confirmation` item is
   confirmed and its table and spec lines match the spec's current ones.

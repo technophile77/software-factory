@@ -1,16 +1,16 @@
 # F-016 Test report
 
-- **Feature:** F-016 The engine acts on the owner's inbox answers and runs the readiness gate, spec v11 (plus SR-12, Gate 2 M1)
+- **Feature:** F-016 The engine acts on the owner's inbox answers and runs the readiness gate, spec v11 (plus SR-12, Code Review M1)
 - **Date:** 2026-11-14
 - **Final commit tested:** engine code at `ee52303`; the commit that adds this report adds tests only
 - **Environment:** Linux 6.18, Node 22.23.4, git 2.43.0. Fake GitHub issues (`test/inbox-fake.ts`), fake Docker, scripted agent sessions, fake clock. No Windows or macOS run here.
-- **Written by:** the test engineer, from the spec, `docs/interface-contracts.md` (Inbox item v3.1, Engine control channel v1.5) and the F-011 parts the spec cites. The developer's report and the Gate 2 report were not read.
+- **Written by:** the test engineer, from the spec, `docs/interface-contracts.md` (Inbox item v3.1, Engine control channel v1.5) and the F-011 parts the spec cites. The developer's report and the Code Review report were not read.
 
 ## Tool choice
 
 | Test type | Best fit and why | Tool used | Owner decision |
 |---|---|---|---|
-| Unit | Vitest, the engine's runner; tests call `structuralChecks`, `validateReadinessReport` and `gate1Resolution` directly | `vitest` 5.1.0 | OQ-9 (F-007) |
+| Unit | Vitest, the engine's runner; tests call `structuralChecks`, `validateReadinessReport` and `stReviewResolution` directly | `vitest` 5.1.0 | OQ-9 (F-007) |
 | Acceptance | Vitest with the F-008/F-016 engine harness (`test/agents-harness.ts`): the engine runs in-process, driven over its channel and the fake issues API | `vitest` 5.1.0 | OQ-9 (F-007) |
 | Contract | Vitest: issue body, labels, action comment markers and record fields checked against Inbox item v3.1; `engine.status` against channel v1.5 | `vitest` 5.1.0 | OQ-9 (F-007) |
 | Stochastic | Not required at Rapid prototype | None | None |
@@ -27,7 +27,7 @@
 
 Each failing test is kept as it is. None was weakened or skipped.
 
-### 1. Gate 1 choice item: the issue body doesn't list the options
+### 1. Security and Testability Review choice item: the issue body doesn't list the options
 
 - **Test:** `f016-acceptance.test.ts:213`, "Inbox item v3.1 (decision body): the Options section lists the reviewer's options, numbered".
 - **Spec:** Inbox item v3.1, decision body: "Context, Options (numbered, with pros and cons), …". AC-1: the issue carries "the reviewer's options and recommendation".
@@ -46,7 +46,7 @@ Each failing test is kept as it is. None was weakened or skipped.
 - **Test:** `f016-acceptance.test.ts:618`, "AC-14: a report invalid twice leaves the branch as it was and the engine log says why".
 - **Spec:** AC-14: "the gate fails closed, nothing is committed from it, and the transcript and engine log say why".
 - **Expected:** an engine log line naming the feature and that its readiness report was refused.
-- **Actual:** the transcript says why ("The readiness session failed: its report was still invalid after one correction."), the branch is unchanged and no item is filed. The engine log has no line about it at any level; its last line is "F-001: Gate 1 run … filed 0 finding(s); the feature is at readiness_gate."
+- **Actual:** the transcript says why ("The readiness session failed: its report was still invalid after one correction."), the branch is unchanged and no item is filed. The engine log has no line about it at any level; its last line is "F-001: Security and Testability Review run … filed 0 finding(s); the feature is at readiness_gate."
 
 ## After the report (developer, 2026-11-14)
 
@@ -54,11 +54,11 @@ The developer fixed all three product failures. The test engineer's tests are un
 
 | # | Fix |
 |---|---|
-| 1 | A decision item's body lists its options, numbered, before the action comments. A Gate 1 choice item's labels come from the reviewer, so they are fenced as the reviewer's text (F-011 SR-10). |
+| 1 | A decision item's body lists its options, numbered, before the action comments. A Security and Testability Review choice item's labels come from the reviewer, so they are fenced as the reviewer's text (F-011 SR-10). |
 | 2 | FR-9: when the branch moved, the engine reopens the same sign-off item, on GitHub too, and the next readiness pass revises it to the new commit (F-011 FR-8) instead of filing a second one. |
 | 3 | AC-14: a refused readiness report writes a warning to the engine log naming the feature and the reason. |
 
-Test code note: the developer's `f016-run.test.ts` AC-14 fake now keeps the commit across the correction, and the test checks the reason. The `chain` and `gate1cap` effects now have tests in `f016-run.test.ts` ("F-016 H-0182: chain and Gate 1 run limit items").
+Test code note: the developer's `f016-run.test.ts` AC-14 fake now keeps the commit across the correction, and the test checks the reason. The `chain` and `streviewcap` effects now have tests in `f016-run.test.ts` ("F-016 H-0182: chain and Security and Testability Review run limit items").
 
 ## AC-11 live trial (2026-11-14)
 
@@ -66,15 +66,15 @@ Run on the owner's PC (Windows) with the engine at `51b6e7f` (the tree of `main`
 
 | Time (UTC) | Event |
 |---|---|
-| 10:11 | The owner answered Q-012 (Gate 1 #1) in the terminal interview (F-018) with the suggested requirement; spec v10 passed the interview checks |
-| 10:12 | Gate 1 resolved: every blocking finding taken up by an Approved requirement; the Low findings were skipped under FR-20 |
+| 10:11 | The owner answered Q-012 (Security and Testability Review #1) in the terminal interview (F-018) with the suggested requirement; spec v10 passed the interview checks |
+| 10:12 | Security and Testability Review resolved: every blocking finding taken up by an Approved requirement; the Low findings were skipped under FR-20 |
 | 10:12 | Readiness gate code checks failed (AC-8 named no requirement in Covers); back to the interview as Q-013; the owner's answer added FR-4; spec v11 passed |
-| 10:14 | The changed spec went back to Gate 1, which had used its 3 runs; the engine filed D-0004 (issue #7, `gate1cap`) |
-| 10:22 | The owner chose A on D-0004; one extra Gate 1 run: 5 Low findings, all recorded as known issues, none asked |
+| 10:14 | The changed spec went back to Security and Testability Review, which had used its 3 runs; the engine filed D-0004 (issue #7, `streviewcap`) |
+| 10:22 | The owner chose A on D-0004; one extra Security and Testability Review run: 5 Low findings, all recorded as known issues, none asked |
 | 10:24 | Readiness gate passed (code checks and the orchestrator session); S-0001 filed as issue #8 |
 | 10:33 | The owner's confirmed Approve on S-0001; F-002 at `build_and_test_prep` |
 
-Earlier rounds of the same trial found the faults fixed in spec v13 to v19 and the bug fixes listed in the dev report. The `gate1cap` effect, which had only a unit-level test, also ran live here.
+Earlier rounds of the same trial found the faults fixed in spec v13 to v19 and the bug fixes listed in the dev report. The `streviewcap` effect, which had only a unit-level test, also ran live here.
 
 ## Test code note
 
@@ -87,10 +87,10 @@ Earlier rounds of the same trial found the faults fixed in spec v13 to v19 and t
 | AC | Tests | Judgment |
 |---|---|---|
 | AC-1 | run "AC-1, AC-12, AC-2: …"; acc "AC-1 (FR-1, Inbox item v3.1): …" (body markers, sections, labels, action comments, record fields, no old-layout file); acc "Inbox item v3.1 (decision body) …" | Covered. The body Options check **fails** (failure 1) |
-| AC-2 | run "AC-1, AC-12, AC-2: …" (option B as data, Approved SR citing `Gate 1 #1; D-0001`, reaches `readiness_gate`) | Covered |
+| AC-2 | run "AC-1, AC-12, AC-2: …" (option B as data, Approved SR citing `Security and Testability Review #1; D-0001`, reaches `readiness_gate`) | Covered |
 | AC-3 | run "AC-3: an SR citing the item with another option's label …"; acc "FR-4, SR-2, AC-3: /research …" (no recorded choice, end to end); acc unit "AC-3: an Approved row citing the item while the item's record shows no choice …" | Covered |
 | AC-4 | run "AC-4: a declined requirement files a risk item; Accept the risk …", "AC-4: Send it back …" | Covered |
-| AC-5 | run "AC-5: Defer keeps the feature blocked …" (choice item); acc "AC-5: Defer on a Gate 1 risk item …" | Covered |
+| AC-5 | run "AC-5: Defer keeps the feature blocked …" (choice item); acc "AC-5: Defer on a Security and Testability Review risk item …" | Covered |
 | AC-6 | run "AC-6: option A on a write-outside-the-rules item …"; acc "AC-6: … restarts the analyst from the last good commit …" (outside write gone, branch head unchanged, no new item) | Covered |
 | AC-7 | run "AC-7: an action recorded before a crash has its effect once after the restart" | Covered |
 | AC-8 | run "AC-13, AC-8, AC-9: …", "AC-8, AC-13: an orchestrator check that fails …", "AC-13: an FR no criterion covers …"; acc "AC-8, FR-8 (Inbox item v3.1): the sign-off item names …" | Covered |
@@ -107,7 +107,7 @@ Other requirements with tests of their own:
 |---|---|
 | FR-4 | acc "FR-4, SR-2, AC-3: /research …", acc "FR-4, SR-7: Reject returns the feature …" |
 | FR-11 | acc "FR-11: a factory version with no orchestrator model …"; `limits.test.ts` "F-016 H-0184: readiness limits …" (a project may only lower them) |
-| FR-12 | `migrate-inbox.test.ts` AC-13 (a migrated Gate 1 item keeps its effect), "an item not filed by the engine gets no effect, whatever its title says" |
+| FR-12 | `migrate-inbox.test.ts` AC-13 (a migrated Security and Testability Review item keeps its effect), "an item not filed by the engine gets no effect, whatever its title says" |
 | Section 6, two answers in one poll | acc "section 6: two items answered in one poll take effect in record order, and the feature changes stage once" |
 | Section 6, confirm older than 15 minutes | acc "SR-1: …" (last step); `inbox.test.ts` "AC-5: 🚀 confirms; after 15 minutes nothing is recorded" |
 
@@ -120,18 +120,18 @@ Other requirements with tests of their own:
 | SR-3 | acc "AC-9, SR-3: a confirmed Approve after the branch moved …" | Covered |
 | SR-4 | acc "SR-12, SR-4: …" (option A on an item type outside H-0182's table only records); run "AC-6" (option B records only); `migrate-inbox.test.ts` "an item not filed by the engine gets no effect" | Covered |
 | SR-5 | run "AC-7" (effect once after a restart, not again on a third start) | Covered |
-| SR-6 | run "AC-3"; acc unit "SR-6: the chosen option's label word for word, with whitespace normalized …", "SR-6: another label, other words, another item, no finding ref, or a status other than Approved fails …"; `gate1.test.ts` "citesItem (F-016 SR-6, Gate 2 L6)" | Covered |
+| SR-6 | run "AC-3"; acc unit "SR-6: the chosen option's label word for word, with whitespace normalized …", "SR-6: another label, other words, another item, no finding ref, or a status other than Approved fails …"; `stReview.test.ts` "citesItem (F-016 SR-6, Code Review L6)" | Covered |
 | SR-7 | acc "FR-4, SR-7: Reject …" (stage change and `effect_done` in one commit, after the record commit); acc "SR-7: a failed effect changes nothing and is tried again at the next poll"; acc "SR-7: after 3 failed tries a Notice is filed …" | Covered |
 | SR-8 | run "F-016 SR-8: after MAX_RESUMES restarts, option A files a Notice and restarts nothing" | Covered |
 | SR-9 | run "F-016 SR-9: a token GitHub refuses issues to turns the inbox off …" | Covered for a missing permission. Untestable here: that the token holds Issues on the config repo only and no Issues on managed code repos. That is the owner's token setup (F-003), not engine behavior |
 | SR-10 | run "AC-4: … Accept the risk … a spec row citing it reaches readiness_gate"; acc unit "SR-10: an accepted risk resolves only with an Accepted risk row citing the finding and the item" | Covered |
 | SR-11 | run "AC-13, AC-8, AC-9" (tools Read, Grep, Glob, Write; model; read-only worktree); run "AC-13: an FR no criterion covers …" (a failed code check starts no session); acc "AC-14: a session that writes outside its report …"; acc "SR-11: an orchestrator role that also allows Bash starts no session" | Covered. Untestable here: "no network, CPU or memory limits until Beta" is an accepted risk, not a behavior to test |
-| SR-12 | run "Gate 2 M1: a recorded answer GitHub doesn't show is not carried out after a restart"; acc "SR-12, SR-4: a recorded risky choice whose confirmation isn't on GitHub is not carried out …"; `remote.test.ts` "sync(): refuses a remote change to inbox records and files a Security item (F-016 Gate 2 M1)" | Covered |
+| SR-12 | run "Code Review M1: a recorded answer GitHub doesn't show is not carried out after a restart"; acc "SR-12, SR-4: a recorded risky choice whose confirmation isn't on GitHub is not carried out …"; `remote.test.ts` "sync(): refuses a remote change to inbox records and files a Security item (F-016 Code Review M1)" | Covered |
 
 ## What didn't run, and why
 
 - **FR-11, "without the orchestrator role in the project's policy"**: not reachable as a black-box test. `orchestrator` is a core role in Role policy v2.6, and every session (the analyst's too) refuses a policy without it, so no feature can reach `readiness_gate` in such a project. The "no orchestrator model" case is tested instead.
-- **H-0182 `chain`, `gate1cap` and `pins` re-pin effects**: `pins` is covered by `f016-run.test.ts` "F-016 OQ-3 …" and by the two SR-7 tests above. `chain` (transcript changed outside the engine, option A) and `gate1cap` (Gate 1 run limit, option A) have no test. Each needs a long setup (a forged transcript, or several Gate 1 runs to reach the cap) that this round didn't build. Open gap.
+- **H-0182 `chain`, `streviewcap` and `pins` re-pin effects**: `pins` is covered by `f016-run.test.ts` "F-016 OQ-3 …" and by the two SR-7 tests above. `chain` (transcript changed outside the engine, option A) and `streviewcap` (Security and Testability Review run limit, option A) have no test. Each needs a long setup (a forged transcript, or several Security and Testability Review runs to reach the cap) that this round didn't build. Open gap.
 - **Windows and macOS**: not run here; CI runs them.
 
 ## Notes for the orchestrator

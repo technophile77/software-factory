@@ -24,7 +24,7 @@
   - Inbox item v1.1 (Security items).
   - Agent report v1.1.
   - Project manifest keys H-0080.
-  - Gate 1 component review 5 (gitleaks).
+  - Security and Testability Review component review 5 (gitleaks).
 - **Change-controlled files:** none edited. The proposed CI workflow is at the end of this report for the owner to approve as a hygiene item.
 
 ## What changed
@@ -67,7 +67,7 @@ Test names are `file: test name` (shortened). Ids marked *(m2)* are deferred to 
 | FR-7 | `github.ts startDeviceApproval`, `sessions.ts` (approval recorded in the transcript before the session counts) | `interview: device approval (FR-7, AC-6)` block, `units: GitHub device flow` block |
 | FR-8, FR-9, FR-11 | *(m2)* | — |
 | FR-10 | `interview/tools.ts` (the five tools, as functions) | `interview: analyst and owner` block |
-| FR-12 | `interview/readiness.ts`, `tools.ts interview_spec_ready` (moves the stage to `security_gate_1` on pass) | `readiness: *` |
+| FR-12 | `interview/readiness.ts`, `tools.ts interview_spec_ready` (moves the stage to `security_testability_review` on pass) | `readiness: *` |
 | FR-13 | `state/runs.ts agentReport`, written by `interview_spec_ready` | `readiness: passes a clean spec, writes the agent report …`, `AC-10: check 6 …` (outcome `partial`) |
 | FR-14 | `state/runs.ts RunBook`, `engine.ts` marks left-running runs `interrupted` at start | `engine: FR-14 …`, `units: resumes from the session, then from the last commit …`, `interview: rebuilds the interview from the transcript after a restart` |
 | AC-1 | — | `engine: AC-1 …` |
@@ -135,7 +135,7 @@ choice open. Each is my reading, and each is easy to change.
 6. **`settings.budget.mode` is required** in the manifest, and **the project name must match** `^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$` (it names a credential and a Security item).
 7. **Logs are kept 30 days.**
 8. **`research_web` caps.** The per-question and per-session cap values are still undecided. `research_web` is a stub that returns error code `unavailable` and appends nothing.
-9. **After all checks pass, the stage becomes `security_gate_1`.**
+9. **After all checks pass, the stage becomes `security_testability_review`.**
 10. ~~Code -32000 is used for refusals the channel contract has no code for.~~ *Replaced in fix round 1 by the contract code -32008 `refused` (H-0084).*
 
 ## Deferred to milestone 2
@@ -319,13 +319,13 @@ CH-4 was un-skipped on Windows (`test/acceptance/channel.test.ts`, as the coordi
 ### Left open
 
 1. **IT-10 and SE-11 on Windows** (see above). IT-10 needs more time or a lighter fixture on Windows. SE-11 needs `drive` to step more finely, or a wider tolerance. Both are the test engineer's call.
-2. **Windows stale parent pids** in the ancestry walk: a residual risk for Security Gate 2. It can only fail closed.
+2. **Windows stale parent pids** in the ancestry walk: a residual risk for Code Review. It can only fail closed.
 3. **Speed of the pipe on Windows.** Connections are now polled every 20 ms and data every 10 ms. That is fine for the channel, but it is polling, not overlapped I/O.
 4. **No job timeout.** The workflow (`.github/workflows/engine.yml`) has no `timeout-minutes`. The hung run sat for 54 minutes until it was cancelled. I suggest `timeout-minutes: 45` per job; this needs approval.
 
 ## Milestone 2
 
-Built against spec v26 and the Gate 1 report. No Docker daemon was available,
+Built against spec v26 and the Security and Testability Review report. No Docker daemon was available,
 so everything that touches Docker, the network or the model is behind a seam
 and unit-tested with fakes. Real-daemon checks are in
 `test/docker-real.test.ts`, which is skipped unless `FACTORY_DOCKER_TESTS=1`.
@@ -349,7 +349,7 @@ and unit-tested with fakes. Real-daemon checks are in
 | `research_web`, real version. The request is recorded under the feature lock, but the reader runs outside it. The query is logged against the item, with per-question and per-session caps. Each query gets its own web-reader session and container, with only the query as prompt. Sources are the pages the engine actually fetched. | `src/interview/tools.ts`, `src/agent/web-reader.ts` | H-0082, F-005 SR-6/SR-17 |
 | Worktree commit (FR-11) with the end-of-session check in front. The engine reads the worktree itself (no git porcelain, links taken as links). git runs with an explicit `--git-dir`, because the agent can rewrite the worktree's `.git` file. The commit is refused on any path outside the write rules, a new or changed symlink, a changed `.git` link, history that no longer descends, or a secrets-scan hit. The branch moves by compare-and-swap. | `src/agent/worktree-commit.ts`, `src/agent/write-check.ts` | FR-9, FR-11, SR-11, SR-12, AC-9 |
 | The analyst session from start to end: billing check, policy, group, container, tools, session; the container is stopped *before* the commit and check; then breach handling and cleanup. | `src/agent/analyst.ts` | FR-8 to FR-11, SR-18 |
-| The agent image. The base is `node:26.13.0-trixie-slim@sha256:5adad64f…` (Gate 1 review 4). Claude Code 2.1.311 comes from an exact lockfile with `--ignore-scripts`; its binary's SHA-256 is checked against the SDK 0.3.311 manifest in the build stage. The final stage has no npm, npx or corepack, runs as `USER 1000:1000` and has no entrypoint script. | `docker/` | SR-19, G1 #18, #22 |
+| The agent image. The base is `node:26.13.0-trixie-slim@sha256:5adad64f…` (Security and Testability Review review 4). Claude Code 2.1.311 comes from an exact lockfile with `--ignore-scripts`; its binary's SHA-256 is checked against the SDK 0.3.311 manifest in the build stage. The final stage has no npm, npx or corepack, runs as `USER 1000:1000` and has no entrypoint script. | `docker/` | SR-19, G1 #18, #22 |
 | CI flake fix: `driveClock` advances the fake clock only while something is waiting on it. The two confirm tests used a fixed number of steps. On a slow runner, the steps ran out before the device poll started sleeping, and the poll then waited forever. That was the Windows timeout in "confirm on the handle". | `test/helpers.ts`, `test/engine.test.ts` | — |
 
 ### Tests
@@ -380,7 +380,7 @@ Results on Linux (this container): typecheck is clean, the build passes (`dist/p
 ### Blocked: decisions needed from the owner
 
 1. **Agent SDK peer dependencies (Architecture, Security).** `npm ci` refuses a lockfile without the SDK's peers. `sdk.mjs` bundles its own zod and MCP code and imports neither peer at run time. Only its type file uses `@anthropic-ai/sdk` and `@modelcontextprotocol/sdk`, and `tool()` needs the caller's zod. So the SDK isn't installed yet. Options:
-   - **A.** Pin all three peers exactly: zod 4.6.7 and MCP SDK 1.32.2 (both in Gate 1 review 2), plus an `@anthropic-ai/sdk` version, which review 2 left "not verified, choose at implementation". This adds about 100 packages to the host lockfile, including express, hono, cross-spawn, jose and ajv. None of them is loaded at run time and `npm audit` finds nothing, but none was reviewed under S4.1.
+   - **A.** Pin all three peers exactly: zod 4.6.7 and MCP SDK 1.32.2 (both in Security and Testability Review review 2), plus an `@anthropic-ai/sdk` version, which review 2 left "not verified, choose at implementation". This adds about 100 packages to the host lockfile, including express, hono, cross-spawn, jose and ajv. None of them is loaded at run time and `npm audit` finds nothing, but none was reviewed under S4.1.
    - **B.** An `engine/.npmrc` with `legacy-peer-deps=true`, plus zod 4.6.7 as a direct dependency. The lockfile gains only the SDK, its 8 platform packages and zod, and peer type imports degrade to `any`. This is factory configuration, so it needs approval, and CI's `npm ci` picks it up unchanged.
 
    I recommend **B** (the smallest supply chain). With either option, the 8 SDK platform packages carry a native Claude Code binary of about 290 MB. One of them lands on the host and is never run, because every session goes through the container spawn. Once this is decided, the remaining work is one binding file (`src/agent/sdk-binding.ts`, about 30 lines, mapping `query` and `createSdkMcpServer`/`tool` onto `src/agent/sdk.ts`) and a test that `docker/claude-sha256.json` equals the installed SDK manifest.
@@ -398,15 +398,15 @@ Results on Linux (this container): typecheck is clean, the build passes (`dist/p
 5. **Skills baked into the image (Architecture).** SR-10 says skills come only from the pinned master factory version, baked into the image. Two things are open: which version (`factory.version` in the manifest? a commit of the master clone?), and how the image gets them. I suggest copying `skills/` from that commit into a local plugin folder at build time. Until this is decided, a role with `Skill`, which includes the analyst, refuses to start.
 6. **Where `AGENT.md` is read from (Architecture).** It must be "from the master factory, never the worktree". It could be read from the master clone's working tree, its `HEAD` commit, or the commit named by `factory.version`. I'd read the blob from a pinned commit.
 7. **Which item a research call counts against (Product).** `research_web` takes only `{ query }`. I count it against the item in `researching`, or else the open question. A call with neither counts only against the session cap. "Per session" is per analyst session, held in memory.
-8. **The OSV-Scanner image scan in CI (SR-19).** It needs a step in `.github/workflows/engine.yml`, which is change-controlled, and a component review of OSV-Scanner. The step would build the agent image and scan it. It needs a hygiene item. The image's Debian packages haven't been CVE-checked yet (Gate 1 review 4).
+8. **The OSV-Scanner image scan in CI (SR-19).** It needs a step in `.github/workflows/engine.yml`, which is change-controlled, and a component review of OSV-Scanner. The step would build the agent image and scan it. It needs a hygiene item. The image's Debian packages haven't been CVE-checked yet (Security and Testability Review review 4).
 
 ### Interpretations (owner to confirm)
 
 - **`DOCKER_CONFIG`.** SR-14 says to clear `DOCKER_CONFIG`. I set it to an empty engine-owned folder instead. Clearing it would load the owner's `~/.docker/config.json`, which can set a remote context, inject proxy variables into containers, and run credential helpers. The endpoint is passed as `--host`, chosen from a fixed per-OS list of local sockets and pipes. Remote (tcp/ssh) endpoints are refused.
 - **Network scope.** There is one internal network and one proxy per run; the analyst and its web readers share it, each with its own credential. That satisfies SR-16, which allows sharing within a project. Docker gives identical images the same id, so two projects with the same Dockerfile get the same agent image id. They hold no state.
 - **Which DNS answers refuse.** The proxy refuses a name if any of its DNS answers is blocked, not just the one it would use. This is stricter than SR-8. It also refuses reserved IPv4 (240/4) and NAT64 forms carrying a blocked address.
-- **Hidden content.** Only inline markup and styles are recognised. Text hidden by a stylesheet class still reaches the reader. That residual risk goes to Gate 2.
-- **Directory-level reads.** `Grep` and `Glob` on a directory are checked against the directory, not each file under it. Deny globs on files inside an allowed directory therefore don't stop a directory-wide `Grep`. The fresh-worktree rule (tracked files only) limits the impact. That residual risk goes to Gate 2.
+- **Hidden content.** Only inline markup and styles are recognised. Text hidden by a stylesheet class still reaches the reader. That residual risk goes to Code Review.
+- **Directory-level reads.** `Grep` and `Glob` on a directory are checked against the directory, not each file under it. Deny globs on files inside an allowed directory therefore don't stop a directory-wide `Grep`. The fresh-worktree rule (tracked files only) limits the impact. That residual risk goes to Code Review.
 - **Whether to commit at all.** The worktree commit includes ignored files, so they pass the write rules and the secrets scan too. Ignored files are left out only if the owner prefers that.
 - **The proxy's control channel.** The proxy runs attached (`docker run -i`, log driver `none`), so pages and logs never land in Docker's log files.
 
@@ -582,7 +582,7 @@ This settles blocked decisions 5 and 6 above.
 - **Symlinks:** tests that need a real symlink (RD-11, RD-12, RD-13, ST-12, unit AC-19 file case, unit paths-file link) skip with a reason when the OS refuses them. Folder-link cases (ST-16, unit AC-19 parent folder) use a junction on Windows.
 - **Cleanup:** `World.cleanup` waits at most 15 s for the engine. If removal is refused on Windows, it kills this test process's children and retries. Unit `tmpdir()` folders are removed after each test file (`test/setup.ts`).
 
-## Security Gate 2 fixes
+## Code Review fixes
 
 - **H1 (tool gate):** the gate now also runs as a PreToolUse hook, so it sees calls Claude Code approves itself in `permissionMode: "default"`: in-folder reads and read-only Bash. `canUseTool` stays. A Read, Write or Edit without `file_path` is denied. A Grep over a folder is denied if any file under it (up to 100,000 entries) isn't readable. `test/claude-real.test.ts` runs the SDK's real binary on the host, in a scratch folder, against a fake Messages API with a dummy key. Read, Grep, Glob and `cat` on denied paths are refused there, allowed ones work, and no denied content reaches a request. The same run fails without the hook. **Residual:** the paths in an allowed Bash command's arguments aren't checked. F-007's roles have no commands.
 - **H2 (populating the worktree):** the whole tree is checked before the worktree is touched. It is refused if it contains:
@@ -621,12 +621,12 @@ This settles blocked decisions 5 and 6 above.
 
   A compressed body gets 415. Each refusal is logged with a reason and never the body. `anthropic-beta` values outside the allow-list in `src/proxy/server.ts` are dropped, and the request still goes. The dropped values are logged after being cleaned to plain tokens. The allow-list is what Claude Code 2.1.311 sent for both the analyst and web-reader models, captured from the real binary, plus `oauth-2025-04-20`. The real-binary test fails if the CLI starts sending a beta that isn't listed.
 
-## After Gate 2 (orchestrator, 2026-11-12)
+## After Code Review (orchestrator, 2026-11-12)
 
-Changes after the Security Gate 2 fix round, each recorded in the spec change log:
+Changes after the Code Review fix round, each recorded in the spec change log:
 
 - `8657a80`: info and warn log lines that can't be written fall back to the console, so a shutdown can't fail on them; action records still fail closed (SR-4).
-- `aabaed2`: on Windows, `populateWorktree` refuses any existing entry (links included) before opening, and checks the opened file's real path before writing, because Windows has no `O_NOFOLLOW` (Gate 2 H2).
+- `aabaed2`: on Windows, `populateWorktree` refuses any existing entry (links included) before opening, and checks the opened file's real path before writing, because Windows has no `O_NOFOLLOW` (Code Review H2).
 - H-0088 (`77bdff2`, `a010208`, `e8a6c0a`, `7d5d8ab`): OSV-Scanner on both lockfiles and the agent image, actions pinned by SHA, the SR-13 placeholder check; only image CVEs with a fix for the image's own Debian release fail CI (spec v36, v37, v40).
 - Spec v37 and v38: base image `node:26.13.1-trixie-slim` by index digest; the agent image's final stage runs Debian's `apt-get upgrade`.
 - `22482e2` (spec v39): the gateway passes `web_search_<date>` only on the web reader's grant with `WebSearch`; every other server tool stays refused.

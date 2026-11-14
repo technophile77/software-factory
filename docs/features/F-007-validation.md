@@ -120,7 +120,7 @@ Evidence I didn't produce, as reported by the owner-side session (I record it, I
 | SR-1 | Met | SC-1, SC-2, GS-4, ST-10 |
 | SR-2 | Met | ST-7, ST-8, AP-8, AP-12, TR-5, TR-6, SC-5, PIN-3; SDDL anchored (`os/sddl.ts`) |
 | SR-3 | Met | IT-6, IT-7, IT-13, IT-14 |
-| SR-4 | Met | `log.ts` action log; Gate 2 confirmed. No direct test (deferred by the test plan) |
+| SR-4 | Met | `log.ts` action log; Code Review confirmed. No direct test (deferred by the test plan) |
 | SR-5 | Met | PIN-1 to PIN-5, ST-20 |
 | SR-6, SR-7 | Met | DR-3, DR-6 (PC, reported); `proxy.test.ts`. L1 (the web reader's `*` grant) is still open with the owner |
 | SR-8 | Met | DR-4, DR-6 (PC, reported); `proxy/rules.ts`, `proxy.test.ts` address table |
@@ -165,7 +165,7 @@ Evidence I didn't produce, as reported by the owner-side session (I record it, I
 | Comments | Met, with findings | New comments say why: `proxy/server.ts:153-154` (the one exception and its owner decision), `Grant.webSearch` doc, `claude-real.test.ts:178,185`, `containers-real.test.ts:183-184` (why the volume goes before cleanup). Outdated: m1, m2 (unchanged) |
 | Test tools | Met | The run report's tool table names a best-fit tool for each required type, with a reason and the decision behind it: Vitest (OQ-9), the fake `docker` client at the OQ-5 boundary, the fake SDK at the engine's seam, Docker Desktop for real containers (§7, ADR 0015), Claude Code 2.1.311 (OQ-4), `@vitest/coverage-v8` 5.1.0 (spec v24). Coverage is reported (87.06% lines, 78.55% branches on `4b21531`; 87.1% / 78.68% in my run on `797a8e1`). Stochastic tests aren't required at this level. Substitutes need no new OK: none is a new component |
 | Documentation | Met, with findings | The documents the spec requires are updated, as in round 1. The test plan and report now cover milestone 2. Open: README and dev report out of date (m1 to m3); the test report needs a final-commit addendum (M7) |
-| Security | Met | Gate 1 and Gate 2 present. Gate 2 is PASS with conditions, with its Highs fixed and tested. The v39 gateway exception loosens an M1 fix on the owner's decision, with real-binary evidence; Gate 2 hasn't seen it (m5). L1, L4, L5 open with the owner, not blocking at this level |
+| Security | Met | Security and Testability Review and Code Review present. Code Review is PASS with conditions, with its Highs fixed and tested. The v39 gateway exception loosens an M1 fix on the owner's decision, with real-binary evidence; Code Review hasn't seen it (m5). L1, L4, L5 open with the owner, not blocking at this level |
 
 ## Findings
 
@@ -189,7 +189,7 @@ None.
 | m2 | `engine/src/engine.ts:76-78` | The `resumeAnalyst` doc still says "Milestone 2 starts an Agent SDK session here"; it is now the test seam. |
 | m3 | `docs/features/F-007-dev-report.md` | Header still says spec v21 and describes milestone 1 only; no entries for H-0088, v37, v38, `aabaed2`, `8657a80` or `22482e2`. |
 | m4 | `engine/test/docker-real.test.ts:57,81` | The developer's AC-8 test name claims "no … owner home" but asserts nothing about it. AC-8 is now covered by DR-2, so this only misleads a reader of that test. |
-| m5 | Gate 2 | Gate 2 reviewed `a3a2294`. It hasn't re-reviewed `a061d8a`, `aabaed2`, the H-0088 CI, the v37 and v38 image changes, or now `22482e2`, which re-opens part of the M1 block for the reader. All but `22482e2` tighten. `22482e2` is the owner's decision, narrow, and tested on the real binary. Not required at Rapid prototype; Gate 2 should confirm with the next increment. |
+| m5 | Code Review | Code Review reviewed `a3a2294`. It hasn't re-reviewed `a061d8a`, `aabaed2`, the H-0088 CI, the v37 and v38 image changes, or now `22482e2`, which re-opens part of the M1 block for the reader. All but `22482e2` tighten. `22482e2` is the owner's decision, narrow, and tested on the real binary. Not required at Rapid prototype; Code Review should confirm with the next increment. |
 | m6 | `docs/features/` | No `F-007-orchestrator-review.md` yet (DoD 6). Needed before the PR. |
 | m7 | `engine/src/agent/session.ts:42,110-118` | Only Glob's `path` is checked, not its `pattern`, so a Glob can list names (not content) under read denies such as `.env`. Unchanged. |
 | m8 | `src/agent/page-text.ts:10,15,17`, `src/engine.ts:289,335,459,568,616`, `src/os/ffi.ts:227,245,246` | Very long lines; split the regexes into named parts. Unchanged. |

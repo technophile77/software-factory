@@ -160,7 +160,7 @@ I ran every new test against a clean export of `43772c5`, before the fixes. Each
 ### Observations
 
 - **O2 is resolved** by the two-step picker. Options now reach the picker whenever there are four or fewer, which is the picker's limit.
-- **Gate 2 #3 and my tests (dev report).** My tests read the raw output fields (`item.text`, `options`, `findings`, `error.message`) only to check that they are cleaned and pass through unchanged. The spec doesn't require those fields. If the orchestrator decides the client should drop them and output only `display`, I'll move those checks to `display`. The spec doesn't block either way.
+- **Code Review #3 and my tests (dev report).** My tests read the raw output fields (`item.text`, `options`, `findings`, `error.message`) only to check that they are cleaned and pass through unchanged. The spec doesn't require those fields. If the orchestrator decides the client should drop them and output only `display`, I'll move those checks to `display`. The spec doesn't block either way.
 - **Coverage** was not re-measured this round. The figures above are for `43772c5`.
 
 ## Final run

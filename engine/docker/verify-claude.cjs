@@ -1,5 +1,5 @@
 // Runs in the image build stage only. Fails the build unless the Claude Code
-// binary is exactly the one the pinned Agent SDK's manifest names (Gate 1
+// binary is exactly the one the pinned Agent SDK's manifest names (Security and Testability Review
 // review 3, spec section 5).
 "use strict";
 const crypto = require("node:crypto");

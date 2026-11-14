@@ -25,7 +25,7 @@
 | AC-14 | Met | the three AC-14 tests; `channel` CH-5b and `units` "engine.status activity codes" for the engine side |
 | AC-15 | Met | `approval` AP-10c (engine_start); `units` "sign-in setting" (session, engine_start, hours, failed sign-in) and manifest validation; `pinning` PIN-2 "the interview sign-in setting" |
 
-Security requirements SR-1 to SR-8: see `F-018-security-gate2.md` (PASS; SR-8 is an accepted risk).
+Security requirements SR-1 to SR-8: see `F-018-code-review.md` (PASS; SR-8 is an accepted risk).
 
 ## Minor findings (logged)
 

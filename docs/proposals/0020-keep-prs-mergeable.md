@@ -54,7 +54,7 @@ merge, and it only happens when an agent session is awake.
      exists, branches are still updated and conflicts still flagged, the
      job warns that checks did not run, and a PR's checks run again on its
      next push. Using the owner's own token instead would make the factory's
-     commits look like the owner's (ADR 0006, F-003 Gate 2 #12), so it is
+     commits look like the owner's (ADR 0006, F-003 Code Review #12), so it is
      not recommended.
    - **Permissions.** The job has `contents: write`, `pull-requests: write`
      and `issues: write`. It runs only on pushes to `main` and manual

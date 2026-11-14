@@ -3,7 +3,7 @@
  * `.factory/engine.json` in the `factory/state` linked worktree of the repo
  * the owner's Claude Code session is in. A repo can track its own `.factory/`
  * or make it a link, to point the session at a socket of its choosing
- * (F-003 Gate 2 R2-5), so only the worktree git registered is trusted.
+ * (F-003 Code Review R2-5), so only the worktree git registered is trusted.
  */
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";

@@ -3,7 +3,7 @@ import * as path from "node:path";
 import YAML from "yaml";
 import { describe, expect, it } from "vitest";
 import {
-  LIMITS_FILE, Limits, LimitsError, agentLimits, containerLimits, gate1Limits, manifestLimits, maxPageBytes, mergeLimits, parseLimits,
+  LIMITS_FILE, Limits, LimitsError, agentLimits, containerLimits, stReviewLimits, manifestLimits, maxPageBytes, mergeLimits, parseLimits,
   readDefaultLimits, readinessLimits, roleContainerLimits, sessionCaps, worktreeLimits,
 } from "../src/config/limits";
 import { Git } from "../src/git";
@@ -26,7 +26,7 @@ describe("engine/config/limits.yaml (H-0087)", () => {
       research_result: { summary_chars: 2000, max_sources: 8 },
       worktree_commit: { max_files: 200, max_total_mib: 5, max_file_mib: 1 },
       security_reviewer: { turns: 100, output_tokens: 200000, dollars: 5, wall_time_minutes: 60, cpus: 1, memory_mib: 1024, pids: 128, tmp_mib: 256 },
-      security_gate_1: { runs_per_feature: 3, report_kib: 256, additions_kib: 64 },
+      security_testability_review: { runs_per_feature: 3, report_kib: 256, additions_kib: 64 },
       orchestrator: { turns: 40, output_tokens: 60000, dollars: 2, wall_time_minutes: 20, cpus: 1, memory_mib: 1024, pids: 128, tmp_mib: 256 },
       readiness_gate: { runs_per_feature: 5, report_kib: 64 },
     });
@@ -136,13 +136,13 @@ describe("consumers", () => {
   });
 });
 
-describe("F-008 Gate 1 limits (H-0095)", () => {
-  it("AC-10: a factory version without the Gate 1 sections still parses, and then has no Gate 1 limits", () => {
+describe("F-008 Security and Testability Review limits (H-0095)", () => {
+  it("AC-10: a factory version without the Security and Testability Review sections still parses, and then has no Security and Testability Review limits", () => {
     const d = YAML.parse(SHIPPED) as Record<string, unknown>;
     delete d.security_reviewer;
-    delete d.security_gate_1;
+    delete d.security_testability_review;
     const l = parseLimits(d, LIMITS_FILE, true);
-    expect(gate1Limits(l, "tokens")).toBeNull();
+    expect(stReviewLimits(l, "tokens")).toBeNull();
     expect(Object.keys(roleContainerLimits(l))).toEqual(["requirements-analyst", "web-reader", "orchestrator"]);
     // A project can't raise what isn't there, and lowering it is a no-op.
     expect(mergeLimits(l, { security_reviewer: { turns: 1 } })).toEqual({ limits: l, above: [] });
@@ -157,18 +157,18 @@ describe("F-008 Gate 1 limits (H-0095)", () => {
   });
 
   it("caps, run limit and file sizes from the shipped values; a project may only lower them", () => {
-    expect(gate1Limits(defaults(), "tokens")).toEqual({
+    expect(stReviewLimits(defaults(), "tokens")).toEqual({
       caps: { maxTurns: 100, maxOutputTokens: 200000, maxBudgetUsd: 5, wallTimeMs: 3600_000 }, runsPerFeature: 3, reportBytes: 256 * 1024, additionsBytes: 64 * 1024,
     });
-    expect(gate1Limits(defaults(), "subscription")!.caps.maxBudgetUsd).toBeUndefined();
-    const { limits, above } = mergeLimits(defaults(), { security_gate_1: { runs_per_feature: 1, report_kib: 512 } });
-    expect(limits.security_gate_1!.runs_per_feature).toBe(1);
-    expect(above).toEqual(["security_gate_1.report_kib"]);
+    expect(stReviewLimits(defaults(), "subscription")!.caps.maxBudgetUsd).toBeUndefined();
+    const { limits, above } = mergeLimits(defaults(), { security_testability_review: { runs_per_feature: 1, report_kib: 512 } });
+    expect(limits.security_testability_review!.runs_per_feature).toBe(1);
+    expect(above).toEqual(["security_testability_review.report_kib"]);
   });
 
-  it("refuses an unknown key in a Gate 1 section", () => {
+  it("refuses an unknown key in a Security and Testability Review section", () => {
     const d = YAML.parse(SHIPPED) as Record<string, Record<string, unknown>>;
-    d.security_gate_1!.extra = 1;
-    expect(() => parseLimits(d, LIMITS_FILE, true)).toThrow(/unknown key 'security_gate_1.extra'/);
+    d.security_testability_review!.extra = 1;
+    expect(() => parseLimits(d, LIMITS_FILE, true)).toThrow(/unknown key 'security_testability_review.extra'/);
   });
 });

@@ -285,7 +285,7 @@ export class Inbox {
   // ---- privacy (F-011 FR-15, SR-9) ----
 
   /**
-   * F-016 Gate 2 M1 (owner decision 2026-11-14): an answer this engine didn't
+   * F-016 Code Review M1 (owner decision 2026-11-14): an answer this engine didn't
    * record in this run is checked on GitHub before it has any effect. The
    * pinned owner's 👍 must still be on the workflow's action comment for that
    * action, or the owner's command comment must still say it, and a risky

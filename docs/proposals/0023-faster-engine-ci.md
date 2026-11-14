@@ -27,7 +27,7 @@ together. The rest is tests. Per test file on Windows:
 | File | Tests | Time |
 |---|---|---|
 | acceptance/f009-document | 252 | 30 min |
-| acceptance/gate1 | 67 | 24 min |
+| acceptance/st-review | 67 | 24 min |
 | acceptance/interview-tools | 52 | 15 min |
 | everything else | about 520 | 3.6 min or less per file |
 

@@ -398,7 +398,7 @@ def _setup_module():
 @functools.lru_cache(maxsize=None)
 def tool_paths():
     """The tools of the environment this interpreter runs in, gitleaks re-checked
-    against its pin once per checker run (F-007 Gate 2: a same-user process
+    against its pin once per checker run (F-007 Code Review: a same-user process
     could swap it between runs)."""
     require_tools()
     st = _setup_module()
@@ -526,7 +526,7 @@ def _read_blobs(root, ids):
 
 def scan_secrets(repo, gitleaks):
     """gitleaks over the working tree, the repo's history and its file names,
-    the way F-007 Gate 1 component review 5 approved it: `dir` mode over a fresh
+    the way F-007 Security and Testability Review component review 5 approved it: `dir` mode over a fresh
     0700 folder of files named by content hash, so no path allowlist,
     `.gitleaks.toml` or `.gitleaksignore` in the repo can match or apply.
 
@@ -992,7 +992,7 @@ def _protection(data):
         if not reviews.get("require_last_push_approval"):
             problems.append("last push not required to be approved")
         # The machine account has Write, so its approval would otherwise satisfy
-        # the review rule on owner-authored PRs (F-003 Gate 2 R2-10).
+        # the review rule on owner-authored PRs (F-003 Code Review R2-10).
         if not reviews.get("require_code_owner_reviews"):
             problems.append("code owner review not required")
     if not (checks.get("contexts") or checks.get("checks")):
@@ -1007,7 +1007,7 @@ EVIDENCE = {
     "alpha": [
         ("tests:unit", "Unit tests on core logic"),
         ("tests:acceptance", "Acceptance criteria of core features tested"),
-        ("gate2", "Gate 2 security review of the whole codebase (factory record needed)"),
+        ("code-review", "Code Review of the whole codebase (factory record needed)"),
         ("known-issues", "Known issues listed (factory record needed)"),
     ],
     "beta": [
@@ -1050,7 +1050,7 @@ def recommend_level(gaps, readme):
         "recommended": recommended,
         "criteria_status": "draft",  # maturity-levels.md promotion table is not approved yet
         "note": "Rapid prototype is the floor. Higher levels also need evidence only the factory produces "
-                "(Gate 2 reports, CI history), so a newly onboarded repo starts low and is promoted with evidence.",
+                "(Code Review reports, CI history), so a newly onboarded repo starts low and is promoted with evidence.",
         "levels": levels,
     }
 
@@ -1220,13 +1220,15 @@ LIMIT_KEYS = {
     "fetch_page": {"max_download_mib": "num", "max_chars": "int"},
     "research_result": {"summary_chars": "int", "max_sources": "int"},
     "worktree_commit": {"max_files": "int", "max_total_mib": "num", "max_file_mib": "num"},
-    # F-008 Security Gate 1 (H-0095): optional in the master, so a manifest may lower them too.
+    # F-008 Security and Testability Review (H-0095): optional in the master, so a manifest may lower them too.
     "security_reviewer": _SESSION_LIMITS,
-    "security_gate_1": {"runs_per_feature": "int", "report_kib": "int", "additions_kib": "int"},
+    "security_testability_review": {"runs_per_feature": "int", "report_kib": "int", "additions_kib": "int"},
     # F-016 readiness gate (H-0184, H-0185): optional in the master too.
     "orchestrator": _SESSION_LIMITS,
     "readiness_gate": {"runs_per_feature": "int", "report_kib": "int"},
 }
+
+LEGACY_LIMIT_SECTIONS = {"security_gate_1": "security_testability_review"}
 
 
 def _limit_number(value, kind):
@@ -1249,7 +1251,8 @@ def _check_limits(data):
         return ["limits must be a mapping of sections (see the master's engine/config/limits.yaml)"]
     errors = []
     for section, values in block.items():
-        keys = LIMIT_KEYS.get(section)
+        # A manifest written before the gate rename names the section security_gate_1.
+        keys = LIMIT_KEYS.get(LEGACY_LIMIT_SECTIONS.get(section, section))
         if keys is None:
             errors.append(f"limits.{section} is not a known section ({', '.join(LIMIT_KEYS)})")
             continue
@@ -1432,7 +1435,7 @@ MAY_REQUEST = {"advisor": {"requirements-analyst", "orchestrator"}}
 
 
 # Role policy commands are program names with any arguments, so a shell or
-# interpreter would undo every read and write rule (Gate 2 re-review R2-1).
+# interpreter would undo every read and write rule (Code Review re-review R2-1).
 # Interpreter families match as prefixes (pythonw, luajit, nodemon); shells and
 # awks as suffixes of the name without its version (ksh93, bash5.2, gawk).
 SHELL_FAMILIES = re.compile(r"^(python|pypy|ipython|node|ruby|irb|perl|php|lua|tcl|rscript)|^(r|py)$")
@@ -1462,7 +1465,7 @@ def _escapes_worktree(glob):
 
 
 # Host names only: an engine that trims entries or matches them as globs
-# would read " *", "*.com" or "0.0.0.0/0" as open web access (F-005 Gate 2 #2).
+# would read " *", "*.com" or "0.0.0.0/0" as open web access (F-005 Code Review #2).
 _HOST_RE = re.compile(r"(?=.{1,253}\Z)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*")
 
 
@@ -1606,7 +1609,7 @@ def validate_policy(data, agents):
         return errors
     # Any role that can write outside the factory's own records must be denied change-controlled files.
     # The project policy is checked on its own too: it applies wherever a repo
-    # has no override, and an override can hide a bad project rule (Gate 2 #10).
+    # has no override, and an override can hide a bad project rule (Code Review #10).
     for repo in [None, *(data.get("repos") or [])]:
         name = repo.get("name") if isinstance(repo, dict) else None
         where = f"repo {name}" if name else "the project"
@@ -1794,7 +1797,7 @@ def plugin_version(manifest=None, plugin_json=PLUGIN_JSON):
 
     The marketplace serves whatever ref the owner added it at, so the skill
     checks that the copy it runs from is the factory version the project
-    pinned (F-003 Gate 2 R2-8).
+    pinned (F-003 Code Review R2-8).
     """
     with open(plugin_json, encoding="utf-8") as f:
         version = json.load(f).get("version")
@@ -1819,7 +1822,7 @@ def _load_json(path):
 def _require_state_worktree(inbox_dir):
     """A repo can carry its own `.factory/` with forged items marked as filed,
     or a `.factory` link pointing elsewhere; only the factory/state worktree's
-    inbox is trusted (Gate 2 R3-2, R3-3, R4-1, R4-2). A folder outside any git
+    inbox is trusted (Code Review R3-2, R3-3, R4-1, R4-2). A folder outside any git
     work tree and outside any `.factory` is a plain folder chosen by the caller."""
     full = os.path.abspath(inbox_dir)
     parts = full.split(os.sep)

@@ -56,6 +56,6 @@ of who acted.
   ADR 0017 (no merge from our extension) and ADR 0018 (applies to every
   owner action, not just the phone).
 - F-001, F-011 and F-012 are revised through the requirements interview,
-  with Security Gate 1, and the Inbox item contract gets a new major
+  with Security and Testability Review, and the Inbox item contract gets a new major
   version. Until those specs are approved, nothing is built against the
   old design.

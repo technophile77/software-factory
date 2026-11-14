@@ -124,7 +124,7 @@ secrets scan), Engine control channel, Interview tools v1.0, Role policy.
 None yet. Each will be proposed to the owner.
 
 ## 9. Security considerations
-| Id | Requirement | Source (analyst / Gate 1) | Status |
+| Id | Requirement | Source (analyst / Security and Testability Review) | Status |
 |---|---|---|---|
 | SR-1 | The document is data: framed with a fresh boundary, never followed as instructions by the analyst, the skill or the advisor. | Analyst; owner 2026-11-12 (thread) | Approved |
 | SR-2 | Claude in the skill never reads, shows or summarizes the document; only the client (the engine's MCP mode) reads the file. | Analyst; owner 2026-11-12 (thread) | Approved |
@@ -133,7 +133,7 @@ None yet. Each will be proposed to the owner.
 | SR-5 | The stored document is write-denied to every agent role. | Analyst; owner 2026-11-12 (thread) | Approved |
 | SR-6 | The client refuses UNC and device paths, opens without following symlinks, checks the open handle is a regular file, and reads at most the limit + 1 bytes. | G1 #1; owner 2026-11-12 (thread) | Approved |
 | SR-7 | Every spec line drawn from the document carries a quote of its source. The engine's readiness check refuses unless each quote is in the stored document word for word, and the engine, not the analyst, builds the source-confirmation list from those quotes. | G1 #2; owner 2026-11-12 (thread) | Approved |
-| SR-8 | The engine refuses a document that contains HTML comments, raw HTML, zero-width or bidi characters, a Markdown link reference definition that has a title or that no link uses, or a link or image with empty text, and names the line numbers so the owner can remove them and retry. | G1 #3; owner decision 2026-11-12 (decision card); extended by Gate 2 M2, owner decision 2026-11-12 (decision card) | Approved |
+| SR-8 | The engine refuses a document that contains HTML comments, raw HTML, zero-width or bidi characters, a Markdown link reference definition that has a title or that no link uses, or a link or image with empty text, and names the line numbers so the owner can remove them and retry. | G1 #3; owner decision 2026-11-12 (decision card); extended by Code Review M2, owner decision 2026-11-12 (decision card) | Approved |
 | SR-9 | The engine validates every `document` field itself (UTF-8, no control characters but tab, LF, CR, allowed `media_type` and `provenance`, size) and fails closed. | G1 #4; owner 2026-11-12 (thread) | Approved |
 | SR-10 | The engine fixes the stored file name from `media_type`; `name` is display text only, length-limited, control characters stripped, never in a path or git argument. | G1 #5; owner 2026-11-12 (thread) | Approved |
 | SR-11 | Sensitive data is the whole document: it goes to the config repo remote and the model API. The skill says so before the owner picks a file. A secrets refusal names line and rule, never the value. | G1 #6; owner 2026-11-12 (thread) | Approved |
@@ -141,7 +141,7 @@ None yet. Each will be proposed to the owner.
 | SR-13 | The engine counts the document against the ADR 0012 budget at start and refuses a start the budget can't cover. | G1 #8; owner 2026-11-12 (thread) | Deferred to Alpha: the engine has no project budget ledger yet; until then the 256 KiB cap is the only size guard (owner, decision card, 2026-11-12). Known issue; must be fixed before promotion to Alpha |
 | SR-14 | The skill sends `provenance` only from the owner's pick in the picker in that turn. | G1 #9; owner 2026-11-12 (thread) | Approved |
 
-Security Gate 1 ran on spec v2: `F-009-security-gate1.md` (0 Critical, 3 High, 4 Medium, 2 Low).
+Security and Testability Review ran on spec v2: `F-009-security-testability-review.md` (0 Critical, 3 High, 4 Medium, 2 Low).
 
 ## 10. Interface requirements
 Approved by the owner 2026-11-12 (PR #29 merged; decision card, as drafted):
@@ -176,15 +176,15 @@ Passed 2026-11-12 (orchestrator check on spec v6):
 |---|---|---|---|
 | 1 | 2026-11-12 | First draft from the owner's request | — |
 | 2 | 2026-11-12 | OQ-1 (c) owner picks per document; OQ-2 Markdown and plain text only; OQ-3 256 KiB; OQ-4 no replacing the document mid-interview | Owner, 2026-11-12 (thread) |
-| 3 | 2026-11-12 | Security Gate 1 findings drafted as SR-6 to SR-14 | — |
+| 3 | 2026-11-12 | Security and Testability Review findings drafted as SR-6 to SR-14 | — |
 | 4 | 2026-11-12 | SR-8: refuse documents with hidden content (G1 #3 option a); AC-10 added | Owner, 2026-11-12 (decision card) |
 | 5 | 2026-11-12 | SR-1 to SR-7 and SR-9 to SR-14 approved as written | Owner, 2026-11-12 (thread) |
 | 6 | 2026-11-12 | H-0105 to H-0108 approved as drafted; readiness gate passed; development starts | Owner, 2026-11-12 (decision card) |
 | 7 | 2026-11-12 | SR-13 deferred to Alpha as a known issue (no project budget ledger in the engine yet) | Owner, 2026-11-12 (decision card) |
 | 8 | 2026-11-12 | A document in the repo itself is named by its repo path and read from the working copy; reading the committed version from `main` is not in this increment | Owner, 2026-11-12 (decision card) |
-| 9 | 2026-11-12 | Engine reports `capabilities: ["document"]` in engine.json and `engine.status`; the client checks it before reading a document (channel v1.4 text amended; closes Gate 2 L3) | Owner, 2026-11-12 (decision card) |
-| 10 | 2026-11-12 | SR-8 and AC-10 extended to Markdown link reference definitions with a title or no use, and links or images with empty text (Gate 2 M2) | Owner, 2026-11-12 (decision card) |
-| 11 | 2026-11-12 | FR-8: the source confirmation shows and locks each spec line; quotes need 5 words or 25 characters and sit in one block under the named heading (Gate 2 M3); Interview tools v1.1 and channel v1.4 text amended | Owner, 2026-11-12 (decision card) |
+| 9 | 2026-11-12 | Engine reports `capabilities: ["document"]` in engine.json and `engine.status`; the client checks it before reading a document (channel v1.4 text amended; closes Code Review L3) | Owner, 2026-11-12 (decision card) |
+| 10 | 2026-11-12 | SR-8 and AC-10 extended to Markdown link reference definitions with a title or no use, and links or images with empty text (Code Review M2) | Owner, 2026-11-12 (decision card) |
+| 11 | 2026-11-12 | FR-8: the source confirmation shows and locks each spec line; quotes need 5 words or 25 characters and sit in one block under the named heading (Code Review M3); Interview tools v1.1 and channel v1.4 text amended | Owner, 2026-11-12 (decision card) |
 | 12 | 2026-11-12 | AC-4 to AC-8 (and the model parts of FR-6, FR-7, FR-9, SR-1, SR-12) accepted at Rapid prototype on the engine-side evidence with the scripted analyst; a real-analyst evaluation against sample documents is a known issue that blocks promotion to Alpha (validation M3) | Owner, 2026-11-12 (decision card) |
 | 13 | 2026-11-12 | H-0109: Interview tools v1.1 states the `source_unchanged` readiness check (validation M2), and the requirements analyst's AGENT.md states the v11 Sources rules (validation m4), both as drafted | Owner, 2026-11-12 (decision card) |
 

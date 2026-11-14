@@ -7,7 +7,7 @@ import { realPath } from "../fsutil";
  * A branch tree the engine won't write into a worktree on the host. Anyone
  * who can push to the config repo shapes the tree, and the files are written
  * as the owner, so a tree that could steer a write elsewhere is refused
- * whole (Security Gate 2, H2).
+ * whole (Code Review, H2).
  */
 export class WorktreeRefused extends ConfigError {
   override name = "WorktreeRefused";

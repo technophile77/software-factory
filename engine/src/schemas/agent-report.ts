@@ -7,7 +7,7 @@ import { outputSchemaOf } from "./json-file";
  *   field the engine fills (F-020 SR-7), so a report that sets one is refused.
  * - `storedReport`: the file on factory/state, the agent's part plus the
  *   engine's facts.
- * Gate 1 and readiness add context rules on top (the criteria and checklist
+ * Security and Testability Review and readiness add context rules on top (the criteria and checklist
  * the reviewer was given, the feature and commit), in their own validators.
  */
 

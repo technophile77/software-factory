@@ -1,6 +1,6 @@
 """The onboard-repo skill's gitleaks pins equal the engine's (ADR 0020, F-003 AC-24, H-0147).
 
-Both download the same reviewed release (F-007 Gate 1 component review 5), so a
+Both download the same reviewed release (F-007 Security and Testability Review component review 5), so a
 pin bumped in one place and not the other fails here.
 """
 import json

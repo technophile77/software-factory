@@ -10,7 +10,7 @@
     { "heading": "## 6. Edge cases" },
     { "heading": "## 7. Dependencies" },
     { "heading": "## 8. Assumptions", "table": ["Id", "Assumption", "Decision link", "Status"] },
-    { "heading": "## 9. Security considerations", "table": ["Id", "Requirement", "Source (analyst / Gate 1)", "Status"] },
+    { "heading": "## 9. Security considerations", "table": ["Id", "Requirement", "Source (analyst / Security and Testability Review)", "Status"] },
     { "heading": "## 10. Interface requirements" },
     { "heading": "## 11. Readiness gate" },
     { "heading": "## 12. Change log", "table": ["Version", "Date", "Change", "Approved by"] }

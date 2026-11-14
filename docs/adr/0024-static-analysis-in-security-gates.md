@@ -1,19 +1,19 @@
 # 0024. CodeQL and Semgrep in the security gates
 
-- **Status:** Accepted; amended 2026-11-14 (engine Gate 2 runs Semgrep from a hash-pinned PyPI venv, see the end)
+- **Status:** Accepted; amended 2026-11-14 (engine Code Review runs Semgrep from a hash-pinned PyPI venv, see the end)
 - **Date:** 2026-11-13
 - **Decided by:** owner (decision card, option A)
 - **Decision item:** `docs/proposals/0028-static-analysis-in-security-gates.md`
 
 ## Problem
 Code-pattern weaknesses (injection, path traversal, unsafe
-deserialization) were found only by an agent reading code in Gate 2: not
+deserialization) were found only by an agent reading code in Code Review: not
 repeatable, and paid in tokens on every run.
 
 ## Options considered
 | Option | Pros | Cons |
 |---|---|---|
-| **A. CodeQL on the master repo, Semgrep CE on project repos and in Gate 2** | Repeatable; free on the public master repo and on private project repos | Two tools to review; Semgrep rules fetched at run time |
+| **A. CodeQL on the master repo, Semgrep CE on project repos and in Code Review** | Repeatable; free on the public master repo and on private project repos | Two tools to review; Semgrep rules fetched at run time |
 | B. Semgrep everywhere | One tool | No CodeQL depth on the master repo |
 | C. CodeQL everywhere | Strongest analysis | Paid (GitHub Code Security) on private repos |
 | D. Opengrep | No rules licence limits | Younger; rules licence unchecked |
@@ -32,15 +32,15 @@ repeatable, and paid in tokens on every run.
 1. The master repo runs CodeQL (JavaScript/TypeScript, Python, Actions) in
    a pinned workflow.
 2. The onboarding CI template gets a Semgrep CE job, and the engine runs
-   the same pinned image as a deterministic step before the Gate 2 agent,
+   the same pinned image as a deterministic step before the Code Review agent,
    which receives the findings as evidence.
 
 ## Consequences
-- `security-standards.md` gets a criterion: Gate 2 runs the approved
+- `security-standards.md` gets a criterion: Code Review runs the approved
   static analysis, and every finding at the tool's highest severity is
   fixed or accepted by the owner.
 - Hygiene items for the CodeQL workflow, the template job, the onboarding
-  gap for a missing job, and the Gate 2 step when Gate 2 is automated.
+  gap for a missing job, and the Code Review step when Code Review is automated.
 
 ## S4.1 reviews (H-0173, 2026-11-13)
 
@@ -75,12 +75,12 @@ change there changes results between runs. That is accepted because the
 licence forbids pinning a copy in the master repo. A rules change can add
 findings; it can't run code.
 
-## Amendment, 2026-11-14: the engine's Gate 2 step runs Semgrep from PyPI
+## Amendment, 2026-11-14: the engine's Code Review step runs Semgrep from PyPI
 
 - **Decided by:** owner (decision card, 2026-11-14, F-015)
 - **Why:** agents no longer run in containers until Beta (ADR 0026), and the
   owner chose not to keep Docker on the PC for Semgrep alone.
-- **Decision:** the engine runs Semgrep CE before the Gate 2 agent from a
+- **Decision:** the engine runs Semgrep CE before the Code Review agent from a
   factory-owned virtual environment on the owner's PC, installed with
   `pip install --require-hashes --only-binary :all:` from a change-controlled
   requirements file with hashes for every wheel on each supported platform
@@ -94,7 +94,7 @@ findings; it can't run code.
 | Item | Finding |
 |---|---|
 | Source and maintainers | PyPI project `semgrep`, Semgrep Inc., the same release as the reviewed image (uploaded 2026-10-29, past a 14-day wait). Requires Python 3.10 or later. |
-| Platforms | Wheels for Windows x64, macOS arm64, Linux x86_64 and aarch64 (glibc and musl). No wheel for Intel macOS: there `--only-binary` refuses the sdist, so the Gate 2 Semgrep step fails closed. Semgrep's docs still label native Windows support "beta" ([quickstart](https://semgrep.dev/docs/getting-started/quickstart-ce)). |
+| Platforms | Wheels for Windows x64, macOS arm64, Linux x86_64 and aarch64 (glibc and musl). No wheel for Intel macOS: there `--only-binary` refuses the sdist, so the Code Review Semgrep step fails closed. Semgrep's docs still label native Windows support "beta" ([quickstart](https://semgrep.dev/docs/getting-started/quickstart-ce)). |
 | What it pulls in | 66 wheels in all (resolved for Windows x64, Python 3.12), all binary, so no install scripts run. Notable: `mcp` 1.29.0 (pinned exactly by Semgrep), the OpenTelemetry SDK 1.37 family, `cryptography`, `pydantic`, `requests`, `ruamel.yaml`, `pywin32` on Windows. |
 | Known CVEs (PyPI advisory data, which mirrors OSV; api.osv.dev was blocked from this session, CI rechecks) | `mcp` 1.29.0: GHSA-84m7-p3x7-pcfv, GHSA-5h93-6whr-6q8j, GHSA-w4fh-qvv9-3v23, GHSA-rwrf-2pqf-9j8j, fixed in 1.30.0. They affect an MCP HTTP server, HTTP client redirects, server bearer auth and client tool-schema `$ref` fetching. `opentelemetry-api` 1.37.0: GHSA-xcq7-p3pf-p88h, GHSA-mf5v-w3w3-f6cg (ReDoS parsing inbound `tracestate` / `traceparent` headers), fixed in 1.45.x. Semgrep 1.185.0 (latest) still pins both, so no release avoids them. |
 | Reachability | Not reachable from `semgrep scan`: the MCP code runs only under `semgrep mcp`, which the engine never starts, and the OpenTelemetry parsers handle inbound HTTP headers, which a command-line scan never receives (tracing exports only with `--trace`, which the engine never passes). Each gets an `osv-scanner.toml` ignore entry with this reason and an expiry of at most 90 days (H-0196), so the weekly scan flags them again. |

@@ -30,7 +30,7 @@ export interface ModelIdentity {
  */
 export type EndpointProbe = (e: Endpoint, pin: PinnedEndpoint, key: string | null) => Promise<ProbeResult>;
 
-/** The whole model-list request, not just its idle time: a server dripping bytes can't hold the start (Gate 2 L5). */
+/** The whole model-list request, not just its idle time: a server dripping bytes can't hold the start (Code Review L5). */
 const MODELS_TIMEOUT_MS = 20_000;
 /** Default for the whole tool-call request; a large local model can take minutes to its first token. */
 export const TOOL_TIMEOUT_MS = 120_000;

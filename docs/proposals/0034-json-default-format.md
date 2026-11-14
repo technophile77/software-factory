@@ -36,7 +36,7 @@ the format is defined:
 
 1. **Written for the owner to read.** Specs, ADRs, proposals and rendered
    reports are Markdown. When code needs the facts in one, they come from a
-   JSON file the Markdown is rendered from (as Gate 1 does), or from a JSON
+   JSON file the Markdown is rendered from (as Security and Testability Review does), or from a JSON
    description of the Markdown's structure (as the spec does).
 2. **Fixed by an outside tool.** `AGENT.md` and `SKILL.md` (Claude Code),
    GitHub issue and PR bodies (Markdown), JUnit XML from test runners,
@@ -65,7 +65,7 @@ every `agents/*/AGENT.md`, `engine/src`, and the onboarding plugin.
 | Data | Format | Where it is defined |
 |---|---|---|
 | Agent report, every role | JSON, `agent-report/1.0` | Agent report v1.5; `.factory/runs/<feature>/<stage>/<role>-<n>.json` |
-| Gate 1 result | JSON (security reviewer's agent report); the Markdown copy is rendered by code | `engine/src/gate1/report.ts`, `render.ts` |
+| Security and Testability Review result | JSON (security reviewer's agent report); the Markdown copy is rendered by code | `engine/src/st-review/report.ts`, `render.ts` |
 | Readiness gate result | JSON (orchestrator's agent report) | `engine/src/readiness/report.ts` |
 | Run review | JSON, `run-review/1.0` | Run review v1.0 |
 | Tuning metrics, calibration results | JSON | Tuning metrics v1.1, Calibration result v1.0 |
@@ -92,7 +92,7 @@ every `agents/*/AGENT.md`, `engine/src`, and the onboarding plugin.
 | How agents produce their report | The agent writes the file with its `Write` tool; the engine parses it | Code can make the model return JSON that matches the schema, rather than hope it does | Pass the role's report schema to the Agent SDK's structured output (`outputFormat: {type: "json_schema"}`, present in the pinned `@anthropic-ai/claude-agent-sdk` 0.3.311) where a role writes only its report |
 
 These are engine and contract changes, so they would be one feature, F-020,
-with its own spec, Gate 1 and readiness gate. Nothing is built before the
+with its own spec, Security and Testability Review and readiness gate. Nothing is built before the
 owner approves.
 
 ### Stays as it is, with the reason
@@ -100,7 +100,7 @@ owner approves.
 | Data | Format | Reason |
 |---|---|---|
 | Feature specs, ADRs, proposals, `docs/*.md` | Markdown | Written for the owner (reason 1). The spec's structure is checked against its JSON file |
-| Rendered reports (Gate 1 `.md`, onboarding assessment `.md`) | Markdown, rendered by code from JSON | For the owner; the JSON stays the source |
+| Rendered reports (Security and Testability Review `.md`, onboarding assessment `.md`) | Markdown, rendered by code from JSON | For the owner; the JSON stays the source |
 | Inbox issue body, its stored copy `inbox/<id>.rev<n>.md`, PR evidence comments | Markdown | GitHub renders it (reason 2). The record's `body_sha256` proves the posted copy |
 | `AGENT.md`, `SKILL.md` | Markdown with YAML frontmatter | Claude Code's format (reason 2) |
 | Owner's source document for an interview, `F-nnn-source.md` / `.txt` | As the owner gave it | It is the owner's document, kept as given |
@@ -108,7 +108,7 @@ owner approves.
 | `gitleaks.toml`, `osv-scanner.toml`, `.github/workflows/*.yml`, `package.json` | Their tools' formats | Reason 2 |
 | Engine log, transcript | JSON Lines | Append-only (reason 4); already JSON |
 | `workflows/feature-development/workflow.yaml` | YAML | No code reads it today; the stages live in the engine's state machines (F-019). Move it to JSON when F-019's machines are generated from it, or retire it |
-| The factory's own hand-built reports in `docs/features/` (dev, test, validation, Gate 2, orchestrator reviews) | Markdown | They were written by Claude sessions building the factory before the engine could. Engine-run features already write JSON reports; these stay as history and are not converted |
+| The factory's own hand-built reports in `docs/features/` (dev, test, validation, Code Review, orchestrator reviews) | Markdown | They were written by Claude sessions building the factory before the engine could. Engine-run features already write JSON reports; these stay as history and are not converted |
 
 ### For the owner to choose: hand-edited configuration
 

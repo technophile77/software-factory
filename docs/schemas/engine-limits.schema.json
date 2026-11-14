@@ -270,7 +270,7 @@
       ],
       "additionalProperties": false
     },
-    "security_gate_1": {
+    "security_testability_review": {
       "type": "object",
       "properties": {
         "runs_per_feature": {
@@ -365,6 +365,32 @@
       "required": [
         "runs_per_feature",
         "report_kib"
+      ],
+      "additionalProperties": false
+    },
+    "security_gate_1": {
+      "type": "object",
+      "properties": {
+        "runs_per_feature": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "report_kib": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "additions_kib": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "runs_per_feature",
+        "report_kib",
+        "additions_kib"
       ],
       "additionalProperties": false
     }

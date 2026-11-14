@@ -579,7 +579,7 @@ describe("router egress (F-013 FR-5)", () => {
   });
 });
 
-describe("Gate 2 M2: what the agent sees of the router's replies", () => {
+describe("Code Review M2: what the agent sees of the router's replies", () => {
   const marked = (m: string) => JSON.stringify({ ...MESSAGES, messages: [{ role: "user", content: m }] });
   const rawPost = (port: number, body: string): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> =>
     new Promise((resolve, reject) => {
@@ -623,7 +623,7 @@ describe("Gate 2 M2: what the agent sees of the router's replies", () => {
   });
 });
 
-describe("Gate 2 L1: logs name the endpoint, never its host or address (SR-2)", () => {
+describe("Code Review L1: logs name the endpoint, never its host or address (SR-2)", () => {
   it("no log entry from endpoint traffic holds the pinned host or address", async () => {
     const h = await endpointHarness();
     const marked = (m: string) => JSON.stringify({ ...MESSAGES, messages: [{ role: "user", content: m }] });
@@ -643,7 +643,7 @@ describe("Gate 2 L1: logs name the endpoint, never its host or address (SR-2)", 
   });
 });
 
-describe("Gate 2 L2: the router's plain-HTTP grant allows only the paths an endpoint needs", () => {
+describe("Code Review L2: the router's plain-HTTP grant allows only the paths an endpoint needs", () => {
   it("allows the listed paths with GET or POST, and the endpoint's base path variants", async () => {
     const h = await endpointHarness();
     for (const p of ["/v1/models", "/v1/messages", "/v1/messages/count_tokens", "/v1/chat/completions"]) {

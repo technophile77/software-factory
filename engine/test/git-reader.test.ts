@@ -151,7 +151,7 @@ describe("F-014 reader failures (FR-2, AC-3, SR-6, SR-7)", () => {
     }
   });
 
-  it.skipIf(process.platform === "win32")("output a timed-out reader writes later never reaches the next reader (Gate 2 M2)", async () => {
+  it.skipIf(process.platform === "win32")("output a timed-out reader writes later never reaches the next reader (Code Review M2)", async () => {
     const { repo, head } = fixture();
     const other = git(repo, "rev-parse", "HEAD~1");
     const mark = path.join(tmpdir(), "first");
@@ -173,7 +173,7 @@ describe("F-014 reader failures (FR-2, AC-3, SR-6, SR-7)", () => {
     await g.closeReaders();
   });
 
-  it("a catBlobs call over the read limit in total fails as one plain call did (Gate 2 M1)", async () => {
+  it("a catBlobs call over the read limit in total fails as one plain call did (Code Review M1)", async () => {
     const { repo, head } = fixture();
     // Each blob is 2 bytes; three of them are over a 5-byte limit together.
     const g = make({ readLimit: 5 });
@@ -240,7 +240,7 @@ describe("F-014 reader setup (SR-2, SR-4)", () => {
   });
 });
 
-describe("F-014 master repo facts (FR-4, Gate 2 L5)", () => {
+describe("F-014 master repo facts (FR-4, Code Review L5)", () => {
   it("a master read that failed isn't kept: a later check still finds a clone", async () => {
     const { repo } = fixture();
     const master = path.join(tmpdir(), "master");
@@ -255,7 +255,7 @@ describe("F-014 master repo facts (FR-4, Gate 2 L5)", () => {
   });
 });
 
-describe("F-014 origin from the config listing (FR-5, Gate 2 L4)", () => {
+describe("F-014 origin from the config listing (FR-5, Code Review L4)", () => {
   it("is used only when it is one non-empty value; otherwise git is asked", async () => {
     const { repo } = fixture();
     const s = new StateRepo(make(), { scan: async () => [] } as never, repo, new MemoryLogger(), path.join(tmpdir(), "t"));
@@ -312,7 +312,7 @@ describe("F-014 tree parsing (SR-5)", () => {
     }
   });
 
-  it("refuses entries out of git's order, where a folder sorts as if its name ended in / (Gate 2 L2)", () => {
+  it("refuses entries out of git's order, where a folder sorts as if its name ended in / (Code Review L2)", () => {
     expect(() => parseTree(Buffer.concat([entry("100644", "b"), entry("100644", "a")]), 20)).toThrow(/order/);
     expect(() => parseTree(Buffer.concat([entry("40000", "a"), entry("100644", "a.txt")]), 20)).toThrow(/order/);
     expect(parseTree(Buffer.concat([entry("100644", "a.txt"), entry("40000", "a"), entry("100644", "a0")]), 20).map((e) => e.name)).toEqual(["a.txt", "a", "a0"]);

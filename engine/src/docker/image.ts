@@ -6,7 +6,7 @@ import { ensureOwnerDir } from "../fsutil";
 import { ROLE_RE } from "../policy/role-policy";
 import { DockerCli, DockerError } from "./cli";
 
-/** The base image, by multi-arch index digest (Gate 1 review 4, OQ-6). Agent images and the proxy sidecar both start from it. */
+/** The base image, by multi-arch index digest (Security and Testability Review review 4, OQ-6). Agent images and the proxy sidecar both start from it. */
 export const BASE_IMAGE_DIGEST = "sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc";
 export const BASE_IMAGE = `node:26.13.1-trixie-slim@${BASE_IMAGE_DIGEST}`;
 

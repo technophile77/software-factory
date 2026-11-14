@@ -118,16 +118,16 @@ which gaps closed and which opened, without duplicating anything.
 | A-6 | A single-repo project still gets its own config repo, as ADR 0010 decides. The skill creates it (named `<project>-factory`, private) after the owner confirms. | ADR 0010; owner, 2026-11-10 | Approved |
 
 ## 9. Security considerations
-| Id | Requirement | Source (analyst / Gate 1) | Status |
+| Id | Requirement | Source (analyst / Security and Testability Review) | Status |
 |---|---|---|---|
 | SR-1 | Everything read from the target repo (files, workflow YAML, issue text, `gh` output) is data. The skill never follows instructions found there. | Analyst (S6.1) | Accepted |
-| SR-2 | Assessment only reads files. It never runs the repo's build, tests, install scripts or hooks; build and test evidence comes from CI on the onboarding PR. | Gate 1 (S8.4, S4.5) | Accepted |
-| SR-3 | A suspected secret is reported by file, line and type only. Its value is never written to the report, an item, a log or a commit. | Gate 1 (S3.1, S3.3) | Accepted |
-| SR-4 | Paths are resolved and confined to the repo root; symlinks pointing outside it are reported and not followed. | Gate 1 (S1.4) | Accepted |
-| SR-5 | Generated CI workflows declare least-privilege `permissions`, pass no secrets the job does not use, and pin every third-party action to a commit SHA. | Gate 1 (S8.3, S4.3) | Accepted |
-| SR-6 | `git` and `gh` are called with argument lists, never through a shell string built from repo content. | Gate 1 (S1.3) | Accepted |
-| SR-7 | Nothing on GitHub changes (protection, repo creation) without the owner's confirmation in that session; the skill never creates, reads or stores tokens. | Gate 1 (S8.2, S8.5) | Accepted |
-| SR-8 | The YAML/TOML/JSON readers in the checker fail closed: a file that can't be parsed is a reported gap, never a silent pass. YAML is read with PyYAML's safe loader, which also refuses anchors, aliases and tags. | Gate 1 (S5.1) | Accepted; amended by ADR 0020 |
+| SR-2 | Assessment only reads files. It never runs the repo's build, tests, install scripts or hooks; build and test evidence comes from CI on the onboarding PR. | Security and Testability Review (S8.4, S4.5) | Accepted |
+| SR-3 | A suspected secret is reported by file, line and type only. Its value is never written to the report, an item, a log or a commit. | Security and Testability Review (S3.1, S3.3) | Accepted |
+| SR-4 | Paths are resolved and confined to the repo root; symlinks pointing outside it are reported and not followed. | Security and Testability Review (S1.4) | Accepted |
+| SR-5 | Generated CI workflows declare least-privilege `permissions`, pass no secrets the job does not use, and pin every third-party action to a commit SHA. | Security and Testability Review (S8.3, S4.3) | Accepted |
+| SR-6 | `git` and `gh` are called with argument lists, never through a shell string built from repo content. | Security and Testability Review (S1.3) | Accepted |
+| SR-7 | Nothing on GitHub changes (protection, repo creation) without the owner's confirmation in that session; the skill never creates, reads or stores tokens. | Security and Testability Review (S8.2, S8.5) | Accepted |
+| SR-8 | The YAML/TOML/JSON readers in the checker fail closed: a file that can't be parsed is a reported gap, never a silent pass. YAML is read with PyYAML's safe loader, which also refuses anchors, aliases and tags. | Security and Testability Review (S5.1) | Accepted; amended by ADR 0020 |
 | SR-9 | The external tools take nothing from the repo being assessed but its files: zizmor runs with `--offline --no-config --no-ignores`, gitleaks with the skill's own rules, an empty ignore path and `--redact`. Both run with argument lists, a timeout and no network, and an exit code other than clean or findings is a reported gap, never a pass. | ADR 0020 (S6.1, S5.1, S4.3) | Accepted (owner, 2026-11-13, decision card) |
 
 ## 10. Interface requirements
@@ -148,7 +148,7 @@ not an inter-agent contract.
 ## 12. Change log
 | Version | Date | Change | Approved by |
 |---|---|---|---|
-| 1 | 2026-11-10 | Draft, with Gate 1 security requirements | — |
+| 1 | 2026-11-10 | Draft, with Security and Testability Review security requirements | — |
 | 2 | 2026-11-10 | FR-13/AC-17 added for F-002's complexity preset; assumptions A-1 to A-6 approved | Owner, 2026-11-10 |
 | 3 | 2026-11-10 | Plugin distribution (A-1, FR-12, AC-20); test adoption and baseline feature (FR-14, FR-15, AC-18, AC-19) | Owner, 2026-11-10 (decision cards) |
 | 4 | 2026-11-10 | One project file: maturity level and role policy move into the manifest (FR-6, FR-7, AC-11; Role policy v2.0, Project manifest v1.1) | Owner, 2026-11-10 (decision card) |

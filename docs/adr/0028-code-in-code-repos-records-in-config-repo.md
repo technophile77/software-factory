@@ -36,7 +36,7 @@ the owner's rule is that sensitive information never goes into a public repo.
 1. Feature branches for code and tests, `feature/F-nnn-name` and the agent
    branches `feature/F-nnn/<agent>` (ADR 0005), live in the feature's one
    target code repo and are created from its `main`.
-2. The feature's spec, interview transcript, Gate 1 and Gate 2 reports,
+2. The feature's spec, interview transcript, Security and Testability Review and Code Review reports,
    agent reports, run records and inbox and PR records stay in the project's
    private config repo: the spec on its config-repo feature branch, the rest
    on the config repo's `factory/state` (ADR 0009, 0022).

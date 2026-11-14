@@ -595,7 +595,7 @@ unix("Properties", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Round 2: channel v1.3 amendment H-0075, Gate 2 #3, the v1.3 gate (F-005 OQ-3)
+// Round 2: channel v1.3 amendment H-0075, Code Review #3, the v1.3 gate (F-005 OQ-3)
 // ---------------------------------------------------------------------------
 
 const LIMITS = { turns: 40, tokens: 200000, time_s: 900, web_calls: 12 };
@@ -748,7 +748,7 @@ unix("H-0075: advice entries", () => {
   });
 });
 
-unix("Gate 2 #3: web_queries missing vs empty", () => {
+unix("Code Review #3: web_queries missing vs empty", () => {
   async function displayFor(extra: Record<string, Json> = {}): Promise<string> {
     withAdvice({ call: "A-0001", status: "done", text: VALID_ADVICE, ...extra });
     await w.open();
@@ -757,24 +757,24 @@ unix("Gate 2 #3: web_queries missing vs empty", () => {
     return unfencedLines(out.display).join("\n");
   }
 
-  it("test_gate2_3_missing_web_queries_said_not_reported", async () => {
+  it("test_code_review_3_missing_web_queries_said_not_reported", async () => {
     await world();
     expect(await displayFor()).toMatch(/not reported|did not report|didn't report|no report|unreported/i);
   });
 
-  it("test_gate2_3_empty_web_queries_said_none", async () => {
+  it("test_code_review_3_empty_web_queries_said_none", async () => {
     await world();
     const labels = await displayFor({ web_queries: [] });
     expect(labels).toMatch(/\bnone\b|no (web )?(queries|searches)/i);
     expect(labels).not.toMatch(/not reported|did not report|didn't report|unreported/i);
   });
 
-  it("test_gate2_3_missing_and_empty_differ", async () => {
+  it("test_code_review_3_missing_and_empty_differ", async () => {
     await world();
     expect(await displayFor()).not.toBe(await displayFor({ web_queries: [] }));
   });
 
-  it("test_gate2_3_missing_not_claimed_as_none", async () => {
+  it("test_code_review_3_missing_not_claimed_as_none", async () => {
     await world();
     expect(await displayFor()).not.toMatch(/web queries sent[^\n]*\bnone\b/i);
   });

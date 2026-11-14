@@ -33,13 +33,13 @@ export interface GitleaksOptions {
   timeoutS?: number;
   /**
    * Only for tests with a stand-in binary. Production uses the pinned
-   * SHA-256 for this platform (Gate 1 component review 5).
+   * SHA-256 for this platform (Security and Testability Review component review 5).
    */
   expectSha256?: string;
 }
 
 /**
- * Runs gitleaks exactly as Gate 1 component review 5 approved it: `dir` mode
+ * Runs gitleaks exactly as Security and Testability Review component review 5 approved it: `dir` mode
  * only, over a fresh 0700 folder of blobs named by their SHA (so no path
  * allowlist or .gitleaksignore in a repo can match), with the fixed flags,
  * the report on stdout and redacted. Exit 0 is clean, 99 is a finding, and
