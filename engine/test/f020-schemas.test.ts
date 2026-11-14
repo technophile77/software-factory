@@ -6,7 +6,7 @@ import { SCHEMAS, jsonSchemaText } from "../src/schemas";
 import * as crypto from "node:crypto";
 import { fenced } from "../src/inbox/render";
 import { adviceParts, advisorAnswer, readAdvice } from "../src/schemas/advisor-answer";
-import { modelReport } from "../src/schemas/agent-report";
+import { modelReport, storedReport } from "../src/schemas/agent-report";
 import { webReaderAnswer } from "../src/schemas/web-reader-answer";
 import { prRecord } from "../src/schemas/pr-record";
 import { SchemaError, parseJsonFile } from "../src/schemas/json-file";
@@ -28,6 +28,21 @@ const TEST_BODY = {
   tests_run: 3, passed: 3, failed: 0, skipped: 0, criteria_map: { "AC-1": ["t1"] }, failures: [], not_run: [],
   tool_choices: [{ test_type: "acceptance", tool: "vitest", reason: "already in the engine", approval_ref: null }],
 };
+
+describe("F-020 format inventory (FR-1, AC-1)", () => {
+  it("every versioned JSON format the contracts name has exactly one zod schema, whose schema field is that version", () => {
+    const contracts = fs.readFileSync(path.join(__dirname, "..", "..", "docs", "interface-contracts.md"), "utf8");
+    const ids = [...new Set([...contracts.matchAll(/[`"]([a-z]+(?:-[a-z]+)+)\/(\d+)\.(\d+)[`"]/g)].map((m) => m[0].slice(1, -1)))];
+    expect(ids).toEqual(expect.arrayContaining(["agent-report/1.0", "inbox-record/4.0", "pr-record/1.0", "advisor-answer/1.0", "web-reader-answer/1.0"]));
+    for (const id of ids) {
+      const [name, version] = id.split("/") as [string, string];
+      const key = `${name}-${version.split(".")[0]}`;
+      expect(SCHEMAS[key], `no schema for ${id}`).toBeDefined();
+      const json = JSON.parse(jsonSchemaText(key)) as { properties?: { schema?: { const?: string } } };
+      expect(json.properties?.schema?.const, id).toBe(id);
+    }
+  });
+});
 
 describe("F-020 schema files", () => {
   it("FR-2 (AC-2): every committed schema file matches what the script writes, and there are no others", () => {
@@ -79,6 +94,11 @@ describe("F-020 agent reports", () => {
     const base = { feature: "F-012", stage: "security_gate_1", role: "security-reviewer", n: 1, commit: COMMIT, outcome: "complete" as const, summary: "s", body: {}, facts: {} };
     expect(JSON.parse(String(agentReport(base).content))).toMatchObject({ schema: "agent-report/1.0", items_filed: [], artifacts: [] });
     expect(() => agentReport({ ...base, summary: "x".repeat(5000) })).toThrow(SchemaError);
+  });
+
+  it("AC-3: a stored report with an outcome outside its enum is refused, naming the file and outcome", () => {
+    const file = "runs/F-012/build_and_test_prep/test-engineer-1.json";
+    expect(() => parseJsonFile(file, JSON.stringify({ ...testReport(TEST_BODY), outcome: "done" }), storedReport)).toThrow(new SchemaError(`${file}: outcome is invalid (invalid_value)`));
   });
 });
 
