@@ -1,7 +1,7 @@
 # Feature: Answer factory decisions in the console
 
 - **Id:** F-021
-- **Status:** In review (readiness gate passed on v6; waiting for the owner's sign-off)
+- **Status:** Approved (owner sign-off 2026-11-14 10:31Z, decision card; readiness gate passed on v6)
 - **Requested by / date:** Alex, 2026-11-14 ("the console is actually the
   better method of communicating with the factory"; "the console app should
   also say when a decision is pending, not just factory is idle")
@@ -199,7 +199,7 @@ after the owner approves their text:
 | 3 | 2026-11-14 | OQ-1 decided (a): both the new `inbox` command and the interview command (FR-2, FR-11 stand as written) | Owner, 2026-11-14 10:27Z (decision card) |
 | 4 | 2026-11-14 | OQ-2 decided (a): console answers follow `settings.interview_sign_in`; FR-13 written out; SR-4 accepted risk | Owner, 2026-11-14 10:28Z (decision card) |
 | 5 | 2026-11-14 | A-1, A-2, SR-1 to SR-3 and SR-5 to SR-7 approved as written; H-0245 names `inbox.open` and `inbox.close`; exact H-0245 to H-0248 text drafted | Owner, 2026-11-14 10:29Z (decision card) |
-| 6 | 2026-11-14 | H-0245 to H-0248 approved as written; readiness gate passed (all six checks) | Owner, 2026-11-14 10:30Z (decision card) |
+| 6 | 2026-11-14 | H-0245 to H-0248 approved as written; readiness gate passed (all six checks); spec signed off, status Approved | Owner, 2026-11-14 10:30Z and 10:31Z (decision cards) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
