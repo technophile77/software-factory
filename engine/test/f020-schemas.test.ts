@@ -49,7 +49,7 @@ describe("F-020 schema files", () => {
     const committed = fs.readdirSync(SCHEMA_DIR).filter((f) => f.endsWith(".schema.json")).sort();
     expect(committed).toEqual(Object.keys(SCHEMAS).map((n) => `${n}.schema.json`).sort());
     for (const n of Object.keys(SCHEMAS)) {
-      expect(fs.readFileSync(path.join(SCHEMA_DIR, `${n}.schema.json`), "utf8"), `docs/schemas/${n}.schema.json is stale: run npm run write-schemas`).toBe(jsonSchemaText(n));
+      expect(fs.readFileSync(path.join(SCHEMA_DIR, `${n}.schema.json`), "utf8").replace(/\r\n/g, "\n"), `docs/schemas/${n}.schema.json is stale: run npm run write-schemas`).toBe(jsonSchemaText(n));
     }
   });
 
