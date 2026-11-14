@@ -137,6 +137,8 @@ export interface Gate1State {
   accepted: Map<number, string>;
   /** F-016 FR-15: times this report's unresolved findings went back to the analyst without the owner. */
   unresolvedSent: number;
+  /** F-016 FR-15: every send-back since the report, the owner's option A included, so each later failure files its own item. */
+  unresolvedRounds: number;
   /** F-016 H-0182: extra runs the owner allowed past the run limit. */
   extraRuns: number;
 }
@@ -184,7 +186,7 @@ export class InterviewState {
   readonly undelivered: string[] = [];
   researchCalls = 0;
   lastSpecReady: { passed: boolean; at: string; spec_path: string; spec_version: number } | null = null;
-  readonly gate1: Gate1State = { runs: 0, findings: [], pending: false, blocked: null, riskFiled: [], reportAt: null, itemsAtReport: 0, decided: new Map(), accepted: new Map(), extraRuns: 0, unresolvedSent: 0 };
+  readonly gate1: Gate1State = { runs: 0, findings: [], pending: false, blocked: null, riskFiled: [], reportAt: null, itemsAtReport: 0, decided: new Map(), accepted: new Map(), extraRuns: 0, unresolvedSent: 0, unresolvedRounds: 0 };
   readonly readiness: ReadinessState = { last: null, runs: 0, signoff: null, signedOff: null };
   returns: Return[] = [];
 
@@ -255,7 +257,10 @@ export class InterviewState {
         break;
       case "returned":
         this.returns.push({ ...(e.return as Return) });
-        if ((e.return as Return).why === "gate1_unresolved" && !(e.return as Return).item) this.gate1.unresolvedSent++;
+        if ((e.return as Return).why === "gate1_unresolved") {
+          this.gate1.unresolvedRounds++;
+          if (!(e.return as Return).item) this.gate1.unresolvedSent++;
+        }
         break;
       case "gate1_decided":
         this.gate1.decided.set(e.finding as number, { item: e.item as string, option: e.option as string, label: e.label as string });
@@ -311,6 +316,7 @@ export class InterviewState {
         this.gate1.decided.clear();
         this.gate1.accepted.clear();
         this.gate1.unresolvedSent = 0;
+        this.gate1.unresolvedRounds = 0;
         break;
       case "gate1_blocked":
         this.gate1.blocked = e.reason as string;

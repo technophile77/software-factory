@@ -71,17 +71,6 @@ function fastTiming(): Timing {
 let engine: FakeEngine;
 let repo: string;
 
-beforeEach(async () => {
-  ({ repo } = makeRepo("state"));
-  engine = await FakeEngine.start();
-  writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document"] });
-});
-
-afterEach(async () => {
-  await engine.cleanup();
-  removeTmp();
-});
-
 async function run(lines: string[], feature?: string): Promise<{ code: number; s: Script }> {
   const s = new Script(lines);
   const ops = new Interview({ os: realOsApi(), projectDir: repo });
@@ -92,6 +81,18 @@ async function run(lines: string[], feature?: string): Promise<{ code: number; s
 const replies = (): Json[] => engine.calls("interview.reply").map((m) => m.params);
 
 describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
+  // The fake engine listens on a Unix socket, so only this suite needs it and its repo; render's tests run everywhere.
+  beforeEach(async () => {
+    ({ repo } = makeRepo("state"));
+    engine = await FakeEngine.start();
+    writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document"] });
+  });
+
+  afterEach(async () => {
+    await engine.cleanup();
+    removeTmp();
+  });
+
   test("AC-1: an assumption is printed whole before its choices, every time", async () => {
     engine.addFeature("F-1", "Export", [assumption("A1", "open", { text: "Assume exports are CSV only.\nNo Excel.", why: "Keeps scope small." })]);
     const { code, s } = await run(["1"], "F-1");
@@ -199,9 +200,17 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
   });
 
   test("AC-11: a new feature from a description, then its first question", async () => {
+    // The analyst's first question is there when the command opens the new feature.
+    engine.hooks["interview.open"] = (_conn, msg) => {
+      const f = engine.features.get(msg.params.feature);
+      if (f && f.items.length === 0) f.items.push(question("Q1", "open", { options: ["a", "b"] }));
+      return false;
+    };
     const { s } = await run(["1", "1", "Export reports", "as CSV", "", "2"]);
     expect(engine.calls("feature.start")[0]!.params).toEqual({ request: "Export reports\nas CSV" });
     expect(s.out).toMatch(/Started F-\d+/);
+    expect(s.out).toContain("What should Q1 be?");
+    expect(replies()).toEqual([expect.objectContaining({ item: "Q1", kind: "answer", text: "b" })]);
   });
 
   test("AC-11: an existing feature from the list", async () => {

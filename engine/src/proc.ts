@@ -122,6 +122,8 @@ export interface RunOptions {
   input?: Buffer | string;
   timeoutMs?: number;
   maxStdout?: number;
+  /** Kills the program when aborted; it then settles as a timeout would, with code null. */
+  signal?: AbortSignal;
 }
 
 /** Variables a child may inherit, so proxies and Windows system paths still work. */
@@ -160,6 +162,9 @@ export function runFixed(binary: string, args: string[], opts: RunOptions, child
           child.kill("SIGKILL");
         }, opts.timeoutMs)
       : null;
+    const abort = () => child.kill("SIGKILL");
+    if (opts.signal?.aborted) abort();
+    else opts.signal?.addEventListener("abort", abort, { once: true });
     child.stdout.on("data", (d: Buffer) => {
       outLen += d.length;
       if (outLen > max) {
@@ -175,11 +180,13 @@ export function runFixed(binary: string, args: string[], opts: RunOptions, child
     });
     child.on("error", (e) => {
       if (timer) clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", abort);
       if (child.pid) children.remove(child.pid);
       reject(e);
     });
     child.on("close", (code, signal) => {
       if (timer) clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", abort);
       if (child.pid) children.remove(child.pid);
       if (outLen > max) return reject(new Error("output over the limit"));
       resolve({ code, signal, stdout: Buffer.concat(out), stderr: err, timedOut });

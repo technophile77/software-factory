@@ -34,5 +34,6 @@
 - `test/f016-acceptance.test.ts` F-021 block (2, new): the channel end to end, from `inbox.open` to the effect, the issue closed and a later 👍 ignored; session and input checks.
 - `test/acceptance/terminal-f021.test.ts` (8, new): the command and the interview command's offer (AC-1, AC-3 to AC-5, AC-10, AC-12, FR-4).
 - Regression: `test/inbox.test.ts`, `inbox-calls.test.ts`, `f016-acceptance.test.ts`, `units.test.ts`, `engine.test.ts` AC-1, `acceptance/terminal-f018`, `mcp-f005`, `mcp-f006`, `mcp-f009`: all pass.
+- After merging `main` (F-020 #79, #84): the above plus `test/f020-inbox-json.test.ts` and `acceptance/mcp-tools.test.ts` (its operation list now includes the five `inbox_*` operations): 167 pass. The engine-folder reader now checks and reads one open file, not a path twice (CodeQL file-system race alert).
 - `npm run typecheck`, `python3 scripts/check_docs.py`: pass.
 - Not run here: Windows (AC-14). The console methods use the same pipe code the interview already uses on Windows CI (`terminal-pipe.test.ts`); CI runs the platform suite.

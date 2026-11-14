@@ -520,7 +520,8 @@ describe("F-016 H-0182: chain and Gate 1 run limit items", () => {
   }, 60_000);
 
   it("gate1cap, option A: the feature gets one more Gate 1 run than its limit", async () => {
-    const limits = fs.readFileSync(path.join(__dirname, "..", "config", "limits.yaml"), "utf8").replace(/(security_gate_1:\n\s+runs_per_feature:) \d+/, "$1 1");
+    // A Windows checkout may give the file CRLF line endings.
+    const limits = fs.readFileSync(path.join(__dirname, "..", "config", "limits.yaml"), "utf8").replace(/\r\n/g, "\n").replace(/(security_gate_1:\n\s+runs_per_feature:) \d+/, "$1 1");
     expect(limits).toMatch(/security_gate_1:\n\s+runs_per_feature: 1/);
     const w = world({ "engine/config/limits.yaml": limits });
     const d = new FakeDocker();
@@ -894,4 +895,28 @@ describe("F-016 FR-15: Gate 1 findings the interview didn't take up", () => {
     expect(effects(w, item.id)[0]).toMatchObject({ effect: "record_only" });
     expect(inputs).toHaveLength(2);
   }, 60_000);
+  it("FR-15 (validation round 2 B1): after option A, a failure again files a new item instead of leaving the feature stuck", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    const inputs: string[] = [];
+    const scripts = {
+      analyst: analyst(w, () => feature, async (s, input, n) => {
+        inputs.push(input);
+        writeSpec(w, feature, spec(feature, 2 + n));
+        await s.call("interview_spec_ready", { spec_path: `docs/features/${feature}-export.md`, spec_version: 2 + n });
+      }),
+      reviewer: reviewer(d, () => feature, [FINDING]),
+    };
+    const { e, c, gh } = await start(w, d, scripts);
+    await interview(w, e, c, () => feature, (f) => (feature = f));
+    const unresolved = () => items(w).filter((i) => i.record.effect?.type === "gate1unresolved");
+    await until("the first item", () => unresolved().length === 1);
+    const first = unresolved()[0]!;
+    await pollUntil(w, "the issue", () => !!items(w).find((i) => i.id === first.id)?.record.revisions.at(-1)?.action_comments.length);
+    await act(w, gh, items(w).find((i) => i.id === first.id)!.record.issue, "choose:A");
+    await pollUntil(w, "a second item", () => unresolved().length === 2);
+    expect(inputs).toHaveLength(3);
+    expect(effects(w, first.id)[0]).toMatchObject({ effect: "restarted" });
+  }, 90_000);
 });

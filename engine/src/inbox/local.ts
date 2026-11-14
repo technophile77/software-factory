@@ -40,12 +40,17 @@ export class InboxLocal {
   }
 
   private read(file: string): unknown {
+    // Checked and read through one descriptor, so the file can't be swapped between the two; a link isn't followed.
+    let fd: number | null = null;
     try {
-      const st = fs.lstatSync(file);
+      fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+      const st = fs.fstatSync(fd);
       if (!st.isFile() || st.size > MAX_FILE_BYTES) return null;
-      return JSON.parse(fs.readFileSync(file, "utf8"));
+      return JSON.parse(fs.readFileSync(fd, "utf8"));
     } catch {
       return null;
+    } finally {
+      if (fd !== null) fs.closeSync(fd);
     }
   }
 

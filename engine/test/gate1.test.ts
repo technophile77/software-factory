@@ -353,6 +353,18 @@ describe("FR-9 and FR-13: findings resolved", () => {
     expect(gate1Resolution(spec(""), s2, "rapid-prototype").check.passed).toBe(true);
   });
 
+  it("FR-20 (validation round 2 M3): a finding recorded at a lower level follows the bar at the current level", () => {
+    const high = { criterion: "S4.4", severity: "High", fix: "Pin dev tools.", explanation: "x", needs_owner: false, location: "SR-2", blocks: false };
+    const recs = records([high as never], new Map(), "rapid-prototype");
+    expect(recs[0]!.recorded).toBe(true);
+    const s = new InterviewState();
+    s.apply(e("gate1_report", { run: "R-1", report: 1, findings: recs }));
+    expect(gate1Resolution(spec(""), s, "rapid-prototype").check.passed).toBe(true);
+    expect(gate1Resolution(spec(""), s, "alpha").check.evidence).toContain("Gate 1 #1");
+    expect(analystGate1Turn("F-001", "docs/features/F-001-x.md", recs, "alpha")).toContain('"ref": "Gate 1 #1"');
+    expect(gate1QuestionProblem("Gate 1 #1: pin?", "Pin dev tools.", recs, "alpha")).toBeNull();
+  });
+
   it("FR-20: a Gate 1 question must carry its finding's requirement as suggested", () => {
     const f = (n: number, extra = {}) => ({ n, criterion: "S4.4", severity: "Critical", fix: "Pin dev tools.\\nAnd libraries.", explanation: "x", needs_owner: false, ...extra });
     const fs = [f(1), f(2, { needs_owner: true }), f(3, { severity: "Low" })];

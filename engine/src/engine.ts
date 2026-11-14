@@ -44,7 +44,7 @@ import { HttpIssues, IssuesApi } from "./inbox/github-issues";
 import { ConsoleResult, Inbox, Recorded } from "./inbox/store";
 import { InboxLocal } from "./inbox/local";
 import type { ItemInput } from "./inbox/model";
-import { osNotifier } from "./os/notify";
+import { type OsNotify, osNotifier } from "./os/notify";
 import { Gitleaks, SecretsScanner } from "./gitleaks";
 import { activityOf } from "./interview/activity";
 import { FeatureInterview } from "./interview/feature";
@@ -92,6 +92,8 @@ export interface EngineOptions {
   github?: GitHubClient | { webBase?: string; apiBase?: string };
   clock?: Clock;
   os?: OsApi;
+  /** Shows the owner OS notifications. Default: the OS's own; tests pass one that shows nothing on the test host. */
+  notify?: OsNotify;
   /** Environment for the billing-mode check. Default: process.env. */
   env?: NodeJS.ProcessEnv;
   logger?: Logger;
@@ -308,7 +310,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     features: new Map(), sessions: null, listener: null, conns: new Set(), token: null, inbox: null, pinsWaiting: false,
   }));
 
-  const notify = osNotifier({ platform: osApi.platform, children, log, cwd: home });
+  const notify = o.notify ?? osNotifier({ platform: osApi.platform, children, log, cwd: home });
   /**
    * F-021 SR-5: private detail goes through the secrets scan before it is
    * stored; each flagged line is replaced, and if the scan still flags the
@@ -1230,7 +1232,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       }
       await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: false, evidence: r.check.evidence }], "gate 1: findings not resolved"));
       log.warn(`${f.id}: Gate 1 findings not resolved again: ${r.check.evidence}`);
-      await alert(p, `gate1unresolved:${f.id}:${f.state.gate1.reportAt}:${f.state.gate1.unresolvedSent}`, {
+      await alert(p, `gate1unresolved:${f.id}:${f.state.gate1.reportAt}:${f.state.gate1.unresolvedRounds}`, {
         title: `Gate 1 findings for ${f.id} still not taken up`, feature: f.id,
         context: `The interview went back to the analyst once already, and Security Gate 1's check still finds: ${r.check.evidence.slice(0, 1500)}`,
         impact: `${f.id} stays at Security Gate 1 with no analyst.`,
@@ -2202,8 +2204,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           if (p.state_repo) fs.rmSync(path.join(p.state_repo.factoryDir, ENGINE_JSON), { force: true });
         }
         await git.closeReaders();
-        // A notification still showing runs in the engine folder; Windows can't remove a folder a process works in.
-        await notify.settled();
+        // A notification still showing runs in the engine folder, and Windows can't remove a folder a process works
+        // in; it is ended rather than waited for, since a hung one would hold the stop for its whole time limit.
+        await notify.stop();
         log.info(`engine stopped at ${iso(clock.now())}`);
         done();
       })();

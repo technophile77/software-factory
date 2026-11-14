@@ -60,6 +60,22 @@ The developer fixed all three product failures. The test engineer's tests are un
 
 Test code note: the developer's `f016-run.test.ts` AC-14 fake now keeps the commit across the correction, and the test checks the reason. The `chain` and `gate1cap` effects now have tests in `f016-run.test.ts` ("F-016 H-0182: chain and Gate 1 run limit items").
 
+## AC-11 live trial (2026-11-14)
+
+Run on the owner's PC (Windows) with the engine at `51b6e7f` (the tree of `main` at `cf6e75c`), project `factory-e2e-trial` at `maturity: rapid-prototype`, the inbox on that repo's issues.
+
+| Time (UTC) | Event |
+|---|---|
+| 10:11 | The owner answered Q-012 (Gate 1 #1) in the terminal interview (F-018) with the suggested requirement; spec v10 passed the interview checks |
+| 10:12 | Gate 1 resolved: every blocking finding taken up by an Approved requirement; the Low findings were skipped under FR-20 |
+| 10:12 | Readiness gate code checks failed (AC-8 named no requirement in Covers); back to the interview as Q-013; the owner's answer added FR-4; spec v11 passed |
+| 10:14 | The changed spec went back to Gate 1, which had used its 3 runs; the engine filed D-0004 (issue #7, `gate1cap`) |
+| 10:22 | The owner chose A on D-0004; one extra Gate 1 run: 5 Low findings, all recorded as known issues, none asked |
+| 10:24 | Readiness gate passed (code checks and the orchestrator session); S-0001 filed as issue #8 |
+| 10:33 | The owner's confirmed Approve on S-0001; F-002 at `build_and_test_prep` |
+
+Earlier rounds of the same trial found the faults fixed in spec v13 to v19 and the bug fixes listed in the dev report. The `gate1cap` effect, which had only a unit-level test, also ran live here.
+
 ## Test code note
 
 `f016-run.test.ts` "AC-14: a report invalid twice fails closed" passes, but not for the reason it states. Its fake orchestrator reads `at commit <sha>` from every session's first turn. The engine's one correction comes as a resumed session whose first turn has no commit, so the fake throws and the session fails. The transcript then reads "the session failed (Cannot read properties of null (reading '1'))", not "still invalid after one correction". The test checks only that the run failed, so it passes. The new test (`f016-acceptance.test.ts:599`) uses a fake that survives the correction and checks the reason. I did not edit the developer's test; the orchestrator decides.
@@ -80,7 +96,7 @@ Test code note: the developer's `f016-run.test.ts` AC-14 fake now keeps the comm
 | AC-8 | run "AC-13, AC-8, AC-9: …", "AC-8, AC-13: an orchestrator check that fails …", "AC-13: an FR no criterion covers …"; acc "AC-8, FR-8 (Inbox item v3.1): the sign-off item names …" | Covered |
 | AC-9 | run "AC-13, AC-8, AC-9: …" (confirmed Approve; Approve without confirm); acc "AC-9, SR-3: a confirmed Approve after the branch moved …"; acc "AC-9, FR-9: Defer on the sign-off item …" | Covered. FR-9's revision rule **fails** (failure 2) |
 | AC-10 | run "AC-10: /changes on the sign-off item sends the note to the analyst as data" | Covered |
-| AC-11 | None | **Not run**: see below |
+| AC-11 | Live trial on the owner's PC (see "AC-11 live trial" below) | **Met**: F-002 reached `build_and_test_prep` after a confirmed Approve on S-0001 |
 | AC-12 | run "AC-1, AC-12, AC-2: …" (`waiting_on: ["D-0001"]`, then left out), "AC-13, AC-8, AC-9: …" (`waiting_on: ["S-0001"]`) | Covered |
 | AC-13 | run "AC-13, AC-8, AC-9: …", "AC-13: an FR no criterion covers …", "AC-8, AC-13: an orchestrator check that fails …"; acc unit "F-016 FR-7: structural readiness checks" (4 tests) | Covered |
 | AC-14 | run "AC-14: a report invalid twice …" (see test code note); acc "AC-14: a session that writes outside its report fails closed …"; acc "AC-14: a report invalid twice leaves the branch as it was and the engine log says why"; acc unit "the orchestrator's report is validated" (3 tests) | Covered. The engine log part **fails** (failure 3) |
@@ -114,7 +130,6 @@ Other requirements with tests of their own:
 
 ## What didn't run, and why
 
-- **AC-11** (F-002 in the end-to-end trial project reaches the Spec sign-off item and, after a confirmed Approve, `build_and_test_prep`): **not run**. It needs the trial project's private config repo on GitHub, the inbox workflow and `FACTORY_OWNER_LOGIN` installed by hand (A-1), the owner's real token and his 👍 and 🚀 on real issues. All of that is on the owner's PC. It is a live check for the owner to run with the engine.
 - **FR-11, "without the orchestrator role in the project's policy"**: not reachable as a black-box test. `orchestrator` is a core role in Role policy v2.6, and every session (the analyst's too) refuses a policy without it, so no feature can reach `readiness_gate` in such a project. The "no orchestrator model" case is tested instead.
 - **H-0182 `chain`, `gate1cap` and `pins` re-pin effects**: `pins` is covered by `f016-run.test.ts` "F-016 OQ-3 …" and by the two SR-7 tests above. `chain` (transcript changed outside the engine, option A) and `gate1cap` (Gate 1 run limit, option A) have no test. Each needs a long setup (a forged transcript, or several Gate 1 runs to reach the cap) that this round didn't build. Open gap.
 - **Windows and macOS**: not run here; CI runs them.
