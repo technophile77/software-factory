@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
-- **Spec version:** 16
+- **Spec version:** 17
 
 This is engine increment 4, "Build to PR" (F-007 section 13). It is a draft
 written before the owner interview, from the baseline spec, the ADRs and the
@@ -68,7 +68,7 @@ records stay in the private config repo (OQ-2, ADR 0028).
 |---|---|
 | FR-1 | A feature of an enabled, running project that passes the readiness gate enters `build_and_test_prep`. One build per feature at a time. |
 | FR-2 | Only code and tests move to the code repo (OQ-2): feature and agent branches live in the target code repo (OQ-3), named per ADR 0005, created from that repo's `main`. The spec, interview transcript, Gate reports, agent reports, run records and inbox records stay in the private config repo (its feature branch and `factory/state`). Nothing from the config repo is committed to a code repo. The PR description links the spec at its approved commit in the config repo. |
-| FR-3 | The developer and then the test engineer run, one after the other, as Agent SDK sessions, one per role (not subagents), each in its own engine-made worktree on the owner's machine, under the project's role policy as the engine enforces it on the host: allowed tools, file tool read and write checks, and the end-of-session write check (owner, 2026-11-13: no containers until Beta, ADR 0026). Both roles get a full `Bash` shell on the owner's PC (owner, decision card, 2026-11-14; SR-1). Each gets its `AGENT.md`, the approved spec at the readiness-gate commit (read-only, at a fixed path outside its worktree), and the contracts. The test engineer starts only when the developer reports done (owner, decision card, 2026-11-14, H-0192: sequential, in place of the baseline spec's "in parallel where possible"); its branch starts from the feature branch, not from `dev`. Neither gets the other's branch, report or transcript. Credentialed command-line tools (for example `gh`, `aws`) in either shell follow the role policy's ask rule (worktree thread, ADR 0026 follow-up). Build tools are the owner's own installed tools (OQ-6). |
+| FR-3 | The developer and then the test engineer run, one after the other, as Agent SDK sessions, one per role (not subagents), each in its own engine-made worktree on the owner's machine, under the project's role policy as the engine enforces it on the host: allowed tools, file tool read and write checks, and the end-of-session write check (owner, 2026-11-13: no containers until Beta, ADR 0026). Both roles get a full `Bash` shell on the owner's PC (owner, decision card, 2026-11-14; SR-1). Each gets its `AGENT.md`, the approved spec at the readiness-gate commit (read-only, at a fixed path outside its worktree), and the contracts. The test engineer starts only when the developer reports done (owner, decision card, 2026-11-14, H-0192: sequential, in place of the baseline spec's "in parallel where possible"); its branch starts from the feature branch, not from `dev`. Neither gets the other's branch, report or transcript. Credentialed command-line tools in either shell (`gh`, `aws`, `railway`, `docker`, `ssh` and the others listed in Role policy v2.7, H-0201) follow its ask rule: the engine holds the call and files a Security inbox item; the owner's 👍 runs it once; a refusal or 30 minutes with no answer denies it. The wait doesn't count toward the session's time cap. Every hit is recorded in the run report and transcript, and a denied step is reported as not done (owner, decision card, 2026-11-14). The engine's own `commands.test` and `commands.build` aren't covered; they fall under ADR 0026's accepted risks. Build tools are the owner's own installed tools (OQ-6). |
 | FR-4 | Agent edits are committed by the engine after each edit (ADR 0012), with the secrets scan before each commit; the end-of-session write check applies (F-007 FR-9). |
 | FR-5 | When both agents report done, the engine merges `dev` and `test` into the feature branch. A merge conflict between them is handled per ADR 0013. |
 | FR-6 | The engine runs the tests, not an agent (OQ-5). Each code repo's manifest entry declares its test command and the path of the JUnit XML results file it writes (H-0193), set at onboarding. The engine runs the command against the merged commit in a worktree of that commit on the owner's machine with no model, reads the results file, and builds the run report per `testing-strategy.md`: commit tested, counts, failures with expected, actual and logs, anything not run and why. The test engineer agent writes the tests and the acceptance-criteria-to-test map; the engine joins that map to the results. A missing or unreadable results file, or an unexplained skip, makes the run incomplete. |
@@ -198,8 +198,8 @@ earlier would stop every project. F-002 rungs replace these per project later.
   and transcript; with a full shell (SR-1) that is a rule, not a boundary,
   and its instructions forbid reading them. The developer's `write.deny`
   keeps the test engineer's test paths (as today's example).
-- Credentialed CLIs in the shell follow the ask rule the worktree thread is
-  adding to the role policy.
+- Credentialed CLIs in the shell follow Role policy v2.7's ask rule
+  (H-0201): held, asked in the inbox, denied after 30 minutes (FR-3).
 - The orchestrator (classifier) gets `Read`, `Grep`, `Glob` only, reads the
   run report, the spec and the diff, and writes only its report.
 - `Bash` for the developer and test engineer as SR-1 accepts.
@@ -288,3 +288,4 @@ Asked one at a time on decision cards. None is assumed.
 | 14 | 2026-11-14 | H-0190 approved: session limits for developer, test engineer, failure classifier and judge, test-run and CI-wait caps; applied with the build | Owner, 2026-11-14 (decision card) |
 | 15 | 2026-11-14 | H-0193 approved and applied: Project manifest v1.7, `repos[].commands` as argument lists and `owner.commit_name` | Owner, 2026-11-14 (decision card) |
 | 16 | 2026-11-14 | Stage 5 is sequential: the test engineer runs after the developer, on its own branch from the feature branch (FR-3, H-0192); credentialed CLIs follow the role policy's ask rule | Owner, 2026-11-14 (decision card) |
+| 17 | 2026-11-14 | FR-3: credentialed CLIs in the developer's and test engineer's shells follow H-0201's ask rule (held, Security item, 👍 runs once, denied after 30 minutes, wait off the time cap) | Owner, 2026-11-14 (decision card, H-0201) |
