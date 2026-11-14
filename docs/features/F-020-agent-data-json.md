@@ -3,7 +3,7 @@
 - **Id:** F-020
 - **Status:** In review
 - **Requested by / date:** owner, 2026-11-14 ("I would like the default format for any data, reports, etc. that an agent interacts with to be in json, unless there is a specific reason that it should be something different"; proposal 0034 decision 3, "Start F-020, full scope", decision card 08:53Z)
-- **Spec version:** 1
+- **Spec version:** 2
 
 ## 1. Objective and business purpose
 
@@ -100,6 +100,15 @@ H-0240 and proposal 0034 (merged, PR #76). F-011 (inbox records), F-006 (advisor
 | SR-1 | Schema validation is the boundary check for every agent result and every record read from `factory/state` (S1.1, S4.5); it replaces casts such as `YAML.parse(...) as InboxRecord` | analyst | Proposed |
 | SR-2 | String length limits in each schema match today's limits (for example the web reader's summary cap) so a JSON answer can't carry more than the text it replaces | analyst | Proposed |
 | SR-3 | Advisor and web reader strings are untrusted data: rendered only as escaped plain text and never used as commands, paths or URLs except a web reader source the engine fetched itself (S6.1, S9.3) | analyst | Proposed |
+| SR-4 | While any `inbox/*.yaml` exists on a project's `factory/state`, the engine starts no feature work and files no item for that project, and tells the owner to run the migration script; `nextId` counts `.yaml`, `.json` and `.md` files | Gate 1 #1 | Proposed |
+| SR-5 | The migration script checks each YAML record against `inbox-record/3.0` (id equal to the file name, default core schema, alias cap) before converting it; prints failures by path and reason only and leaves them in place; never overwrites an existing `.json`; adds a `migrated` history entry with the old path and commit; pushes fast-forward only and stores no credentials | Gate 1 #2 | Proposed |
+| SR-6 | Every schema is strict (unknown keys refused, not stripped) and caps every array and the file's byte size before parsing. The engine validates only with the zod schemas in its own source, never a schema file read at run time or named in the data. A refusal names the field path, never its value | Gate 1 #3 | Proposed |
+| SR-7 | The engine takes a report only from the structured output of a successful SDK `result` message. The model's schema leaves out every engine-filled field (`blocks`, `model`, `usage`, `rung`, `fallback`, test run counts), and a result containing one is refused. Roles under FR-10 get no report folder mount | Gate 1 #4 | Proposed |
+| SR-8 | The advisor's options are shown only inside the untrusted Advisor section, with ids that can't be read as the item's options ("Advisor option 1"); they never become action comments or `/choose` targets | Gate 1 #5 | Proposed |
+| SR-9 | The record keeps the SHA-256 of the exact bytes of `.factory/advice/<call>.json`, and the issue keeps the existing match or mismatch line | Gate 1 #6 | Proposed |
+| SR-10 | `source_contains_instructions` and `page_contains_instructions` are the agent's own claim: true shows a warning, false relaxes no check; `where` is untrusted text under SR-3, and the `research_web` result keeps its untrusted label | Gate 1 #7 | Proposed |
+| SR-11 | The engine decides A-2's fallback from the endpoint's declared capability, never from the agent; it grants `Write` only to the run's one report path and records the fallback in a field other than v1.4's `fallback` | Gate 1 #8 | Proposed |
+| SR-12 | Only if OQ-1 (a) is chosen: the S4.1 review and CVE check are recorded with the Architecture decision; the extension version is pinned with auto-update off; the `$schema` reference names a commit SHA or a local path, never a tag; SchemaStore and the extension's telemetry are off in the workspace settings; the schema host is listed as a read-only external service; the engine ignores the `$schema` line | Gate 1 #9 | Proposed |
 
 ## 10. Interface requirements
 
@@ -125,6 +134,7 @@ Each change is an Interfaces decision, applied with the build once approved:
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-14 | Draft from proposal 0034 (decisions 2 and 3) | (pending) |
+| 2 | 2026-11-14 | Security Gate 1 filed; SR-4 to SR-12 proposed | (pending) |
 
 ## 13. Open questions
 
