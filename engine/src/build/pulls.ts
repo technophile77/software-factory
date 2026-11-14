@@ -1,3 +1,4 @@
+import { ACTIONS_APP_ID } from "./stage9";
 import { GitHubError } from "../github";
 import { HttpIssues, type IssueComment, checkRepo } from "../inbox/github-issues";
 
@@ -114,6 +115,8 @@ export class HttpPulls extends HttpIssues implements PullsApi {
   async checkRuns(repo: string, sha: string): Promise<CheckRun[]> {
     if (!SHA_RE.test(sha)) throw new GitHubError("malformed commit");
     const r = await this.call("GET", `/repos/${checkRepo(repo)}/commits/${sha}/check-runs?per_page=100`);
+    // Fine-grained tokens can't hold the Checks permission, so GitHub refuses them; Actions' own jobs are the same checks.
+    if (r.status === 403 || r.status === 404) return this.actionsJobs(repo, sha);
     const runs = (r.body as { check_runs?: unknown } | null)?.check_runs;
     if (r.status !== 200 || !Array.isArray(runs)) throw new GitHubError(`GitHub refused the check runs (HTTP ${r.status})`);
     return (runs as Array<Record<string, unknown>>).map((c) => {
@@ -121,5 +124,28 @@ export class HttpPulls extends HttpIssues implements PullsApi {
       const output = (c.output ?? {}) as Record<string, unknown>;
       return { name: str(c.name), status: str(c.status), conclusion: typeof c.conclusion === "string" ? c.conclusion : null, appId: isPosInt(app.id) ? app.id : null, headSha: str(c.head_sha), summary: str(output.summary).slice(0, 8192) };
     });
+  }
+
+  /**
+   * SR-3, SR-11 with the Actions read permission only: each GitHub Actions
+   * job on `sha` is the check run Actions reports under the job's name, so
+   * it counts as coming from the Actions app. A required check pinned to any
+   * other app finds nothing here and keeps waiting.
+   */
+  private async actionsJobs(repo: string, sha: string): Promise<CheckRun[]> {
+    const r = await this.call("GET", `/repos/${checkRepo(repo)}/actions/runs?head_sha=${sha}&per_page=100`);
+    const runs = (r.body as { workflow_runs?: unknown } | null)?.workflow_runs;
+    if (r.status !== 200 || !Array.isArray(runs)) throw new GitHubError(`GitHub refused the check runs and the Actions runs (HTTP ${r.status}); the token needs Actions read`);
+    const out: CheckRun[] = [];
+    for (const run of (runs as Array<Record<string, unknown>>).slice(0, 20)) {
+      if (!isPosInt(run.id) || str(run.head_sha) !== sha) continue;
+      const j = await this.call("GET", `/repos/${checkRepo(repo)}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`);
+      const jobs = (j.body as { jobs?: unknown } | null)?.jobs;
+      if (j.status !== 200 || !Array.isArray(jobs)) throw new GitHubError(`GitHub refused the Actions jobs (HTTP ${j.status})`);
+      for (const job of jobs as Array<Record<string, unknown>>) {
+        out.push({ name: str(job.name), status: str(job.status), conclusion: typeof job.conclusion === "string" ? job.conclusion : null, appId: ACTIONS_APP_ID, headSha: str(job.head_sha), summary: "" });
+      }
+    }
+    return out;
   }
 }
