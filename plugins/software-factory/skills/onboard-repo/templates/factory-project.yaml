@@ -68,6 +68,11 @@ agents:
 
 standards: {}
 
+settings:
+  interview_sign_in:                # F-018 FR-15; pinned, a change needs `factory-engine confirm`
+    every: <never | engine_start | session | hours>   # never only at rapid-prototype
+    # hours: <1-168>                # only with every: hours
+
 # Role policy (Role policy v2.3, from ADR 0004's table). Anything not allowed
 # is denied; deny wins over allow; a role missing here may not run. `tools`
 # are the agent's built-in tools; Bash runs only the `commands` listed. Loosening

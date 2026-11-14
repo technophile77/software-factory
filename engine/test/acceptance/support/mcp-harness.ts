@@ -1,26 +1,22 @@
-// Drives the engine's `mcp` mode (F-005 v10, ADR 0025) through the MCP SDK's
-// own stdio client, as Claude Code does, for the AC-17 acceptance suites.
-// The engine is bundled once per test file with esbuild, the way the
-// `build` script in engine/package.json does, into a temp folder.
+// Drives the interview operations the `factory-engine interview` command uses
+// (F-018, ADR 0029) in-process, as the command does, for the suites first
+// written for the retired MCP mode (F-005, F-006, F-009). Each operation's
+// JSON result is what the command renders, so the suites' checks on it hold.
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { PassThrough } from "node:stream";
 import { expect } from "vitest";
+import { Interview, type Operation } from "../../../src/mcp/operations";
+import { realOsApi } from "../../../src/os/ffi";
 import type { FakeEngine, Json } from "./mcp-fake-engine";
 
 export const ENGINE_DIR = path.resolve(__dirname, "..", "..", "..");
 export const IS_UNIX = process.platform === "linux" || process.platform === "darwin";
 export const IS_ROOT = typeof process.geteuid === "function" && process.geteuid() === 0;
 export const NOBODY = 65534;
-
-export const TOOL_NAMES = ["interview_status", "interview_start", "interview_list", "interview_open", "interview_approval",
-  "interview_next", "interview_reply", "interview_state", "interview_close"];
 
 const madeDirs: string[] = [];
 
@@ -42,7 +38,7 @@ export function removeTmp(): void {
   }
 }
 
-/** Builds the engine's CLI once; returns the bundle's path. */
+/** Builds the engine's CLI once, as the `build` script does; returns the bundle's path. */
 export async function buildEngine(): Promise<string> {
   const out = path.join(tmp("sfb-"), "engine.js");
   await build({
@@ -87,60 +83,32 @@ export function writeEngineJson(folder: string, address: string, extra: Record<s
 }
 
 export interface ToolResult {
-  /** The tool result's parsed JSON, or null when the text isn't JSON (an SDK-level refusal). */
+  /** The operation's JSON result. */
   out: Json;
   text: string;
   isError: boolean;
   elapsed: number;
 }
 
-/** One MCP mode process, as Claude Code starts it from the plugin's .mcp.json. */
-export class Mcp {
-  stderrText = "";
-  private constructor(readonly client: Client, readonly transport: StdioClientTransport) {}
+/** The interview operations, as one `factory-engine interview` process holds them. */
+export class Ops {
+  /** In-process, nothing is written to stderr; kept so the token checks read as before. */
+  readonly stderrText = "";
+  private constructor(readonly interview: Interview) {}
 
-  static async start(bundle: string, projectDir: string | undefined, o: { env?: Record<string, string>; cwd?: string } = {}): Promise<Mcp> {
-    const env: Record<string, string> = {};
-    for (const [k, v] of Object.entries(process.env)) if (v !== undefined && k !== "CLAUDE_PROJECT_DIR") env[k] = v;
-    // The bundle lives in a temp folder; its two externals resolve from the engine's own node_modules.
-    env.NODE_PATH = path.join(ENGINE_DIR, "node_modules");
-    if (projectDir !== undefined) env.CLAUDE_PROJECT_DIR = projectDir;
-    Object.assign(env, o.env ?? {});
-    const transport = new StdioClientTransport({ command: process.execPath, args: [bundle, "mcp"], env, stderr: "pipe", cwd: o.cwd ?? os.tmpdir() });
-    const client = new Client({ name: "f005-acceptance", version: "1.0.0" });
-    const m = new Mcp(client, transport);
-    (transport.stderr as PassThrough | null)?.on("data", (d: Buffer) => (m.stderrText += d.toString("utf8")));
-    await client.connect(transport);
-    return m;
+  static async start(_bundle: string, projectDir: string | undefined): Promise<Ops> {
+    return new Ops(new Interview({ os: realOsApi(), projectDir }));
   }
 
-  async call(tool: string, args: Record<string, unknown> = {}, timeoutMs = 200_000): Promise<ToolResult> {
+  /** `tool` is the operation, with or without the old `interview_` prefix. */
+  async call(tool: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
     const t0 = Date.now();
-    let text: string;
-    let isError: boolean;
-    try {
-      const r = await this.client.callTool({ name: tool, arguments: args }, undefined, { timeout: timeoutMs, resetTimeoutOnProgress: false });
-      const content = r.content as Array<{ type: string; text?: string }>;
-      expect(content.length, `${tool}: one content block`).toBe(1);
-      expect(content[0]!.type).toBe("text");
-      text = content[0]!.text ?? "";
-      isError = r.isError === true;
-    } catch (e) {
-      // The SDK may raise its own input validation as a protocol error.
-      text = String((e as Error).message);
-      isError = true;
-    }
-    let out: Json = null;
-    try {
-      out = JSON.parse(text);
-    } catch {
-      out = null;
-    }
-    return { out, text, isError, elapsed: (Date.now() - t0) / 1000 };
+    const out = (await this.interview.run(tool.replace(/^interview_/, "") as Operation, args)) as Json;
+    return { out, text: JSON.stringify(out, null, 2), isError: (out as { ok?: unknown }).ok !== true, elapsed: (Date.now() - t0) / 1000 };
   }
 
   async close(): Promise<void> {
-    await this.client.close().catch(() => undefined);
+    /* nothing held between calls */
   }
 }
 

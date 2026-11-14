@@ -145,7 +145,7 @@ describe("F-016: answers in the inbox have their effects", () => {
     expect(items(w)[0]!.record).toMatchObject({ id: "D-0001", category: "Security", feature, recommendation: "A", effect: { type: "gate1_choice", feature, finding: 1 } });
 
     // AC-12: engine.status names what the feature waits on.
-    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "security_gate_1", active_agents: 0, waiting_on: ["D-0001"] }]);
+    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "security_gate_1", active_agents: 0, activity: expect.any(String), waiting_on: ["D-0001"] }]);
 
     // AC-2: option B, confirmed, sends the feature back with the choice as data.
     await act(w, gh, 1, "choose:B");
@@ -676,7 +676,7 @@ describe("F-016: the full readiness gate", () => {
     await pollUntil(w, "the sign-off issue", () => gh.issues.size === 1);
     const signoff = items(w).find((i) => i.record.kind === "spec")!;
     expect(signoff.id).toBe("S-0001");
-    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "readiness_gate", active_agents: 0, waiting_on: ["S-0001"] }]);
+    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "readiness_gate", active_agents: 0, activity: expect.any(String), waiting_on: ["S-0001"] }]);
 
     // AC-9: Approve without its confirm changes nothing.
     gh.react(gh.actionComment(1, "approve").id, "+1");
@@ -814,7 +814,7 @@ describe("F-016 FR-13, FR-14: an analyst run that stopped (issues #64, #65)", ()
     expect(items(w)).toHaveLength(1);
     const agents = async () => ((await c.ok("engine.status")).features as Array<{ active_agents: number }>)[0]!.active_agents;
     for (let i = 0; i < 250 && (await agents()) !== 0; i++) await new Promise((r) => setTimeout(r, 20));
-    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "requirements_interview", active_agents: 0, waiting_on: ["D-0001"] }]);
+    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "requirements_interview", active_agents: 0, activity: expect.any(String), waiting_on: ["D-0001"] }]);
     await pollUntil(w, "the issue", () => gh.issues.size === 1);
     await act(w, gh, 1, "choose:A");
     await pollUntil(w, "the second run", () => s.count.analyst === 2);

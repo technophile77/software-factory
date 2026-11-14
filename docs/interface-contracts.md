@@ -306,13 +306,13 @@ it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 
 | Method | Params | Result |
 |---|---|---|
-| `engine.status` | none | `{ version, capabilities?, uptime_s, features: [{ id, stage, active_agents, waiting_on? }] }` (`capabilities` from v1.4; `waiting_on` from v1.5: the ids of the inbox items the feature waits on, left out when there are none) |
+| `engine.status` | none | `{ version, capabilities?, uptime_s, features: [{ id, stage, active_agents, waiting_on?, activity? }] }` (`capabilities` from v1.4; `waiting_on` from v1.5: the ids of the inbox items the feature waits on, left out when there are none; `activity` from F-018: one of `analyst_reviewing`, `analyst_researching`, `analyst_writing_spec`, `security_reviewing`, `readiness_check`, `advisor_working`, `waiting_for_owner`, `paused`, `idle`; clients ignore codes they don't know and treat a missing one as unknown) |
 | `engine.pause` | `{ feature? }` | `{ paused: [feature ids] }` |
 | `engine.resume` | `{ feature? }` | `{ resumed: [feature ids] }` |
 | `engine.shutdown` | none | `{ ok: true }` after agents reach a safe stop |
 | `feature.start` | `{ request: string, document?: Document }` | `{ feature: id }` (assigns the requirements analyst; `document` from v1.4) |
 | `interview.list` | none | `{ features: [{ id, title, open, deferred, pending_assumptions }] }` (v1.1) |
-| `interview.open` | `{ feature, takeover?: bool }` | `{ session, started_at, approval: { user_code, verification_uri, expires_at } }`, takes the feature's session lock; the session is pending until approved (v1.1; `approval` from v1.2) |
+| `interview.open` | `{ feature, takeover?: bool }` | `{ session, started_at, approval: { user_code, verification_uri, expires_at } }`, takes the feature's session lock; the session is pending until approved (v1.1; `approval` from v1.2); no `approval` when the project's sign-in setting covers the session (F-018 FR-15) |
 | `interview.awaitApproval` | `{ session, wait_s?: int }` | `{ approved: true }` once GitHub confirms the owner; waits up to `wait_s` (at most 900) (v1.2) |
 | `interview.next` | `{ session, wait_s?: int }` | `{ item: Item \| null }`, deferred items first; waits up to `wait_s` (at most 600) for research to finish (v1.1) |
 | `interview.reply` | `{ session, item, revision, reply_id, kind, text }` | `{ status, next?: Item }` (v1.1) |
@@ -397,6 +397,13 @@ Interview rules (v1.1):
   `approval_failed`; a poll that gets no answer is retried. A takeover
   opens a new session and needs a new approval. An approved session also
   ends 2 hours after approval.
+  How often a session needs this approval follows the project's
+  `settings.interview_sign_in` (Project manifest v1.8, F-018 FR-15): never,
+  once per engine start, every session, or once per so many hours; without
+  the key, never at Rapid prototype and every session above it. When the
+  setting covers a session, `interview.open` (takeovers included) returns an
+  approved session with no `approval`; clients treat a missing `approval` as
+  approved, as with v1.1.
 - Within a session each deferred item is returned once, before new items;
   the engine tracks what it has shown per session.
 - A reply naming a revision other than the item's current one gets error
@@ -775,12 +782,13 @@ section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.7
+## Project manifest — v1.8
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014);
   v1.3 approved (H-0080); v1.4 approved (H-0087); v1.5 approved (H-0135);
   v1.6 approved (F-013 OQ-11, owner, decision card, 2026-11-13); v1.7
-  approved (F-015 H-0193, owner, decision card, 2026-11-14)
+  approved (F-015 H-0193, owner, decision card, 2026-11-14); v1.8 approved
+  (F-018 H-0227, owner, decision card, 2026-11-14)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
   adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
   `complexity` and `settings.agents` (F-002 A-6, A-8); v1.3 adds `enabled`,
@@ -803,7 +811,7 @@ the preset used only for initial calibration) and
 ladder; the engine refuses a rung that doesn't exist in the pinned factory
 version or is below the role's floor). Both change only through hygiene
 items (F-002). The manifest is the only record of repo and project maturity
-levels. `schema` stays `factory-project/1.0`: v1.1 to v1.7 only add optional keys.
+levels. `schema` stays `factory-project/1.0`: v1.1 to v1.8 only add optional keys.
 
 From v1.5, optional `settings.endpoints`: a list of model endpoint names
 (Model endpoints file v1.0) this project's code may be sent to; default
@@ -849,6 +857,15 @@ path that must resolve inside the worktree under the ADR 0015 path rule. A
 repo without `commands.test` can't enter stage 5 (F-015). `commit_name` is a
 non-empty string of at most 100 characters with no control characters.
 Onboarding (F-003) asks for the commands per repo.
+
+From v1.8 (F-018 FR-15), optional `settings.interview_sign_in`: how often
+the owner signs in to GitHub to open interview sessions. `every` is
+`never` (allowed only at `rapid-prototype`), `engine_start`, `session` or
+`hours`; `hours` (1 to 168) is required with `hours` and refused
+otherwise. Without the key the level's default applies: `never` at
+`rapid-prototype`, `session` above it. The key is pinned with `owner.*`,
+`allowed_repo_owners` and `enabled` (F-007 SR-5). Onboarding (F-003) asks
+for it on a new project and always writes it.
 
 From v1.4, optional `limits`: the same keys as the master factory's
 `engine/config/limits.yaml` (H-0087). For each key the engine uses the lower
