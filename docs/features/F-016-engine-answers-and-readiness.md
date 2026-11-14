@@ -80,7 +80,7 @@ signs the spec off, and the feature is handed to development
 | FR-16 | The engine reads the spec's section 9 table under either title, "Security considerations" (the template's) or "Security requirements", for Gate 1 (F-008 FR-9) and the readiness gate. A feature blocked at Security Gate 1 is checked again at engine start; when Gate 1 passes, the engine withdraws (closes, with a comment saying why) that feature's open Gate 1 risk items, since the spec now takes their findings up. |
 | FR-17 | The spec's exact structure is defined in `docs/features/feature-template.structure.json`: the twelve level-2 headings of the template, word for word and in order, each once, and the header row of the first table in sections 3, 4, 8, 9 and 12. Any other level-2 section goes after section 12; level-3 and lower headings may appear inside any section. The engine states this structure in the analyst's first turn, and `interview_spec_ready` adds a `spec_structure` check that fails on any difference, naming each missing, repeated, misplaced or unknown heading and each wrong header row by line number and the template's exact text (never spec text). The readiness gate and Gate 1's resolution run the same check, so FR-16's second title no longer passes; the engine's table reader still accepts it. |
 | FR-18 | When Gate 1 matches the owner's answer, the finding's suggested requirement and the spec's section 9 row word for word (F-008 FR-9, FR-15), a written escape `\n`, `\t` or `\r` counts as whitespace, the same as a real line break, tab or space. Any other difference still fails. |
-| FR-19 | Gate 1 decides what blocks in code, never the reviewer. Each finding's `blocks` is set by the engine from its severity and the project's `maturity`, using `plugins/software-factory/security-blocking.json`, the one copy of security-standards.md's "What blocks a PR, by maturity level" table (H-0235), which the onboarding checker also reads. A reviewer's own `blocks` value is ignored, and its instructions no longer ask for one. A finding that doesn't block at the project's level, including one framed as the owner's choice, is recorded as a known issue in the Gate 1 report ("open until fixed before promotion"); it is neither asked in the interview nor filed to the inbox, and Gate 1 resolution doesn't need it in the spec. When no finding blocks, the feature goes on to the readiness gate. An unknown level or severity blocks. |
+| FR-19 | Gate 1 decides what blocks in code, never the reviewer. Each finding's `blocks` is set by the engine from its severity and the project's `maturity`, using `plugins/software-factory/skills/onboard-repo/scripts/security-blocking.json`, the one copy of security-standards.md's "What blocks a PR, by maturity level" table (H-0235), which the onboarding checker also reads. A reviewer's own `blocks` value is ignored, and its instructions no longer ask for one. A finding that doesn't block at the project's level, including one framed as the owner's choice, is recorded as a known issue in the Gate 1 report ("open until fixed before promotion"); it is neither asked in the interview nor filed to the inbox, and Gate 1 resolution doesn't need it in the spec. When no finding blocks, the feature goes on to the readiness gate. An unknown level or severity blocks. |
 | FR-12 | Existing open item files on `factory/state` are moved to issues by F-011's one-time migration script (F-011 FR-16); an item whose effect is defined here gets that effect when answered on its issue. |
 
 ## 4. Acceptance criteria
@@ -236,10 +236,15 @@ H-0180, H-0182, H-0183 approved (owner, 2026-11-13, decision card); H-0184 appro
 
 - **H-0235 (Hygiene), approved (owner, 2026-11-14, card and in thread):**
   the blocking table becomes data in
-  `plugins/software-factory/security-blocking.json`, read by the engine's
+  `plugins/software-factory/skills/onboard-repo/scripts/security-blocking.json`, read by the engine's
   Gate 1 and by `factory_check.py`; `docs/security-standards.md` points to it;
   the security reviewer's AGENT.md no longer asks it to say whether a finding
   blocks; the Agent report contract notes the engine sets `blocks`.
+
+- **H-0236 (Hygiene), approved (owner, 2026-11-14, card and in thread):**
+  `security-blocking.json` moves from the plugin root into the onboard-repo
+  skill's `scripts/` folder, next to `gitleaks-pins.json`, so a skill copied
+  into a repo's `.claude/skills/` still finds it. It stays the one copy.
 
 ## 11. Readiness gate
 Checked 2026-11-13 against spec v10.
