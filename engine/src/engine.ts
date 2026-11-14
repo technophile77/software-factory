@@ -986,6 +986,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
             return;
           }
           throw e;
+        } finally {
+          // A session that ended can still hold a pending read of its turns, which would take an owner reply meant for the next session.
+          turns.close();
         }
         if (dead) return;
         if (r.outcome.status === "error") log.warn(`${f.id}: run ${runId}'s session failed (${r.outcome.reason})${r.outcome.detail ? `; Claude Code said: ${JSON.stringify(r.outcome.detail)}` : ""}`);

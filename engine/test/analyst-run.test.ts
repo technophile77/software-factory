@@ -302,6 +302,45 @@ describe("the analyst, wired end to end with fake Docker and SDK (FR-8 to FR-11)
     expect(runOf(w, feature)).toMatchObject({ id: run.id, status: "running", resumes: 1 });
   });
 
+  it("ADR 0012: an owner reply after a failed resume reaches the new session, not the failed one's turn stream", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    const s1 = scriptedSdk(async function* ({ next, call }) {
+      await next();
+      yield { type: "system", subtype: "init", session_id: "s-10" };
+      await call("interview_ask", { text: "Which columns?", why: "To size the export." });
+      await next();
+    });
+    const first = await boot(w, runtime(d, s1.sdk));
+    feature = (await first.c.ok("feature.start", { request: "Export" })).feature as string;
+    await until("the question", () => (first.e.feature(feature)?.state.items.size ?? 0) > 0);
+    const run = runOf(w, feature)!;
+    await first.e.crash();
+    engines = [];
+    clients = [];
+    await until("the old group to close", () => d.calls.some((x) => x.args.join(" ") === `network rm factory-${run.id.toLowerCase()}-out`));
+
+    // The live trial: the failed session still had a read of its turn stream pending, which took the owner's reply.
+    let replyTurn: string | null = null;
+    const s2 = scriptedSdk(async function* ({ next, options }) {
+      await next();
+      if (options.resume) {
+        void next();
+        yield { type: "result", subtype: "error_during_execution", session_id: "s-10", num_turns: 0, errors: ["No conversation found"] };
+        return;
+      }
+      yield { type: "system", subtype: "init", session_id: "s-11" };
+      replyTurn = await next();
+    });
+    const second = await boot(w, runtime(d, s2.sdk));
+    await until("the new session", () => s2.seen.length === 2);
+    const session = await approvedSession(w, second.c, feature);
+    await second.c.ok("interview.reply", { session, item: "Q-001", revision: 0, reply_id: "r1", kind: "answer", text: "Order id and total." });
+    await until("the reply in the new session", () => replyTurn !== null);
+    expect(replyTurn).toContain("Order id and total.");
+  });
+
   it("ADR 0012: when the run's session volume is gone, the new session gets the transcript summary", async () => {
     const w = world();
     const d = new FakeDocker();
