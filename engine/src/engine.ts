@@ -45,6 +45,7 @@ import { Inbox, Recorded } from "./inbox/store";
 import type { ItemInput } from "./inbox/model";
 import { osNotifier } from "./os/notify";
 import { Gitleaks, SecretsScanner } from "./gitleaks";
+import { activityOf } from "./interview/activity";
 import { FeatureInterview } from "./interview/feature";
 import { InterviewTools, ResearchConfig, createInterviewTools } from "./interview/tools";
 import { FileLogger, Logger } from "./log";
@@ -1501,7 +1502,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       features: projects.filter((p) => p.state === "running").flatMap((p) => [...p.features.values()].filter((f) => !ambiguous.has(f.id)).map((f) => {
         const waiting = p.inbox?.waitingOn(f.id) ?? [];
         // H-0183 (channel v1.5): the items the feature waits on, only when there are any.
-        return { id: f.id, stage: f.stage() || INTERVIEW_STAGE, active_agents: jobs.has(f.id) ? 1 : 0, ...(waiting.length ? { waiting_on: waiting } : {}) };
+        const stage = f.stage() || INTERVIEW_STAGE;
+        const activity = activityOf({ stage, paused: f.paused, running: jobs.has(f.id), statuses: f.state.list().map((it) => it.status) });
+        return { id: f.id, stage, active_agents: jobs.has(f.id) ? 1 : 0, activity, ...(waiting.length ? { waiting_on: waiting } : {}) };
       })),
     }),
     pause: (fid) => {

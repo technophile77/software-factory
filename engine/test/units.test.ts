@@ -810,3 +810,18 @@ describe("FileLogger when its folder is gone", () => {
     expect(() => log.action({ kind: "push", target: "x", outcome: "ok" } as never)).toThrow(/ENOENT/);
   });
 });
+
+describe("engine.status activity codes (F-018 FR-14, H-0225)", () => {
+  it("maps stage, pause, a running job and item states to the fixed codes", async () => {
+    const { activityOf } = await import("../src/interview/activity");
+    const a = (stage: string, running: boolean, statuses: Array<"open" | "researching" | "answered">, paused = false) => activityOf({ stage, paused, running, statuses });
+    expect(a("requirements_interview", true, ["open"], true)).toBe("paused");
+    expect(a("requirements_interview", true, ["answered", "open"])).toBe("analyst_reviewing");
+    expect(a("requirements_interview", true, ["researching"])).toBe("analyst_researching");
+    expect(a("requirements_interview", true, ["answered"])).toBe("analyst_writing_spec");
+    expect(a("security_gate_1", true, [])).toBe("security_reviewing");
+    expect(a("readiness_gate", true, [])).toBe("readiness_check");
+    expect(a("requirements_interview", false, ["open"])).toBe("waiting_for_owner");
+    expect(a("build_and_test_prep", false, [])).toBe("idle");
+  });
+});
