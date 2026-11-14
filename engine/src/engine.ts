@@ -23,6 +23,8 @@ import { CAUSES, type Cause, afterClassify, afterRun, checkClassification, stage
 import { type RunReport, TestRunError, clearResults, readResults, resolveProgram, runCommand, runReport, testEnv } from "./build/test-run";
 import { type BuildRole, type FixFrom, buildPolicy, buildTestResults, buildTurn, runWorkerSessions } from "./build/worker";
 import { HttpPulls, type PullsApi } from "./build/pulls";
+import { HttpTokenCheck, type TokenCheckApi, tokenProblems } from "./build/token-check";
+import { HttpMerge, type MergeApi, autoMergeHygiene } from "./inbox/auto-merge";
 import { checksVerdict, doneComment, prText, prWorkflowProblems, verbatimMatch } from "./build/stage9";
 import { PR_RECORD_SCHEMA, type PrRecord } from "./schemas/pr-record";
 import { type CodeReviewFinding, type JudgeOutcome, checkCodeReview, judgeOutcome } from "./build/review";
@@ -103,6 +105,10 @@ export interface EngineOptions {
   scanner?: SecretsScanner;
   /** F-015 FR-10: the code repo's pull request calls (tests only). */
   pulls?: (token: string) => PullsApi;
+  /** F-015 SR-2: the token scope checks' calls (tests only). */
+  tokenCheck?: (token: string) => TokenCheckApi;
+  /** F-011 FR-10: the hygiene auto-merge's calls (tests only). */
+  merge?: (token: string) => MergeApi;
   /** How long stage 9 waits between looks at CI or the owner's merge (tests only). */
   prPollMs?: number;
   /** F-015 FR-8: a Semgrep program to use instead of the hash-pinned venv (tests only). */
@@ -1842,6 +1848,20 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
 
+    // F-011 FR-10, F-015 SR-12: an approved hygiene change the engine opened as a PR merges only as approved.
+    if (type === "hygiene_pr") {
+      if (e.action !== "approved") return done("record_only");
+      const fx: Record<string, unknown> = r.effect ?? {};
+      const repo = String(fx.repo ?? "");
+      const pr = Number(fx.pr);
+      const approvedDiff = String(fx.diff ?? "");
+      if (!p.token || !Number.isSafeInteger(pr) || pr < 1 || !/^[0-9a-f]{64}$/.test(approvedDiff) || !p.manifest!.repos.some((x) => `${x.owner}/${x.repo}` === repo)) return done("hygiene_target_invalid");
+      const api = o.merge ? o.merge(p.token) : new HttpMerge(p.token, log, GITHUB_API_BASE);
+      const res = await autoMergeHygiene(api, { itemId: r.id, repo, pr, approvedDiff });
+      log.info(`${r.id}: ${res.merged ? `merged ${repo}#${pr} at ${res.sha}` : `merged nothing: ${res.why}`}.`);
+      return done(res.merged ? "hygiene_merged" : "hygiene_not_merged");
+    }
+
     // Role policy v2.7: a held command's answer; one that came after the 30 minutes only records.
     if (type === "ask") {
       const answer = asks.get(r.id);
@@ -2501,6 +2521,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   // ---- Stage 9: the pull request (FR-10, FR-14, SR-2 to SR-6, SR-11, SR-13) ----
 
   const prTimers = new Set<NodeJS.Timeout>();
+  const tokenChecked = new Set<string>();
   const machineState = (f: FeatureInterview) => buildMachine(f.state.build.actions).machine.state();
   /** CI and the owner's merge happen on GitHub, so the build looks again later; a stop clears the wait. */
   function buildLater(p: Project, f: FeatureInterview, ms: number): void {
@@ -2586,6 +2607,19 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (missing.length) {
       await prRefused(p, f, `dod:${head}`, `${f.id} isn't done yet`, `definition of done item${missing.length > 1 ? "s" : ""} ${missing.map((i) => i.n).join(", ")} ${missing.length > 1 ? "aren't" : "isn't"} met at ${head}`);
       return;
+    }
+    // SR-2: checked before the first push with this token; nothing reaches a code repo before stage 9.
+    const tokenKey = sha256Hex(`${p.real}\0${p.token}`);
+    if (!tokenChecked.has(tokenKey)) {
+      const api = o.tokenCheck ? o.tokenCheck(p.token!) : new HttpTokenCheck(p.token!, log, GITHUB_API_BASE);
+      const project = [...p.manifest!.repos.map((x) => `${x.owner}/${x.repo}`), await configSlug(p)];
+      const problems = await tokenProblems(api, project, { repo, base: await ctx.repo.fetchMain(p.token!) });
+      if (problems.length) {
+        await prRefused(p, f, `token:${tokenKey.slice(0, 16)}`, `${p.name}'s token has more access than the factory allows`, `${problems.join("; ")} (F-015 SR-2). Make a fine-grained token for the project's repos only, without the Workflows permission`);
+        stop(p, "the owner token has more access than F-015 SR-2 allows");
+        return;
+      }
+      tokenChecked.add(tokenKey);
     }
     // SR-6: no confirmation of publishing is recorded at onboarding yet, so only a private repo gets code.
     const info = await github.repo(ctx.target.owner, ctx.target.repo, p.token!);

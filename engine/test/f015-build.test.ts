@@ -319,7 +319,9 @@ process.exit(1);
 `);
     const s = scriptedSdk({ analyst: async function* () {}, reviewer: codeReviewer, orchestrator: classifier, developer: dev, tester: tester(() => feature, seen), judge });
     const pulls = new FakePulls(path.join(w.root, "remote", "example-org", "acme-web.git"));
-    const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, semgrep: { program: semgrep }, pulls: () => pulls, prPollMs: 50 });
+    const probes: string[] = [];
+    const tokenApi = { reachableRepos: async () => ["example-org/acme-web", "example-org/acme-config"], workflowWriteRefused: async (repo: string) => (probes.push(repo), true) };
+    const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, semgrep: { program: semgrep }, pulls: () => pulls, prPollMs: 50, tokenCheck: () => tokenApi });
     const stopAt = ["green", "failed", "refused"];
     await until("the ready pull request", () => stopAt.some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000).catch((err) => {
       throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature(feature)?.state.build.actions)}; last ${JSON.stringify(e.feature(feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-4).map((l) => l.message ?? l.action).join(" | ")}`);
@@ -339,6 +341,8 @@ process.exit(1);
     expect(pulls.created).toEqual([{ title: `${feature}: Export orders as CSV`, head: branch, base: "main", draft: true }]);
     expect(pulls.pr!.body).toContain("ready for the owner's review");
     expect(pulls.readyCalls).toBe(1);
+    // SR-2: the token's reach and its workflow write were checked once, before the push.
+    expect(probes).toEqual(["example-org/acme-web"]);
     // AC-28: the check only counted once it passed on the pushed SHA from GitHub Actions.
     expect(pulls.checkCalls).toBeGreaterThanOrEqual(2);
     expect(pulls.posted).toHaveLength(1);
