@@ -64,6 +64,7 @@ fails when a schema file is out of date with the code.
 | AC-12 | Given each hand-edited YAML file's example in the repo, when the schema test runs, then each validates against its schema, and a copy with one unknown top-level key fails | FR-11 |
 | AC-13 | Given a `factory-project.yaml` with an unknown key under `settings`, when the engine starts, then that project is not started and the error names the file and the key's path | FR-12 |
 | AC-14 | Given `scripts/check_docs.py`, when it runs, then it fails if the advisor's or web reader's `AGENT.md` lacks the "Output format" line | FR-13 |
+| AC-15 | Given the engine records evidence for a managed PR, when it writes the PR record, then the file is `prs/<owner>/<repo>/<n>.json` and validates against `pr-record/1.0`, and a record missing `feature` is refused before any commit | FR-5 |
 
 ## 5. Constraints
 
@@ -124,7 +125,7 @@ Each change is an Interfaces decision, applied with the build once approved:
 
 ## 11. Readiness gate
 
-Checked 2026-11-14 on v4: every FR has at least one AC, A-1 to A-3 approved, SR-1 to SR-11 accepted (SR-12 withdrawn), OQ-1 answered, no deferred items. Passed; waiting on the owner's sign-off.
+Checked 2026-11-14 on v4: every FR has at least one AC (AC-15 added for FR-5), A-1 to A-3 approved, SR-1 to SR-11 accepted (SR-12 withdrawn), OQ-1 answered, no deferred items. Passed; waiting on the owner's sign-off.
 
 
 - [x] Clear objective
@@ -140,7 +141,7 @@ Checked 2026-11-14 on v4: every FR has at least one AC, A-1 to A-3 approved, SR-
 | 1 | 2026-11-14 | Draft from proposal 0034 (decisions 2 and 3) | (pending) |
 | 2 | 2026-11-14 | Security Gate 1 filed; SR-4 to SR-12 proposed | (pending) |
 | 3 | 2026-11-14 | OQ-1 answered (no editor check): FR-12 and AC-13 rewritten, SR-12 withdrawn | owner, decision card (OQ-1) |
-| 4 | 2026-11-14 | A-1 to A-3 approved, SR-1 to SR-11 accepted; readiness gate passed | owner, 09:03Z (in thread) |
+| 4 | 2026-11-14 | A-1 to A-3 approved, SR-1 to SR-11 accepted; AC-15 added for FR-5; readiness gate passed | owner, 09:03Z (in thread), AC-15 pending sign-off |
 
 ## 13. Open questions
 
