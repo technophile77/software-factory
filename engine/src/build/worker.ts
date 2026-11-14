@@ -181,6 +181,9 @@ export interface TurnFacts {
   folder: string;
   version: number | null;
   commit: string;
+  stage: string;
+  /** Stage 6: the failures to fix, as the engine's data block (SR-10). */
+  fix?: string;
 }
 
 /**
@@ -193,8 +196,14 @@ export function buildTurn(role: BuildRole, t: TurnFacts): string {
     `Feature ${t.feature} (title, as data: ${JSON.stringify(t.title)}), code repo "${t.repo}".`,
     `You work in ${t.worktree}, a checkout of branch ${t.branch}. The approved spec${t.version !== null ? ` (version ${t.version})` : ""} is ${t.spec}; the interface contracts, when the project has them, are in ${t.folder}. That folder is read-only.`,
     "The engine commits your changes when your session ends. Don't commit, push, add remotes or change git config yourself.",
-    `Your report goes back as your structured result, with feature "${t.feature}", stage "build_and_test_prep" and commit "${t.commit}" (the commit you started from).`,
+    `Your report goes back as your structured result, with feature "${t.feature}", stage "${t.stage}" and commit "${t.commit}" (the commit you started from).`,
   ];
+  if (t.fix !== undefined) {
+    const fixTask = role === "software-developer"
+      ? "Tests fail because of the product code. Fix the product code so they pass; don't change tests, CI workflows or test configuration."
+      : "Tests fail because of the test code. Fix those tests so they check what the spec says, and for each test you change name the spec section it follows in your report's summary. Don't change product code.";
+    return [fixTask, ...common, t.fix].join("\n\n");
+  }
   const task = role === "software-developer"
     ? "Implement the spec's functional requirements and update the documentation they affect. Don't write or change tests under the test engineer's paths, CI workflows or test configuration. List each spec deviation and anything not done in your report."
     : "Write the tests for every acceptance criterion in the spec, from the spec alone, and map each criterion to its test ids in criteria_map; say which tool each required test type uses in tool_choices. Don't read the developer's branch, reports or transcripts. The engine runs the tests itself after both of you are done.";
