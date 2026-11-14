@@ -3,7 +3,7 @@
 - **Id:** F-020
 - **Status:** In review
 - **Requested by / date:** owner, 2026-11-14 ("I would like the default format for any data, reports, etc. that an agent interacts with to be in json, unless there is a specific reason that it should be something different"; proposal 0034 decision 3, "Start F-020, full scope", decision card 08:53Z)
-- **Spec version:** 2
+- **Spec version:** 3
 
 ## 1. Objective and business purpose
 
@@ -12,17 +12,18 @@ proposal 0034 audited every format. Most agent data is already JSON. This
 feature moves the remaining items, gives every JSON format a schema that
 code checks, and makes the model return schema-valid reports, so code (not
 the model's good behaviour) guarantees the shape of what agents hand over.
-It also gives the YAML files the owner edits by hand a schema, so mistakes
-show up as he types instead of when the engine starts.
+It also gives the YAML files the owner edits by hand a schema, which the
+engine checks them against when it starts.
 
 ## 2. Expected behavior
 
 The owner sees little change. Inbox issues, the Gate 1 report and the
 advisor's answer look as they do today, because code renders them from
 JSON. A report that doesn't match its schema is refused by the engine with
-the field that failed, instead of being half-read. When the owner edits
-`factory-project.yaml` or another hand-edited config file in VS Code, a
-wrong key or value is underlined with the reason (if OQ-1 is answered yes).
+the field that failed, instead of being half-read. A wrong key or value in
+`factory-project.yaml` or another hand-edited config file stops the engine
+at startup with the file and field named. There is no check in the editor
+(OQ-1).
 Behind the scenes, inbox records are JSON files, each agent's report is the
 session's structured result rather than a file the agent writes, and CI
 fails when a schema file is out of date with the code.
@@ -42,7 +43,7 @@ fails when a schema file is out of date with the code.
 | FR-9 | Each engine-run agent session is given its report schema as the Agent SDK's structured output (`outputFormat: { type: "json_schema", schema }`). The engine takes the report from the session's structured result, validates it (FR-3) and writes the report file itself. A session that ends without a valid result is a failed run with the reason, as a missing report is today |
 | FR-10 | With FR-9 in place, roles whose only write was their report (security reviewer at Gate 1, readiness orchestrator) lose the `Write` tool and their report write rule (a tightening of their run policy) |
 | FR-11 | Each hand-edited YAML config file has a JSON Schema in `docs/schemas/` from the engine's zod schema for it: project manifest (including the role policy), `factory-endpoints.local.yaml`, `factory-projects.local.yaml`, `engine/config/models.yaml`, `engine/config/limits.yaml`, `engine.yaml`. The files stay YAML (proposal 0034 decision 2) |
-| FR-12 | VS Code checks those files against their schemas as the owner types, per OQ-1. The onboarding template `factory-project.yaml` carries the schema reference the chosen option needs |
+| FR-12 | The engine checks each hand-edited YAML file against its schema when it starts and refuses to start a project whose file fails, naming the file and the field path. Nothing is added to VS Code and the files carry no schema reference (owner, OQ-1, 2026-11-14) |
 | FR-13 | The advisor's and web reader's `AGENT.md` describe the JSON answer in place of plain text, and gain the "Output format" line other roles got in H-0240 |
 
 ## 4. Acceptance criteria
@@ -61,7 +62,7 @@ fails when a schema file is out of date with the code.
 | AC-10 | Given a Gate 1 run, when it completes, then the report file was written by the engine from the structured result, and the reviewer's session had no `Write` tool | FR-9, FR-10 |
 | AC-11 | Given a session that ends without a structured result, when the run ends, then it is recorded as failed with "no report" and offered for a rerun (F-019 FR-4) | FR-9 |
 | AC-12 | Given each hand-edited YAML file's example in the repo, when the schema test runs, then each validates against its schema, and a copy with one unknown top-level key fails | FR-11 |
-| AC-13 | Given the onboarding template, when a new project is onboarded, then its `factory-project.yaml` carries the schema reference from FR-12 | FR-12 |
+| AC-13 | Given a `factory-project.yaml` with an unknown key under `settings`, when the engine starts, then that project is not started and the error names the file and the key's path | FR-12 |
 | AC-14 | Given `scripts/check_docs.py`, when it runs, then it fails if the advisor's or web reader's `AGENT.md` lacks the "Output format" line | FR-13 |
 
 ## 5. Constraints
@@ -108,7 +109,7 @@ H-0240 and proposal 0034 (merged, PR #76). F-011 (inbox records), F-006 (advisor
 | SR-9 | The record keeps the SHA-256 of the exact bytes of `.factory/advice/<call>.json`, and the issue keeps the existing match or mismatch line | Gate 1 #6 | Proposed |
 | SR-10 | `source_contains_instructions` and `page_contains_instructions` are the agent's own claim: true shows a warning, false relaxes no check; `where` is untrusted text under SR-3, and the `research_web` result keeps its untrusted label | Gate 1 #7 | Proposed |
 | SR-11 | The engine decides A-2's fallback from the endpoint's declared capability, never from the agent; it grants `Write` only to the run's one report path and records the fallback in a field other than v1.4's `fallback` | Gate 1 #8 | Proposed |
-| SR-12 | Only if OQ-1 (a) is chosen: the S4.1 review and CVE check are recorded with the Architecture decision; the extension version is pinned with auto-update off; the `$schema` reference names a commit SHA or a local path, never a tag; SchemaStore and the extension's telemetry are off in the workspace settings; the schema host is listed as a read-only external service; the engine ignores the `$schema` line | Gate 1 #9 | Proposed |
+| SR-12 | Withdrawn: it applied only to OQ-1 option (a), which the owner did not choose | Gate 1 #9 | Not applicable |
 
 ## 10. Interface requirements
 
@@ -119,7 +120,7 @@ Each change is an Interfaces decision, applied with the build once approved:
 | H-0241 | Inbox item v4.0 (breaking) | Records at `inbox/<id>.json`, schema `inbox-record/4.0`; PR records `prs/<owner>/<repo>/<n>.json`, schema `pr-record/1.0`; advice file `.factory/advice/<call>.json` (FR-4, FR-5, FR-6) |
 | H-0242 | Agent report v1.6 (additive) | `tool_choices`, `docs_updated` (FR-8); the report is the session's structured result and the engine writes the file (FR-9) |
 | H-0243 | New: Advisor answer v1.0, Web reader answer v1.0; Interview tools v1.2 (`research_web` result shape) | FR-6, FR-7; `agents/advisor/AGENT.md` and `agents/web-reader/AGENT.md` updated (FR-13) |
-| H-0244 | Role policy v2.8 (tightening) and `docs/schemas/` | Gate 1 reviewer and readiness orchestrator lose `Write` (FR-10); schema files and their CI check (FR-2, FR-11); onboarding template schema reference (FR-12) |
+| H-0244 | Role policy v2.8 (tightening) and `docs/schemas/` | Gate 1 reviewer and readiness orchestrator lose `Write` (FR-10); schema files and their CI check (FR-2, FR-11) |
 
 ## 11. Readiness gate
 
@@ -135,9 +136,10 @@ Each change is an Interfaces decision, applied with the build once approved:
 |---|---|---|---|
 | 1 | 2026-11-14 | Draft from proposal 0034 (decisions 2 and 3) | (pending) |
 | 2 | 2026-11-14 | Security Gate 1 filed; SR-4 to SR-12 proposed | (pending) |
+| 3 | 2026-11-14 | OQ-1 answered (no editor check): FR-12 and AC-13 rewritten, SR-12 withdrawn | owner, decision card (OQ-1) |
 
 ## 13. Open questions
 
 | Id | Question | Recommendation |
 |---|---|---|
-| OQ-1 | How should VS Code check the hand-edited YAML files? (a) Install Red Hat's YAML extension (`redhat.vscode-yaml`), an external component that needs an S4.1 review and an Architecture decision, with a `# yaml-language-server: $schema=<URL of the schema at the factory's release tag>` line at the top of each file; (b) no editor check: the schemas are used by the engine and the onboarding checker only | (a): it's the only way to get the as-you-type check the owner's card included; the review is done before it's approved |
+| OQ-1 | How should VS Code check the hand-edited YAML files? (a) Red Hat's YAML extension with a schema reference in each file; (b) no editor check | Answered: (b), no editor check; nothing new is installed and the engine checks the files at startup (owner, decision card, 2026-11-14) |
