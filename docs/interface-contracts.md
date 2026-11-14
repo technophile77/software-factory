@@ -543,7 +543,10 @@ The wait doesn't count toward the session's wall-time cap. The ask list is
 under `policy.ask` in its manifest but can't remove listed ones. The gate
 matches every word of the command, with any folder path and `.exe`, `.cmd`
 or `.bat` stripped and case ignored. A command it can't split into words
-counts as a match. This catches commands the agent itself runs. It doesn't
+counts as a match. Every match, and what came of it, is recorded in the
+session's transcript and the run report; a denied step is reported as not
+done. This catches commands the agent itself runs. The engine's own build
+and test commands are not agent tool calls and are not covered. It doesn't
 catch a program started by code the agent runs, such as a test or a
 package script, or code that reads a login file directly. Those stay under
 ADR 0026's accepted risks.
