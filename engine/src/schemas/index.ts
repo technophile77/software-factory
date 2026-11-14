@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { endpointsFile, engineFile, limitsFile, manifestFile, modelsFile, projectsFile } from "./config";
 import { ROLE_BODIES, modelReport, storedReport } from "./agent-report";
+import { advisorAnswer } from "./advisor-answer";
 import { inboxRecord } from "./inbox-record";
 import { prRecord } from "./pr-record";
 import { calibrationResult, runReview, tuningMetrics } from "./tuning";
+import { webReaderAnswer } from "./web-reader-answer";
 
 /**
  * Every JSON format the engine owns, by the name and major version its
@@ -19,6 +21,8 @@ export const SCHEMAS: Record<string, z.ZodType> = {
   "run-review-1": runReview,
   "tuning-metrics-1": tuningMetrics,
   "calibration-result-1": calibrationResult,
+  "advisor-answer-1": advisorAnswer,
+  "web-reader-answer-1": webReaderAnswer,
   // Hand-edited YAML (FR-11): checked by the engine, published for reference.
   "factory-project-1": manifestFile,
   "factory-endpoints-1": endpointsFile,

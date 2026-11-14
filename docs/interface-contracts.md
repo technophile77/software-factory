@@ -184,7 +184,7 @@ actor id), `merged_on_github` (merge commit, merged by), `closed_on_github`.
 `^/(choose [A-Z0-9]{1,3}|approve|reject|defer|restore|dismiss|advisor|step [0-9]{1,2}|confirm [A-Z0-9]{4}|changes .+|research .+)$`.
 The engine never reads its own comments as commands (F-011 SR-17).
 
-**Advisor (from v1.1, F-006).** `advisor_reason` is set only by the orchestrator when filing; `advice` entries are written only by the engine, with the advice file at `.factory/advice/<call>.md` on `factory/state` and its sha256; the issue shows it under an **Advisor** heading, rendered as untrusted text (F-011 SR-10).
+**Advisor (from v1.1, F-006).** `advisor_reason` is set only by the orchestrator when filing; `advice` entries are written only by the engine, with the advice file at `.factory/advice/<call>.json` on `factory/state` (from v4.0, an Advisor answer v1.0; `.md` before) and the sha256 of its exact bytes (F-020 SR-9); the issue shows it under an **Advisor** heading, rendered as untrusted text (F-011 SR-10), with the advisor's options named "Advisor option 1" and so on, which are never the item's options or `/choose` targets (F-020 SR-8).
 
 ---
 
@@ -250,7 +250,7 @@ FR-7). Tuning metrics and Calibration result group rungs by the full
 | requirements-analyst | `spec_path`, `spec_version`, `open_assumptions` (item ids) |
 | software-developer | `files_changed`, `spec_deviations`, `not_done`; from v1.6 `docs_updated` (path) |
 | test-engineer | `tests_run`, `passed`, `failed`, `skipped`, `criteria_map` (AC id → test ids), `failures` (test, expected, actual, log ref), `not_run` (with reason); from v1.6 `tool_choices` (test type, tool, reason, approval ref or null) |
-| security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks (from F-016 v18 set by the engine from severity and maturity, never by the reviewer; a reviewer's value is ignored); from v1.3 optional `needs_owner`, `options` (id, label), `recommendation`); from v1.3 optional for Gate 1: `checklist` (question, answer), `permissions_added`, `abuse_cases`, `not_applicable` (criterion, reason) |
+| security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks (from F-016 v18 set by the engine from severity and maturity, never by the reviewer; from v1.6 a report that sets it is refused); from v1.3 optional `needs_owner`, `options` (id, label), `recommendation`); from v1.3 optional for Gate 1: `checklist` (question, answer), `permissions_added`, `abuse_cases`, `not_applicable` (criterion, reason) |
 | validation-judge | `verdict` (PASS, FAIL, NEEDS_HUMAN_REVIEW), `checklist` (area, status, evidence), `findings` (grade, location, explanation) |
 | orchestrator | `gate`, `checks` (name, passed, evidence); from v1.5, for the stage 6 failure classifier (F-015), `failures` (test, cause, evidence), where cause is one of the failure causes in `testing-strategy.md` |
 | project-evaluator | `scope` (project or feature), `complexity` (simple, moderate, complex), `predictions` (role → rung, reason), and from v1.2 `proposed_items` |
@@ -265,9 +265,18 @@ results; the agent fills only `criteria_map`. Additive.
 the stored report; `agent-report-1.<role>.schema.json` is what each role's
 agent returns. The agent's schema has no field the engine fills
 (`items_filed`, `artifacts`, `model`, `effort`, `rung`, `usage`,
-`transcript_ref`, `fallback`), so a report that sets one is refused
-(F-020 SR-7). Every object refuses unknown keys. Additive for the stored
+`transcript_ref`, `fallback`, `report_via`), so a report that sets one is
+refused (F-020 SR-7). Every object refuses unknown keys. Additive for the stored
 report; the two new body fields are required.
+
+**How a report reaches the engine (v1.6, F-020 FR-9).** The engine gives
+each session its role's schema as the Agent SDK's structured output, takes
+the report only from the structured result of a successful session, checks
+it, and writes the file itself. A session that ends without one is a failed
+run with the reason "no report". The engine-filled `report_via` is
+`structured_output`, or `file` for a session on a model endpoint, which the
+engine lets write only its one report path (F-020 A-2, SR-11); for the Gate 1
+advisory pass it is `advisory.report_via`.
 
 **`proposed_items` (v1.2).** Items a role with no inbox write access wants
 filed: each is a complete Inbox item v1.0 without `id`, `created_at` or
@@ -374,8 +383,9 @@ written to H-0063 alone stay valid:
   section 6). `web_queries` is the engine's log of the call's web searches
   and addresses: `[]` means none were sent; a missing field means the
   engine did not report them. `sha256` is the lowercase hex SHA-256 of the
-  UTF-8 bytes of the stored advice file (`.factory/advice/<call>.md`),
-  which is `text` exactly; clients compare it with `text` and tell the
+  UTF-8 bytes of the stored advice file (`.factory/advice/<call>.json`
+  from Inbox item v4.0, an Advisor answer v1.0; `.md` before), which is
+  `text` exactly; clients compare it with `text` and tell the
   owner on a mismatch (F-006 SR-4).
 - A question and an `advisor_proposal` may carry `advisor_call: { limits:
   { turns, tokens, time_s, web_calls }, over_budget }`: the fixed per-call
@@ -484,11 +494,12 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
-## Role policy — v2.7
+## Role policy — v2.8
 
 - Status: Approved (v2.2); v2.3 draft, awaiting owner approval (H-0040);
   v2.4 approved (H-0061, H-0076); v2.5 approved (H-0083); v2.7 approved
-  (H-0201, ADR 0026; owner, 2026-11-14, decision card, as drafted)
+  (H-0201, ADR 0026; owner, 2026-11-14, decision card, as drafted); v2.8
+  approved (F-020 H-0244; owner, 2026-11-14, decision card)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
@@ -518,7 +529,12 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   engine tool `fetch_page` and gives it to the web reader in place of
   `WebFetch`; a manifest with a `web-reader` role must make that swap.
   v2.7 suspends the container rules until Beta (ADR 0026); no manifest
-  changes.
+  changes. v2.8 is a tightening (F-020 FR-10): for a Gate 1 run and a
+  readiness run the engine takes `Write` and the report write rule away
+  from the `security-reviewer` and `orchestrator` roles, whose report is now
+  the session's structured result, and mounts no report folder; only an
+  endpoint session that must write its report file gets `Write`, for that
+  one path (F-020 A-2, SR-11). No manifest changes.
 
 **Location:** the `policy:` key of the project manifest (change-controlled),
 with optional per-repo overrides under `repos[].policy`. Effective policy
@@ -1073,9 +1089,65 @@ config repo's `factory/state` branch.
 
 ---
 
-## Interview tools — v1.1
+## Advisor answer — v1.0
 
-- Status: Approved
+- Status: Approved (F-020 H-0243; owner, 2026-11-14, decision card)
+- Owner decision: H-0240 (agent data is JSON by default), F-020 FR-6
+- Used by: advisor (returns it), engine (checks, stores and renders it)
+- Compatibility: as for inbox items.
+
+What the advisor returns for one call, as its session's structured output.
+The engine checks it against `docs/schemas/advisor-answer-1.schema.json`,
+stores it at `.factory/advice/<call>.json` on `factory/state`, and renders
+the inbox issue's Advisor section from it. Every string is the advisor's
+and untrusted (F-011 SR-10).
+
+```json
+{
+  "schema": "advisor-answer/1.0",
+  "findings": [{ "text": "...", "source": "<path or address>" }],
+  "options": [{ "id": 1, "label": "...", "trade_offs": "..." }, { "id": 2, "label": "...", "trade_offs": "..." }],
+  "recommendation": { "option": 1, "reasoning": "...", "confidence": "medium" },
+  "risks": [{ "text": "..." }],
+  "source_contains_instructions": false
+}
+```
+
+`options` are two to four, numbered 1, 2, ... in order; `recommendation.option`
+is one of them; `confidence` is `low`, `medium` or `high`.
+`source_contains_instructions` is the advisor's own claim: when true,
+`where` (untrusted text) says where, and the issue shows a warning; false
+relaxes no check (F-020 SR-10). An answer that breaks a rule fails the call
+with the reason, and nothing is added to the issue.
+
+## Web reader answer — v1.0
+
+- Status: Approved (F-020 H-0243; owner, 2026-11-14, decision card)
+- Owner decision: H-0240, F-020 FR-7
+- Used by: web reader (returns it), engine (checks it and passes it to the
+  analyst through `research_web`)
+- Compatibility: as for inbox items.
+
+What the web reader returns for one query, as its session's structured
+output, checked against `docs/schemas/web-reader-answer-1.schema.json`.
+
+```json
+{
+  "schema": "web-reader-answer/1.0",
+  "facts": [{ "text": "...", "source": "<address>" }],
+  "page_contains_instructions": false
+}
+```
+
+`page_contains_instructions` is the reader's own claim: when true, `where`
+holds the page's address (untrusted text); false relaxes no check (F-020
+SR-10). The engine keeps only facts whose `source` is a page it fetched for
+the reader.
+
+## Interview tools — v1.2
+
+- Status: Approved; v1.2 (F-020 H-0243) approved by the owner, 2026-11-14
+  (decision card)
 - Owner decision: F-007 OQ-8, H-0082, tightened by Security Gate 1 #10;
   owner, decision card, 2026-11-11; v1.1 (F-009, H-0106) approved by the
   owner, 2026-11-12 (decision card, as drafted); spec lines shown and
@@ -1096,7 +1168,7 @@ and are data to the engine.
 | `interview_ask` | `{ text, why, suggested?, options?: [string], findings?: [{ text, source }] }` | `{ item }`; a new question, status `open` |
 | `interview_propose_assumption` | `{ text, why }` | `{ item }`; `open` until the owner approves or rejects it |
 | `interview_revise` | `{ item, text, why, suggested?, options?, findings? }` | `{ revision }`; answers a `more_info` reply: a new revision, back to `open` |
-| `research_web` | `{ query }` | `{ summary, sources: [string] }` from the web reader, labelled untrusted |
+| `research_web` | `{ query }` | from v1.2 `{ facts: [{ text, source }], sources: [string], page_contains_instructions, where? }` from the web reader's answer (Web reader answer v1.0), keeping only facts from pages the engine fetched, labelled untrusted; `{ summary, sources }` before |
 | `interview_spec_ready` | `{ spec_path, spec_version }` | `{ checks: [{ name, passed, evidence }] }` |
 
 Rules:

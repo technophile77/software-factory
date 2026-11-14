@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { outputSchemaOf } from "./json-file";
 
 /**
  * Agent report v1.6 (F-020 FR-1, FR-8, H-0242). Two shapes:
@@ -108,6 +109,8 @@ const facts = {
   fallback: fallback.optional(),
   advisory: z.record(z.string(), z.unknown()).optional(),
   endpoint_rates: list(z.record(z.string(), z.unknown()), 50).optional(),
+  /** v1.6 (F-020 SR-11): how the report reached the engine. */
+  report_via: z.enum(["structured_output", "file"]).optional(),
 };
 
 /** The stored report: any role's body, plus the engine's facts. */
@@ -122,3 +125,8 @@ export const storedReport = z.strictObject({
   body: z.record(z.string(), z.unknown()),
   ...facts,
 });
+
+/** F-020 FR-9: the JSON Schema a session is given for its report, from the same schema the engine checks it with. */
+export function reportOutputSchema(role: ReportRole): Record<string, unknown> {
+  return outputSchemaOf(modelReport(role));
+}

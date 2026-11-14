@@ -170,6 +170,13 @@
         },
         "additionalProperties": {}
       }
+    },
+    "report_via": {
+      "type": "string",
+      "enum": [
+        "structured_output",
+        "file"
+      ]
     }
   },
   "required": [

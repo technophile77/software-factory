@@ -3,7 +3,11 @@ import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { SCHEMA_DIR, writeSchemas } from "../scripts/write-schemas";
 import { SCHEMAS, jsonSchemaText } from "../src/schemas";
+import * as crypto from "node:crypto";
+import { fenced } from "../src/inbox/render";
+import { adviceParts, advisorAnswer, readAdvice } from "../src/schemas/advisor-answer";
 import { modelReport } from "../src/schemas/agent-report";
+import { webReaderAnswer } from "../src/schemas/web-reader-answer";
 import { prRecord } from "../src/schemas/pr-record";
 import { SchemaError, parseJsonFile } from "../src/schemas/json-file";
 import { agentReport } from "../src/state/runs";
@@ -111,4 +115,53 @@ describe("F-020 hand-edited YAML schemas (FR-11, FR-12, AC-12)", () => {
       expect(schema.safeParse({ ...(doc as object), surprise: 1 }).success).toBe(false);
     });
   }
+});
+
+describe("F-020 advisor answer (FR-6, SR-8, SR-9, SR-10, AC-7)", () => {
+  const ANSWER = {
+    schema: "advisor-answer/1.0",
+    findings: [{ text: "Redis is already deployed. [click](https://evil.example)", source: "docs/architecture.md" }],
+    options: [{ id: 1, label: "Redis", trade_offs: "<b>fast</b>" }, { id: 2, label: "Postgres table", trade_offs: "One less service." }],
+    recommendation: { option: 1, reasoning: "Already there.", confidence: "medium" },
+    risks: [{ text: "Redis memory limits." }],
+    source_contains_instructions: true, where: "docs/notes.md line 4",
+  };
+
+  it("AC-7: a confidence outside low, medium or high fails the read, naming the field and not the value", () => {
+    const raw = Buffer.from(JSON.stringify({ ...ANSWER, recommendation: { ...ANSWER.recommendation, confidence: "certain" } }));
+    expect(() => readAdvice(".factory/advice/C-1.json", raw)).toThrow(new SchemaError(".factory/advice/C-1.json: recommendation.confidence is invalid (invalid_value)"));
+  });
+
+  it("refuses a recommendation that names no option, options out of order, and `where` without the claim", () => {
+    for (const bad of [
+      { ...ANSWER, recommendation: { ...ANSWER.recommendation, option: 3 } },
+      { ...ANSWER, options: [ANSWER.options[1], ANSWER.options[0]] },
+      { ...ANSWER, source_contains_instructions: false },
+    ]) expect(advisorAnswer.safeParse(bad).success).toBe(false);
+  });
+
+  it("SR-9, AC-7: a valid answer keeps the SHA-256 of its exact bytes; every advisor string is outside text, and its options are only ever Advisor option N", () => {
+    const raw = Buffer.from(JSON.stringify(ANSWER, null, 2));
+    const { answer, sha256 } = readAdvice(".factory/advice/C-1.json", raw);
+    expect(sha256).toBe(crypto.createHash("sha256").update(raw).digest("hex"));
+    const parts = adviceParts(answer);
+    const outside = parts.flatMap((p) => ("outside" in p ? [p.outside] : []));
+    expect(outside).toEqual(expect.arrayContaining(["Redis is already deployed. [click](https://evil.example)", "<b>fast</b>", "docs/notes.md line 4"]));
+    const engine = parts.flatMap((p) => ("engine" in p ? [p.engine] : []));
+    expect(engine.join("\n")).not.toMatch(/evil|<b>|Redis/);
+    expect(engine).toEqual(expect.arrayContaining(["Advisor option 1:", "Advisor option 2:", "The advisor recommends Advisor option 1, with medium confidence:"]));
+    expect(engine[0]).toMatch(/source it read contained instructions/);
+    // F-011 SR-10: outside text is rendered fenced, so Markdown and HTML in it stay literal.
+    for (const p of parts) if ("outside" in p) expect(fenced(p.outside, p.author)).toMatch(/^Written by advisor, shown as plain text:\n\n```+text\n/);
+  });
+});
+
+describe("F-020 web reader answer (FR-7)", () => {
+  it("needs `where` exactly when the page is said to contain instructions", () => {
+    const base = { schema: "web-reader-answer/1.0", facts: [{ text: "t", source: "https://a.example/" }] };
+    expect(webReaderAnswer.safeParse({ ...base, page_contains_instructions: false }).success).toBe(true);
+    expect(webReaderAnswer.safeParse({ ...base, page_contains_instructions: true, where: "https://a.example/" }).success).toBe(true);
+    expect(webReaderAnswer.safeParse({ ...base, page_contains_instructions: true }).success).toBe(false);
+    expect(webReaderAnswer.safeParse({ ...base, page_contains_instructions: false, extra: 1 }).success).toBe(false);
+  });
 });

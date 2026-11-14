@@ -23,14 +23,18 @@ async function setup() {
   return { w, e, feature };
 }
 
+// Interview tools v1.2 (F-020 FR-7): the reader's facts, its sources and its claim about instructions on a page.
+const ANSWER = { facts: [{ text: "Use a streaming writer.", source: "https://example.org/csv" }], sources: ["https://example.org/csv"], page_contains_instructions: true, where: "https://example.org/csv" };
+const EMPTY = { facts: [], sources: [], page_contains_instructions: false };
+
 describe("research_web with the web reader (H-0082 caps)", () => {
   it("logs the query against the open question and returns the reader's answer", async () => {
     const { w, e, feature } = await setup();
     const queries: string[] = [];
-    const research: ResearchConfig = { perQuestion: 1, perSession: 5, run: async (q) => (queries.push(q), { summary: "Use a streaming writer.", sources: ["https://example.org/csv"] }) };
+    const research: ResearchConfig = { perQuestion: 1, perSession: 5, run: async (q) => (queries.push(q), ANSWER) };
     const t = e.interviewTools(feature, w.worktree, {}, research);
     await t.interview_ask({ text: "Which CSV dialect?", why: "w" });
-    expect(await t.research_web({ query: "csv dialects" })).toEqual({ ok: true, result: { summary: "Use a streaming writer.", sources: ["https://example.org/csv"] } });
+    expect(await t.research_web({ query: "csv dialects" })).toEqual({ ok: true, result: ANSWER });
     expect(queries).toEqual(["csv dialects"]);
     const second = await t.research_web({ query: "again" });
     expect(second).toMatchObject({ ok: false, error: { code: "limit" } });
@@ -45,7 +49,7 @@ describe("research_web with the web reader (H-0082 caps)", () => {
     let fail = false;
     const research: ResearchConfig = { perQuestion: 9, perSession: 2, run: async () => {
       if (fail) throw new Error("container failed its check");
-      return { summary: "s", sources: [] };
+      return EMPTY;
     } };
     const t = e.interviewTools(feature, w.worktree, {}, research);
     expect((await t.research_web({ query: "a" })).ok).toBe(true);
@@ -57,7 +61,7 @@ describe("research_web with the web reader (H-0082 caps)", () => {
   it("doesn't hold the feature while the reader works", async () => {
     const { w, e, feature } = await setup();
     let release!: () => void;
-    const research: ResearchConfig = { perQuestion: 9, perSession: 9, run: () => new Promise((r) => (release = () => r({ summary: "s", sources: [] }))) };
+    const research: ResearchConfig = { perQuestion: 9, perSession: 9, run: () => new Promise((r) => (release = () => r(EMPTY))) };
     const t = e.interviewTools(feature, w.worktree, {}, research);
     const pending = t.research_web({ query: "slow" });
     await new Promise((r) => setTimeout(r, 50));

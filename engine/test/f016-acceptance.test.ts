@@ -15,7 +15,7 @@ import { FakeDocker } from "./fakes";
 import { GIT_ENV, World, git, manifestYaml, start as startEngine, tmpdir } from "./helpers";
 import { FakeIssues, OTHER, OWNER } from "./inbox-fake";
 import { inboxItems, securityItemsIn } from "./inbox-items";
-import { ORCHESTRATOR, ORCHESTRATOR_MD, POLICY, REVIEWER, Script, boot, entries, interview, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
+import { ORCHESTRATOR, ORCHESTRATOR_MD, POLICY, REVIEWER, Script, boot, entries, interview, orchestratorDir, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
 import { policyDoc } from "./policy-fixture";
 
 // F-016 acceptance tests written by the test engineer from spec v11 (plus
@@ -24,24 +24,18 @@ import { policyDoc } from "./policy-fixture";
 
 const CHOICE = {
   criterion: "S8.5", severity: "Medium", location: "FR-1", explanation: "Where the export runs decides who can read it.", fix: "Say where the export runs.",
-  blocks: false, needs_owner: true, options: [{ id: "A", label: "Export in the browser" }, { id: "B", label: "Export on the server" }], recommendation: "A",
+  needs_owner: true, options: [{ id: "A", label: "Export in the browser" }, { id: "B", label: "Export on the server" }], recommendation: "A",
 };
 const CHOICE2 = {
   criterion: "S6.1", severity: "Medium", location: "FR-1", explanation: "Old exports could be read later.", fix: "Say how long exports are kept.",
-  blocks: false, needs_owner: true, options: [{ id: "A", label: "Keep exports for a day" }, { id: "B", label: "Delete exports at once" }], recommendation: "B",
+  needs_owner: true, options: [{ id: "A", label: "Keep exports for a day" }, { id: "B", label: "Delete exports at once" }], recommendation: "B",
 };
 const FIX = "The export never includes card numbers.";
-const REQUIREMENT = { criterion: "S3.2", severity: "High", location: "FR-1", explanation: "Exports may hold card numbers.", fix: FIX, blocks: true, needs_owner: false };
+const REQUIREMENT = { criterion: "S3.2", severity: "High", location: "FR-1", explanation: "Exports may hold card numbers.", fix: FIX, needs_owner: false };
 const JUDGED = ["clear_objective", "expected_behavior_defined", "acceptance_criteria_testable", "constraints_documented"];
 const PRIORITY_ORDER = ["critical", "high", "medium", "low"];
 
 // ---------- helpers (same shape as f016-run.test.ts, kept local so these tests stand alone) ----------
-
-function orchestratorDir(d: FakeDocker): string {
-  const run = [...d.calls].reverse().find((x) => x.args[0] === "run" && x.args.includes("factory.role=orchestrator"))!.args;
-  const mount = run.filter((a, i) => run[i - 1] === "--mount").find((m) => m.includes("readiness_gate"))!;
-  return /source=([^,]+)/.exec(mount)![1]!;
-}
 
 function readiness(feature: string, commit: string): string {
   return JSON.stringify({
@@ -69,7 +63,7 @@ function orchestrator(d: FakeDocker, feature: () => string, extra: (commit: stri
   return async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
     const first = (await sc.next())!;
     commit = /at commit ([0-9a-f]{40})/.exec(first)?.[1] ?? commit;
-    const name = /(orchestrator-\d+\.json)/.exec(first)![1]!;
+    const name = `orchestrator-${n}.json`;
     for (let turn = 0; ; turn++) {
       fs.writeFileSync(path.join(orchestratorDir(d), name), make(commit));
       if (turn === 0) extra(commit, n);

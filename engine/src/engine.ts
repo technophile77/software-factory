@@ -56,7 +56,9 @@ import { READINESS_STAGE, analystGate1Turn, analystReturnTurn, correctionTurn, g
 import { findingRef, plain, renderReport } from "./gate1/render";
 import { ADVISORY_WALL_MS, type AdvisoryHints, advisoryBlock, matchRate, runAdvisory } from "./gate1/advisory";
 import { runAdvisorySession } from "./gate1/advisory-session";
-import { GATE1_STAGE, Gate1Report, REVIEWER_ROLE, readReportFile, validateReport } from "./gate1/report";
+import { GATE1_STAGE, Gate1Report, REVIEWER_ROLE, validateReport } from "./gate1/report";
+import { modelReport, reportOutputSchema } from "./schemas/agent-report";
+import { schemaErrors } from "./schemas/json-file";
 import { StandardsError, loadStandards } from "./gate1/standards";
 import { type Check, readinessChecks, specPathPattern } from "./interview/readiness";
 import { structuralChecks } from "./readiness/checks";
@@ -1253,7 +1255,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           confirm: "Fix the additions file on main", hold: "Find out who changed it", recommendation: "A",
         });
       }
-      const policy = reviewerPolicy(m.raw, undefined, reportRel);
+      // F-020 FR-10: the Claude reviewer returns its report as structured output and writes nothing; only the endpoint's advisory pass writes a file (A-2, SR-11).
+      const policy = reviewerPolicy(m.raw, undefined);
+      const filePolicy = reviewerPolicy(m.raw, undefined, reportRel);
       const sdk = await rt.sdk();
       const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
       const image = await shared(images, `${ident.project}\0${ident.masterCommit}\0${ident.skillsDigest}`, () => ensureAgentImage(rt.docker, rt.dockerDir, path.join(home, "images"), ident, sources));
@@ -1281,9 +1285,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       });
       const group = new SessionGroup(groupFor(runId));
       let valid: Gate1Report | null = null;
-      const first = resumeId
-        ? `The engine restarted. Finish your Gate 1 report at /workspace/${reportRel}.`
-        : reviewerTurn({ feature: f.id, specPath, specVersion, commit, reportPath: reportRel, standards: loaded.standards, transcript: transcriptSummary(f.state) });
+      const turnFor = (reportPath?: string) => reviewerTurn({ feature: f.id, specPath, specVersion, commit, ...(reportPath ? { reportPath } : {}), standards: loaded.standards, transcript: transcriptSummary(f.state) });
+      const first = resumeId ? "The engine restarted. Finish your Gate 1 report and return it as your structured output." : turnFor();
       const reportTarget = `${WORKSPACE}/${path.posix.dirname(reportRel)}`;
       // The worktree and the report folder are checked after every reviewer session, whether it ran on Claude or on an endpoint (SR-12, AC-4).
       const verifyIn = (dir: string) => async (pol: RolePolicy) => {
@@ -1319,8 +1322,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
               return await runAdvisorySession({
                 route, group: new SessionGroup(groupFor(advId, route.router)), reportDir: advDir, reportName, maxBytes: g1!.reportBytes,
                 run: {
-                  sdk, docker: rt.docker, policy, worktree: wt.path, reportDir: { source: advDir, target: reportTarget }, instructions: instructions!.text,
-                  caps: { ...g1!.caps, wallTimeMs: Math.min(g1!.caps.wallTimeMs, ADVISORY_WALL_MS) }, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), first,
+                  sdk, docker: rt.docker, policy: filePolicy, worktree: wt.path, reportDir: { source: advDir, target: reportTarget }, instructions: instructions!.text,
+                  caps: { ...g1!.caps, wallTimeMs: Math.min(g1!.caps.wallTimeMs, ADVISORY_WALL_MS) }, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), first: turnFor(reportRel),
                   billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
                   verify: verifyIn(advDir), onBreach: onBreachOf(advId, "'s advisory pass"), log,
                 },
@@ -1339,7 +1342,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         if (rates.length) facts.endpoint_rates = rates;
         if (adv.status !== "none") {
           facts.advisory = {
-            endpoint: adv.endpoint, status: adv.status, ...(adv.status !== "ok" ? { reason: adv.reason } : {}),
+            endpoint: adv.endpoint, status: adv.status, ...(adv.status !== "ok" ? { reason: adv.reason } : {}), ...(adv.status !== "skipped" ? { report_via: "file" as const } : {}),
             ...(adv.status === "ok" ? { model: adv.model, hints: adv.hints.findings.length, dropped: adv.hints.dropped } : {}), ...(advUsage ? { usage: advUsage } : {}),
             ...(adv.status !== "ok" && adv.fallback ? { fallback: adv.fallback } : {}),
           };
@@ -1357,26 +1360,25 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           }
         } else if (adv.status === "ok") hints = adv.hints;
       }
+      facts.report_via = "structured_output";
       const result = await runReviewerSessions({
-        sdk, docker: rt.docker, group, policy, worktree: wt.path,
-        reportDir: { source: reportDir, target: reportTarget },
+        sdk, docker: rt.docker, group, policy, worktree: wt.path, outputSchema: reportOutputSchema(REVIEWER_ROLE),
         instructions: instructions!.text, caps: g1!.caps, skillsPluginDir: skillsPluginDir(REVIEWER_ROLE), model: model!, first: reviewerFirst,
         ...(resumeId ? { resume: resumeId } : {}),
         ...(known?.used ? { used: known.used } : {}),
         onUsed: (u) => void (dead || runs.update(runId, { used: u })),
         billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
-        check: async () => {
-          const read = readReportFile(reportDir, reportName, g1!.reportBytes);
-          const errors = "missing" in read ? [`there is no report at /workspace/${reportRel}`]
-            : "refused" in read ? [read.refused]
-            : (() => {
-                const v = validateReport(read.text, { feature: f.id, commit, standards: loaded.standards, spec, maxBytes: g1!.reportBytes, maturity: maturityOf(p.manifest!) });
-                if (v.ok) valid = v.report;
-                return v.ok ? [] : v.errors;
-              })();
+        check: async (structured) => {
+          // SR-7: the model's schema first, so a report that sets an engine-filled field is refused; then the Gate 1 rules.
+          const shape = schemaErrors(structured, modelReport(REVIEWER_ROLE));
+          const errors = shape.length ? shape : (() => {
+            const v = validateReport(JSON.stringify(structured), { feature: f.id, commit, standards: loaded.standards, spec, maxBytes: g1!.reportBytes, maturity: maturityOf(p.manifest!) });
+            if (v.ok) valid = v.report;
+            return v.ok ? [] : v.errors;
+          })();
           if (!errors.length) return null;
           log.warn(`${f.id}: Gate 1 report refused: ${errors.slice(0, 5).join("; ")}`);
-          return correctionTurn(reportRel, errors);
+          return correctionTurn(undefined, errors);
         },
         // SR-12: the report folder may hold the named report and nothing else.
         verify: verifyIn(reportDir),
@@ -1821,19 +1823,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
     const n = await nextReadinessReport(p, f.id);
-    const reportName = `${READINESS_ROLE}-${n}.json`;
-    const reportRel = `.factory/runs/${f.id}/${READINESS_STAGE}/${reportName}`;
     const wt = await prepareWorktree(git, p.real!, path.join(path.dirname(worktreeDir(p, f.id)), `${f.id}-ready`), f.state.branch, undefined, commit);
     await populateWorktree(git, p.real!, commit, wt.path, wt.gitDir);
     const run = runs.start({ project: p.real!, feature: f.id, role: READINESS_ROLE, stage: READINESS_STAGE, worktree: wt.path });
     runs.update(run.id, { git_dir: wt.gitDir, last_commit: commit });
     await f.exclusive(() => f.append([{ type: "readiness_run", run: run.id, commit }], "readiness gate started"));
-    const reportDir = path.join(home, "readiness", sha256Hex(p.real!).slice(0, 16), run.id);
     const facts: RunFacts = { model: model! };
     try {
       const credential = modelCredentialFor(env, modelCredential);
       if (!credential) throw new SessionRefused("no model credential is stored or set");
-      const policy = orchestratorPolicy(m.raw, reportRel);
+      const policy = orchestratorPolicy(m.raw);
       const sdk = await rt!.sdk();
       const sources = p.sources!;
       const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
@@ -1841,36 +1840,29 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       proxyImage ??= baseImageId(rt!.docker);
       proxyImage.catch(() => (proxyImage = null));
       const proxyImageId = await proxyImage;
-      fs.rmSync(reportDir, { recursive: true, force: true });
-      ensureOwnerDir(reportDir);
-      fs.mkdirSync(path.join(wt.path, ...path.posix.dirname(reportRel).split("/")), { recursive: true });
       const group = new SessionGroup({
         docker: rt!.docker, runId: run.id, project: m.name, agentImageId: image.id, proxyImageId, proxyScript: rt!.proxyScript,
         agentLimits: roleContainerLimits(p.limits!), proxyLimits: containerLimits(p.limits!.proxy), maxPageBytes: maxPageBytes(p.limits!),
         credential, log, ...(rt!.platform ? { platform: rt!.platform } : {}), ...(rt!.sleep ? { sleep: rt!.sleep } : {}),
       });
       let valid: ReadinessReport | null = null;
+      facts.report_via = "structured_output";
       const result = await runReviewerSessions({
-        sdk, docker: rt!.docker, group, policy, worktree: wt.path,
-        reportDir: { source: reportDir, target: `${WORKSPACE}/${path.posix.dirname(reportRel)}` },
+        sdk, docker: rt!.docker, group, policy, worktree: wt.path, outputSchema: reportOutputSchema(READINESS_ROLE),
         instructions: instructions!.text, caps: rl!.caps, model: model!,
-        first: orchestratorTurn({ feature: f.id, specPath, specVersion: version, commit, reportPath: reportRel }),
+        first: orchestratorTurn({ feature: f.id, specPath, specVersion: version, commit }),
         onUsed: (u) => void (dead || runs.update(run.id, { used: u })),
         billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
-        check: async () => {
-          const read = readReportFile(reportDir, reportName, rl!.reportBytes);
-          const errors = "missing" in read ? [`there is no report at /workspace/${reportRel}`]
-            : "refused" in read ? [read.refused]
-            : (() => {
-                const v = validateReadinessReport(read.text, { feature: f.id, commit, maxBytes: rl!.reportBytes });
-                if (v.ok) valid = v.report;
-                return v.ok ? [] : v.errors;
-              })();
-          return errors.length ? readinessCorrection(reportRel, errors) : null;
+        check: async (structured) => {
+          const shape = schemaErrors(structured, modelReport(READINESS_ROLE));
+          const errors = shape.length ? shape : (() => {
+            const v = validateReadinessReport(JSON.stringify(structured), { feature: f.id, commit, maxBytes: rl!.reportBytes });
+            if (v.ok) valid = v.report;
+            return v.ok ? [] : v.errors;
+          })();
+          return errors.length ? readinessCorrection(undefined, errors) : null;
         },
         verify: async (pol: RolePolicy) => {
-          const extra = fs.existsSync(reportDir) ? fs.readdirSync(reportDir).filter((x) => x !== reportName) : [];
-          if (extra.length) return { status: "rejected" as const, breaches: extra.slice(0, 20).map((x) => ({ path: `${path.posix.dirname(reportRel)}/${x}`, reason: "not_allowed" as const })) };
           return commitWorktree({
             git, gitDir: wt.gitDir, worktree: wt.path, branch: f.state.branch, base: commit, policy: { ...pol, write: { allow: [], deny: [] } }, scanner, tmpDir,
             message: `${f.id}: readiness session (run ${run.id})`, limits: worktreeLimits(p.limits!),
@@ -1926,7 +1918,6 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       runs.finish(run.id, "failed", engineWords(e));
       throw e;
     } finally {
-      fs.rmSync(reportDir, { recursive: true, force: true });
       await o.agents?.docker.run(["volume", "rm", "--force", runVolume(run.id)], { okCodes: [1] }).catch(() => undefined);
     }
   }

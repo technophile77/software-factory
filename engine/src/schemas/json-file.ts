@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import { z } from "zod";
 
 /** F-020 SR-6: the largest JSON file the engine parses; checked on the bytes before parsing. */
 export const MAX_JSON_BYTES = 1024 * 1024;
@@ -13,10 +13,19 @@ function where(issue: z.core.$ZodIssue): string {
   return p ? p.replace(/^\./, "") : "(top level)";
 }
 
+function issueText(issue: z.core.$ZodIssue): string {
+  const what = issue.code === "unrecognized_keys" ? `unknown key ${(issue as { keys: string[] }).keys.map((k) => JSON.stringify(k.slice(0, 64))).join(", ")}` : issue.code;
+  return `${where(issue)} is invalid (${what})`;
+}
+
 function failure(file: string, error: z.ZodError): SchemaError {
-  const first = error.issues[0]!;
-  const what = first.code === "unrecognized_keys" ? `unknown key ${(first as { keys: string[] }).keys.map((k) => JSON.stringify(k)).join(", ")}` : first.code;
-  return new SchemaError(`${file}: ${where(first)} is invalid (${what})`);
+  return new SchemaError(`${file}: ${issueText(error.issues[0]!)}`);
+}
+
+/** Each failing field of a value, as engine words that name the path and the rule, never the value (SR-6); for a correction turn. */
+export function schemaErrors(value: unknown, schema: z.ZodType, max = 20): string[] {
+  const r = schema.safeParse(value);
+  return r.success ? [] : r.error.issues.slice(0, max).map(issueText);
 }
 
 /** F-020 FR-3: parses and validates a JSON file, or throws naming the file and the first failing field. */
@@ -39,4 +48,10 @@ export function jsonFileContent(file: string, value: unknown, schema: z.ZodType)
   const r = schema.safeParse(value);
   if (!r.success) throw failure(file, r.error);
   return JSON.stringify(r.data, null, 2) + "\n";
+}
+
+/** F-020 FR-9: the JSON Schema a session is given for its answer, from the same schema the engine checks it with. */
+export function outputSchemaOf(schema: z.ZodType): Record<string, unknown> {
+  const { $schema: _drop, ...out } = z.toJSONSchema(schema, { target: "draft-2020-12" }) as Record<string, unknown>;
+  return out;
 }

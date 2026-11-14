@@ -31,6 +31,8 @@ export interface RunFacts {
   advisory?: AdvisoryFacts;
   /** F-013 FR-12: the endpoints' measured speeds by prompt-size band, for the run review. */
   endpoint_rates?: EndpointRateReport[];
+  /** F-020 FR-9, SR-11: how the agent's report reached the engine; "file" only for a session the engine let write it (A-2). */
+  report_via?: "structured_output" | "file";
 }
 
 /** The advisory pass of a gate role, for the run review (F-013 FR-10). Names the endpoint, never its address. */
@@ -46,6 +48,8 @@ export interface AdvisoryFacts {
   match?: MatchRate;
   /** F-013 FR-7: the pass fell back (reason "deadline", say) and the gate ran without it. */
   fallback?: { endpoint: string; reason: string; waited_s: number; prompt_tokens: number };
+  /** F-020 A-2, SR-11: an endpoint session writes its answer to the one file the engine allows it. */
+  report_via?: "file";
 }
 
 export type ResumePlan =

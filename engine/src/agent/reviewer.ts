@@ -16,19 +16,21 @@ const ORCHESTRATOR_TOOLS = new Set(["Read", "Grep", "Glob", "Write"]);
 
 /**
  * The project's `security-reviewer` policy, narrowed for one Gate 1 run:
- * refused if it has a tool, command or network host beyond SR-1, and its
- * write rule replaced by the run's one report path (SR-12).
+ * refused if it has a tool, command or network host beyond SR-1. The report
+ * comes back as structured output, so the role writes nothing (F-020 FR-10);
+ * only a session that must write its report file (F-020 A-2, SR-11) gets
+ * `Write`, for the run's one report path (SR-12).
  */
-export function reviewerPolicy(manifest: unknown, repoName: string | undefined, reportPath: string): RolePolicy {
+export function reviewerPolicy(manifest: unknown, repoName: string | undefined, reportPath?: string): RolePolicy {
   return reportOnlyPolicy(manifest, "security-reviewer", REVIEWER_TOOLS, "Gate 1", repoName, reportPath);
 }
 
 /** The project's `orchestrator` policy narrowed the same way for one readiness run (F-016 FR-7, SR-11). */
-export function orchestratorPolicy(manifest: unknown, reportPath: string): RolePolicy {
+export function orchestratorPolicy(manifest: unknown, reportPath?: string): RolePolicy {
   return reportOnlyPolicy(manifest, "orchestrator", ORCHESTRATOR_TOOLS, "the readiness gate", undefined, reportPath);
 }
 
-function reportOnlyPolicy(manifest: unknown, role: string, allowed: Set<string>, what: string, repoName: string | undefined, reportPath: string): RolePolicy {
+function reportOnlyPolicy(manifest: unknown, role: string, allowed: Set<string>, what: string, repoName: string | undefined, reportPath: string | undefined): RolePolicy {
   let p: RolePolicy;
   try {
     p = effectiveRole(manifest, role, repoName);
@@ -38,7 +40,9 @@ function reportOnlyPolicy(manifest: unknown, role: string, allowed: Set<string>,
   const extra = p.tools.filter((t) => !allowed.has(t));
   if (extra.length) throw new SessionRefused(`the ${role} role has tools ${what} doesn't allow (${extra.join(", ")})`);
   if (p.commands.length || p.network.length) throw new SessionRefused(`the ${role} role has commands or network hosts, which ${what} doesn't allow`);
-  return { ...p, write: { allow: [reportPath], deny: [...p.write.deny] } };
+  const tools = p.tools.filter((t) => t !== "Write");
+  if (reportPath === undefined) return { ...p, tools, write: { allow: [], deny: [...p.write.deny] } };
+  return { ...p, tools: [...tools, "Write"], write: { allow: [reportPath], deny: [...p.write.deny] } };
 }
 
 function once(text: string): AsyncIterable<UserTurn> {
@@ -53,8 +57,10 @@ export interface ReviewerRunInput {
   group: SessionGroup;
   policy: RolePolicy;
   worktree: string;
-  /** The engine-owned folder the report is written to, and where it appears in the container. */
-  reportDir: { source: string; target: string };
+  /** The engine-owned folder a file report is written to, and where it appears in the container; none for a structured report. */
+  reportDir?: { source: string; target: string };
+  /** F-020 FR-9: the report's JSON Schema; the report is then the session's structured result, and there is no report folder. */
+  outputSchema?: Record<string, unknown>;
   instructions: string;
   caps: SessionCaps;
   skillsPluginDir?: string;
@@ -69,11 +75,12 @@ export interface ReviewerRunInput {
   onUsed(used: RunUsed): void;
   billingCheck(): string | null;
   /**
-   * FR-5: called after each session, with the container gone. Returns null
+   * FR-5: called after each session, with the container gone, with the
+   * session's structured result when the run asked for one. Returns null
    * when the report is valid, else the turn that tells the reviewer why; the
    * session is resumed once with it.
    */
-  check(): Promise<string | null>;
+  check(structured?: unknown): Promise<string | null>;
   /** AC-4: the worktree must be unchanged; the engine's check of it. */
   verify(policy: RolePolicy): Promise<WorktreeCommitResult>;
   onBreach(breaches: Breach[]): Promise<void>;
@@ -115,14 +122,14 @@ export async function runReviewerSessions(i: ReviewerRunInput): Promise<Reviewer
         return { outcome: total ?? { status: "cap", reason: caps, turns: 0, outputTokens: 0, inputTokens: 0, costUsd: 0, durationMs: 0 }, invalid: `it reached the run's ${caps} cap`, breach: false, sessions: n - 1 };
       }
       let outcome: SessionOutcome;
-      const agent = await i.group.startAgent(i.policy, i.worktree, { sessionVolume: "run", reportDir: i.reportDir, ...(i.upstream !== undefined ? { upstream: i.upstream } : {}) });
+      const agent = await i.group.startAgent(i.policy, i.worktree, { sessionVolume: "run", ...(i.reportDir ? { reportDir: i.reportDir } : {}), ...(i.upstream !== undefined ? { upstream: i.upstream } : {}) });
       try {
         const abort = new AbortController();
         const opts = sessionOptions({
           policy: i.policy, worktree: i.worktree, instructions: i.instructions,
           factoryServer: i.sdk.createFactoryServer([]), factoryTools: [], caps,
           ...(i.skillsPluginDir ? { skillsPluginDir: i.skillsPluginDir } : {}),
-          model: i.model, ...(resume ? { resume } : {}),
+          model: i.model, ...(resume ? { resume } : {}), ...(i.outputSchema ? { outputSchema: i.outputSchema } : {}),
           spawn: containerSpawn(i.docker, agent.name, WORKSPACE), log: i.log,
         }, abort);
         outcome = await runSession(i.sdk, opts, once(turn), caps, { onSessionId: i.onSessionId });
@@ -141,8 +148,11 @@ export async function runReviewerSessions(i: ReviewerRunInput): Promise<Reviewer
         return { outcome: total, invalid: "it changed files outside its report", breach: true, sessions: n };
       }
       if (outcome.status === "cap") return { outcome: total, invalid: `it reached the ${outcome.reason} cap`, breach: false, sessions: n };
+      if (outcome.status === "error" && outcome.reason === "error_max_structured_output_retries") return { outcome: total, invalid: "no report", breach: false, sessions: n };
       if (outcome.status === "error") return { outcome: total, invalid: `the session failed (${String(outcome.reason).slice(0, 200)})`, breach: false, sessions: n };
-      const correction = await i.check();
+      // F-020 AC-11: a session that ended without its structured report has no report; asking again would be a retry loop.
+      if (i.outputSchema && outcome.structured === undefined) return { outcome: total, invalid: "no report", breach: false, sessions: n };
+      const correction = await i.check(outcome.structured);
       if (correction === null) return { outcome: total, invalid: null, breach: false, sessions: n };
       if (n === 2 || !outcome.sessionId) return { outcome: total, invalid: "its report was still invalid after one correction", breach: false, sessions: n };
       turn = correction;
