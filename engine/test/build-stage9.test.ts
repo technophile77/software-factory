@@ -87,3 +87,33 @@ describe("publishRefusal (SR-6, AC-23, H-0249)", () => {
     expect(publishRefusal({ status: 404 }, "public")).toMatch(/HTTP 404/);
   });
 });
+
+describe("HttpPulls.checkRuns with a fine-grained token (no Checks permission)", () => {
+  it("falls back to the Actions jobs on the SHA, counted as the Actions app", async () => {
+    const http = await import("node:http");
+    const { HttpPulls } = await import("../src/build/pulls");
+    const { MemoryLogger } = await import("../src/log");
+    const seen: string[] = [];
+    const srv = http.createServer((req, res) => {
+      seen.push(req.url!);
+      const send = (status: number, body: unknown) => {
+        res.writeHead(status, { "content-type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (req.url!.includes("/check-runs")) return send(403, { message: "Resource not accessible by personal access token" });
+      if (req.url!.includes("/actions/runs?")) return send(200, { workflow_runs: [{ id: 7, head_sha: SHA }, { id: 8, head_sha: "b".repeat(40) }] });
+      if (req.url!.includes("/actions/runs/7/jobs")) return send(200, { jobs: [{ name: "test", status: "completed", conclusion: "success", head_sha: SHA }] });
+      send(404, {});
+    });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    try {
+      const api = new HttpPulls("t", new MemoryLogger(), `http://127.0.0.1:${(srv.address() as { port: number }).port}`);
+      const runs = await api.checkRuns("o/r", SHA);
+      expect(runs).toEqual([run({ summary: "" })]);
+      expect(checksVerdict([{ context: "test", integrationId: null }], runs, SHA)).toEqual({ state: "green" });
+      expect(seen.some((u) => u.includes("/actions/runs/8/"))).toBe(false);
+    } finally {
+      srv.close();
+    }
+  });
+});
