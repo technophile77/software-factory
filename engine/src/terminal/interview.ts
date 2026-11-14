@@ -5,7 +5,7 @@
  * keystrokes are sent (FR-7). There is no model anywhere in this path.
  */
 import type { Item } from "../mcp/items";
-import type { Operation } from "../mcp/operations";
+import { CONSOLE_KEY, type Operation } from "../mcp/operations";
 import { clean } from "../mcp/text";
 
 type Obj = Record<string, unknown>;
@@ -42,6 +42,7 @@ export const ACTIVITY: Record<string, string> = {
   readiness_check: "Checking readiness",
   advisor_working: "Advisor is working",
   waiting_for_owner: "Getting your next question",
+  waiting_for_decision: "Waiting for your decision",
   paused: "The feature is paused",
   idle: "The factory is idle",
 };
@@ -59,7 +60,11 @@ const BUSY: Partial<Record<Operation, string>> = {
   status: "Connecting to the engine", start: "Sending your request", list: "Getting the feature list",
   open: "Opening the feature", approval: "Waiting for your approval on GitHub", next: "Waiting for the analyst",
   reply: "Sending your reply", state: "Checking the item", close: "Closing the session",
+  inbox_open: "Opening the inbox", inbox_list: "Getting the inbox", inbox_show: "Getting the item",
+  inbox_answer: "Sending your answer", inbox_confirm: "Sending the code",
 };
+
+const INBOX_ID = /^[DTHSMN]-\d{4,8}$/;
 
 /** The owner stopped: input ended or they picked Stop. */
 class Stop extends Error {}
@@ -114,6 +119,10 @@ interface Choice {
 export class TerminalInterview {
   private feature: string | null = null;
   private advisor = false;
+  /** F-021: whether a console session is open, so it is closed on the way out. */
+  private consoleOpen = false;
+  /** F-021 FR-11: the decision ids last offered while waiting, so "Not now" isn't asked again until they change. */
+  private offered = "";
   /** The last reply sent, so a lost one can be checked and, on the owner's word, resent. */
   private lastSent: { item: Item; kind: string; text: string } | null = null;
 
@@ -387,7 +396,24 @@ export class TerminalInterview {
           this.say(`The interview for ${feature} is finished: the feature has moved on to the ${stage} stage.`);
           return null;
         }
-        const label = ACTIVITY[(st.activities as Record<string, string> | undefined)?.[feature] ?? ""] ?? "Working";
+        const code = (st.activities as Record<string, string> | undefined)?.[feature] ?? "";
+        const decisions = (st.waiting_on as Record<string, string[]> | undefined)?.[feature] ?? [];
+        // F-021 FR-11: the feature waits on the owner's decision, so it is offered here, once per set of items.
+        if (decisions.length && decisions.join() !== this.offered) {
+          clear();
+          shown = null;
+          this.offered = decisions.join();
+          this.say(`\nThe factory needs your decision on ${decisions.join(", ")}.`);
+          const c = await this.choose([{ label: "Answer it here", key: "answer" }, { label: "Not now (it stays open on GitHub and in factory-engine inbox)", key: "later" }]);
+          if ("key" in c && c.key === "answer") {
+            for (const id of decisions) if (!(await this.answerItem(feature, id))) break;
+          }
+          continue;
+        }
+        // F-021 FR-12: the ids come from the operations' checked list, never from engine text.
+        const label = code === "waiting_for_decision" && decisions.length
+          ? `${ACTIVITY[code]} on ${decisions.join(", ")}`
+          : ACTIVITY[code] ?? "Working";
         const now = this.timing.now();
         const changed = label !== shown;
         if (changed) {
@@ -463,6 +489,142 @@ export class TerminalInterview {
       this.say("This item's kind isn't known to this command, so it can't be answered here.");
       return "stop";
     }
+  }
+
+  // ---- F-021: inbox items in the console ----
+
+  /** `factory-engine inbox [<item id>]`. Exit code as FR-11 of F-018 (F-021 FR-14). */
+  async inboxMain(itemArg?: string): Promise<number> {
+    try {
+      const status = await this.run("status", {});
+      if (status.ok !== true) {
+        this.show(status);
+        return 1;
+      }
+      if (!(await this.openConsole())) return 1;
+      if (itemArg) {
+        await this.answerItem(CONSOLE_KEY, itemArg);
+        return 0;
+      }
+      for (;;) {
+        const r = await this.run("inbox_list", { feature: CONSOLE_KEY });
+        if (r.ok !== true) {
+          this.show(r);
+          return 1;
+        }
+        const items = r.items as Array<{ id: string; kind: string; title: string; feature?: string; priority: string; blocking: boolean }>;
+        if (!items.length) {
+          this.say("Nothing in this project's inbox is waiting for you.");
+          return 0;
+        }
+        this.say("\nOpen items:");
+        const c = await this.choose([
+          ...items.map((i) => ({ key: i.id, label: `${i.id} ${i.kind}${i.feature ? ` for ${i.feature}` : ""}, ${i.priority}${i.blocking ? ", blocking" : ""}: ${i.title}` })),
+          { label: "Stop", key: "" },
+        ]);
+        if (!("key" in c) || !c.key) return 0;
+        await this.answerItem(CONSOLE_KEY, c.key);
+      }
+    } catch (e) {
+      if (e instanceof Stop) return 0;
+      throw e;
+    } finally {
+      if (this.consoleOpen) {
+        this.consoleOpen = false;
+        const r = await this.run("close", { feature: CONSOLE_KEY });
+        if (r.ok !== true) this.say("The session couldn't be closed; the engine ends it after 30 minutes without a call.");
+      }
+    }
+  }
+
+  private async openConsole(): Promise<boolean> {
+    const r = await this.run("inbox_open", {});
+    if (r.ok !== true) {
+      this.show(r);
+      return false;
+    }
+    this.consoleOpen = true;
+    if (typeof r.approval_display === "string") {
+      this.say("\n" + render(r.approval_display, this.marker));
+      for (;;) {
+        this.say("Waiting for your approval on GitHub...");
+        const a = await this.run("approval", { feature: CONSOLE_KEY, wait_s: APPROVAL_WAIT_S });
+        if (a.ok === true && a.approved === true) break;
+        if (a.ok !== true && (a.error as Obj | undefined)?.name === "approval_pending") continue;
+        this.show(a);
+        return false;
+      }
+      this.say("Approved.");
+    }
+    return true;
+  }
+
+  /**
+   * F-021 FR-3 to FR-8: one item printed whole, then its actions; the
+   * owner's pick, its note, and for a risky action the engine's code. `key`
+   * is the session the calls go under: the console's, or the interview's
+   * feature (FR-11). Returns false when the owner wants to stop.
+   */
+  private async answerItem(key: string, id: string): Promise<boolean> {
+    if (!INBOX_ID.test(id)) {
+      this.say(`${id} isn't an inbox item id (like D-0007).`);
+      return true;
+    }
+    for (;;) {
+      const s = await this.run("inbox_show", { feature: key, item: id });
+      if (s.ok !== true) {
+        this.show(s);
+        return true;
+      }
+      // FR-3: the whole item, then its actions; never a pick for an item not just printed.
+      this.show(s);
+      const actions = s.actions as Array<{ action: string; label: string }>;
+      this.say("\nYour answer:");
+      const c = await this.choose([...actions.map((a) => ({ label: a.label, key: a.action })), { label: "Back, without answering", key: "" }, { label: "Stop", key: "stop" }]);
+      if (!("key" in c) || c.key === "stop") return false;
+      if (!c.key) return true;
+      const req: Obj = { feature: key, item: id, rev: s.rev, action: c.key };
+      if (c.key === "changes" || c.key === "research") {
+        this.say(c.key === "changes" ? "What should change?" : "What should be researched?");
+        const note = await this.text();
+        if (!note.trim()) {
+          this.say("Nothing was typed, so nothing was sent.");
+          continue;
+        }
+        req.note = note;
+      }
+      let r = await this.run("inbox_answer", req);
+      while (r.ok !== true && typeof r.reply_id === "string") {
+        // A lost answer is never resent on its own (as F-018 FR-7); a resend carries the same reply id.
+        this.show(r);
+        this.say("The answer may already be recorded.");
+        const again = await this.choose([{ label: "Send it again", key: "again" }, { label: "Don't send it", key: "no" }]);
+        if (!("key" in again) || again.key !== "again") return true;
+        r = await this.run("inbox_answer", { ...req, reply_id: r.reply_id });
+      }
+      if (r.ok !== true) {
+        this.show(r);
+        return true;
+      }
+      if (r.outcome === "changed") {
+        this.show(r);
+        continue;
+      }
+      if (r.outcome === "confirm") return this.confirmItem(key, id, s.rev as number, r);
+      this.show(r);
+      if (typeof r.action_display === "string") this.say(render(r.action_display, this.marker));
+      return true;
+    }
+  }
+
+  /** FR-6, SR-2: the confirm words are the engine's (marked); the code and the prompt are the command's own. */
+  private async confirmItem(key: string, id: string, rev: number, r: Obj): Promise<boolean> {
+    this.show(r);
+    this.say(`To confirm, type the code ${String(r.code)} and press Enter. It is good until ${String(r.expires_at)}; anything else cancels.`);
+    const typed = (await this.line("Code: ")).trim().toUpperCase().slice(0, 16);
+    const c = await this.run("inbox_confirm", { feature: key, item: id, rev, code: typed || "-" });
+    this.show(c);
+    return true;
   }
 
   /** A choice whose label is the reply text, as the engine records it. */

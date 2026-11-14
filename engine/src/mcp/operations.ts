@@ -20,7 +20,18 @@ import { findEngineFile, readEngineAddress } from "./locate";
 import { clean, fence, isWellFormed, quotesReply } from "./text";
 
 type Obj = Record<string, unknown>;
-export type Operation = "status" | "start" | "list" | "open" | "approval" | "next" | "reply" | "state" | "close";
+export type Operation =
+  | "status" | "start" | "list" | "open" | "approval" | "next" | "reply" | "state" | "close"
+  | "inbox_open" | "inbox_list" | "inbox_show" | "inbox_answer" | "inbox_confirm";
+
+/**
+ * F-021: the session key a console session is kept under. Feature ids are
+ * `F-` and digits, so it never names a feature; `approval` and `close` take
+ * it like a feature. Inbox calls may also name a feature whose interview
+ * session is open, so the interview command answers items without a second
+ * session (FR-11, FR-13).
+ */
+export const CONSOLE_KEY = "inbox";
 
 export const FIELDS: Record<Operation, readonly string[]> = {
   status: [],
@@ -32,7 +43,17 @@ export const FIELDS: Record<Operation, readonly string[]> = {
   reply: ["feature", "item", "revision", "status", "kind", "text", "reply_id", "wait_s"],
   state: ["feature", "item"],
   close: ["feature"],
+  inbox_open: [],
+  inbox_list: ["feature"],
+  inbox_show: ["feature", "item"],
+  inbox_answer: ["feature", "item", "rev", "action", "note", "reply_id"],
+  inbox_confirm: ["feature", "item", "rev", "code"],
 };
+
+const INBOX_ACTION_RE = /^(?:choose:[A-D]|step:[1-9]\d?|approve|reject|changes|research|defer|restore|dismiss)$/;
+const INBOX_KINDS = ["decision", "testing", "hygiene", "spec", "maturity", "notice"];
+const PRIORITY_WORDS = ["critical", "high", "medium", "low"];
+const MAX_INBOX_NOTE = 4000;
 
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
 const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
@@ -106,7 +127,17 @@ export function validate(op: Operation, req: Obj): void {
       }
     }
   }
-  if (["open", "approval", "next", "reply", "state", "close"].includes(op)) needId(req, "feature");
+  if (["open", "approval", "next", "reply", "state", "close", "inbox_list", "inbox_show", "inbox_answer", "inbox_confirm"].includes(op)) needId(req, "feature");
+  if (op === "inbox_show" || op === "inbox_answer" || op === "inbox_confirm") {
+    if (typeof req.item !== "string" || !INBOX_ID_RE.test(req.item)) throw new Refused("bad_request", "`item` must be an inbox item id such as D-0007.");
+  }
+  if ((op === "inbox_answer" || op === "inbox_confirm") && (!isInt(req.rev) || req.rev < 1)) throw new Refused("bad_request", "`rev` must be the revision the owner was shown.");
+  if (op === "inbox_answer") {
+    if (typeof req.action !== "string" || !INBOX_ACTION_RE.test(req.action)) throw new Refused("bad_request", "`action` must be one of the item's actions.");
+    if (req.note !== undefined && (typeof req.note !== "string" || req.note.length > MAX_INBOX_NOTE)) throw new Refused("bad_request", `\`note\` must be text up to ${MAX_INBOX_NOTE} characters.`);
+    if (req.reply_id !== undefined) needId(req, "reply_id");
+  }
+  if (op === "inbox_confirm" && (typeof req.code !== "string" || req.code.length > 16)) throw new Refused("bad_request", "`code` must be the code the owner typed.");
   if (op === "reply" || op === "state") needId(req, "item");
   if (op === "next" || op === "reply") waitS(req);
   if (op === "approval") waitS(req, 120, MAX_APPROVAL_WAIT_S);
@@ -169,7 +200,7 @@ export class Interview {
     let replyId: string | undefined;
     try {
       validate(op, req);
-      if (op !== "status" && op !== "start" && op !== "list" && op !== "open" && op !== "state") this.session(req.feature as string);
+      if (op !== "status" && op !== "start" && op !== "list" && op !== "open" && op !== "state" && op !== "inbox_open") this.session(req.feature as string);
       if (!this.env.projectDir) {
         throw new Refused("no_project_dir", "Claude Code didn't say which project folder this chat is in, so the engine can't be found.");
       }
@@ -187,10 +218,14 @@ export class Interview {
       }
       // The file is read before connecting, so a refused document sends nothing.
       if (doc) run.document = readDocument(doc.path, doc.provenance, this.env.projectDir);
+      if (op.startsWith("inbox_") && !where.capabilities.has("inbox")) {
+        throw new Refused("inbox_unsupported", "This engine can't take inbox answers in the console; it needs an engine whose "
+          + "engine.json lists the \"inbox\" capability (F-021). Answer on the item's GitHub issue instead. Nothing was sent.");
+      }
       run.advisor = where.minor >= 3;
       run.ch = new Channel(await connect(where.address, where.pid, this.env.os, Math.min(CALL_TIMEOUT_S, run.remainingS()) * 1000));
       try {
-        if (op === "reply") {
+        if (op === "reply" || op === "inbox_answer") {
           replyId = (req.reply_id as string | undefined) ?? crypto.randomBytes(16).toString("hex");
         }
         return { ok: true, ...(await this.dispatch(op, req, run, replyId)) };
@@ -198,7 +233,7 @@ export class Interview {
         run.ch.close();
       }
     } catch (e) {
-      return failure(e, op === "reply" ? replyId : undefined);
+      return failure(e, op === "reply" || op === "inbox_answer" ? replyId : undefined);
     }
   }
 
@@ -213,6 +248,11 @@ export class Interview {
       case "reply": return this.reply(req, run, replyId!);
       case "state": return this.state(req, run);
       case "close": return this.close(req, run);
+      case "inbox_open": return this.inboxOpen(run);
+      case "inbox_list": return this.inboxList(req, run);
+      case "inbox_show": return this.inboxShow(req, run);
+      case "inbox_answer": return this.inboxAnswer(req, run, replyId!);
+      case "inbox_confirm": return this.inboxConfirm(req, run);
     }
   }
 
@@ -226,6 +266,8 @@ export class Interview {
       stages: Object.fromEntries(feats.filter((f) => typeof f.stage === "string" && STAGE_RE.test(f.stage)).map((f) => [f.id, f.stage])),
       // Codes only; the terminal command maps them to its own words (F-018 FR-14).
       activities: Object.fromEntries(feats.filter((f) => typeof f.activity === "string" && STAGE_RE.test(f.activity)).map((f) => [f.id, f.activity])),
+      // Inbox ids only, each checked, so "Waiting for your decision on ..." never shows engine text (F-021 FR-12).
+      waiting_on: Object.fromEntries(feats.filter((f) => Array.isArray(f.waiting_on)).map((f) => [f.id, (f.waiting_on as unknown[]).filter((x): x is string => typeof x === "string" && INBOX_ID_RE.test(x)).slice(0, 20)])),
     };
     // Only a plain version number gets through.
     if (typeof r.version === "string" && VERSION_RE.test(r.version)) out.version = r.version;
@@ -299,6 +341,76 @@ export class Interview {
     if ("approval" in r) Object.assign(out, approval(r.approval));
     this.sessions.set(feature, r.session);
     return out;
+  }
+
+  // ---- F-021: inbox items in the console ----
+
+  private async inboxOpen(run: Run): Promise<Obj> {
+    const r = result(await run.call("inbox.open"));
+    if (typeof r.session !== "string" || !SESSION_RE.test(r.session)) {
+      throw new ChannelFailure("bad_response", "The engine sent an invalid session token.", { sent: true });
+    }
+    this.tokens.add(r.session);
+    const out: Obj = { feature: CONSOLE_KEY };
+    if ("approval" in r) Object.assign(out, approval(r.approval));
+    this.sessions.set(CONSOLE_KEY, r.session);
+    return out;
+  }
+
+  /** FR-2: each item's checked fields; a title is cleaned to one line, as the menu shows it. */
+  private async inboxList(req: Obj, run: Run): Promise<Obj> {
+    const r = result(await this.sessionCall(req, run, "inbox.list", {}));
+    const items = (Array.isArray(r.items) ? r.items.filter(isObj) : []).flatMap((i) => {
+      if (typeof i.id !== "string" || !INBOX_ID_RE.test(i.id) || !INBOX_KINDS.includes(i.kind as string) || !isInt(i.rev) || i.rev < 1) return [];
+      return [{
+        id: i.id, kind: i.kind, rev: i.rev, blocking: i.blocking === true,
+        priority: PRIORITY_WORDS.includes(i.priority as string) ? i.priority : "medium",
+        ...(typeof i.feature === "string" && ID_RE.test(i.feature) ? { feature: i.feature } : {}),
+        title: clean(typeof i.title === "string" ? i.title : "", true).slice(0, 200),
+      }];
+    });
+    return { items };
+  }
+
+  /**
+   * FR-3, SR-1: the item whole. Every section and every piece of private
+   * detail is engine or outside text, so all of it goes in fences, which the
+   * terminal prints with its margin marker; the heading line is built from
+   * checked values only.
+   */
+  private async inboxShow(req: Obj, run: Run): Promise<Obj> {
+    const r = result(await this.sessionCall(req, run, "inbox.show", { item: req.item }));
+    if (r.id !== req.item || !isInt(r.rev) || r.rev < 1 || !INBOX_KINDS.includes(r.kind as string)) {
+      throw new ChannelFailure("bad_response", "The engine sent an invalid item.", { sent: true });
+    }
+    const named = (v: unknown) => (Array.isArray(v) ? v.filter(isObj) : [])
+      .filter((x) => typeof x.name === "string" && typeof x.text === "string")
+      .map((x) => ({ name: clean(x.name as string, true).slice(0, 80), text: clean(x.text as string) }));
+    const sections = named(r.sections);
+    const priv = named(r.private);
+    const actions = (Array.isArray(r.actions) ? r.actions.filter(isObj) : [])
+      .filter((a) => typeof a.action === "string" && INBOX_ACTION_RE.test(a.action) && typeof a.label === "string")
+      .map((a) => ({ action: a.action as string, label: clean(a.label as string, true).slice(0, 300) }));
+    const feature = typeof r.feature === "string" && ID_RE.test(r.feature) ? ` for ${r.feature}` : "";
+    const parts = [`${r.id} (${r.kind}${feature}), revision ${r.rev}. Title:`, fence(clean(typeof r.title === "string" ? r.title : "", true))];
+    for (const x of sections) parts.push(`${x.name}:`, fence(x.text || "None."));
+    if (priv.length) {
+      parts.push("Detail on this PC (never on GitHub):");
+      for (const x of priv) parts.push(`${x.name}:`, fence(x.text || "None."));
+    }
+    return { id: r.id, rev: r.rev, kind: r.kind, actions, has_private: priv.length > 0, display: parts.join("\n\n") };
+  }
+
+  /** FR-5 to FR-7: what the engine did with the owner's pick, in checked values only. */
+  private async inboxAnswer(req: Obj, run: Run, replyId: string): Promise<Obj> {
+    const r = result(await this.sessionCall(req, run, "inbox.answer", {
+      item: req.item, rev: req.rev, action: req.action, ...(req.note !== undefined ? { note: req.note } : {}), reply_id: replyId,
+    }));
+    return inboxOutcome(r);
+  }
+
+  private async inboxConfirm(req: Obj, run: Run): Promise<Obj> {
+    return inboxOutcome(result(await this.sessionCall(req, run, "inbox.confirm", { item: req.item, rev: req.rev, code: req.code })));
   }
 
   private async approval(req: Obj, run: Run): Promise<Obj> {
@@ -462,6 +574,37 @@ function mask(value: unknown, tokens: Set<string>): any {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mask(v, tokens)]));
   }
   return value;
+}
+
+const CONFIRM_CODE_RE = /^[A-Z0-9]{4}$/;
+const REFUSALS: Record<string, string> = {
+  unknown_item: "The engine has no such item; nothing was recorded.",
+  not_allowed: "That action isn't one this item takes; nothing was recorded.",
+  no_console: "This engine can't record console answers for this project; answer on the item's GitHub issue.",
+  confirm_failed: "That code didn't match, or it expired; nothing was recorded. Pick the action again for a new code.",
+  note_too_long: "The note is too long; nothing was recorded.",
+};
+
+/** One `inbox.answer` or `inbox.confirm` result as the command shows it; anything else is a bad answer. */
+function inboxOutcome(r: Obj): Obj {
+  if (r.recorded === true) return { outcome: "recorded", display: "Recorded. The item's GitHub issue says it was answered here." };
+  if (isObj(r.confirm)) {
+    const { words, code, expires_at: expires } = r.confirm;
+    if (typeof words !== "string" || typeof code !== "string" || !CONFIRM_CODE_RE.test(code) || typeof expires !== "string" || !TIMESTAMP_RE.test(expires)) {
+      throw new ChannelFailure("bad_response", "The engine sent an invalid confirm request.", { sent: true });
+    }
+    return { outcome: "confirm", code, expires_at: expires, display: fence(clean(words, true)) };
+  }
+  if (isObj(r.already)) {
+    const by = r.already.by;
+    const action = typeof r.already.action === "string" ? clean(r.already.action, true).slice(0, 300) : "";
+    if (by === "engine") return { outcome: "already", display: "Withdrawn by the engine: this item no longer needs an answer. Nothing was recorded." };
+    const where = by === "console" ? "in the console" : "on GitHub";
+    return { outcome: "already", display: `Already answered ${where}${action ? ":" : "."} Nothing more was recorded.`, ...(action ? { action_display: fence(action) } : {}) };
+  }
+  if (isObj(r.changed) && isInt(r.changed.rev)) return { outcome: "changed", rev: r.changed.rev, display: "This item changed since you opened it; here is the new version. Nothing was recorded." };
+  if (typeof r.refused === "string" && r.refused in REFUSALS) return { outcome: "refused", display: REFUSALS[r.refused] };
+  throw new ChannelFailure("bad_response", "The engine sent an answer the console doesn't know.", { sent: true });
 }
 
 function failure(e: unknown, replyId: string | undefined): Obj {

@@ -3,6 +3,7 @@ import { endpointsFile, engineFile, limitsFile, manifestFile, modelsFile, projec
 import { ROLE_BODIES, modelReport, storedReport } from "./agent-report";
 import { advisorAnswer } from "./advisor-answer";
 import { inboxRecord } from "./inbox-record";
+import { consoleAnswer, inboxPrivate } from "./inbox-local";
 import { prRecord } from "./pr-record";
 import { calibrationResult, runReview, tuningMetrics } from "./tuning";
 import { webReaderAnswer } from "./web-reader-answer";
@@ -15,6 +16,8 @@ import { webReaderAnswer } from "./web-reader-answer";
  */
 export const SCHEMAS: Record<string, z.ZodType> = {
   "inbox-record-4": inboxRecord,
+  "inbox-private-1": inboxPrivate,
+  "console-answer-1": consoleAnswer,
   "pr-record-1": prRecord,
   "agent-report-1": storedReport,
   ...Object.fromEntries(Object.keys(ROLE_BODIES).map((r) => [`agent-report-1.${r}`, modelReport(r as keyof typeof ROLE_BODIES)])),

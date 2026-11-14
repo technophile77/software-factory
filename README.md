@@ -49,3 +49,19 @@ for word, with no model in between, and never answers for you. While the
 factory works it shows what it is doing. It needs a running factory engine;
 without it the command says so and stops. How often you sign in to GitHub
 to answer is the project's `settings.interview_sign_in` (F-018 FR-15).
+
+## Answer factory decisions in the console
+
+```
+factory-engine inbox [<item id>] [--project <path>]
+```
+
+Lists the project's open inbox items and answers them in this terminal
+(F-021, ADR 0033). Every item is still a GitHub issue; whichever you answer
+first counts, and the other path then shows it as answered. Items with
+private detail (a Security item's subject, the engine log lines behind a
+failure) show it only here; their issue says the detail is on the PC. Risky
+answers ask you to type a code, as `/confirm` does on GitHub. When an
+interview has nothing to ask and the feature waits on your decision,
+`factory-engine interview` offers the items too, and its status line says
+"Waiting for your decision on …" rather than idle.

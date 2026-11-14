@@ -354,6 +354,20 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
     expect(s.out).not.toContain("finished");
   });
 
+  test("F-021 AC-11: a pending decision shows as waiting for it, with only well-formed ids", async () => {
+    engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["a"] })]);
+    engine.hooks["engine.status"] = (conn, msg) => {
+      conn.respond(msg, ["result", { version: "1.4", capabilities: ["document"], uptime_s: 1,
+        features: [{ id: "F-1", stage: "security_testability_review", active_agents: 0, activity: "waiting_for_decision", waiting_on: ["D-0007", "S-0002", "\u001b[2Jfake"] }] }]);
+      return true;
+    };
+    // F-021 FR-11 offers the decisions first; "Not now" goes back to the live status.
+    const { s } = await run(["1", "2"], "F-1");
+    expect(s.out).toMatch(/\] Waiting for your decision on D-0007, S-0002/);
+    expect(s.out).not.toContain("fake");
+    expect(s.out).not.toContain("idle");
+  });
+
   test("FR-5: with no suggested answer, no choice offers to accept one", async () => {
     engine.addFeature("F-1", "Export", [question("Q7", "open", { options: ["CSV"] }), question("Q8", "open", { suggested: "   " })]);
     const { s } = await run(["1", "1"], "F-1");

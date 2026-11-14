@@ -60,6 +60,11 @@ export interface ItemInput {
   effect?: Effect;
   /** Keeps a type's item from being filed twice (engine `alert` keys). */
   key?: string;
+  /**
+   * F-021 FR-4: detail kept only on the PC and shown only in the console.
+   * Never rendered into the body, the record or anything sent anywhere (SR-5).
+   */
+  private?: Array<{ name: string; text: string }>;
 }
 
 /** An action's id, as the marker of its action comment names it: `choose:A`, `step:2`, `approve`, ... */

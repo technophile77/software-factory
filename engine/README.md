@@ -89,6 +89,11 @@ factory-engine mcp                      # started by Claude Code, not by hand
   the analyst (F-018, ADR 0029): it prints each item word for word and reads
   the answer from the keyboard, talking to the running engine over the
   control channel. It runs only in a terminal and never starts the engine.
+- `inbox [<item id>] [--project <path>]` lists the project's open inbox items
+  and answers them in this terminal (F-021, ADR 0033): every item is still a
+  GitHub issue, and the first answer from either path counts. Items with
+  private detail show it only here. Like `interview`, it runs only in a
+  terminal and needs a running engine.
 
 The gitleaks binary's absolute path comes from `--gitleaks` or from
 `gitleaks:` in `<engine home>/engine.yaml`. The engine refuses to run any
