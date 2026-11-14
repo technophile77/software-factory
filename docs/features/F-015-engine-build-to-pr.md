@@ -1,7 +1,7 @@
 # Feature: Build a feature to a pull request on the real engine
 
 - **Id:** F-015
-- **Status:** Approved (readiness gate passed 2026-11-14)
+- **Status:** In review (readiness gate passed 2026-11-14; awaiting the owner's spec sign-off)
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
@@ -113,7 +113,7 @@ records stay in the private config repo (OQ-2, ADR 0028).
 | AC-24 | Given an agent session that runs `git push` or `npm publish`, then the call is held under the ask rule; the agent's clone has no remote and no credential helper. | SR-7 |
 | AC-25 | Given a results file with an external entity, an oversized file, a symlink, or one left from an earlier run, then the run is incomplete and nothing outside the worktree is read. | SR-8 |
 | AC-26 | Given a test command named like a file in the worktree, or one that starts child processes and exceeds its cap, then the program is resolved outside the worktree, no shell runs, and the whole process tree is killed. | SR-9 |
-| AC-27 | Given test output claiming the test is wrong, then the classifier's verdict cites the spec, and without a spec reference the cause defaults to product code. | SR-10 |
+| AC-27 | Given a classifier report naming a failure not in the results file, an unknown cause, or evidence over 2 KiB, then the classification is invalid and a Testing item is filed; given a `test code` failure fixed by changing that test, then the judge's input lists the change with the spec section it cites. | SR-10 |
 | AC-28 | Given a green check on a SHA other than the engine's pushed head, or a `/changes` from anyone but the owner or over the size cap, then neither counts. | SR-11 |
 | AC-29 | Given the PR head moving after the FR-10 diff check, or a PR the hygiene item doesn't name, then nothing is merged. | SR-12 |
 | AC-30 | Given a code repo whose CI hands secrets to pull request runs, then no PR is opened there and a Security item explains why. | SR-13 |
