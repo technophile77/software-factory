@@ -6,7 +6,7 @@
   approval and merge in the inbox, no machine account; phone approvals,
   F-012; "can't [a VS Code issues extension] be used in place of the
   inbox?", proposal 0026)
-- **Spec version:** 29
+- **Spec version:** 30
 - **Replaces:** F-001's inbox view and all of F-012 (both superseded by this
   version, see their change logs). Their approved requirements that still
   apply are carried here, each marked with where it came from.
@@ -137,7 +137,10 @@ or a one-word command.
   poll the action stands; undoing it is a new item.
 - Owner closes or deletes an issue by hand: the item stays open in the
   record; the engine reopens a closed one once with a note, and files a
-  Notice for a deleted one.
+  Notice for a deleted one. Closed again by the owner after that reopen,
+  the item is withdrawn and whatever waited on it offers a rerun; a close
+  by any other account is reopened with a note every time (F-019 FR-10,
+  SR-2; H-0231).
 - The workflow fails or Actions is down: the engine sees no issue after two
   polls, shows an OS notification and logs it; it doesn't retry in a loop.
 - GitHub rate limit or outage: the engine backs off and retries on the next
@@ -402,6 +405,7 @@ token (from v19).
 | 28 | 2026-11-13 | Migration is a one-time script deleted after use, not engine code (FR-16, AC-13, H-0161, H-0164) | Owner, 2026-11-13 (thread) |
 | 29 | 2026-11-13 | H-0161 to H-0165 approved; H-0165 and H-0164's doc edits applied; readiness gate passed | Owner, 2026-11-13 (decision card) |
 | 29 | 2026-11-13 | Spec v29 signed off; status Approved | Owner, 2026-11-13 (decision card) |
+| 30 | 2026-11-14 | Edge case: a second hand-close by the owner withdraws the item; other accounts' closes are reopened (F-019 FR-10, SR-2; H-0231) | Owner, 2026-11-14 08:07Z (in thread) |
 
 ## 13. Open questions
 OQ-1 to OQ-10 are decided or withdrawn as recorded in v19 (git history);
