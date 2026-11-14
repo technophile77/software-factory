@@ -60,6 +60,7 @@ import { GATE1_STAGE, Gate1Report, REVIEWER_ROLE, readReportFile, validateReport
 import { StandardsError, loadStandards } from "./gate1/standards";
 import { type Check, readinessChecks, specPathPattern } from "./interview/readiness";
 import { structuralChecks } from "./readiness/checks";
+import { structureText } from "./interview/structure";
 import { READINESS_ROLE, type ReadinessReport, orchestratorTurn, readinessCorrection, validateReadinessReport } from "./readiness/report";
 import { PolicyError, type RolePolicy, effectiveRole } from "./policy/role-policy";
 import { EngineRecord, RunRecord } from "./state/record";
@@ -902,7 +903,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         if (v.code !== 0) resumeId = undefined;
       }
       const slugName = branch.replace(/^feature\//, "");
-      const intro = `You are working on ${f.id} on branch ${branch}, in /workspace. Write its spec at docs/features/${slugName}.md. Reach the owner only through your factory tools.`;
+      const intro = `You are working on ${f.id} on branch ${branch}, in /workspace. Write its spec at docs/features/${slugName}.md. Reach the owner only through your factory tools.\n\n${structureText()}`;
       let summary = plan?.mode === "from_commit" ? plan.summary : "";
       if (plan?.mode === "session" && !resumeId) summary = transcriptSummary(f.state);
       // A new run after one that ended (an analyststop or breach restart) would otherwise start from the request alone (F-016 FR-13).

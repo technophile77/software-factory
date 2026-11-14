@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { templateSections } from "./template-spec";
 import * as path from "node:path";
 import YAML from "yaml";
 import { afterEach, describe, expect, it } from "vitest";
@@ -87,7 +88,7 @@ const entries = (w: World, feature: string) =>
   parseTranscript(git(w.config, "show", `factory/state:interviews/${feature}/transcript.jsonl`) + "\n");
 
 function spec(feature: string): string {
-  return [`# Feature: Export`, "", `- **Id:** ${feature}`, "- **Spec version:** 3", "", "## 8. Assumptions", "| Id | Assumption | Decision link | Status |", "|---|---|---|---|", "", "## 9. Security considerations", ""].join("\n");
+  return [`# Feature: Export`, "", `- **Id:** ${feature}`, "- **Spec version:** 3", "", ...templateSections()].join("\n");
 }
 
 describe("the analyst, wired end to end with fake Docker and SDK (FR-8 to FR-11)", () => {

@@ -336,7 +336,7 @@ describe("F-016: Security item effects (H-0182)", () => {
     expect(third).toContain('"why": "gate1_risk_accepted"');
   }, 60_000);
 
-  it("FR-16, AC-18: a security table titled \"Security requirements\" counts; a risk item filed before the spec took the finding up is withdrawn at the next start", async () => {
+  it("FR-16, AC-18: a risk item filed before the spec took the finding up is withdrawn at the next start", async () => {
     const w = world();
     const d = new FakeDocker();
     let feature = "";
@@ -362,8 +362,8 @@ describe("F-016: Security item effects (H-0182)", () => {
     const branch = first.e.feature(feature)!.state.branch;
     await first.e.stop();
 
-    // The spec now has the row, under the other title the analyst may use.
-    const fixed = spec(feature, 4, ["| SR-1 | Inputs are validated. | Analyst | Approved |", `| SR-2 | ${FIX} | Gate 1 #1 | Approved |`]).replace("## 9. Security considerations", "## 9. Security requirements");
+    // The spec now has the row. The other title FR-16 allowed would fail spec_structure (FR-17) here.
+    const fixed = spec(feature, 4, ["| SR-1 | Inputs are validated. | Analyst | Approved |", `| SR-2 | ${FIX} | Gate 1 #1 | Approved |`]);
     const wt = path.join(w.root, "fix-wt");
     git(w.config, "worktree", "add", "-q", "--detach", wt, branch);
     fs.writeFileSync(path.join(wt, "docs", "features", `${feature}-export.md`), fixed);
@@ -500,11 +500,11 @@ describe("F-016 H-0182: chain and Gate 1 run limit items", () => {
     const d = new FakeDocker();
     let feature = "";
     const s = scriptedSdk({
-      // The first spec has no section 5, so the readiness code checks send it back and the next spec needs a second Gate 1 run.
+      // The first spec's section 5 is empty, so the readiness code checks send it back and the next spec needs a second Gate 1 run.
       analyst: analyst(w, () => feature, async (sc) => {
         writeSpec(w, feature, spec(feature, 4));
         await sc.call("interview_spec_ready", { spec_path: `docs/features/${feature}-export.md`, spec_version: 4 });
-      }, (f) => spec(f, 3).replace(/## 5\. Constraints\nRuns in the existing web app; no new services\.\n/, "")),
+      }, (f) => spec(f, 3).replace(/(## 5\. Constraints\n)Runs in the existing web app; no new services\.\n/, "$1")),
       reviewer: async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
         const commit = /at commit ([0-9a-f]{40})/.exec((await sc.next())!)![1]!;
         fs.writeFileSync(path.join(reportDir(d), `security-reviewer-${n}.json`), report(feature, commit, []));

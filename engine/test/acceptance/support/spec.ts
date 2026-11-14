@@ -57,7 +57,7 @@ ${rows}
 
 ## 10. Interface requirements
 None.
-${extra}
+
 ## 11. Readiness gate
 - [ ] Clear objective
 
@@ -65,7 +65,7 @@ ${extra}
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 3 | 2026-11-11 | Interview | — |
-`;
+${extra}`;
 }
 
 /** The spec's path, relative to the worktree, for a feature. */

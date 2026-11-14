@@ -143,8 +143,13 @@ export function spec(feature: string, version: number, srs: string[] = ["| SR-1 
     "## 3. Functional requirements", "| Id | Requirement |", "|---|---|", "| FR-1 | Export orders in a date range as CSV. |", ...frs, "",
     "## 4. Acceptance criteria", "| Id | Given / When / Then | Covers |", "|---|---|---|", "| AC-1 | Given orders in May, when the owner exports May, then the CSV holds them. | FR-1 |", "",
     "## 5. Constraints", "Runs in the existing web app; no new services.", "",
+    "## 6. Edge cases", "An empty date range gives an empty CSV.", "",
+    "## 7. Dependencies", "None.", "",
     "## 8. Assumptions", "| Id | Assumption | Decision link | Status |", "|---|---|---|---|", "",
     "## 9. Security considerations", "| Id | Requirement | Source (analyst / Gate 1) | Status |", "|---|---|---|---|", ...srs, "",
+    "## 10. Interface requirements", "None.", "",
+    "## 11. Readiness gate", "- [ ] Clear objective", "",
+    "## 12. Change log", "| Version | Date | Change | Approved by |", "|---|---|---|---|", "",
   ].join("\n");
 }
 
