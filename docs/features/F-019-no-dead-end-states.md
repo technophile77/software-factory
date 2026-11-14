@@ -34,7 +34,7 @@ engine will do next.
 | FR-3 | A liveness test, run with the engine's unit tests, fails when any machine has a state that can't be entered (`has_unenterables()`), a non-final state with no exits (`is_terminal()` without being declared final), or a non-final state with no actor (FR-2). The failure names the machine and state |
 | FR-4 | The same test fails when a final state is reachable only through a path the owner never sees: every path to `failed` must pass through a state that files an owner item or offers a rerun |
 | FR-5 | Restart is part of the model: for every state, the test checks that the engine's startup recovery has a rule for it (resume, rerun, file an item, or nothing because the state is final or owner-waiting with its item present) |
-| FR-6 | The event log in `factory/state` stays the source of truth. The engine rebuilds each machine by replaying events; an event the machine refuses is logged as a warning with the feature, state and event, and is not applied |
+| FR-6 | The event log in `factory/state` stays the source of truth. The engine rebuilds each machine by replaying events; an event the machine refuses is not applied: the feature pauses in its last valid state, a warning names the feature, state and event, and the owner gets an inbox item to choose the feature's state (A-1). Nothing runs for that feature until the owner answers |
 | FR-7 | Engine code reaches jssm only through a typed wrapper per machine that exports its states and actions as `as const` unions; a test fails when those unions and the machine's `states()` and actions differ |
 | FR-8 | F-018's `activity` code for a feature is computed from the feature and run machines' current states |
 | FR-9 | The machines' definitions render as diagrams in the feature's docs (jssm's visualiser, at development time only), so the owner can review the lifecycle |
@@ -47,7 +47,7 @@ engine will do next.
 | AC-2 | Given a feature state "Gate 1, report written, no inbox item" with no actor, when the tests run, then they fail naming it | FR-2, FR-3 |
 | AC-3 | Given a run machine where `failed` is reachable without an owner item or rerun offer, when the tests run, then they fail | FR-4 |
 | AC-4 | Given a state with no startup recovery rule, when the tests run, then they fail naming it | FR-5 |
-| AC-5 | Given an event log with a `stage` event the lifecycle doesn't allow, when the engine replays it, then the stage is unchanged and a warning names the feature, state and event | FR-6 |
+| AC-5 | Given an event log with a `stage` event the lifecycle doesn't allow, when the engine replays it, then the stage is unchanged, the feature is paused, a warning names the feature, state and event, and an owner inbox item asks which state to use; no agent starts for that feature until it is answered | FR-6 |
 | AC-6 | Given a state added to a machine but not to its typed union, when the tests run, then they fail | FR-7 |
 | AC-7 | Given each lifecycle state, when `engine.status` is called, then `activity` is the code mapped from that state | FR-8 |
 | AC-8 | Given the trial's three stalls (idle analyst, Gate 1 with no item, reply delivered before a restart) replayed as event logs, when the engine starts, then each has an actor and moves on | FR-2, FR-5 |
@@ -72,7 +72,7 @@ ADR 0031 (jssm). F-016 (increment 3, PR #60), F-018 (`activity` codes, PR #68), 
 
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | Replaying an existing log that contains a forbidden move warns and keeps going rather than stopping the feature | | Pending |
+| A-1 | Replaying an existing log that contains a forbidden move pauses the feature and asks the owner which state to use | Owner, decision card 2026-11-14 08:01Z | Approved |
 | A-2 | Inbox items are modelled from the engine's side only (open, answered, expired); GitHub's own issue states are inputs | | Pending |
 
 ## 9. Security considerations
