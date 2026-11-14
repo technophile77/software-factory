@@ -3,7 +3,7 @@
 - **Id:** F-019
 - **Status:** In review
 - **Requested by / date:** owner, 2026-11-14 ("is there a use case for a state machine in this project? like jssm?"; "it should also be used to validate that stateful things don't end up in a dead end state like happened with the analyst, security agents, etc.")
-- **Spec version:** 4
+- **Spec version:** 6
 
 ## 1. Objective and business purpose
 
@@ -52,6 +52,7 @@ engine will do next.
 | AC-6 | Given a state added to a machine but not to its typed union, when the tests run, then they fail | FR-7 |
 | AC-7 | Given each lifecycle state, when `engine.status` is called, then `activity` is the code mapped from that state | FR-8 |
 | AC-9 | Given an unanswered inbox item the engine has already reopened once, when the owner closes it again, then the item is recorded as withdrawn, the run or stage that waited on it is marked failed, and a rerun is offered | FR-10 |
+| AC-10 | Given the machine definitions, when the development docs script runs, then one diagram per machine is written next to this spec, and the engine bundle contains no `jssm/viz` code | FR-9 |
 | AC-8 | Given the trial's three stalls (idle analyst, Gate 1 with no item, reply delivered before a restart) replayed as event logs, when the engine starts, then each has an actor and moves on | FR-2, FR-5 |
 
 ## 5. Constraints
@@ -83,12 +84,12 @@ ADR 0031 (jssm). F-016 (increment 3, PR #60), F-018 (`activity` codes, PR #68), 
 
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | Event text from the log is data: state and event names are checked against the typed unions before reaching jssm (S1.1) | analyst | Proposed |
-| SR-2 | Only a close by the owner's GitHub account counts toward FR-10. Any other close is reopened with a note every time and never withdraws the item; a test closes an item twice as a different actor | Gate 1 #1 | Proposed |
-| SR-3 | jssm and its dependencies are pinned exactly and installed with `npm ci` from the lockfile; any version change is a new S4.1 review; osv-scanner and `npm audit` cover them, including the optional packages | Gate 1 #2 | Proposed |
-| SR-4 | Machine definitions are string constants in engine source with no interpolation; a test checks that each `sm` call has no template substitutions | Gate 1 #3 | Proposed |
-| SR-5 | Replay catches jssm errors per feature and handles them like FR-6: that feature pauses with an owner item, the other features carry on; a test replays a log with an unknown state | Gate 1 #4 | Proposed |
-| SR-6 | The FR-6 pause item names the commit of the refused event | Gate 1 #5 | Proposed |
+| SR-1 | Event text from the log is data: state and event names are checked against the typed unions before reaching jssm (S1.1) | analyst | Accepted (owner, 2026-11-14 08:04Z, decision card) |
+| SR-2 | Only a close by the owner's GitHub account counts toward FR-10. Any other close is reopened with a note every time and never withdraws the item; a test closes an item twice as a different actor | Gate 1 #1 | Accepted (owner, 2026-11-14 08:04Z, decision card) |
+| SR-3 | jssm and its dependencies are pinned exactly and installed with `npm ci` from the lockfile; any version change is a new S4.1 review; osv-scanner and `npm audit` cover them, including the optional packages | Gate 1 #2 | Accepted (owner, 2026-11-14 08:04Z, decision card) |
+| SR-4 | Machine definitions are string constants in engine source with no interpolation; a test checks that each `sm` call has no template substitutions | Gate 1 #3 | Accepted (owner, 2026-11-14 08:04Z, decision card) |
+| SR-5 | Replay catches jssm errors per feature and handles them like FR-6: that feature pauses with an owner item, the other features carry on; a test replays a log with an unknown state | Gate 1 #4 | Accepted (owner, 2026-11-14 08:04Z, decision card) |
+| SR-6 | The FR-6 pause item names the commit of the refused event | Gate 1 #5 | Accepted (owner, 2026-11-14 08:04Z, decision card) |
 
 ## 10. Interface requirements
 
@@ -102,12 +103,15 @@ Hygiene items applied with the build:
 | H-0231 | `docs/features/F-011-one-inbox.md`, edge cases | "Owner closes or deletes an issue by hand" gains: closed again after the engine's one reopen, the item is withdrawn and whatever waited on it offers a rerun (F-019 FR-10); only a close by the owner's account counts (F-019 SR-2) | Proposed |
 
 ## 11. Readiness gate
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+
+Checked 2026-11-14 on v6: every FR has at least one AC (FR-9 gained AC-10), both assumptions and OQ-1 are approved, all six SRs accepted, no deferred items. Passed.
+
+- [x] Clear objective
+- [x] Expected behavior defined
+- [x] Acceptance criteria testable
+- [x] Constraints documented
+- [x] Assumptions explicit
+- [x] Blocking decisions resolved (approved, not deferred)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -116,3 +120,5 @@ Hygiene items applied with the build:
 | 2 | 2026-11-14 | A-1 answered: a forbidden move pauses the feature and asks the owner | owner, card 08:01Z |
 | 3 | 2026-11-14 | A-2 answered: inbox items mirror GitHub issue states; OQ-1 raised | owner, card 08:01Z |
 | 4 | 2026-11-14 | OQ-1 answered (FR-10, AC-9, H-0231); Security Gate 1 filed, SR-2 to SR-6 proposed; H-0230 listed | owner, card 08:03Z (OQ-1) |
+| 5 | 2026-11-14 | SR-1 to SR-6 accepted | owner, card 08:04Z |
+| 6 | 2026-11-14 | AC-10 added for FR-9; readiness gate passed | (sign-off pending) |
