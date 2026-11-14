@@ -3,7 +3,7 @@
 - **Id:** F-020
 - **Status:** In review
 - **Requested by / date:** owner, 2026-11-14 ("I would like the default format for any data, reports, etc. that an agent interacts with to be in json, unless there is a specific reason that it should be something different"; proposal 0034 decision 3, "Start F-020, full scope", decision card 08:53Z)
-- **Spec version:** 3
+- **Spec version:** 4
 
 ## 1. Objective and business purpose
 
@@ -90,25 +90,25 @@ H-0240 and proposal 0034 (merged, PR #76). F-011 (inbox records), F-006 (advisor
 
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | Existing inbox records are moved by a one-time script run from the owner's PC, as F-011 FR-16 did, not by engine code | Owner's F-011 choice (2026-11-13) followed | Pending |
-| A-2 | A role running on a model endpoint without structured output support falls back to writing its report file as today, still validated by FR-3; the fallback is recorded in the report's `fallback` field | | Pending |
-| A-3 | The Agent SDK's structured output works with multi-turn tool use for every role; checked by a spike test at the start of the build, and if it fails for a role, that role uses A-2's fallback | | Pending |
+| A-1 | Existing inbox records are moved by a one-time script run from the owner's PC, as F-011 FR-16 did, not by engine code | Owner's F-011 choice (2026-11-13) followed | Approved (owner, 2026-11-14 09:03Z, in thread) |
+| A-2 | A role running on a model endpoint without structured output support falls back to writing its report file as today, still validated by FR-3; the fallback is recorded in the report's `fallback` field | | Approved (owner, 2026-11-14 09:03Z, in thread) |
+| A-3 | The Agent SDK's structured output works with multi-turn tool use for every role; checked by a spike test at the start of the build, and if it fails for a role, that role uses A-2's fallback | | Approved (owner, 2026-11-14 09:03Z, in thread) |
 
 ## 9. Security considerations
 
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | Schema validation is the boundary check for every agent result and every record read from `factory/state` (S1.1, S4.5); it replaces casts such as `YAML.parse(...) as InboxRecord` | analyst | Proposed |
-| SR-2 | String length limits in each schema match today's limits (for example the web reader's summary cap) so a JSON answer can't carry more than the text it replaces | analyst | Proposed |
-| SR-3 | Advisor and web reader strings are untrusted data: rendered only as escaped plain text and never used as commands, paths or URLs except a web reader source the engine fetched itself (S6.1, S9.3) | analyst | Proposed |
-| SR-4 | While any `inbox/*.yaml` exists on a project's `factory/state`, the engine starts no feature work and files no item for that project, and tells the owner to run the migration script; `nextId` counts `.yaml`, `.json` and `.md` files | Gate 1 #1 | Proposed |
-| SR-5 | The migration script checks each YAML record against `inbox-record/3.0` (id equal to the file name, default core schema, alias cap) before converting it; prints failures by path and reason only and leaves them in place; never overwrites an existing `.json`; adds a `migrated` history entry with the old path and commit; pushes fast-forward only and stores no credentials | Gate 1 #2 | Proposed |
-| SR-6 | Every schema is strict (unknown keys refused, not stripped) and caps every array and the file's byte size before parsing. The engine validates only with the zod schemas in its own source, never a schema file read at run time or named in the data. A refusal names the field path, never its value | Gate 1 #3 | Proposed |
-| SR-7 | The engine takes a report only from the structured output of a successful SDK `result` message. The model's schema leaves out every engine-filled field (`blocks`, `model`, `usage`, `rung`, `fallback`, test run counts), and a result containing one is refused. Roles under FR-10 get no report folder mount | Gate 1 #4 | Proposed |
-| SR-8 | The advisor's options are shown only inside the untrusted Advisor section, with ids that can't be read as the item's options ("Advisor option 1"); they never become action comments or `/choose` targets | Gate 1 #5 | Proposed |
-| SR-9 | The record keeps the SHA-256 of the exact bytes of `.factory/advice/<call>.json`, and the issue keeps the existing match or mismatch line | Gate 1 #6 | Proposed |
-| SR-10 | `source_contains_instructions` and `page_contains_instructions` are the agent's own claim: true shows a warning, false relaxes no check; `where` is untrusted text under SR-3, and the `research_web` result keeps its untrusted label | Gate 1 #7 | Proposed |
-| SR-11 | The engine decides A-2's fallback from the endpoint's declared capability, never from the agent; it grants `Write` only to the run's one report path and records the fallback in a field other than v1.4's `fallback` | Gate 1 #8 | Proposed |
+| SR-1 | Schema validation is the boundary check for every agent result and every record read from `factory/state` (S1.1, S4.5); it replaces casts such as `YAML.parse(...) as InboxRecord` | analyst | Accepted (owner, 2026-11-14 09:03Z, in thread) |
+| SR-2 | String length limits in each schema match today's limits (for example the web reader's summary cap) so a JSON answer can't carry more than the text it replaces | analyst | Accepted (owner, 2026-11-14 09:03Z, in thread) |
+| SR-3 | Advisor and web reader strings are untrusted data: rendered only as escaped plain text and never used as commands, paths or URLs except a web reader source the engine fetched itself (S6.1, S9.3) | analyst | Accepted (owner, 2026-11-14 09:03Z, in thread) |
+| SR-4 | While any `inbox/*.yaml` exists on a project's `factory/state`, the engine starts no feature work and files no item for that project, and tells the owner to run the migration script; `nextId` counts `.yaml`, `.json` and `.md` files | Gate 1 #1 | Accepted (owner, 2026-11-14 09:03Z, in thread) |
+| SR-5 | The migration script checks each YAML record against `inbox-record/3.0` (id equal to the file name, default core schema, alias cap) before converting it; prints failures by path and reason only and leaves them in place; never overwrites an existing `.json`; adds a `migrated` history entry with the old path and commit; pushes fast-forward only and stores no credentials | Gate 1 #2 | Accepted (owner, 2026-11-14 09:03Z, in thread) |
+| SR-6 | Every schema is strict (unknown keys refused, not stripped) and caps every array and the file's byte size before parsing. The engine validates only with the zod schemas in its own source, never a schema file read at run time or named in the data. A refusal names the field path, never its value | Gate 1 #3 | Accepted (owner, 2026-11-14 09:03Z, in thread) |
+| SR-7 | The engine takes a report only from the structured output of a successful SDK `result` message. The model's schema leaves out every engine-filled field (`blocks`, `model`, `usage`, `rung`, `fallback`, test run counts), and a result containing one is refused. Roles under FR-10 get no report folder mount | Gate 1 #4 | Accepted (owner, 2026-11-14 09:03Z, in thread) |
+| SR-8 | The advisor's options are shown only inside the untrusted Advisor section, with ids that can't be read as the item's options ("Advisor option 1"); they never become action comments or `/choose` targets | Gate 1 #5 | Accepted (owner, 2026-11-14 09:03Z, in thread) |
+| SR-9 | The record keeps the SHA-256 of the exact bytes of `.factory/advice/<call>.json`, and the issue keeps the existing match or mismatch line | Gate 1 #6 | Accepted (owner, 2026-11-14 09:03Z, in thread) |
+| SR-10 | `source_contains_instructions` and `page_contains_instructions` are the agent's own claim: true shows a warning, false relaxes no check; `where` is untrusted text under SR-3, and the `research_web` result keeps its untrusted label | Gate 1 #7 | Accepted (owner, 2026-11-14 09:03Z, in thread) |
+| SR-11 | The engine decides A-2's fallback from the endpoint's declared capability, never from the agent; it grants `Write` only to the run's one report path and records the fallback in a field other than v1.4's `fallback` | Gate 1 #8 | Accepted (owner, 2026-11-14 09:03Z, in thread) |
 | SR-12 | Withdrawn: it applied only to OQ-1 option (a), which the owner did not choose | Gate 1 #9 | Not applicable |
 
 ## 10. Interface requirements
@@ -124,12 +124,15 @@ Each change is an Interfaces decision, applied with the build once approved:
 
 ## 11. Readiness gate
 
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+Checked 2026-11-14 on v4: every FR has at least one AC, A-1 to A-3 approved, SR-1 to SR-11 accepted (SR-12 withdrawn), OQ-1 answered, no deferred items. Passed; waiting on the owner's sign-off.
+
+
+- [x] Clear objective
+- [x] Expected behavior defined
+- [x] Acceptance criteria testable
+- [x] Constraints documented
+- [x] Assumptions explicit
+- [x] Blocking decisions resolved (approved, not deferred)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -137,6 +140,7 @@ Each change is an Interfaces decision, applied with the build once approved:
 | 1 | 2026-11-14 | Draft from proposal 0034 (decisions 2 and 3) | (pending) |
 | 2 | 2026-11-14 | Security Gate 1 filed; SR-4 to SR-12 proposed | (pending) |
 | 3 | 2026-11-14 | OQ-1 answered (no editor check): FR-12 and AC-13 rewritten, SR-12 withdrawn | owner, decision card (OQ-1) |
+| 4 | 2026-11-14 | A-1 to A-3 approved, SR-1 to SR-11 accepted; readiness gate passed | owner, 09:03Z (in thread) |
 
 ## 13. Open questions
 
