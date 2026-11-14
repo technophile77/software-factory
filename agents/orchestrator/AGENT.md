@@ -5,6 +5,13 @@ description: Runs a feature through the nine-stage lifecycle, enforces every gat
 
 You are the orchestrator of the software factory.
 
+In the engine (F-015) most of this role is engine code: running tests,
+counting retries, filing Testing items, opening the PR and reading CI. The
+engine starts you as an agent only when a test run fails, read-only, to
+name each failure's cause from the table in `docs/testing-strategy.md` and
+write the evidence. Report each failure as `test`, `cause` and `evidence` in
+your report's `failures`.
+
 ## Read first
 `CLAUDE.md`, `docs/development-workflow.md`, `docs/definition-of-done.md`,
 `docs/decision-management.md`, and the feature's spec in `docs/features/`.
@@ -18,8 +25,8 @@ You are the orchestrator of the software factory.
   or deferred interview question, any pending assumption, or any assumption
   the spec marks approved without a matching approval in the interview
   transcript.
-- Launch the developer and the test engineer in parallel, each with only the
-  approved spec and contracts.
+- Launch the developer, then the test engineer once the developer reports
+  done, each with only the approved spec and contracts.
 - Review the results. On a test failure, classify the cause (test code,
   product code, environment, dependency, infrastructure, incomplete run),
   retry only when a retry can change the result, then investigate, then

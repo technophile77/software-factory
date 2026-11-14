@@ -38,6 +38,8 @@ H-0135) and Agent report v1.4 (H-0136) for F-013 approved by the owner
 2026-11-13 (decision card). Inbox item v3.0 (F-011 H-0165, ADR 0022: items
 are GitHub issues) approved by the owner 2026-11-13 (decision card); it
 replaces v1.1 and the never-applied v2.0, v2.1 and Phone issue v1.0.
+Project manifest v1.7 (H-0193) and Agent report v1.5 (H-0194) for F-015
+(build to PR) approved by the owner 2026-11-14 (decision card).
 
 ## Contract entry format
 
@@ -167,11 +169,13 @@ The engine never reads its own comments as commands (F-011 SR-17).
 
 ---
 
-## Agent report — v1.4
+## Agent report — v1.5
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0041);
   v1.3 Gate 1 fields approved (H-0096, owner, decision card, 2026-11-12);
-  v1.4 endpoint rungs approved (H-0136, owner, decision card, 2026-11-13)
+  v1.4 endpoint rungs approved (H-0136, owner, decision card, 2026-11-13);
+  v1.5 location and build-stage bodies approved (F-015 H-0194, owner,
+  decision card, 2026-11-14)
 - Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8);
   v1.2 adds the context-hygiene body and `proposed_items`, requested by the
   owner 2026-11-10 (PR #17)
@@ -179,7 +183,8 @@ The engine never reads its own comments as commands (F-011 SR-17).
 - Compatibility: as for inbox items.
 
 **Location:** `.factory/runs/<feature>/<stage>/<role>-<n>.json`, committed on
-the feature branch. Large logs and transcripts are stored outside Git and
+the project config repo's `factory/state` (v1.5, ADR 0028; never in a code
+repo). Large logs and transcripts are stored outside Git and
 referenced by path or URL.
 
 **Common envelope (every role):**
@@ -227,9 +232,14 @@ FR-7). Tuning metrics and Calibration result group rungs by the full
 | test-engineer | `tests_run`, `passed`, `failed`, `skipped`, `criteria_map` (AC id → test ids), `failures` (test, expected, actual, log ref), `not_run` (with reason) |
 | security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks; from v1.3 optional `needs_owner`, `options` (id, label), `recommendation`); from v1.3 optional for Gate 1: `checklist` (question, answer), `permissions_added`, `abuse_cases`, `not_applicable` (criterion, reason) |
 | validation-judge | `verdict` (PASS, FAIL, NEEDS_HUMAN_REVIEW), `checklist` (area, status, evidence), `findings` (grade, location, explanation) |
-| orchestrator | `gate`, `checks` (name, passed, evidence) |
+| orchestrator | `gate`, `checks` (name, passed, evidence); from v1.5, for the stage 6 failure classifier (F-015), `failures` (test, cause, evidence), where cause is one of the failure causes in `testing-strategy.md` |
 | project-evaluator | `scope` (project or feature), `complexity` (simple, moderate, complex), `predictions` (role → rung, reason), and from v1.2 `proposed_items` |
 | context-hygiene (v1.2) | `sizes` (file, tokens, budget, change since last review), `duplicates` (instruction, locations), `skill_misses` (run, skill, `not_loaded` or `not_applicable`), `conflicts` (location, explanation), `proposed_items` |
+
+**Build stage (v1.5, F-015).** The engine runs the tests, so in the
+test engineer's body the run fields (`tests_run`, `passed`, `failed`,
+`skipped`, `failures`, `not_run`) are filled by the engine from the JUnit XML
+results; the agent fills only `criteria_map`. Additive.
 
 **`proposed_items` (v1.2).** Items a role with no inbox write access wants
 filed: each is a complete Inbox item v1.0 without `id`, `created_at` or

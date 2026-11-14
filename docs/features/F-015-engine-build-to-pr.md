@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
-- **Spec version:** 17
+- **Spec version:** 18
 
 This is engine increment 4, "Build to PR" (F-007 section 13). It is a draft
 written before the owner interview, from the baseline spec, the ADRs and the
@@ -157,8 +157,8 @@ repo (OQ-2).
 | SR-1 | Until Beta, the software developer and test engineer have a full `Bash` shell on the owner's PC, and the engine runs the declared build and test commands there too, under ADR 0026. **Accepted risk (stated to the owner):** anything these run, including code and tests the agents wrote, package install scripts and commands planted by prompt injection (OWASP LLM01:2025, LLM06:2025), runs as the owner with access to the owner's files, keys, GitHub sign-in and network, and can act as the owner. Claude Code's own sandbox doesn't cover native Windows. The engine's file-tool checks and end-of-session write check still apply, but a shell can bypass them until the session ends. Expires at Beta, when containers return. | Owner, decision card, 2026-11-14 ("Full shell") | Accepted risk until Beta (ADR 0026) |
 
 ## 10. Interface requirements
-Drafts. Each is a hygiene item the owner approves on a card before it is
-applied; nothing here is applied yet.
+Each is a hygiene item the owner approved on a decision card. Items that need
+engine code in step are applied with the build; the rest are applied here.
 
 ### H-0190 (approved): limits for the new roles
 Approved by the owner 2026-11-14 (decision card, as listed). Applied with
@@ -189,7 +189,10 @@ together with the engine code that knows these roles: today's engine refuses a
 `models.yaml` naming a role it doesn't run (`config/models.ts`), so adding them
 earlier would stop every project. F-002 rungs replace these per project later.
 
-### H-0192 (sequencing approved; rest draft): Role policy for code repo worktrees
+### H-0192 (approved): Role policy for code repo worktrees
+Approved by the owner 2026-11-14 (decision cards: sequencing, then the rest).
+Applied with the build's first milestone, after Role policy v2.7 (H-0201)
+lands, since both change the same contract.
 - The approved spec and contracts are mounted for reading at a fixed path
   outside the worktree; no role may write there.
 - Approved 2026-11-14 (decision card): the test engineer runs after the
@@ -224,7 +227,8 @@ Commands are argument arrays, run with no shell. `test_results` must stay
 inside the worktree under the ADR 0015 path rule. Onboarding (F-003) asks for
 them per repo.
 
-### H-0194 (draft): Agent report location and bodies
+### H-0194 (approved, applied): Agent report location and bodies
+Approved by the owner 2026-11-14 (decision card); applied as Agent report v1.5.
 - Location: `.factory/runs/<feature>/<stage>/<role>-<n>.json` on the config
   repo's `factory/state` (ADR 0028), not the feature branch.
 - Orchestrator body for the classifier: `failures` (test, cause, evidence).
@@ -247,7 +251,10 @@ entries for the four `mcp` 1.29.0 and two `opentelemetry-api` 1.37.0
 advisories, each with the unreachability reason in ADR 0024's recheck and a
 90-day expiry. CI scans the requirements file like the lockfiles.
 
-### H-0195 (draft): documents
+### H-0195 (approved, applied): documents
+Approved by the owner 2026-11-14 (decision card); applied in
+`development-workflow.md`, `workflow.yaml`, the orchestrator's `AGENT.md` and
+F-007's change log (v45).
 `development-workflow.md`, `workflows/feature-development/workflow.yaml` and
 the orchestrator's `AGENT.md` say which steps are engine code and which run
 the orchestrator agent (OQ-4); F-007 v41's exception is marked closed for
@@ -289,3 +296,4 @@ Asked one at a time on decision cards. None is assumed.
 | 15 | 2026-11-14 | H-0193 approved and applied: Project manifest v1.7, `repos[].commands` as argument lists and `owner.commit_name` | Owner, 2026-11-14 (decision card) |
 | 16 | 2026-11-14 | Stage 5 is sequential: the test engineer runs after the developer, on its own branch from the feature branch (FR-3, H-0192); credentialed CLIs follow the role policy's ask rule | Owner, 2026-11-14 (decision card) |
 | 17 | 2026-11-14 | FR-3: credentialed CLIs in the developer's and test engineer's shells follow H-0201's ask rule (held, Security item, 👍 runs once, denied after 30 minutes, wait off the time cap) | Owner, 2026-11-14 (decision card, H-0201) |
+| 18 | 2026-11-14 | H-0192 rest, H-0194 and H-0195 approved; H-0194 (Agent report v1.5) and H-0195 (workflow, orchestrator AGENT.md, F-007 v45) applied | Owner, 2026-11-14 (decision card) |
