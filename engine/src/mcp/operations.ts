@@ -226,6 +226,8 @@ export class Interview {
       stages: Object.fromEntries(feats.filter((f) => typeof f.stage === "string" && STAGE_RE.test(f.stage)).map((f) => [f.id, f.stage])),
       // Codes only; the terminal command maps them to its own words (F-018 FR-14).
       activities: Object.fromEntries(feats.filter((f) => typeof f.activity === "string" && STAGE_RE.test(f.activity)).map((f) => [f.id, f.activity])),
+      // Inbox ids only, each checked, so "Waiting for your decision on ..." never shows engine text (F-021 FR-12).
+      waiting_on: Object.fromEntries(feats.filter((f) => Array.isArray(f.waiting_on)).map((f) => [f.id, (f.waiting_on as unknown[]).filter((x): x is string => typeof x === "string" && INBOX_ID_RE.test(x)).slice(0, 20)])),
     };
     // Only a plain version number gets through.
     if (typeof r.version === "string" && VERSION_RE.test(r.version)) out.version = r.version;

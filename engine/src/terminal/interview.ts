@@ -42,6 +42,7 @@ export const ACTIVITY: Record<string, string> = {
   readiness_check: "Checking readiness",
   advisor_working: "Advisor is working",
   waiting_for_owner: "Getting your next question",
+  waiting_for_decision: "Waiting for your decision",
   paused: "The feature is paused",
   idle: "The factory is idle",
 };
@@ -386,7 +387,12 @@ export class TerminalInterview {
           this.say(`The interview for ${feature} is finished: the feature has moved on to the ${stage} stage.`);
           return null;
         }
-        const label = ACTIVITY[(st.activities as Record<string, string> | undefined)?.[feature] ?? ""] ?? "Working";
+        const code = (st.activities as Record<string, string> | undefined)?.[feature] ?? "";
+        const decisions = (st.waiting_on as Record<string, string[]> | undefined)?.[feature] ?? [];
+        // F-021 FR-12: the ids come from the operations' checked list, never from engine text.
+        const label = code === "waiting_for_decision" && decisions.length
+          ? `${ACTIVITY[code]} on ${decisions.join(", ")}`
+          : ACTIVITY[code] ?? "Working";
         const now = this.timing.now();
         const changed = label !== shown;
         if (changed) {
