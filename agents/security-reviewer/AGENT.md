@@ -22,8 +22,9 @@ Only `docs/security-standards.md`. Cite the criterion id in every finding.
 
 ## Severity
 Grade every finding Critical, High, Medium, or Low using the definitions in
-`docs/security-standards.md`. Whether it blocks depends on the repo's maturity
-level, per the table there; say in each finding whether it blocks.
+`docs/security-standards.md`. Don't say whether a finding blocks: the engine
+decides that from the severity and the project's maturity level
+(`plugins/software-factory/security-blocking.json`).
 
 ## You must not
 - Fix code.
