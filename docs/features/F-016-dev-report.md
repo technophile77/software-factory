@@ -57,6 +57,20 @@
   - An invalid report, or a write outside the report, fails closed.
 - `engine/src/agent/reviewer.ts`: `orchestratorPolicy`. `engine/src/config/limits.ts`, `models.ts`: the `orchestrator` and `readiness_gate` sections, optional, so a factory version without them runs no session.
 
+## Live trial fixes (spec v13 to v17)
+
+The AC-11 trial on F-002 in `factory-e2e-trial` found these. Each one has a test.
+
+| Spec | What the trial showed | Change |
+|---|---|---|
+| v13 FR-13, FR-14 (issues #64, #65) | An analyst stopped at its 4-hour cap left the feature stuck, and the skill said "still working". | `analyststop` item offers a new run, filed at stop and at start; `active_agents` is real; the skill's "where is it" answer is honest. |
+| v13 H-0187, H-0188 (#63, #66) | The device link wasn't clickable; the picker hid what was being approved. | Markdown link; the picker quotes the item word for word. |
+| v14 FR-15 | Gate 1 findings taken up only as assumptions dead-ended. | Unresolved findings go back to the analyst once, then a `gate1unresolved` item. |
+| v15 FR-16 | Risk items were filed for findings the spec took up under another section title. | Either title is read for Gate 1; open risk items are withdrawn when Gate 1 passes. |
+| v16 FR-17, H-0189 (#67) | The analyst wrote its own section headings. | `docs/features/feature-template.structure.json` defines the exact headings and table header rows; `spec_structure` check; the analyst's first turn states the structure. |
+| v17 FR-18 | The skill turned a written `\n` into a line break, so a word-for-word answer didn't match. | Gate 1 matching treats written escapes as whitespace. |
+| Bug fixes, no spec change | Duplicate inbox ids; Docker stuck at start; a failed resume swallowed the owner's next reply; the session volume was root-owned, so no conversation survived a restart (#70); a restarted session lost questions' suggested answers. | `file()` serialized; 15 s Docker timeout with advice; turn stream closed per session; image creates `/home/node/.claude` for uid 1000 and rebuilds when its engine files change; the summary keeps suggested answers. |
+
 ## Tests
 
 - New tests:
