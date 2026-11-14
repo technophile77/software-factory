@@ -111,6 +111,8 @@ export interface Gate1Record {
   needs_owner: boolean;
   /** The Security item filed for it, if any. */
   item?: string;
+  /** F-016 FR-19: a Low finding at Rapid prototype, recorded as a known issue instead of asked. */
+  recorded?: boolean;
 }
 
 /** F-008: where the feature's Security Gate 1 stands. */
@@ -302,7 +304,7 @@ export class InterviewState {
         break;
       case "gate1_report":
         this.gate1.findings = (e.findings as Gate1Record[]).map((f) => ({ ...f }));
-        this.gate1.pending = this.gate1.findings.length > 0;
+        this.gate1.pending = this.gate1.findings.some((f) => !f.recorded);
         this.gate1.riskFiled = [];
         this.gate1.reportAt = e.at;
         this.gate1.itemsAtReport = this.order.length;

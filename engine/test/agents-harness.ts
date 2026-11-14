@@ -101,9 +101,9 @@ export const ORCHESTRATOR = {
  * security standards; with `orchestrator`, also the orchestrator's AGENT.md
  * and role, so the readiness gate runs a session (F-016).
  */
-export function world(masterExtra: Record<string, string | null> = {}, o: { orchestrator?: boolean } = {}): World {
+export function world(masterExtra: Record<string, string | null> = {}, o: { orchestrator?: boolean; maturity?: string } = {}): World {
   const policy = o.orchestrator ? YAML.stringify({ policy: policyDoc({ "security-reviewer": REVIEWER, orchestrator: ORCHESTRATOR }).policy }) : POLICY;
-  const w = makeWorld({ manifest: manifestYaml({ extra: policy }) });
+  const w = makeWorld({ manifest: manifestYaml({ extra: policy, ...(o.maturity ? { maturity: o.maturity } : {}) }) });
   const files: Record<string, string | null> = {
     "agents/security-reviewer/AGENT.md": REVIEWER_MD, "docs/security-standards.md": STANDARDS,
     ...(o.orchestrator ? { "agents/orchestrator/AGENT.md": ORCHESTRATOR_MD } : {}), ...masterExtra,

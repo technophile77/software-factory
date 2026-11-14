@@ -427,8 +427,9 @@ export class World {
       `owner:\n  github_id: ${p.ownerId}\n  oauth_client_id: ${p.clientId}\n` +
       `allowed_repo_owners:\n` +
       allowed.map((a) => `  - { login: ${a.login}, id: ${a.id} }\n`).join("") +
-      `\nrepos:\n  - name: ${p.repo}\n    url: ${p.url}\n    maturity: rapid-prototype\n` +
-      `maturity: rapid-prototype\n\n` +
+      // Production ready, so the Gate 1 fixtures' High and Medium findings block (F-016 FR-19).
+      `\nrepos:\n  - name: ${p.repo}\n    url: ${p.url}\n    maturity: production-ready\n` +
+      `maturity: production-ready\n\n` +
       `skills:\n  custom: []\n  override: []\n  exclude: []\n\n` +
       `agents:\n  custom: []\n  override: []\n\n` +
       `standards: {}\n\n` +

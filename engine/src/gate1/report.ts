@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { blocksAt } from "./flow";
 import * as path from "node:path";
 import { norm, specSecurityRequirements } from "../interview/readiness";
 import type { Standards } from "./standards";
@@ -13,6 +14,7 @@ export interface Gate1Finding {
   explanation: string;
   /** The suggested requirement, or for a choice, what the options are about. */
   fix: string;
+  /** Set by the engine from the severity and the project's maturity (F-016 FR-19); a reviewer's own value is ignored. */
   blocks: boolean;
   needs_owner: boolean;
   options?: Array<{ id: string; label: string }>;
@@ -35,6 +37,8 @@ export interface Expected {
   /** The spec as the gate reviewed it, for SR-7. */
   spec: string;
   maxBytes: number;
+  /** The project's maturity level, from which the engine sets each finding's `blocks` (F-016 FR-19). */
+  maturity?: string;
 }
 
 export type ReportResult = { ok: true; report: Gate1Report } | { ok: false; errors: string[] };
@@ -163,7 +167,6 @@ export function validateReport(text: string, x: Expected): ReportResult {
       for (const k of Object.keys(f)) if (!FINDING.has(k)) err(`unexpected field ${w}.${k.slice(0, 40)}`);
       if (typeof f.criterion !== "string" || !x.standards.criteria.has(f.criterion)) err(`${w}.criterion must be a criterion id from the standards you were given`);
       if (typeof f.severity !== "string" || !x.standards.severities.includes(f.severity)) err(`${w}.severity must be one of ${x.standards.severities.join(", ")}`);
-      if (typeof f.blocks !== "boolean") err(`${w}.blocks must be true or false`);
       if (f.needs_owner !== undefined && typeof f.needs_owner !== "boolean") err(`${w}.needs_owner must be true or false`);
       const needsOwner = f.needs_owner === true;
       const out: Gate1Finding = {
@@ -171,7 +174,7 @@ export function validateReport(text: string, x: Expected): ReportResult {
         location: str(f.location, `${w}.location`, CAP.location),
         explanation: str(f.explanation, `${w}.explanation`, CAP.text),
         fix: str(f.fix, `${w}.fix`, CAP.text),
-        blocks: f.blocks === true, needs_owner: needsOwner,
+        blocks: blocksAt(String(f.severity), x.maturity ?? ""), needs_owner: needsOwner,
       };
       if (needsOwner) {
         if (!Array.isArray(f.options) || f.options.length < 2 || f.options.length > OPTION_IDS.length) err(`${w}.options must list 2 to ${OPTION_IDS.length} options for a finding that needs the owner`);

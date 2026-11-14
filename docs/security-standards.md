@@ -122,6 +122,12 @@ reachable.
 Non-blocking findings are recorded as known issues and count against
 promotion to the next level.
 
+This table's one machine-readable copy is
+`plugins/software-factory/security-blocking.json` (H-0235); the engine's
+Gate 1 and the onboarding checker read it, and the two must stay the same.
+A reviewer grades severity only. Code decides what blocks, from the severity
+and the project's maturity level.
+
 ## Gate 1 (requirements) checklist
 
 - Does the feature touch input, auth, secrets, sensitive data, dependencies, or external systems?

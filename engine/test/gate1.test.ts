@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { remaining, reviewerPolicy } from "../src/agent/reviewer";
 import { SessionRefused } from "../src/agent/analyst";
 import { Git } from "../src/git";
-import { analystGate1Turn, citesFinding, citesItem, correctionTurn, gate1Resolution, records, reviewerTurn } from "../src/gate1/flow";
+import { analystGate1Turn, blocksAt, citesFinding, citesItem, correctionTurn, gate1Resolution, records, reviewerTurn } from "../src/gate1/flow";
 import { plain, renderReport } from "../src/gate1/render";
 import { Gate1Report, readReportFile, validateReport } from "../src/gate1/report";
 import { Standards, StandardsError, loadStandards, parseAdditions, parseStandards } from "../src/gate1/standards";
@@ -330,6 +330,51 @@ describe("FR-9 and FR-13: findings resolved", () => {
     expect(gate1Resolution(row, withAnswer("Print 'Hello, world!\n' to stdout.")).check.passed).toBe(true);
     expect(gate1Resolution(row, withAnswer(fix)).check.passed).toBe(true);
     expect(gate1Resolution(row, withAnswer("Print 'Hello, world!' to stdout.")).check.passed).toBe(false);
+  });
+
+  it("FR-19: a finding below the level's bar is recorded, neither asked nor needed in the spec", () => {
+    const low = { criterion: "S4.4", severity: "Low", fix: "Pin dev tools.", explanation: "x", needs_owner: false, location: "SR-2", blocks: false };
+    const recs = records([low as never, { ...low, severity: "Critical" } as never, { ...low, severity: "High", needs_owner: true } as never], new Map(), "rapid-prototype");
+    // Non-blocking means non-blocking, even for a finding framed as the owner's choice.
+    expect(recs.map((r) => r.recorded)).toEqual([true, undefined, true]);
+    const at = (level: string) => ["Low", "Medium", "High", "Critical"].map((sev) => records([{ ...low, severity: sev } as never], new Map(), level)[0]!.recorded ?? false);
+    expect(at("alpha")).toEqual([true, true, false, false]);
+    expect(at("release")).toEqual([true, false, false, false]);
+    expect(at("unknown-level")).toEqual([false, false, false, false]);
+    expect(analystGate1Turn("F-001", "docs/features/F-001-x.md", recs)).not.toContain('"ref": "Gate 1 #1"');
+    const s = new InterviewState();
+    s.apply(e("gate1_report", { run: "R-1", report: 1, findings: [recs[0]] }));
+    expect(s.gate1.pending).toBe(false);
+    expect(gate1Resolution(spec(""), s).check.passed).toBe(true);
+  });
+
+  it("FR-19: the reviewer no longer says what blocks; the engine sets blocks from severity and maturity, ignoring the reviewer's value", () => {
+    const text = goodReport((r) => {
+      delete r.body.findings[0].blocks;
+      r.body.findings[1].blocks = true;
+    });
+    const at = (maturity?: string) => {
+      const v = validateReport(text, { ...expected(), ...(maturity ? { maturity } : {}) });
+      if (!v.ok) throw new Error(v.errors.join("; "));
+      return v.report.findings.map((f) => f.blocks);
+    };
+    expect(at("rapid-prototype")).toEqual([false, false]);
+    expect(at("alpha")).toEqual([true, false]);
+    expect(at()).toEqual([true, true]);
+  });
+
+  it("H-0235: security-standards.md's blocking table and security-blocking.json say the same", () => {
+    const md = fs.readFileSync(path.join(__dirname, "..", "..", "docs", "security-standards.md"), "utf8");
+    const table = md.slice(md.indexOf("### What blocks a PR, by maturity level")).split("\n").filter((l) => /^\| (Rapid|Alpha|Beta|Release)/.test(l));
+    const levels: Record<string, string> = { "Rapid prototype": "rapid-prototype", Alpha: "alpha", Beta: "beta", "Release / Production ready": "release" };
+    expect(table).toHaveLength(4);
+    for (const row of table) {
+      const [name, blocks] = row.split("|").slice(1, 3).map((c) => c.trim()) as [string, string];
+      const said = blocks.split(",").map((b) => b.trim().toLowerCase()).sort();
+      const coded = ["critical", "high", "medium", "low"].filter((sev) => blocksAt(sev, levels[name]!)).sort();
+      expect(coded, name).toEqual(said);
+    }
+    expect(["critical", "high", "medium", "low"].map((sev) => blocksAt(sev, "production-ready"))).toEqual([true, true, true, false]);
   });
 
   it("citesFinding reads lists of findings", () => {

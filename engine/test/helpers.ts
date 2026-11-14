@@ -89,7 +89,7 @@ export const MASTER_FILES: Record<string, string> = {
   "skills/style/SKILL.md": "---\nname: style\ndescription: master\n---\nStyle.\n",
 };
 
-export function manifestYaml(o: { name?: string; enabled?: boolean; ownerId?: number; mode?: string; allowed?: number; extra?: string } = {}): string {
+export function manifestYaml(o: { name?: string; enabled?: boolean; ownerId?: number; mode?: string; allowed?: number; extra?: string; maturity?: string } = {}): string {
   return [
     "schema: factory-project/1.0",
     `name: ${o.name ?? "acme"}`,
@@ -98,7 +98,7 @@ export function manifestYaml(o: { name?: string; enabled?: boolean; ownerId?: nu
     "repos:",
     "  - name: acme-web",
     "    url: https://github.com/example-org/acme-web",
-    "maturity: prototype",
+    `maturity: ${o.maturity ?? "prototype"}`,
     `enabled: ${o.enabled ?? true}`,
     "owner:",
     `  github_id: ${o.ownerId ?? OWNER_ID}`,

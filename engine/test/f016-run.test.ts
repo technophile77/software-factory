@@ -302,6 +302,38 @@ describe("F-016: Security item effects (H-0182)", () => {
   const FIX = "The export never includes card numbers.";
   const REQUIREMENT = { criterion: "S3.2", severity: "High", location: "FR-1", explanation: "Exports may hold card numbers.", fix: FIX, blocks: true, needs_owner: false };
 
+  it("FR-19, AC-21: at Rapid prototype, findings below Critical are recorded as known issues and Gate 1 goes on to the readiness gate without questions", async () => {
+    const w = world({}, { maturity: "rapid-prototype" });
+    const d = new FakeDocker();
+    let feature = "";
+    const low = { ...REQUIREMENT, severity: "Low", blocks: false };
+    const { e, c, s } = await start(w, d, { analyst: analyst(w, () => feature, async () => undefined), reviewer: reviewer(d, () => feature, [low, { ...low, criterion: "S4.4", severity: "High" }]) });
+    await interview(w, e, c, () => feature, (f) => (feature = f));
+    await until("readiness_gate", () => stageOf(e, feature) === "readiness_gate");
+    expect(e.feature(feature)!.state.gate1.findings.map((f) => f.recorded)).toEqual([true, true]);
+    expect(e.feature(feature)!.state.gate1.pending).toBe(false);
+    expect([...e.feature(feature)!.state.items.values()].some((i) => i.text.startsWith("Gate 1"))).toBe(false);
+    expect(s.count.analyst).toBe(1);
+    const branch = e.feature(feature)!.state.branch;
+    expect(git(w.config, "show", `${branch}:docs/features/${feature}-security-gate1.md`)).toContain("Known issue, open until fixed before promotion");
+  }, 60_000);
+
+  it("FR-19: at Alpha a High finding still goes to the interview, and only it is asked", async () => {
+    const w = world({}, { maturity: "alpha" });
+    const d = new FakeDocker();
+    let feature = "";
+    let second = "";
+    const { e, c } = await start(w, d, {
+      analyst: analyst(w, () => feature, async (_sc, input, n) => { if (n === 2) second = input; }),
+      reviewer: reviewer(d, () => feature, [REQUIREMENT, { ...REQUIREMENT, severity: "Low", criterion: "S4.4", fix: "Pin dev tools." }]),
+    });
+    await interview(w, e, c, () => feature, (f) => (feature = f));
+    await until("the analyst's Gate 1 turn", () => second !== "");
+    expect(stageOf(e, feature)).toBe("requirements_interview");
+    expect(second).toContain(FIX);
+    expect(second).not.toContain("Pin dev tools.");
+  }, 60_000);
+
   it("AC-4: a declined requirement files a risk item; Accept the risk records it, and a spec row citing it reaches readiness_gate", async () => {
     const w = world();
     const d = new FakeDocker();
