@@ -7,10 +7,10 @@
   increment 4 in parallel with increment 3, decision card)
 - **Spec version:** 19
 
-This is engine increment 4, "Build to PR" (F-007 section 13). It is a draft
-written before the owner interview, from the baseline spec, the ADRs and the
-earlier increments. Everything in sections 3 to 10 is a draft to be refined
-by the answers to section 12; nothing here is decided until the owner says so.
+This is engine increment 4, "Build to PR" (F-007 section 13). The owner
+interview ran in the project thread on decision cards (section 12 and the
+change log record each answer). It is built in milestones (OQ-1) once
+increment 3 (F-016) has merged.
 
 ## 1. Objective and business purpose
 The engine takes a feature from request through the interview and Security
@@ -368,4 +368,4 @@ Asked one at a time on decision cards. None is assumed.
 | 17 | 2026-11-14 | FR-3: credentialed CLIs in the developer's and test engineer's shells follow H-0201's ask rule (held, Security item, 👍 runs once, denied after 30 minutes, wait off the time cap) | Owner, 2026-11-14 (decision card, H-0201) |
 | 18 | 2026-11-14 | H-0192 rest, H-0194 and H-0195 approved; H-0194 (Agent report v1.5) and H-0195 (workflow, orchestrator AGENT.md, F-007 v45) applied | Owner, 2026-11-14 (decision card) |
 | 19 | 2026-11-14 | Security Gate 1 folded in: SR-2 (token per project) and SR-6 (confirm once per public repo) chosen, SR-3 to SR-15 approved as worded; S9.1 service table, abuse cases, AC-19 to AC-31. Readiness gate passed | Owner, 2026-11-14 (decision cards); orchestrator (gate) |
-| 19 | 2026-11-14 | Signed off: status Approved; the build waits on increment 3 (F-016) | Owner, 2026-11-14 (decision card) |
+| 19 (sign-off) | 2026-11-14 | Signed off: status Approved; the build waits on increment 3 (F-016) | Owner, 2026-11-14 (decision card) |
