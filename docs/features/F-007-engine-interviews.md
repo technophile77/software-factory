@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 44
+- **Spec version:** 45
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -52,6 +52,10 @@ proxy.
    work as the channel contract says.
 
 ## 3. Functional requirements
+Until Beta, FR-8, AC-16, SR-6, SR-9 and SR-18 read as in section 9,
+"Until Beta: agents on the owner's PC" (ADR 0026). Their text below
+applies again at Beta.
+
 | Id | Requirement |
 |---|---|
 | FR-1 | The engine is a TypeScript Node process in `engine/` (ADR 0001, 0003), started by a command. One engine serves all enabled projects on the machine. |
@@ -199,6 +203,18 @@ to the project's repos, `contents: write` and `metadata: read`, with an
 expiry, and never enters a container.
 
 **Threat model (S9.7):** in the Gate 1 report.
+
+### Until Beta: agents on the owner's PC (ADR 0026)
+Reopened on 2026-11-14 because containers are dropped until Beta. Each row
+replaces its requirement until then; the original applies again at Beta.
+
+| Id | Until Beta | Decided |
+|---|---|---|
+| FR-8 | The analyst and the web reader run as Agent SDK sessions on the owner's PC, each in its own engine worktree as its working folder, under Role policy v2.7's "until Beta" rule. No owner credential is put in their environment. Their model traffic goes only through the engine's proxy (SR-9). If the worktree or the proxy can't be set up, no session starts. | Owner, 2026-11-14 (decision card) |
+| AC-16 | Given a running analyst session, then the model credential appears nowhere in its environment, its arguments or its worktree; and the tool gate refuses every path in the owner's login folders by name, even through a link: `~/.claude`, `~/.ssh`, `~/.config/gh`, `%APPDATA%/GitHub CLI`, `~/.git-credentials`, `~/.aws`, `~/.docker`, `~/.npmrc`. | Owner, 2026-11-14 (decision card); folder list awaiting confirmation |
+| SR-6 | Suspended until Beta. The analyst's and web reader's only network paths are the proxy: the model API, and `fetch_page` under SR-8. Their tool lists hold no shell and no `WebFetch`, and a test checks that their sessions start without them. | Owner, 2026-11-14 (decision card) |
+| SR-9 | The proxy runs on the owner's PC as an engine-started process listening on localhost only. Each session gets its own random token in place of the dummy key; the proxy refuses any request without a live session's token, and the token is void when the session ends. The rest of SR-9 is unchanged: the proxy adds the real credential, forwards only to `https://api.anthropic.com` on the API paths Claude Code uses, and drops any request carrying a credential of its own. | Owner, 2026-11-14 (decision card) |
+| SR-18 | Session caps unchanged: turns, output tokens or dollars, wall time, at most 3 resumes, billing-mode check. The container limits on CPU, memory, pids and temp size are suspended until Beta (ADR 0026, accepted risk 4). | Owner, 2026-11-14 (decision card) |
 
 ## 10. Interface requirements
 - Engine control channel v1.3: implemented as approved, plus amendment
@@ -491,3 +507,4 @@ section 9.
 | 42 | 2026-11-12 | SR-14: `DOCKER_CONFIG` points to an empty engine-owned folder instead of being cleared, because a cleared variable makes Docker read the owner's `~/.docker` (developer interpretation confirmed) | Owner, 2026-11-12 (decision card) |
 | 43 | 2026-11-12 | AC-21 residual risk accepted until Alpha: text hidden only by a page's stylesheet rules can reach the web reader (inline hiding, hidden elements, zero-width and bidi characters are stripped). Must be fixed before promotion to Alpha | Owner, 2026-11-12 (decision card) |
 | 44 | 2026-11-12 | AC-13 for increment 1: the reason no session started is recorded in the feature's transcript and the engine log, and that counts as the owner being told. A channel surface for it (for example a per-feature reason in `engine.status`) comes with the VS Code extension increment, as an Interfaces change then (validation M8, option A) | Owner, 2026-11-12 (decision card) |
+| 45 | 2026-11-14 | Reopened for ADR 0026 (no containers until Beta): until-Beta wording for FR-8, AC-16, SR-6, SR-9 and SR-18 in section 9 | Owner, 2026-11-14 (decision cards) |
