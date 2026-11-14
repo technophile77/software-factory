@@ -115,6 +115,19 @@ export class CodeRepo {
     await this.git.run(this.localDir, ["-c", "protocol.file.allow=always", "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", this.pushDir, `+${ref}:${ref}`]);
   }
 
+  /**
+   * FR-10, SR-4: the one branch that leaves the owner's PC, at exactly `sha`.
+   * It crosses from the local clone to the push clone by path, then to GitHub.
+   */
+  async pushFeature(branch: string, sha: string, token: string): Promise<void> {
+    if (!/^[0-9a-f]{40}$/.test(sha)) throw new CodeRepoError("malformed commit");
+    const ref = `refs/heads/${branch}`;
+    await this.git.run(this.pushDir, ["-c", "protocol.file.allow=always", "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", this.localDir, `+${ref}:${ref}`]);
+    const at = await this.git.revParse(this.pushDir, ref);
+    if (at !== sha) throw new CodeRepoError(`the branch moved from ${sha} before the push`);
+    await this.git.run(this.pushDir, [...this.transport(), "push", "--no-verify", "--porcelain", this.remote.url, `${sha}:${ref}`], { askpassToken: token });
+  }
+
   /** AC-1: the three branches from `main`, made once; an existing branch is kept as it is. */
   async ensureBranches(b: FeatureBranches, main: string): Promise<void> {
     for (const name of [b.feature, b.dev, b.test]) {

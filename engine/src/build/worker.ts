@@ -194,7 +194,7 @@ export interface TurnFacts {
  * in as a quoted value.
  */
 /** Where a fix comes from besides stage 6 test failures (F-015 AC-9, AC-10). */
-export type FixFrom = "code_review" | "validation";
+export type FixFrom = "code_review" | "validation" | "owner";
 
 export function buildTurn(role: BuildRole, t: TurnFacts): string {
   const common = [
@@ -204,7 +204,7 @@ export function buildTurn(role: BuildRole, t: TurnFacts): string {
     `Your report goes back as your structured result, with feature "${t.feature}", stage "${t.stage}" and commit "${t.commit}" (the commit you started from).`,
   ];
   if (t.fix !== undefined) {
-    const why = t.fixFrom === "code_review" ? "Code Review found security problems that block the feature" : t.fixFrom === "validation" ? "The validation judge failed the feature" : "Tests fail";
+    const why = t.fixFrom === "code_review" ? "Code Review found security problems that block the feature" : t.fixFrom === "validation" ? "The validation judge failed the feature" : t.fixFrom === "owner" ? "The owner asked for changes on the pull request" : "Tests fail";
     const fixTask = role === "software-developer"
       ? `${why}${t.fixFrom ? "" : " because of the product code"}. Fix the product code so ${t.fixFrom ? "each finding below is resolved" : "they pass"}; don't change tests, CI workflows or test configuration.`
       : `${why}${t.fixFrom ? "" : " because of the test code"}. Fix those tests so they check what the spec says, and for each test you change name the spec section it follows in your report's summary. Don't change product code.`;

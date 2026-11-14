@@ -12,6 +12,8 @@ import { FakeIssues } from "./inbox-fake";
 import { type Script, boot, entries, interview, runsOf, scriptedSdk, stageOf, until, world } from "./agents-harness";
 import { act, analyst, items, orchestrator, pollUntil, reviewer, start } from "./signoff-flow";
 import { nodeProgram } from "./acceptance/support/platform";
+import type { CheckRun, Pull, PullsApi, RequiredCheck } from "../src/build/pulls";
+import type { IssueComment } from "../src/inbox/github-issues";
 
 // F-015 M1 on the engine: a signed-off spec builds through stage 5 on the owner's PC.
 
@@ -187,6 +189,52 @@ describe("F-015 M1: stage 5 on the engine", () => {
   }, 90_000);
 });
 
+/** GitHub's pull request API for acme-web: one PR, a required "ci" check that passes on the second look. */
+class FakePulls implements PullsApi {
+  pr: (Pull & { body: string; title: string }) | null = null;
+  created: Array<Record<string, unknown>> = [];
+  posted: IssueComment[] = [];
+  readyCalls = 0;
+  checkCalls = 0;
+  commentReads = 0;
+  constructor(readonly bare: string) {}
+  async findPull(): Promise<Pull | null> {
+    return this.pr;
+  }
+  async pull(): Promise<Pull> {
+    return this.pr!;
+  }
+  async createPull(_repo: string, p: { title: string; head: string; base: string; body: string }): Promise<Pull> {
+    this.created.push({ title: p.title, head: p.head, base: p.base, draft: true });
+    const sha = git(path.dirname(this.bare), "--git-dir", this.bare, "rev-parse", `refs/heads/${p.head}`);
+    this.pr = { number: 1, nodeId: "PR_1", state: "open", draft: true, merged: false, mergeCommit: null, mergedBy: "", head: { sha, ref: p.head, repo: "example-org/acme-web" }, url: "", body: p.body, title: p.title };
+    return this.pr;
+  }
+  async updatePull(_repo: string, _n: number, p: { title: string; body: string }): Promise<void> {
+    this.pr = { ...this.pr!, ...p };
+  }
+  async markReady(): Promise<void> {
+    this.readyCalls++;
+    this.pr = { ...this.pr!, draft: false };
+  }
+  async requiredChecks(): Promise<RequiredCheck[]> {
+    return [{ context: "ci", integrationId: null }];
+  }
+  async checkRuns(_repo: string, sha: string): Promise<CheckRun[]> {
+    this.checkCalls++;
+    const other = { name: "ci", status: "completed", conclusion: "success", appId: 1, headSha: sha, summary: "" };
+    return this.checkCalls === 1 ? [other] : [other, { ...other, appId: 15368 }];
+  }
+  async comments(): Promise<IssueComment[]> {
+    this.commentReads++;
+    return this.posted;
+  }
+  async comment(_repo: string, _n: number, body: string): Promise<number> {
+    this.posted.push({ id: 100 + this.posted.length, body, author: "acme-owner", authorId: OWNER_ID, authorType: "User", createdAt: "", updatedAt: "", url: "" });
+    return 100 + this.posted.length - 1;
+  }
+}
+
 /** The repo's test command: a JUnit file whose one test passes once the export is fixed. */
 function runner(dir: string): string {
   const file = path.join(dir, "runner.js");
@@ -201,8 +249,8 @@ process.exit(fixed ? 0 : 1);
   return file;
 }
 
-describe("F-015 M2 and M3: the engine's test run, stage 6, Code Review and the judge", () => {
-  it("AC-6 to AC-10, AC-26: the engine runs the tests, the classifier names the cause, the developer fixes it; a blocking Code Review finding goes back to the developer; the judge's PASS moves the feature to the pull request", async () => {
+describe("F-015 M2 to M4: the test run, stage 6, Code Review, the judge and the pull request", () => {
+  it("AC-6 to AC-10, AC-26: the engine runs the tests, the classifier names the cause, the developer fixes it; a blocking Code Review finding goes back to the developer; the judge's PASS opens a draft PR that goes ready on green CI, and the owner's merge is recorded", async () => {
     const { w, d, gh, id } = await signedOff((yaml, root) => {
       const script = runner(root);
       return yaml.replace("    url: https://github.com/example-org/acme-web\n", `    url: https://github.com/example-org/acme-web\n    commands:\n      test: [${JSON.stringify(process.execPath)}, ${JSON.stringify(script)}]\n      test_results: test-results.xml\n`);
@@ -270,17 +318,46 @@ fs.writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ results: [{ chec
 process.exit(1);
 `);
     const s = scriptedSdk({ analyst: async function* () {}, reviewer: codeReviewer, orchestrator: classifier, developer: dev, tester: tester(() => feature, seen), judge });
-    const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, semgrep: { program: semgrep } });
-    await until("the judge's pass", () => ["pass", "failed"].some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000).catch((err) => {
-      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature(feature)?.state.build.actions)}; last ${JSON.stringify(e.feature(feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-15).map((l) => l.message ?? l.action).join(" | ")}`);
+    const pulls = new FakePulls(path.join(w.root, "remote", "example-org", "acme-web.git"));
+    const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, semgrep: { program: semgrep }, pulls: () => pulls, prPollMs: 50 });
+    const stopAt = ["green", "failed", "refused"];
+    await until("the ready pull request", () => stopAt.some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000).catch((err) => {
+      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature(feature)?.state.build.actions)}; last ${JSON.stringify(e.feature(feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-4).map((l) => l.message ?? l.action).join(" | ")}`);
     });
 
-    expect(JSON.stringify(e.feature(feature)!.state.build.events.at(-1))).not.toContain("\"failed\"");
+    expect(JSON.stringify(e.feature(feature)!.state.build.events.at(-1))).not.toMatch(/"(failed|refused)"/);
     expect(e.feature(feature)!.state.build.actions).toEqual([
       "dependencies_merged", "done", "done", "branches_merged", "tests_failed", "product_code", "done", "passed",
-      "blocking_finding", "done", "passed", "clean", "pass",
+      "blocking_finding", "done", "passed", "clean", "pass", "opened", "green",
     ]);
     expect(stageOf(e, feature)).toBe("pull_request");
+
+    // AC-11: the feature branch, and only it, was pushed with the owner's token; the PR opened as a draft and went ready on green.
+    const branch = e.feature(feature)!.state.branch;
+    const pushed = git(w.root, "--git-dir", pulls.bare, "rev-parse", `refs/heads/${branch}`);
+    expect(git(w.root, "--git-dir", pulls.bare, "for-each-ref", "--format=%(refname:short)", "refs/heads/").split("\n").sort()).toEqual([branch, "main"].sort());
+    expect(pulls.created).toEqual([{ title: `${feature}: Export orders as CSV`, head: branch, base: "main", draft: true }]);
+    expect(pulls.pr!.body).toContain("ready for the owner's review");
+    expect(pulls.readyCalls).toBe(1);
+    // AC-28: the check only counted once it passed on the pushed SHA from GitHub Actions.
+    expect(pulls.checkCalls).toBeGreaterThanOrEqual(2);
+    expect(pulls.posted).toHaveLength(1);
+    expect(pulls.posted[0]!.body).toContain(`**Definition of done for ${feature}**`);
+    expect(pulls.posted[0]!.body).toContain(`head ${pushed}`);
+    expect(pulls.posted[0]!.body).not.toMatch(/Rows go out|expected 3 rows|\/tmp\//);
+    const prRec = JSON.parse(git(w.config, "show", "factory/state:prs/example-org/acme-web/1.json"));
+    expect(prRec).toMatchObject({ schema: "pr-record/1.0", feature, number: 1, head: pushed, history: [{ action: "evidence_posted", head: pushed }] });
+
+    // AC-13: a /changes from anyone but the owner is ignored; the owner's merge is recorded.
+    pulls.posted.push({ id: 900, body: "/changes please rewrite it", author: "someone", authorId: 42, authorType: "User", createdAt: "", updatedAt: "", url: "" });
+    const polls = pulls.commentReads;
+    await until("two more looks at the PR", () => pulls.commentReads >= polls + 2);
+    expect(e.feature(feature)!.state.build.actions.at(-1)).toBe("green");
+    pulls.pr = { ...pulls.pr!, state: "closed", merged: true, mergeCommit: "c".repeat(40), mergedBy: "acme-owner" };
+    await until("the owner's merge", () => e.feature(feature)?.state.build.actions.includes("owner_merged") ?? false);
+    expect(e.feature(feature)!.state.build.events.at(-1)).toMatchObject({ action: "owner_merged", merge_commit: "c".repeat(40), merged_by: "acme-owner" });
+    expect(stageOf(e, feature)).toBe("pull_request");
+    expect(JSON.parse(git(w.config, "show", "factory/state:prs/example-org/acme-web/1.json")).history.at(-1)).toMatchObject({ action: "merged_on_github", merge_commit: "c".repeat(40) });
     expect(s.count.orchestrator).toBe(1);
     expect(s.count.developer).toBe(3);
     expect(s.count.reviewer).toBe(2);
