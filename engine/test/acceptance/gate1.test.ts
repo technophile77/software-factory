@@ -939,13 +939,15 @@ describe("AC-18 / FR-9, FR-13: the owner says no, or the spec says something els
     await analystSettled(r.w, feature, 2);
     // The check's evidence names the finding: in the transcript or the engine log.
     await waitFor(() => /Gate 1 #1[^\n]*(cite|Approved|answer)/.test(committedTranscript(r.w, feature).split("gate1_report").pop()! + engineLog(r.w)), 30_000, "the FR-9 check naming Gate 1 #1");
-    expect(await stageOf(r.w, feature)).toBe(GATE1);
+    // F-016 FR-15: nothing waits on the owner, so the feature goes back to the analyst with the evidence instead of stopping.
+    await waitFor(() => /gate1_unresolved/.test(committedTranscript(r.w, feature)), 15_000, "the send-back to the analyst");
+    expect(await stageOf(r.w, feature)).not.toBe(READINESS);
     expect(r.sdk.of("reviewer").length).toBe(1);
     await r.w.restart();
     await r.w.settle();
     await realWait(1500);
     expect(r.sdk.of("reviewer").length).toBe(1);
-    expect(await stageOf(r.w, feature)).toBe(GATE1);
+    expect(await stageOf(r.w, feature)).not.toBe(READINESS);
   });
 
   it("[G1-39] FR-13: a deferred Gate 1 question leaves the finding unresolved: the feature doesn't reach readiness_gate", T, async () => {
