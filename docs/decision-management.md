@@ -65,7 +65,8 @@ kind; decisions also carry their category. The owner sees them in VS Code
 through Microsoft's GitHub Pull Requests extension and on the phone through
 GitHub Mobile, and acts with a 👍 on an action comment or a command comment.
 Pull requests are not items: the owner merges them in GitHub's PR view
-(F-011 OQ-12).
+(F-011 OQ-12). At Rapid prototype Claude merges a PR once the owner has
+approved its content through the items above (ADR 0030).
 
 | Kind | Owner actions | Confirmation step |
 |---|---|---|

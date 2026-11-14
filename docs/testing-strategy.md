@@ -101,9 +101,12 @@ problems can lead to a model or effort change for that role.
 
 ## Continuous integration
 
-CI (GitHub Actions) re-runs the required jobs for the repo's maturity level
-on a clean machine, on every PR and every push to `main` (ADR 0008). A red
-CI run is a test failure like any other and follows the table above. CI
+CI (GitHub Actions) re-runs the jobs for the repo's maturity level on a
+clean machine, on every PR and every push to `main` (ADR 0008). At Rapid
+prototype no job is required, so CI never holds a merge; the tests covering
+a change must pass locally before its PR opens instead (ADR 0030). A red
+CI run is a test failure like any other and follows the table above, and
+red CI on `main` after a merge is fixed forward or reverted at once. CI
 results are evidence for the judge and for maturity promotions.
 
 ## Test tools
