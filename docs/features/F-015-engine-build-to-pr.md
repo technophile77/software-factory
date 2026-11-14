@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
-- **Spec version:** 14
+- **Spec version:** 15
 
 This is engine increment 4, "Build to PR" (F-007 section 13). It is a draft
 written before the owner interview, from the baseline spec, the ADRs and the
@@ -198,7 +198,9 @@ earlier would stop every project. F-002 rungs replace these per project later.
   run report, the spec and the diff, and writes only its report.
 - `Bash` for the developer and test engineer as SR-1 accepts.
 
-### H-0193 (draft): Project manifest v1.7
+### H-0193 (approved, applied): Project manifest v1.7
+Approved by the owner 2026-11-14 (decision card, argument lists) and applied
+in `interface-contracts.md`.
 Optional keys, non-breaking:
 
 ```yaml
@@ -278,3 +280,4 @@ Asked one at a time on decision cards. None is assumed.
 | 12 | 2026-11-14 | H-0196 approved and applied: the six Semgrep dependency advisories accepted as unreachable until 2027-02-12 | Owner, 2026-11-14 (decision card) |
 | 13 | 2026-11-14 | H-0191 approved: developer and judge on Opus 5.5, test engineer and failure classifier on Sonnet 5.5; applied with the build | Owner, 2026-11-14 (decision card) |
 | 14 | 2026-11-14 | H-0190 approved: session limits for developer, test engineer, failure classifier and judge, test-run and CI-wait caps; applied with the build | Owner, 2026-11-14 (decision card) |
+| 15 | 2026-11-14 | H-0193 approved and applied: Project manifest v1.7, `repos[].commands` as argument lists and `owner.commit_name` | Owner, 2026-11-14 (decision card) |

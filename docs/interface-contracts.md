@@ -712,11 +712,12 @@ section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.6
+## Project manifest — v1.7
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014);
   v1.3 approved (H-0080); v1.4 approved (H-0087); v1.5 approved (H-0135);
-  v1.6 approved (F-013 OQ-11, owner, decision card, 2026-11-13)
+  v1.6 approved (F-013 OQ-11, owner, decision card, 2026-11-13); v1.7
+  approved (F-015 H-0193, owner, decision card, 2026-11-14)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
   adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
   `complexity` and `settings.agents` (F-002 A-6, A-8); v1.3 adds `enabled`,
@@ -739,7 +740,7 @@ the preset used only for initial calibration) and
 ladder; the engine refuses a rung that doesn't exist in the pinned factory
 version or is below the role's floor). Both change only through hygiene
 items (F-002). The manifest is the only record of repo and project maturity
-levels. `schema` stays `factory-project/1.0`: v1.1 to v1.6 only add optional keys.
+levels. `schema` stays `factory-project/1.0`: v1.1 to v1.7 only add optional keys.
 
 From v1.5, optional `settings.endpoints`: a list of model endpoint names
 (Model endpoints file v1.0) this project's code may be sent to; default
@@ -764,6 +765,27 @@ settings:
     web-reader: { model: lan/qwen3.8-27b, fallback: claude-haiku-5-5 }
     security-reviewer: { advisory: lan/qwen3.8-27b }
 ```
+
+From v1.7 (F-015 H-0193), optional `repos[].commands` and
+`owner.commit_name`:
+
+```yaml
+owner:
+  commit_name: <name>            # overrides the GitHub profile name on the engine's code repo commits (F-015 FR-17)
+repos:
+  - name: web
+    commands:
+      test: ["npm", "test", "--", "--reporter=junit", "--outputFile=reports/junit.xml"]
+      test_results: reports/junit.xml
+      build: ["npm", "run", "build"]
+```
+
+`test` and `build` are non-empty lists of strings, run as an argument list
+with no shell. `test_results` is the JUnit XML file `test` writes, a relative
+path that must resolve inside the worktree under the ADR 0015 path rule. A
+repo without `commands.test` can't enter stage 5 (F-015). `commit_name` is a
+non-empty string of at most 100 characters with no control characters.
+Onboarding (F-003) asks for the commands per repo.
 
 From v1.4, optional `limits`: the same keys as the master factory's
 `engine/config/limits.yaml` (H-0087). For each key the engine uses the lower
