@@ -3,8 +3,8 @@
 Rules are in spec section 16. This file holds the numbers: what each
 promotion needs, and how strict each gate is at each level.
 
-**Status: DRAFT.** Neither table is approved. The orchestrator must not
-promote, demote, or relax a gate based on them until the owner approves them.
+**Status: Approved.** Both tables were approved by the owner on 2026-11-14
+(H-0250). They change only through the configuration hygiene process.
 
 Where levels are recorded: the project manifest, `repos[].maturity` for
 each repo and `maturity` for the project (owner, 2026-11-10, H-0008).
@@ -15,9 +15,9 @@ A jump past a level needs the evidence for every level in between.
 
 | Move | Testing required | Other evidence |
 |---|---|---|
-| → Prototype | Builds and a smoke test runs | Purpose written down |
-| Prototype → Alpha | Every acceptance criterion of core features has a passing test; unit tests on core logic; failure paths for core features | Code Review of the whole codebase; known issues listed |
-| Alpha → Beta | All acceptance criteria tested, including edge cases; contract tests for every interface; integration tests; coverage, regression and stochastic bars in `testing-strategy.md` | No open security findings above an agreed severity; user-facing docs; tester feedback channel |
+| → Rapid prototype | Builds and a smoke test runs | Purpose written down |
+| Rapid prototype → Alpha | Every acceptance criterion of core features has a passing test; unit tests on core logic; failure paths for core features | Code Review of the whole codebase; known issues listed |
+| Alpha → Beta | All acceptance criteria tested, including edge cases; contract tests for every interface; integration tests; coverage, regression and stochastic bars in `testing-strategy.md` | No open Critical or High security findings; user-facing docs; tester feedback channel |
 | Beta → Release | Full regression suite green on a clean environment; performance/load tests against stated targets; upgrade and rollback tested | Dependency audit; no open blocking bugs; release notes |
 | Release → Production ready | Tests pass in a production-like environment; backup/restore tested; failure/recovery tested | Monitoring and alerting; runbook; full security review; owner sign-off |
 
@@ -25,9 +25,9 @@ A jump past a level needs the evidence for every level in between.
 
 Every level runs every gate. Only the bar changes.
 
-| Gate | Prototype | Alpha | Beta | Release / Production ready |
+| Gate | Rapid prototype | Alpha | Beta | Release / Production ready |
 |---|---|---|---|---|
-| Requirements interview | Short; assumptions allowed if approved | Full | Full | Full |
+| Requirements interview | Full | Full | Full | Full |
 | Test engineer | Happy path for each acceptance criterion; unit tests on core logic | All acceptance criteria + core failure paths; unit, regression and stochastic tests to the Alpha bar | Plus edge cases and contract tests; Beta bar | Plus non-functional tests; Release bar (Production ready: every test type) |
 | Security and Testability Review and Code Review (approved) | Critical blocks | Critical and High block | Critical and High block | Critical, High, and Medium block |
 | Required CI jobs (approved) | None required; every job runs and reports (ADR 0030) | Build, smoke test, unit, acceptance tests, secret scan, static analysis (ADR 0024) | + contract, integration tests, dependency audit | + full regression, performance tests, coverage report |
@@ -35,4 +35,4 @@ Every level runs every gate. Only the bar changes.
 | Tests before a PR opens (approved) | The tests covering the change pass locally (ADR 0030) | Same | Same | Same |
 | Who merges a PR (approved) | Claude, once local tests pass and the owner approved the content (ADR 0030) | The owner, unless he keeps Claude merging when approving the promotion | Same as Alpha | Same as Alpha |
 
-The security row is approved (open decision 7, see `security-standards.md`). The validation judge row is approved (open decision 8), and the CI row (ADR 0008, Rapid prototype column ADR 0030). The last two rows are approved (ADR 0030). The other rows are still draft.
+Every row is approved. The security row by open decision 7 (see `security-standards.md`), the validation judge row by open decision 8, the CI row by ADR 0008 (Rapid prototype column ADR 0030), and the last two rows by ADR 0030. The requirements interview and test engineer rows were approved on 2026-11-14 (H-0250); the interview is full at every level, Rapid prototype included.
