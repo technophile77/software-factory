@@ -1212,6 +1212,7 @@ def _check_owner_keys(data):
 # fractions. The engine also refuses any value above the master default.
 _CONTAINER_LIMITS = {"cpus": "num", "memory_mib": "num", "pids": "int", "tmp_mib": "num"}
 _SESSION_LIMITS = {"turns": "int", "output_tokens": "int", "dollars": "num", "wall_time_minutes": "int", **_CONTAINER_LIMITS}
+_BUILD_SESSION_LIMITS = {"turns": "int", "output_tokens": "int", "dollars": "num", "wall_time_minutes": "int"}
 LIMIT_KEYS = {
     "analyst": _SESSION_LIMITS,
     "web_reader": _SESSION_LIMITS,
@@ -1226,6 +1227,16 @@ LIMIT_KEYS = {
     # F-016 readiness gate (H-0184, H-0185): optional in the master too.
     "orchestrator": _SESSION_LIMITS,
     "readiness_gate": {"runs_per_feature": "int", "report_kib": "int"},
+    # F-015 build stages (H-0190, H-0197, H-0199): no container keys, since builds run on the owner's PC until Beta (ADR 0026).
+    "software_developer": _BUILD_SESSION_LIMITS,
+    "test_engineer": _BUILD_SESSION_LIMITS,
+    "failure_classifier": _BUILD_SESSION_LIMITS,
+    "validation_judge": _BUILD_SESSION_LIMITS,
+    "test_run": {"wall_time_minutes": "int", "output_kib": "int", "ci_wait_minutes": "int"},
+    "stage6": {
+        "environment_reruns": "int", "incomplete_reruns": "int", "product_fix_cycles": "int", "test_fix_cycles": "int",
+        "unclear_investigations": "int", "flaky_per_test": "int", "disagreements": "int", "agent_hours": "num",
+    },
 }
 
 LEGACY_LIMIT_SECTIONS = {"security_gate_1": "security_testability_review"}
