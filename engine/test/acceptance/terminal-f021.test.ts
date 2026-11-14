@@ -7,7 +7,11 @@ import { Interview } from "../../src/mcp/operations";
 import { realOsApi } from "../../src/os/ffi";
 import { TerminalInterview, type Timing } from "../../src/terminal/interview";
 import { FakeEngine, question, type Json } from "./support/mcp-fake-engine";
-import { IS_UNIX, makeRepo, removeTmp, writeEngineJson } from "./support/mcp-harness";
+import { ENGINE_DIR, IS_UNIX, buildEngine, makeRepo, removeTmp, writeEngineJson } from "./support/mcp-harness";
+import { spawnSync } from "node:child_process";
+import * as path from "node:path";
+
+const ENV = { ...process.env, NODE_PATH: path.join(ENGINE_DIR, "node_modules") };
 
 const MARK = "│ ";
 const SESSION = "c".repeat(32);
@@ -173,6 +177,17 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     const { s } = await inbox(["4", "", "4", "Make it shorter.", "", ], "D-0007");
     expect(s.out).toContain("Nothing was typed, so nothing was sent.");
     expect(answers()).toEqual([expect.objectContaining({ action: "changes", note: "Make it shorter." })]);
+  });
+
+  test("AC-13, SR-3: without a terminal, or with a bad item id or extra argument, the command exits 2 and sends nothing", async () => {
+    const bundle = await buildEngine();
+    const piped = spawnSync(process.execPath, [bundle, "inbox", "D-0007", "--project", repo], { input: "1\n", encoding: "utf8", env: ENV });
+    expect(piped.status).toBe(2);
+    expect(piped.stderr).toContain("factory-engine inbox runs only in a terminal");
+    for (const args of [["inbox", "F-1"], ["inbox", "D-0007", "--answer", "A"], ["inbox", "../D-0007"]]) {
+      expect(spawnSync(process.execPath, [bundle, ...args], { encoding: "utf8", env: ENV }).status).toBe(2);
+    }
+    expect(engine.connections).toBe(0);
   });
 
   test("an engine without the inbox capability is refused before anything is sent", async () => {
