@@ -42,12 +42,21 @@ export interface RepoInfo {
   private?: boolean;
 }
 
+export interface AccountInfo {
+  id: number;
+  login: string;
+  /** The profile name; null when the account has none. */
+  name: string | null;
+}
+
 /** What the engine asks of GitHub. Injectable so tests can use a fake GitHub. */
 export interface GitHubClient {
   requestDeviceCode(clientId: string): Promise<DeviceCode>;
   pollToken(clientId: string, deviceCode: string): Promise<PollResult>;
   userId(token: string): Promise<number>;
   repo(owner: string, name: string, token: string): Promise<RepoInfo>;
+  /** F-015 FR-17: an account's login and profile name, by its numeric id. */
+  account?(id: number, token: string): Promise<AccountInfo>;
   /** GitHub's web and git base. Absent means https://github.com. */
   readonly webBase?: string;
 }
@@ -193,6 +202,17 @@ export class HttpGitHub implements GitHubClient {
     const ownerId = (b?.owner as Record<string, unknown> | undefined)?.id;
     if (!isPosInt(ownerId) || typeof b?.private !== "boolean") throw new GitHubError("GitHub sent a malformed repository");
     return { status: 200, ownerId, private: b.private };
+  }
+
+  async account(id: number, token: string): Promise<AccountInfo> {
+    if (!isPosInt(id)) throw new GitHubError("malformed account id");
+    const r = await this.call(`${this.api}/user/${id}`, {
+      headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" },
+    });
+    this.log.action({ agent: "engine", action: "github.get_account", target: `user/${id}`, outcome: String(r.status) });
+    const b = r.body as Record<string, unknown> | null;
+    if (r.status !== 200 || !isPosInt(b?.id) || typeof b?.login !== "string") throw new GitHubError("GitHub didn't return the account");
+    return { id: b.id, login: b.login, name: typeof b.name === "string" ? b.name : null };
   }
 }
 

@@ -4,6 +4,7 @@
 - **Status:** Draft | In review | Approved | In development | Done
 - **Requested by / date:**
 - **Spec version:** 1
+- **Repo:** <repos[].name> (only when the project has more than one code repo; F-015 FR-16, H-0198)
 
 ## 1. Objective and business purpose
 Why this exists and who it is for.
@@ -29,7 +30,9 @@ Technical, performance, compatibility, time.
 Including abuse cases from the security review.
 
 ## 7. Dependencies
-Other features, services, libraries, data.
+Other features, services, libraries, data. A feature of the same project
+listed here by id (F-<nnn>) must have its pull request merged before this
+one starts development (F-015 FR-16, H-0198).
 
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |

@@ -35,6 +35,8 @@ export interface Manifest {
   commit: string;
   enabled: boolean;
   owner: { github_id: number; oauth_client_id: string };
+  /** Manifest v1.7 `owner.commit_name` (F-015 FR-17); checked where it is used, so a bad one stops only the build. */
+  commitName?: string;
   allowed_repo_owners: RepoOwner[];
   repos: Array<{ name: string; url: string; owner: string; repo: string }>;
   billingMode: "subscription" | "tokens";
@@ -104,7 +106,8 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
   if (typeof doc.enabled !== "boolean") bad("enabled must be true or false");
   if (!isObj(doc.owner)) return bad("owner is required to run");
   const ownerKeys = Object.keys(doc.owner).sort().join();
-  if (ownerKeys !== "github_id,oauth_client_id") bad("owner must have exactly github_id and oauth_client_id");
+  if (ownerKeys !== "github_id,oauth_client_id" && ownerKeys !== "commit_name,github_id,oauth_client_id") bad("owner must have github_id and oauth_client_id, and may have commit_name");
+  if (doc.owner.commit_name !== undefined && typeof doc.owner.commit_name !== "string") bad("owner.commit_name must be text");
   if (!isPosInt(doc.owner.github_id)) bad("owner.github_id must be a positive integer");
   if (typeof doc.owner.oauth_client_id !== "string" || !/^[A-Za-z0-9_.-]{1,100}$/.test(doc.owner.oauth_client_id)) {
     bad("owner.oauth_client_id must be a non-empty client id");
@@ -150,6 +153,7 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
     commit,
     enabled: doc.enabled as boolean,
     owner: { github_id: doc.owner.github_id as number, oauth_client_id: doc.owner.oauth_client_id as string },
+    ...(typeof doc.owner.commit_name === "string" ? { commitName: doc.owner.commit_name } : {}),
     allowed_repo_owners: allowed,
     repos,
     billingMode: mode as "subscription" | "tokens",

@@ -473,7 +473,10 @@ describe("factory.version sources (spec v30)", () => {
     const w = makeWorld();
     commitMaster(w, { "engine/config/models.yaml": "requirements-analyst: newer\nweb-reader: newer\n" });
     const e = await boot(w);
-    expect(e.models("acme")).toEqual({ "requirements-analyst": "claude-opus-5-5", "web-reader": "claude-haiku-5-5", "security-reviewer": "claude-sonnet-5-5", orchestrator: "claude-sonnet-5-5" });
+    expect(e.models("acme")).toEqual({
+      "requirements-analyst": "claude-opus-5-5", "web-reader": "claude-haiku-5-5", "security-reviewer": "claude-sonnet-5-5", orchestrator: "claude-sonnet-5-5",
+      "software-developer": "claude-opus-5-5", "test-engineer": "claude-sonnet-5-5", "validation-judge": "claude-opus-5-5",
+    });
   });
 
   it("follows an annotated tag of an annotated tag to its commit", async () => {

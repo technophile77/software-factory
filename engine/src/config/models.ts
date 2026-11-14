@@ -7,8 +7,8 @@ export const MODELS_FILE = "engine/config/models.yaml";
 
 /** The roles the engine runs in F-007; each needs a model. */
 export const MODEL_ROLES = ["requirements-analyst", "web-reader"] as const;
-/** F-008: a factory version from before it has no entry, and then Security and Testability Review doesn't run (AC-10). */
-export const OPTIONAL_MODEL_ROLES = ["security-reviewer", "orchestrator"] as const;
+/** F-008, F-016, F-015 (H-0191): a factory version from before them has no entry, and then that stage doesn't run. */
+export const OPTIONAL_MODEL_ROLES = ["security-reviewer", "orchestrator", "software-developer", "test-engineer", "validation-judge"] as const;
 export type ModelRole = (typeof MODEL_ROLES)[number];
 export type Models = Record<ModelRole, string> & Partial<Record<(typeof OPTIONAL_MODEL_ROLES)[number], string>>;
 

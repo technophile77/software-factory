@@ -5,7 +5,7 @@ import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Clock } from "../src/clock";
-import { DeviceCode, GitHubClient, PollResult, RepoInfo } from "../src/github";
+import { AccountInfo, DeviceCode, GitHubClient, PollResult, RepoInfo } from "../src/github";
 import { PinStore, pinnedKeys } from "../src/config/pins";
 import { validateManifest } from "../src/config/manifest";
 import YAML from "yaml";
@@ -227,6 +227,13 @@ export class FakeGitHub implements GitHubClient {
   }
   async repo(owner: string, name: string): Promise<RepoInfo> {
     return this.repos.get(`${owner}/${name}`) ?? { status: 404 };
+  }
+  /** F-015 FR-17: the owner's account; tests change it to try the commit identity rules. */
+  accounts = new Map<number, AccountInfo>([[OWNER_ID, { id: OWNER_ID, login: "acme-owner", name: "Acme Owner" }]]);
+  async account(id: number): Promise<AccountInfo> {
+    const a = this.accounts.get(id);
+    if (!a) throw new Error("no such account");
+    return a;
   }
 }
 

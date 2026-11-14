@@ -13,8 +13,12 @@ import type { RouterConfig } from "./agent/sandbox";
 import type { ModelCredential } from "./proxy/server";
 import { type AgentGroup, SessionGroup, runVolume } from "./agent/sandbox";
 import { HostError, HostGroup, runHome, sweepHomes } from "./agent/host";
-import { WORKSPACE, type SessionOutcome } from "./agent/session";
+import { type HostGate, WORKSPACE, type SessionOutcome, denyAsk } from "./agent/session";
 import { commitWorktree } from "./agent/worktree-commit";
+import { CodeRepo, CodeRepoError, type Identity, codeRepoUrl, commitIdentity, featureBranches } from "./build/code-repo";
+import { type BuildAction, type BuildState, STAGE_OF, buildMachine, isBuildAction, isBuildStage } from "./build/lifecycle";
+import { specDependencies, targetRepo } from "./build/target";
+import { type BuildRole, buildPolicy, buildTestResults, buildTurn, runWorkerSessions } from "./build/worker";
 import { DockerError } from "./docker/cli";
 import { baseImageId, ensureAgentImage, skillsPluginDir, writeSkillsPlugins } from "./docker/image";
 import { makeCosignVerifier, parseCosignPins } from "./docker/cosign";
@@ -34,7 +38,7 @@ import { type EndpointLookup } from "./config/endpoint-address";
 import { RoleAssignmentError, manifestAssignments, planAdvisory, planRole } from "./config/endpoint-roles";
 import { type Endpoint, EndpointsError, readEndpointsFile } from "./config/endpoints";
 import { Models, MODELS_FILE, readDefaultModels } from "./config/models";
-import { LIMITS_FILE, Limits, LimitsError, agentLimits, stReviewLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, readinessLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
+import { LIMITS_FILE, Limits, LimitsError, agentLimits, stReviewLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, readinessLimits, roleContainerLimits, worktreeLimits, buildLimits } from "./config/limits";
 import { Manifest, interviewSignIn, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin, pinnedKeys } from "./config/pins";
@@ -1801,6 +1805,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         }
         await done("spec_signed_off", [{ type: "spec_signed_off", item: r.id, commit: so.commit, version: so.version }], BUILD_STAGE);
         notify(`Factory: ${f!.id} is ready for development`, `Spec v${so.version ?? "?"} is signed off.`);
+        startBuild(p, f!);
         return;
       }
       await done("signoff_changes", [
@@ -1811,8 +1816,26 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
 
+    // Role policy v2.7: a held command's answer; one that came after the 30 minutes only records.
+    if (type === "ask") {
+      const answer = asks.get(r.id);
+      if (!answer) return done("ask_expired");
+      answer(chosen === "A");
+      return done(chosen === "A" ? "ask_approved" : "ask_denied");
+    }
+
     // Engine Security items (H-0182). Option B, and anything but A, only records.
     if (chosen !== "A") return done("record_only");
+    if (type === "buildstop" && f) {
+      await jobs.get(f.id)?.done;
+      const action = String(r.effect?.action ?? "");
+      const { machine, refused } = buildMachine(f.state.build.actions);
+      // SR-13 as for the analyst: one step per approval, and only the step the item offered from where the build is now.
+      if (refused || jobs.has(f.id) || !isBuildAction(action) || !machine.act(action)) return done("record_only");
+      await done("restarted", [{ type: "build", action, item: r.id }], STAGE_OF[machine.state()]);
+      startBuild(p, f);
+      return;
+    }
     if (type === "pins") {
       // OQ-3: the inbox proves the previously pinned owner (the inbox reads only that id), so the change is pinned as `factory-engine confirm` pins it.
       const m = p.manifest;
@@ -1881,11 +1904,356 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     return done("record_only");
   }
 
+  // -- Build: stages 5 to 9 (F-015, increment 4) ----------------------------------
+
+  /** FR-17: each project's owner identity, read from GitHub once per engine start. */
+  const identities = new Map<string, Promise<Identity>>();
+  /** Role policy v2.7: held commands waiting on the owner, by Security item id. */
+  const asks = new Map<string, (ok: boolean) => void>();
+  const ASK_WAIT_MS = 30 * 60_000;
+  const buildRoot = (p: Project) => path.join(home, "build", sha256Hex(p.real!).slice(0, 16));
+  const BUILD_WHAT: Record<BuildRole, { state: BuildState; what: string; rerun: BuildAction }> = {
+    "software-developer": { state: "developer", what: "developer", rerun: "rerun_developer" },
+    "test-engineer": { state: "test_engineer", what: "test engineer", rerun: "rerun_test_engineer" },
+  };
+
+  /** Stops the project with a Security item: something only the owner's config can fix (AC-18, AC-31, SR-15). */
+  class BuildStop extends Error {
+    override name = "BuildStop";
+  }
+
+  /** Records one build action, and the feature's stage when the action moves it to another (ADR 0031: the log is the truth). */
+  async function recordBuild(f: FeatureInterview, action: BuildAction, data: Record<string, unknown> = {}): Promise<BuildState> {
+    const { machine, refused } = buildMachine(f.state.build.actions);
+    if (refused) throw new Error(`the build's recorded actions stop at ${refused.action}`);
+    if (!machine.act(action)) throw new Error(`the build can't ${action} from ${machine.state()}`);
+    const stage = STAGE_OF[machine.state()];
+    await f.exclusive(() => f.append([{ type: "build", action, ...data }, ...(stage !== f.stage() ? [{ type: "stage", stage }] : [])] as never, `${f.id}: build ${action}`));
+    return machine.state();
+  }
+
+  function ownerIdentity(p: Project): Promise<Identity> {
+    return shared(identities, p.real!, async () => {
+      const m = p.manifest!;
+      if (!github.account || !p.token) throw new SessionRefused("the engine can't read the owner's GitHub account");
+      const account = await github.account(m.owner.github_id, p.token);
+      let r: ReturnType<typeof commitIdentity>;
+      try {
+        r = commitIdentity(account, m.owner.github_id, m.commitName);
+      } catch (e) {
+        throw e instanceof CodeRepoError ? new BuildStop(e.message) : e;
+      }
+      if (r.notice) {
+        await p.inbox?.file({
+          kind: "notice", title: "Code-repo commits use your GitHub login", priority: "high", blocking: false, created_by: "engine",
+          sections: { Details: [{ engine: `${r.notice} Set owner.commit_name in the project manifest to choose the name (F-015 SR-15).` }] },
+        }).catch((e) => log.warn(`${p.name}: the commit-name notice wasn't filed (${(e as Error).message}).`));
+      }
+      return r.identity;
+    });
+  }
+
+  /** The approved spec at its sign-off commit, the target repo and its engine clones (FR-2, FR-15, FR-16). */
+  async function buildContext(p: Project, f: FeatureInterview) {
+    const so = f.state.readiness.signedOff;
+    const specPath = f.state.lastSpecReady?.spec_path;
+    if (!so || !specPath) throw new SessionRefused("the feature has no signed-off spec");
+    const spec = (await readFileAt(git, p.real!, so.commit, specPath, 1024 * 1024, "The spec")).toString("utf8");
+    let target: Manifest["repos"][number];
+    let url: string;
+    try {
+      target = targetRepo(spec, p.manifest!.repos);
+      url = codeRepoUrl(target, gitBase);
+    } catch (e) {
+      throw new SessionRefused((e as Error).message);
+    }
+    const repo = new CodeRepo(git, path.join(buildRoot(p), "repos", sha256Hex(target.name).slice(0, 16)), { url, base: gitBase });
+    return { spec, specPath, so, target, repo, branches: featureBranches(f.id, f.state.branch) };
+  }
+
+  /** H-0192: the approved spec and the contracts, outside every worktree, for reading only. */
+  async function specFolder(p: Project, f: FeatureInterview, ctx: Awaited<ReturnType<typeof buildContext>>): Promise<{ root: string; spec: string }> {
+    const root = path.join(buildRoot(p), f.id, "spec");
+    fs.rmSync(root, { recursive: true, force: true });
+    ensureOwnerDir(root);
+    const spec = path.join(root, path.basename(ctx.specPath));
+    writeFileAtomic(spec, ctx.spec);
+    const contracts = await readFileAt(git, p.real!, ctx.so.commit, "docs/interface-contracts.md", 4 * 1024 * 1024, "The contracts").catch(() => null);
+    if (contracts) writeFileAtomic(path.join(root, "interface-contracts.md"), contracts);
+    return { root, spec };
+  }
+
+  /** AC-15: same-project features the spec lists in section 7 whose build hasn't reached an owner merge. */
+  function waitingOn(p: Project, f: FeatureInterview, spec: string): string[] {
+    return specDependencies(spec, f.id).filter((id) => {
+      const dep = p.features.get(id);
+      return dep !== undefined && buildMachine(dep.state.build.actions).machine.state() !== "merged";
+    });
+  }
+
+  /** Role policy v2.7: the held command waits on a Security item, at most 30 minutes; only option A runs it, once. */
+  function askOwner(p: Project, f: FeatureInterview, runId: string, role: BuildRole, worktree: string): HostGate["ask"] {
+    return async (command, matched) => {
+      if (!p.inbox || dead) return false;
+      const id = await fileSecurityItem(p.inbox, "ask", {
+        title: `${f.id}: the ${BUILD_WHAT[role].what} asks to run ${matched}`, feature: f.id,
+        context: `Run ${runId} (${role}) wants to run a command that uses ${matched}, which acts with your credentials (Role policy v2.7). The full command and its folder are in the console's private detail.`,
+        impact: "The agent waits for your answer for up to 30 minutes, off its time cap. With no answer the command is denied.",
+        confirm: "Run this command once", hold: "Deny it", recommendation: "B",
+        effectData: { run: runId },
+        private: [{ name: "Command", text: await scrubPrivate(command) }, { name: "Working folder", text: worktree }],
+      });
+      return new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => {
+          asks.delete(id);
+          resolve(false);
+        }, ASK_WAIT_MS);
+        asks.set(id, (ok) => {
+          clearTimeout(timer);
+          asks.delete(id);
+          resolve(ok);
+        });
+      });
+    };
+  }
+
+  /** A failed build step waits on the owner: option A takes the step again (the blocked state's actor). */
+  async function buildStopped(p: Project, f: FeatureInterview, key: string, what: string, why: string, rerun: BuildAction): Promise<void> {
+    await alert(p, `buildstop:${f.id}:${key}`, {
+      title: `The ${what} for ${f.id} stopped`, feature: f.id,
+      context: `The build of ${f.id} stopped at the ${what}: ${why}.`,
+      impact: `${f.id} waits in the build until this is decided.`,
+      confirm: `Run the ${what} again`, hold: "Keep the feature stopped", recommendation: "A",
+      effectData: { action: rerun },
+    });
+  }
+
+  function startBuild(p: Project, f: FeatureInterview): void {
+    // ADR 0026: the developer and test engineer have a shell on the owner's PC; there is no container build.
+    if (!o.agents?.host || dead || shuttingDown || jobs.has(f.id) || !f.chainIntact || p.state !== "running" || ambiguous.has(f.id)) return;
+    if (!isBuildStage(f.stage()) || !f.state.readiness.signedOff) return;
+    const job: Job = { turns: null, done: Promise.resolve() };
+    jobs.set(f.id, job);
+    job.done = runBuild(p, f)
+      .catch(async (e) => {
+        if (e instanceof BuildStop) {
+          await alert(p, `buildconfig:${f.id}:${e.message}`, {
+            title: `${p.name}: the build can't run with this configuration`, feature: f.id,
+            context: `The engine stopped ${p.name} before building ${f.id}: ${e.message}.`,
+            impact: "No feature of the project runs until the configuration is fixed and the engine restarted.",
+            confirm: "Fix the configuration, then restart the engine", hold: "Keep the project stopped", recommendation: "A",
+          });
+          stop(p, e.message);
+          return;
+        }
+        log.warn(`${f.id}: the build stopped: ${engineWords(e)}`);
+      })
+      .finally(() => jobs.delete(f.id));
+  }
+
+  /** Drives a feature's build machine until it waits on someone or something not built yet (M2 to M4). */
+  async function runBuild(p: Project, f: FeatureInterview): Promise<void> {
+    for (;;) {
+      if (dead || shuttingDown || p.state !== "running") return;
+      const { machine, refused } = buildMachine(f.state.build.actions);
+      if (refused) {
+        // F-019 FR-6: an action the machine refuses pauses the feature in its last valid state, for the owner.
+        log.warn(`${f.id}: the build's recorded action ${refused.action} isn't allowed in ${refused.state}; the feature is paused.`);
+        await alert(p, `buildreplay:${f.id}:${refused.index}`, {
+          title: `${f.id}'s build record has a step its lifecycle doesn't allow`, feature: f.id,
+          context: `Entry ${refused.index + 1} of ${f.id}'s build record is "${refused.action}", which the build lifecycle doesn't allow from ${refused.state}.`,
+          impact: `Nothing runs for ${f.id} until this is resolved.`,
+          confirm: "Look at the transcript and restart the feature", hold: "Keep the feature paused", recommendation: "B",
+        });
+        return;
+      }
+      const state = machine.state();
+      if (state === "waiting_dependency") {
+        const ctx = await buildContext(p, f);
+        const waiting = waitingOn(p, f, ctx.spec);
+        if (waiting.length) {
+          log.info(`${f.id}: waits for ${waiting.join(", ")} to merge before development (FR-16).`);
+          return;
+        }
+        await recordBuild(f, "dependencies_merged");
+      } else if (state === "developer" || state === "test_engineer") {
+        if (!(await buildRole(p, f, state === "developer" ? "software-developer" : "test-engineer"))) return;
+      } else if (state === "merging") {
+        await mergeAgentBranches(p, f);
+      } else {
+        // The test run, review, validation and PR steps come with later milestones; owner states wait on their item.
+        return;
+      }
+    }
+  }
+
+  /** FR-12: the newest interrupted run of this role and feature resumes, counted against MAX_RESUMES. */
+  function resumableRun(p: Project, f: FeatureInterview, role: BuildRole): RunRecord | null {
+    const last = record.runs().filter((r) => r.project === p.real && r.feature === f.id && r.role === role && r.stage === BUILD_STAGE).sort((a, b) => a.started_at.localeCompare(b.started_at)).at(-1);
+    return last?.status === "interrupted" ? last : null;
+  }
+
+  /** FR-3, FR-4: one developer or test engineer run in its own worktree; true when the build moved on. */
+  async function buildRole(p: Project, f: FeatureInterview, role: BuildRole): Promise<boolean> {
+    const rt = o.agents!;
+    const m = p.manifest!;
+    const w = BUILD_WHAT[role];
+    const caps = buildLimits(p.limits!, m.billingMode);
+    if ("missing" in caps) throw new BuildStop(`limits.yaml has no ${caps.missing.join(", ")} section${caps.missing.length > 1 ? "s" : ""} (FR-13)`);
+    const model = p.models![role];
+    if (!model) throw new BuildStop(`models.yaml has no ${role} entry (FR-13)`);
+    const ctx = await buildContext(p, f);
+    const identity = await ownerIdentity(p);
+    await ctx.repo.init();
+    if (!(await ctx.repo.head(ctx.branches.feature)) || !(await ctx.repo.head(ctx.branches.dev)) || !(await ctx.repo.head(ctx.branches.test))) {
+      if (!p.token) throw new SessionRefused("the project has no token to fetch the code repo");
+      await ctx.repo.ensureBranches(ctx.branches, await ctx.repo.fetchMain(p.token));
+    }
+    const branch = role === "software-developer" ? ctx.branches.dev : ctx.branches.test;
+    let known = resumableRun(p, f, role);
+    let resumeId: string | undefined;
+    if (known) {
+      const plan = runs.resume(known.id);
+      if (plan.mode === "failed") {
+        await recordBuild(f, "failed", { run: known.id, why: plan.run.reason ?? "interrupted too often" });
+        await buildStopped(p, f, known.id, w.what, plan.run.reason ?? "it was interrupted too often", w.rerun);
+        return false;
+      }
+      if (plan.mode === "session" && (await hasSession(rt, known.id))) resumeId = plan.sessionId;
+    }
+    const wt = await prepareWorktree(git, ctx.repo.localDir, known?.worktree ?? path.join(buildRoot(p), f.id, role), branch, known?.git_dir);
+    known ??= runs.start({ project: p.real!, feature: f.id, role, stage: BUILD_STAGE, worktree: wt.path });
+    const runId = known.id;
+    runs.update(runId, { git_dir: wt.gitDir });
+    const facts: RunFacts = { model };
+    try {
+      const credential = modelCredentialFor(env, modelCredential);
+      if (!credential) throw new SessionRefused("no model credential is stored or set");
+      const md = p.sources!.instructions.get(role);
+      if (!md) throw new SessionRefused(`the ${role} role has no AGENT.md at factory.version or in the project's overrides`);
+      const testResults = buildTestResults(m.raw, ctx.target.name);
+      const policy = buildPolicy(m.raw, role, ctx.target.name, testResults);
+      const folder = await specFolder(p, f, ctx);
+      const sdk = await rt.sdk();
+      const agents = await agentsFor(rt, p, credential);
+      runArtifacts.set(runId, [agents.artifact, { kind: "model", ref: `${role}: ${model}` }]);
+      const base = await ctx.repo.head(branch);
+      if (!base) throw new SessionRefused(`the branch ${branch} is gone`);
+      const first = resumeId
+        ? "The engine restarted. Continue where you left off."
+        : buildTurn(role, { feature: f.id, title: f.state.title, repo: ctx.target.name, branch, worktree: wt.path, spec: folder.spec, folder: folder.root, version: ctx.so.version, commit: base });
+      const group = await agents.group(runId);
+      const r = await runWorkerSessions({
+        sdk, group, policy, worktree: wt.path, instructions: md.text, caps: role === "software-developer" ? caps.developer : caps.tester,
+        ...(policy.tools.includes("Skill") ? { skillsPluginDir: agents.skillsDir(role) } : {}),
+        model, host: { ask: askOwner(p, f, runId, role, wt.path), askExtra: denyAsk(m.raw).askExtra, readOnlyRoot: folder.root },
+        outputSchema: reportOutputSchema(role), first, ...(resumeId ? { resume: resumeId } : {}),
+        ...(known.used ? { used: known.used } : {}),
+        onUsed: (used) => void (dead || runs.update(runId, { used })),
+        billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
+        check: async (report) => {
+          const errors = schemaErrors(report, modelReport(role));
+          const r = report as { feature?: unknown; stage?: unknown } | null;
+          if (!errors.length && r?.feature !== f.id) errors.push(`feature must be ${f.id}`);
+          if (!errors.length && r?.stage !== BUILD_STAGE) errors.push(`stage must be ${BUILD_STAGE}`);
+          return errors.length ? `The engine refused your report: ${errors.join("; ")}. Return the whole report again, corrected.` : null;
+        },
+        commit: async (pol) => {
+          if (dead) return { status: "unchanged" };
+          const head = await ctx.repo.head(branch);
+          if (!head) throw new SessionRefused(`the branch ${branch} is gone`);
+          return commitWorktree({
+            git, gitDir: wt.gitDir, worktree: wt.path, branch, base: head, policy: pol, scanner, tmpDir,
+            message: `${f.id}: ${w.what} session (run ${runId})`, limits: worktreeLimits(p.limits!), identity,
+          });
+        },
+        onSessionId: (id) => void (dead || runs.update(runId, { session_id: id })),
+        log,
+      }).catch(async (e) => {
+        if (!(e instanceof SecretFound)) throw e;
+        await populateWorktree(git, ctx.repo.localDir, base, wt.path, wt.gitDir);
+        await alert(p, `secret:${crypto.randomBytes(8).toString("hex")}`, {
+          title: `${f.id}: ${w.what} change refused: the secrets scan found a secret`, feature: f.id,
+          context: `The engine didn't commit run ${runId}'s changes because gitleaks flagged them (F-015 FR-4). The worktree was reset to the branch.`,
+          impact: `The ${w.what}'s run is stopped.`, confirm: "Rotate the secret if it was real", hold: "It was a false positive: no action", recommendation: "A",
+        });
+        return null;
+      });
+      if (dead) return false;
+      if (shuttingDown) return false;
+      const usageNow = r ? { usage: usage(r.outcome) } : {};
+      let failure = r === null ? "the secrets scan found a secret in its change" : r.failure;
+      const report = r?.report as { outcome?: string; summary?: string; body?: Record<string, unknown> } | undefined;
+      if (!failure && report?.outcome !== "complete") failure = `it reported ${report?.outcome ?? "no outcome"}`;
+      if (r?.refused && r.refused.status !== "unchanged") {
+        await populateWorktree(git, ctx.repo.localDir, base, wt.path, wt.gitDir);
+        if (r.refused.status === "rejected") {
+          const breaches = r.refused.breaches;
+          await alert(p, `breach:${runId}:${crypto.randomBytes(4).toString("hex")}`, {
+            title: `The ${w.what} wrote outside its rules`, feature: f.id,
+            context: `The engine rejected run ${runId}'s changes: ${breaches.slice(0, 20).map((b) => `${b.path || "(history)"} (${b.reason})`).join(", ")} (F-015 AC-4, AC-20). Nothing was committed.`,
+            impact: `The ${w.what}'s run is stopped and its worktree reset to the branch.`,
+            confirm: "Look at the agent's instructions and run it again", hold: "Keep the feature stopped", recommendation: "B",
+          });
+        }
+      }
+      const head = (await ctx.repo.head(branch)) ?? base;
+      await p.state_repo!.commit([agentReport({
+        feature: f.id, stage: BUILD_STAGE, role, n: await nextBuildReport(p, f.id, role), commit: head,
+        outcome: failure ? "partial" : "complete", summary: failure ? `Run ${runId} stopped: ${failure}.` : (report?.summary ?? ""),
+        body: failure ? {} : (report?.body ?? {}), facts: { ...facts, ...usageNow, report_via: "structured_output" }, artifacts: runArtifacts.get(runId) ?? [],
+      })], `${f.id}: ${w.what} run ${runId} ${failure ? "stopped" : "done"}`);
+      await pushState(p);
+      runs.finish(runId, failure ? "failed" : "complete", failure ?? undefined);
+      await dropSession(runId);
+      if (failure) {
+        await recordBuild(f, "failed", { run: runId, why: failure });
+        await buildStopped(p, f, runId, w.what, failure, w.rerun);
+        return false;
+      }
+      await recordBuild(f, "done", { run: runId, commit: head });
+      return true;
+    } catch (e) {
+      if (dead) return false;
+      if (e instanceof BuildStop) throw e;
+      const why = engineWords(e);
+      if (record.run(runId)?.status === "running") runs.interrupt(runId, why);
+      log.warn(`${f.id}: no ${w.what} session started: ${e instanceof SessionRefused || e instanceof HostError ? (e as Error).message : why}`);
+      return false;
+    }
+  }
+
+  async function nextBuildReport(p: Project, fid: string, role: string): Promise<number> {
+    const existing = await p.state_repo!.list(`runs/${fid}/${BUILD_STAGE}`).catch(() => []);
+    return existing.filter((e) => new RegExp(`/${role}-\\d+\\.json$`).test(e.path)).length + 1;
+  }
+
+  /** FR-5: both agent branches into the feature branch; a conflict goes to the owner for now. */
+  async function mergeAgentBranches(p: Project, f: FeatureInterview): Promise<void> {
+    const ctx = await buildContext(p, f);
+    const identity = await ownerIdentity(p);
+    await ctx.repo.init();
+    const r = await ctx.repo.mergeAgentBranches(ctx.branches, path.join(buildRoot(p), f.id, "merge"), identity, f.id);
+    if (r.status === "merged") {
+      await recordBuild(f, "branches_merged", { commit: r.commit });
+      return;
+    }
+    await recordBuild(f, "conflict", { files: r.files.slice(0, 50) });
+    await alert(p, `buildstop:${f.id}:merge:${f.state.build.actions.length}`, {
+      title: `Merge conflict: ${f.id}'s developer and test engineer branches`, feature: f.id,
+      context: `The developer's and test engineer's branches of ${f.id} change the same lines in ${r.files.length} file${r.files.length === 1 ? "" : "s"}: ${r.files.slice(0, 20).join(", ")}. The engine left the feature branch as it was (ADR 0013).`,
+      impact: `${f.id} waits in the build until the branches merge.`,
+      confirm: "Merge again (after the branches were fixed)", hold: "Keep the feature stopped", recommendation: "B",
+      effectData: { action: "remerge" },
+    });
+  }
+
   /** Starts whatever a feature's stage needs, as at engine start (F-016 H-0182 resume effects). */
   function resumeFeature(p: Project, f: FeatureInterview): void {
     if (f.stage() === INTERVIEW_STAGE) launchAnalyst(p, f);
     else if (f.stage() === ST_REVIEW_STAGE) afterInterview(p, f);
     else if (f.stage() === READINESS_STAGE) startReadiness(p, f);
+    else if (isBuildStage(f.stage())) startBuild(p, f);
   }
 
   async function nextReadinessReport(p: Project, fid: string): Promise<number> {
@@ -2328,6 +2696,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (f.stage() === ST_REVIEW_STAGE) afterInterview(p, f);
       // F-016 FR-7: a gate that failed closed, or was cut off by a stop, runs again at start.
       else if (f.stage() === READINESS_STAGE) startReadiness(p, f);
+      else if (isBuildStage(f.stage())) startBuild(p, f);
       else if (f.stage() === INTERVIEW_STAGE && f.state.stReview.pending && f.state.stReview.reportAt) {
         const since = f.state.stReview.reportAt;
         const tried = record.runs().some((r) => r.feature === f.id && r.project === p.real && r.role === "requirements-analyst" && r.started_at >= since);
