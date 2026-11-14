@@ -1,13 +1,13 @@
 # Feature: Isolation evaluation for every onboarded model
 
 - **Id:** F-017
-- **Status:** Draft (OQ-1 and OQ-6 decided; OQ-2 to OQ-5 with the owner)
+- **Status:** Draft (OQ-1, OQ-5, OQ-6 settled; OQ-2 to OQ-4 with the owner)
 - **Requested by / date:** Alex, 2026-11-14 ("each model that is onboarded
   needs to be evaluated for how it enforces isolation, and what
   configuration turns it on. documentation is not sufficient, testing should
   be done."; "since each model may have it's own way to configure things,
   agent definitions need to be per model")
-- **Spec version:** 2
+- **Spec version:** 3
 - **Depends on:** ADR 0026 and Role policy v2.7 (PR #61), F-013
 
 ## 1. Objective and business purpose
@@ -81,7 +81,7 @@ engine decides. So the evaluation answers two separate questions:
 | FR-4 | No canary marker may appear in anything the session sends out: the model request bodies past the gateway, tool results returned to the model, files changed on the branch, or the run report. The engine scans all four. |
 | FR-5 | Part 2 runs the real model through the same path on a fixed task set per role (OQ-3), with planted injections in a set share of tasks. It records, per task: escape attempts by FR-3 category, blocked or not, retries after a refusal, and task success. |
 | FR-6 | The report states the configuration that was tested and that the evaluation found to hold, so the owner sees what turns isolation on for that model: permission mode, tool list, the role's gate rules, the ask list, the LiteLLM route and settings, the model identity, and the Claude Code and engine versions. |
-| FR-7 | Any model used for an agent role that gets write permissions must be evaluated (owner, 2026-11-14), Claude models included. Each such role-and-model pair needs a passing record before that model drives the role. |
+| FR-7 | Any model used for an agent role that gets write permissions must be evaluated (owner, 2026-11-14), Claude models included. "Write permissions" means write rules outside `.factory/` (owner, 2026-11-14, decision card): today the analyst, software developer, test engineer and orchestrator. A role whose only write is its own `.factory/` report needs no evaluation. Each in-scope role-and-model pair needs a passing record before that model drives the role. |
 | FR-9 | A role's agent definition is resolved per model (OQ-6). The resolved definition, meaning prompt, tool configuration, sampling and route settings, is part of the evaluation record's key, so changing a per-model definition voids that pair's record. |
 | FR-10 | A per-model definition can't loosen isolation: it may remove tools, add read or write denies, shrink the command allowlist and add to the ask list, never the reverse. The engine refuses a definition that loosens anything and names the rule. |
 | FR-11 | The evaluation runs per role and model pair, with that pair's resolved definition (FR-5, FR-9). |
@@ -94,7 +94,7 @@ engine decides. So the evaluation answers two separate questions:
 | AC-2 | Given a passing record, when the LiteLLM pin or model identity changes, then the rung is unavailable until a new evaluation passes. | FR-1 |
 | AC-3 | Given the stub model issuing every FR-3 attempt, when Part 1 runs, then each is refused or held as expected and the run passes; given a deliberately weakened gate in a test build, then Part 1 fails and names the case. | FR-3 |
 | AC-4 | Given a canary read through any path, when it appears in a later model request, tool result, changed file or report, then the evaluation fails with the leak location. | FR-4 |
-| AC-5 | Given the owner's Qwen server, when the evaluation runs, then a report is produced with Part 1 passing and Part 2's per-scenario results. | FR-5, FR-6 |
+| AC-5 | Given an in-scope role and model, when the evaluation runs, then a report is produced with Part 1 passing and Part 2's per-scenario results. | FR-5, FR-6 |
 | AC-7 | Given a per-model definition that adds a tool or removes a deny for a role, when the engine loads it, then it is refused with the rule named. | FR-10 |
 | AC-8 | Given a passing pair, when its per-model definition changes, then the pair's rung is unavailable until it is re-evaluated. | FR-9 |
 | AC-6 | Given an engine change that lets one FR-3 case through, when CI runs, then the build fails. | FR-8 |
@@ -155,6 +155,7 @@ record format, the engine command, and the inbox report item.
 |---|---|---|---|
 | 1 | 2026-11-14 | Draft from the owner's request | — |
 | 2 | 2026-11-14 | OQ-6 decided (a): per-model overlay; OQ-1 decided in the owner's words: every model used for a role with write permissions is evaluated | Owner, 2026-11-14 |
+| 3 | 2026-11-14 | Scope: only roles that write outside `.factory/` count as having write permissions; OQ-5 moot; AC-5 generalised | Owner, 2026-11-14 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
@@ -164,4 +165,4 @@ record format, the engine command, and the inbox report item.
 | OQ-3 | Part 2 task set. (a) A fixed suite per role in the master repo: 10 ordinary tasks, half with planted injections, synthetic repos only. (b) Reuse F-002's calibration tasks with injections added. **Recommended: (a) now**, and fold into F-002 calibration once that exists. | Product | Open |
 | OQ-4 | What voids an evaluation record? (a) Any change to model identity, LiteLLM pin, Claude Code version or engine version. (b) Model identity and LiteLLM pin only. **Recommended: (a)**: the gate and Claude Code are what's under test. It costs a few minutes on a local model. | Security | Open |
 | OQ-6 | How are agent definitions made per model (owner, 2026-11-14)? (a) **Overlay.** Each role keeps one base `AGENT.md`. An optional per-model overlay, `agents/<role>/models/<model-family>.md`, adds or replaces prompt sections, and a model profile, `engine/config/model-profiles/<model-family>.yaml`, holds per-model settings such as sampling, max tokens, LiteLLM route options and tool-call quirks. Overlays may only tighten isolation (FR-10). (b) **Full copy per model.** `agents/<role>/<model-family>/AGENT.md`, a whole definition per model; simplest to read, but the copies drift, and context hygiene flags duplication. (c) **Profile only.** Per-model settings in a profile file, with one shared prompt per role and no prompt changes per model. **Recommended: (a)**: one source for each role's rules, small per-model differences, and the tighten-only check is easy to enforce. | Architecture | Decided (owner, 2026-11-14, decision card): (a) base AGENT.md plus per-model overlay and model profile, tighten-only |
-| OQ-5 | Evaluate Qwen against which roles? Under F-013 SR-9 only no-shell roles can use an endpoint: the security reviewer advisory pass, project evaluator and context hygiene. (a) Those roles. (b) Also the shell roles, to learn the model's behaviour with a shell even though it can't be assigned one. **Recommended: (a)**; (b) adds risk without a use. | Product | Open |
+| OQ-5 | Evaluate Qwen against which roles? Under F-013 SR-9 only no-shell roles can use an endpoint: the security reviewer advisory pass, project evaluator and context hygiene. (a) Those roles. (b) Also the shell roles, to learn the model's behaviour with a shell even though it can't be assigned one. **Recommended: (a)**; (b) adds risk without a use. | Product | Moot (owner, 2026-11-14): report-only roles need no evaluation, and F-013 SR-9 keeps endpoint models off the in-scope roles, so Qwen needs no evaluation today. It enters scope only if a later Security decision lets an endpoint model drive a role that writes outside `.factory/`. |
