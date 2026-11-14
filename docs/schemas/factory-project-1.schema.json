@@ -240,6 +240,13 @@
             "type": "string"
           },
           "additionalProperties": {}
+        },
+        "interview_sign_in": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
         }
       },
       "additionalProperties": false

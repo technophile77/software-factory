@@ -99,6 +99,8 @@ export const manifestFile = z.strictObject({
     ci: open.optional(),
     github: open.optional(),
     providers: open.optional(),
+    /** F-018 FR-15; its own validator checks the detail. */
+    interview_sign_in: open.optional(),
   }).optional(),
   notes: text(20000).optional(),
   policy: open.optional(),
