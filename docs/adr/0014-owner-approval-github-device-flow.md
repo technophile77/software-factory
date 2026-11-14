@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-10
 - **Decided by:** owner (decision card)
+- **Amended:** 2026-11-14, F-018 FR-13: at Rapid prototype one approval per engine run covers later sessions; accepted risk F-018 SR-8.
 - **Decision item:** F-005 SR-5; write-up in `docs/proposals/0016-stop-agents-acting-as-owner.md`
 
 ## Problem

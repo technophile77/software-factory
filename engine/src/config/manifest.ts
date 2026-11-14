@@ -23,6 +23,8 @@ export interface Manifest {
   endpoints: string[];
   /** The master factory tag the project uses (spec v30: skills, AGENT.md and limit defaults come from its commit). */
   factoryVersion: string;
+  /** The project's maturity level (H-0008); `rapid-prototype` relaxes interview approval (F-018 FR-13). */
+  maturity: string;
   /** The parsed document, from which a session's Role policy is resolved when it starts. */
   raw?: unknown;
 }
@@ -128,6 +130,7 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
     billingMode: mode as "subscription" | "tokens",
     endpoints,
     factoryVersion: (doc.factory as { version: string }).version,
+    maturity: doc.maturity as string,
     raw: doc,
   };
 }

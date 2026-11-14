@@ -36,7 +36,7 @@ import { Manifest, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin } from "./config/pins";
 import { ConfirmIo, confirmProject as runConfirm } from "./config/confirm";
-import { CAPABILITIES, ENGINE_JSON, FEATURE_ID_RE, GITHUB_WEB_BASE, INTERVIEW_STAGE, SERVED_CHANNEL_VERSION } from "./constants";
+import { CAPABILITIES, ENGINE_JSON, FEATURE_ID_RE, GITHUB_WEB_BASE, INTERVIEW_STAGE, RAPID_PROTOTYPE, SERVED_CHANNEL_VERSION } from "./constants";
 import { ensureOwnerDir, findOnPath, sha256Hex, writeFileAtomic } from "./fsutil";
 import { Git } from "./git";
 import { GitHubClient, HttpGitHub, checkBase } from "./github";
@@ -1388,12 +1388,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     for (const p of projects) {
       if (p.state !== "running" || !p.manifest || !p.state_repo) continue;
       const pin = pins.get(p.real!)!;
-      p.sessions = new SessionManager(p.manifest.name, { githubId: pin.owner.github_id, oauthClientId: pin.owner.oauth_client_id }, github, clock, log, async (fid, no) => {
+      p.sessions = new SessionManager(p.manifest.name, { githubId: pin.owner.github_id, oauthClientId: pin.owner.oauth_client_id }, github, clock, log, async (fid, no, coveredBy) => {
         const f = p.features.get(fid);
         if (f?.chainIntact) {
-          await f.exclusive(() => f.append([{ type: "session_approved", session: no, owner_id: pin.owner.github_id }], "session approved"));
+          const entry = { type: "session_approved", session: no, owner_id: pin.owner.github_id, ...(coveredBy !== undefined ? { covered_by_session: coveredBy } : {}) };
+          await f.exclusive(() => f.append([entry], "session approved"));
         }
-      });
+      }, p.manifest.maturity === RAPID_PROTOTYPE);
       const handler = methods(channelFor(p), control, clock);
       const onConnection = (c: Conn) => {
         p.conns.add(c);

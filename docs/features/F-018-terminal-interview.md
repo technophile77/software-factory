@@ -1,10 +1,10 @@
 # Feature: Answer interview questions in a terminal command
 
 - **Id:** F-018
-- **Status:** Approved (owner, 2026-11-14; readiness gate passed)
+- **Status:** Approved (owner, 2026-11-14; readiness gate passed on v5)
 - **Requested by / date:** Alex, 2026-11-14 ("not the analyst, the agent
   that is presenting me the questions"; "Start F-018 option B")
-- **Spec version:** 4
+- **Spec version:** 6
 - **Depends on:** F-005 (interview channel and MCP mode), F-006 (advisor),
   F-009 (start from a document), F-016 (PR #60, engine increment 3)
 
@@ -71,6 +71,7 @@ owner's PC only, with no phone support; the owner accepted that.
 | FR-10 | At start it reminds the owner, once, not to type secrets into answers, because the transcript is committed to the config repo and sent to the model provider (F-005 SR-4). |
 | FR-11 | Exit codes: 0 when the owner stopped or the interview finished, 1 when the engine couldn't be reached or refused, 2 on bad arguments. |
 | FR-12 | The same build retires the `spec-interview` skill, the plugin's interview MCP server (`.mcp.json`, `engine_path` setting), `factory-engine mcp`, `engine/src/mcp/server.ts` and the `@modelcontextprotocol/sdk` dependency (OQ-1, ADR 0029). The MCP acceptance tests that drive the operations move to the command (AC-11); the operations code stays. The engine README and the root README describe the command in place of the skill. |
+| FR-13 | While the project manifest's `maturity` is `rapid-prototype`, one GitHub device approval covers every later interview session of that project until the engine stops (owner, 2026-11-14: "Once per engine start"). The first `interview.open` after start asks for approval as before; once it is approved, later opens, takeovers included, return an approved session with no `approval` field, and the transcript's `session_approved` entry names the covering session (`covered_by_session`). A failed or pending first approval covers nothing. At `alpha` or higher every session needs its own approval (F-005 SR-5). The rest of the session rules (lock, takeover, 30-minute idle end, 2-hour cap) are unchanged. |
 
 ## 4. Acceptance criteria
 Run against the MCP acceptance tests' fake engine
@@ -91,6 +92,7 @@ through its input and output streams.
 | AC-10 | Given no running engine, a bad `engine.json`, or a `tools_version` mismatch, then the command prints the same reason the MCP mode gives and exits 1. | FR-3, FR-11 |
 | AC-11 | The F-005, F-006 and F-009 interview scenarios in the MCP acceptance tests each pass through the command (same engine calls, same arguments). | FR-3 |
 | AC-12 | On Windows (`windows-latest` CI) the command connects over the named pipe and completes the AC-2 scenario. | FR-2 |
+| AC-13 | Given a project at `rapid-prototype`, when the owner approves the first session after engine start, then a second `interview.open` (or a takeover) returns no `approval` and takes replies at once, and the transcript records `covered_by_session`; given the first approval fails, the next open asks again; given `alpha`, every open asks. | FR-13 |
 
 ## 5. Constraints
 - PC terminal only: Windows Terminal or PowerShell on the owner's Windows PC,
@@ -149,6 +151,7 @@ through its input and output streams.
 | SR-5 | Only the feature id and `--project` come from the command line; the feature id must match `^[A-Za-z0-9_-]{1,64}$`. Owner text and engine text never go on a command line or through a shell (F-005 SR-9). | Analyst (S1.3) | Approved (owner, 2026-11-14, decision card) |
 | SR-6 | Errors are shown by the operation's `display` only, never the JSON-RPC `data` or the owner's reply text (F-005 SR-16). | F-005 SR-16 | Approved (owner, 2026-11-14, decision card) |
 | SR-7 | Typing a reply that the engine records can't be undone in the transcript. A numbered pick is sent on Enter, not on a single keypress, so a stray key doesn't approve anything. | Analyst (S5.1); Gate 1 #4 | Approved (owner, 2026-11-14, decision card) |
+| SR-8 | **Accepted risk until Alpha (owner, 2026-11-14, decision card):** at `rapid-prototype`, after the first approval of an engine run, any program running as the owner that reaches the engine's socket or pipe can open an interview and answer, approve assumptions or confirm sources in the owner's name until the engine stops. That includes agents with a shell on the PC (ADR 0026), since F-005 SR-14's protection relied on containers. SR-3's terminal check doesn't close it: a program can open a pseudo-terminal. Such answers are recorded as the owner's. The risk ends when the project's maturity is raised to `alpha`. Note: `maturity` is read from the manifest, which is not pinned, so lowering it in the config repo restores this mode. | Owner request, 2026-11-14 (S2.1, S6.2) | Accepted risk |
 
 All of F-005 SR-1, SR-5, SR-7, SR-8, SR-10 to SR-16 and F-006/F-009 security
 requirements stay in force through the shared `Interview` code; this spec
@@ -168,7 +171,7 @@ adds no new channel, file, network or permission.
 | H-0216 | `agents/requirements-analyst/AGENT.md` | "The owner answers through the engine, often from the `spec-interview` skill in Claude Code (F-005)" becomes "The owner answers through the engine, in the `factory-engine interview` terminal command (F-018)" | Approved (owner, 2026-11-14, decision card) |
 | H-0217 | `.github/workflows/plugin-tests.yml` | The `spec-interview` job (skill-text tests) removed; header comment updated | Approved (owner, 2026-11-14, decision card) |
 | H-0218 | `docs/adr/0029-interview-in-a-terminal-command.md` (new), ADR 0025 status, `docs/adr/README.md`, `README.md`, `engine/README.md`, a version note in F-005, F-006 and F-009 pointing their skill steps to F-018 | Record the decision and describe the command in place of the skill | Approved (owner, 2026-11-14, decision card) |
-| H-0219 | Reserved | — | — |
+| H-0219 | `docs/interface-contracts.md` (Engine control channel, "Owner approval" and the `interview.open` row), `docs/adr/0014-owner-approval-github-device-flow.md` (amendment note) | `interview.open` returns no `approval` when the project is at `rapid-prototype` and an earlier session of this engine run was approved (F-018 FR-13); clients treat a missing `approval` as an approved session, as with v1.1. ADR 0014 gains an amendment line pointing to F-018 FR-13 and SR-8 | Approved (owner, 2026-11-14, decision card) |
 
 ## 11. Readiness gate
 - [x] Clear objective
@@ -176,7 +179,7 @@ adds no new channel, file, network or permission.
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit (A-1, A-2 approved)
-- [x] Blocking decisions resolved (OQ-1, OQ-2, SR-1 to SR-7, H-0215 to H-0218)
+- [x] Blocking decisions resolved (OQ-1, OQ-2, SR-1 to SR-8, H-0215 to H-0219)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -185,6 +188,8 @@ adds no new channel, file, network or permission.
 | 2 | 2026-11-14 | Security Gate 1 ([F-018-security-gate1.md](F-018-security-gate1.md)): 5 findings (0 Critical, 0 High, 3 Medium, 2 Low), none blocking; SR-1 to SR-3 and SR-7 sharpened from it | — |
 | 3 | 2026-11-14 | OQ-1 decided (a): retire skill, plugin MCP server, `mcp` mode and MCP SDK in this build; ADR 0029 supersedes 0025; FR-12 and section 10 rewritten, H-0215 to H-0218 drafted. OQ-2 decided (a): Enter on an empty line ends a typed answer (FR-6). A-1, A-2 and SR-1 to SR-7 approved, SR-3 residual accepted | Owner, 2026-11-14 (decision cards; recording confirmed in the thread) |
 | 4 | 2026-11-14 | H-0215 to H-0218 approved; readiness gate passed; status Approved | Owner, 2026-11-14 (decision card) |
+| 5 | 2026-11-14 | FR-13, AC-13, SR-8 (accepted risk) from the owner's choice "Once per engine start" for GitHub approval until Alpha; H-0219 drafted | Owner, 2026-11-14 (decision card, choice and risk); H-0219 pending |
+| 6 | 2026-11-14 | H-0219 approved and applied; readiness gate passed | Owner, 2026-11-14 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |

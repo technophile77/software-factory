@@ -302,7 +302,7 @@ it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 | `engine.shutdown` | none | `{ ok: true }` after agents reach a safe stop |
 | `feature.start` | `{ request: string, document?: Document }` | `{ feature: id }` (assigns the requirements analyst; `document` from v1.4) |
 | `interview.list` | none | `{ features: [{ id, title, open, deferred, pending_assumptions }] }` (v1.1) |
-| `interview.open` | `{ feature, takeover?: bool }` | `{ session, started_at, approval: { user_code, verification_uri, expires_at } }`, takes the feature's session lock; the session is pending until approved (v1.1; `approval` from v1.2) |
+| `interview.open` | `{ feature, takeover?: bool }` | `{ session, started_at, approval: { user_code, verification_uri, expires_at } }`, takes the feature's session lock; the session is pending until approved (v1.1; `approval` from v1.2); no `approval` when covered by this run's approval at Rapid prototype (F-018) |
 | `interview.awaitApproval` | `{ session, wait_s?: int }` | `{ approved: true }` once GitHub confirms the owner; waits up to `wait_s` (at most 900) (v1.2) |
 | `interview.next` | `{ session, wait_s?: int }` | `{ item: Item \| null }`, deferred items first; waits up to `wait_s` (at most 600) for research to finish (v1.1) |
 | `interview.reply` | `{ session, item, revision, reply_id, kind, text }` | `{ status, next?: Item }` (v1.1) |
@@ -387,6 +387,11 @@ Interview rules (v1.1):
   `approval_failed`; a poll that gets no answer is retried. A takeover
   opens a new session and needs a new approval. An approved session also
   ends 2 hours after approval.
+  At Rapid prototype (F-018 FR-13), once one session of an engine run is
+  approved, later `interview.open` calls for that project, takeovers
+  included, return an approved session with no `approval`; clients treat a
+  missing `approval` as approved, as with v1.1. At Alpha or higher every
+  session needs its own approval.
 - Within a session each deferred item is returned once, before new items;
   the engine tracks what it has shown per session.
 - A reply naming a revision other than the item's current one gets error
