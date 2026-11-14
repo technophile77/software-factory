@@ -6,7 +6,10 @@
 - **Category:** Architecture (a factory-wide data format rule); the format
   changes it leads to are Interfaces decisions, one per contract
 - **Status:** H-0240 (the rule text) approved by the owner on 2026-11-14
-  (decision card, as drafted). Decisions 2 and 3 below are open
+  (decision card, as drafted). Decision 2: hand-edited configuration stays
+  YAML (the owner, 2026-11-14: "hand edited config files stay as yaml");
+  whether to publish a JSON Schema per file goes with decision 3. Decision 3
+  is open
 - **Related rules from the owner (2026-11-14):** agents report facts as
   structured JSON and code makes policy decisions (H-0235,
   `security-blocking.json`); a policy table lives in one JSON file that every
