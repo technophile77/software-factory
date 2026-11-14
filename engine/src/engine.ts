@@ -43,7 +43,7 @@ import { GitHubClient, GitHubError, GitHubUnreachable, HttpGitHub, checkBase } f
 import { HttpIssues, IssuesApi } from "./inbox/github-issues";
 import { Inbox, Recorded } from "./inbox/store";
 import type { ItemInput } from "./inbox/model";
-import { osNotifier } from "./os/notify";
+import { type OsNotify, osNotifier } from "./os/notify";
 import { Gitleaks, SecretsScanner } from "./gitleaks";
 import { activityOf } from "./interview/activity";
 import { FeatureInterview } from "./interview/feature";
@@ -89,6 +89,8 @@ export interface EngineOptions {
   github?: GitHubClient | { webBase?: string; apiBase?: string };
   clock?: Clock;
   os?: OsApi;
+  /** Shows the owner OS notifications. Default: the OS's own; tests pass one that shows nothing on the test host. */
+  notify?: OsNotify;
   /** Environment for the billing-mode check. Default: process.env. */
   env?: NodeJS.ProcessEnv;
   logger?: Logger;
@@ -305,7 +307,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     features: new Map(), sessions: null, listener: null, conns: new Set(), token: null, inbox: null, pinsWaiting: false,
   }));
 
-  const notify = osNotifier({ platform: osApi.platform, children, log, cwd: home });
+  const notify = o.notify ?? osNotifier({ platform: osApi.platform, children, log, cwd: home });
   const alert = async (p: Project, key: string, a: SecurityAlert) => {
     if (!p.inbox || dead) return;
     const k = sha256Hex(`${p.real}\0${key}`);
@@ -2125,8 +2127,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           if (p.state_repo) fs.rmSync(path.join(p.state_repo.factoryDir, ENGINE_JSON), { force: true });
         }
         await git.closeReaders();
-        // A notification still showing runs in the engine folder; Windows can't remove a folder a process works in.
-        await notify.settled();
+        // A notification still showing runs in the engine folder, and Windows can't remove a folder a process works
+        // in; it is ended rather than waited for, since a hung one would hold the stop for its whole time limit.
+        await notify.stop();
         log.info(`engine stopped at ${iso(clock.now())}`);
         done();
       })();
