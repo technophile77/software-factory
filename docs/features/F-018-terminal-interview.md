@@ -1,10 +1,10 @@
 # Feature: Answer interview questions in a terminal command
 
 - **Id:** F-018
-- **Status:** Approved (owner, 2026-11-14; readiness gate passed on v5)
+- **Status:** In review (v7 adds FR-14 live status; v6 was approved)
 - **Requested by / date:** Alex, 2026-11-14 ("not the analyst, the agent
   that is presenting me the questions"; "Start F-018 option B")
-- **Spec version:** 6
+- **Spec version:** 7
 - **Depends on:** F-005 (interview channel and MCP mode), F-006 (advisor),
   F-009 (start from a document), F-016 (PR #60, engine increment 3)
 
@@ -66,12 +66,13 @@ owner's PC only, with no phone support; the owner accepted that.
 | FR-5 | Choices are numbered. A question's answer choices are its `suggested` answer, then its `options` in order, skipping an option equal to `suggested`; the first is marked "(recommended)" only if it is `suggested`. Picking a number sends that choice's full text as written in the item. |
 | FR-6 | Free-text input (an answer, a feature request, a document title, "more information" text, the spec refs to reopen) is read as the owner types it, over several lines, and sent unchanged. Enter on an empty line ends it (OQ-2), so a typed text can't hold a blank line; leading and trailing empty lines are dropped. A text that is only a number is treated as a pick, and "Type my own answer" lets the owner send a number as text. |
 | FR-7 | It never sends `takeover`, `ask_advisor`, `approve_advisor`, `decline_advisor`, `confirm_sources` or any reply except from the owner's own keystrokes at that prompt. It never retries a reply on its own: after `connection_lost` or `timeout` it shows the item's state and asks; only on the owner's yes does it resend with the failed call's `reply_id` (F-005 FR-13). A lost `ask_advisor` is checked as the skill does (through `next`). |
-| FR-8 | It never polls on its own except for the device approval (each wait up to 120 s, until approved, failed or expired) and the `wait_s` the owner chose by waiting for research. "Check again" is the owner's choice each time. |
+| FR-8 | It never polls on its own except for the device approval (each wait up to 120 s, until approved, failed or expired), the `wait_s` the owner chose by waiting for research, and the live-status wait of FR-14. |
 | FR-9 | On Stop, end of input, Ctrl+C or SIGTERM it calls `close` for the open feature before exiting; if that fails the engine still releases the lock after 30 minutes idle (F-005 SR-13). |
 | FR-10 | At start it reminds the owner, once, not to type secrets into answers, because the transcript is committed to the config repo and sent to the model provider (F-005 SR-4). |
 | FR-11 | Exit codes: 0 when the owner stopped or the interview finished, 1 when the engine couldn't be reached or refused, 2 on bad arguments. |
 | FR-12 | The same build retires the `spec-interview` skill, the plugin's interview MCP server (`.mcp.json`, `engine_path` setting), `factory-engine mcp`, `engine/src/mcp/server.ts` and the `@modelcontextprotocol/sdk` dependency (OQ-1, ADR 0029). The MCP acceptance tests that drive the operations move to the command (AC-11); the operations code stays. The engine README and the root README describe the command in place of the skill. |
 | FR-13 | While the project manifest's `maturity` is `rapid-prototype`, one GitHub device approval covers every later interview session of that project until the engine stops (owner, 2026-11-14: "Once per engine start"). The first `interview.open` after start asks for approval as before; once it is approved, later opens, takeovers included, return an approved session with no `approval` field, and the transcript's `session_approved` entry names the covering session (`covered_by_session`). A failed or pending first approval covers nothing. At `alpha` or higher every session needs its own approval (F-005 SR-5). The rest of the session rules (lock, takeover, 30-minute idle end, 2-hour cap) are unchanged. |
+| FR-14 | **Live status (owner, 2026-11-14).** Whenever nothing is waiting for the owner (after a reply with no next item, while research runs, after opening a feature with nothing waiting), the command waits on its own and shows what the factory is doing, one line per change, with the time: for example "Analyst is reviewing your answers", "Analyst is researching", "Analyst is writing the specification", "Security reviewer is reviewing the specification", "Checking readiness", "Advisor is working". It reads the feature's `activity` from `engine.status` every 2 seconds and asks `interview.next` when the activity changes or every 15 seconds. It stops waiting and shows the item as soon as one arrives, says so when the interview is finished, and offers "Keep waiting" or "Stop" after 30 minutes. Ctrl+C stops at any time. The status text is the command's own, chosen from the fixed `activity` codes; no engine-written text is shown as status. |
 
 ## 4. Acceptance criteria
 Run against the MCP acceptance tests' fake engine
@@ -93,6 +94,7 @@ through its input and output streams.
 | AC-11 | The F-005, F-006 and F-009 interview scenarios in the MCP acceptance tests each pass through the command (same engine calls, same arguments). | FR-3 |
 | AC-12 | On Windows (`windows-latest` CI) the command connects over the named pipe and completes the AC-2 scenario. | FR-2 |
 | AC-13 | Given a project at `rapid-prototype`, when the owner approves the first session after engine start, then a second `interview.open` (or a takeover) returns no `approval` and takes replies at once, and the transcript records `covered_by_session`; given the first approval fails, the next open asks again; given `alpha`, every open asks. | FR-13 |
+| AC-14 | Given the engine reports `activity` changing from `analyst_reviewing` to `analyst_writing_spec` and then an item, then the command prints both status lines in order, with no prompt in between, and then the item whole before its choices; an unknown `activity` code shows as "Working"; given the stage moves past the interview, it says the interview is finished. | FR-14 |
 
 ## 5. Constraints
 - PC terminal only: Windows Terminal or PowerShell on the owner's Windows PC,
@@ -171,6 +173,7 @@ adds no new channel, file, network or permission.
 | H-0216 | `agents/requirements-analyst/AGENT.md` | "The owner answers through the engine, often from the `spec-interview` skill in Claude Code (F-005)" becomes "The owner answers through the engine, in the `factory-engine interview` terminal command (F-018)" | Approved (owner, 2026-11-14, decision card) |
 | H-0217 | `.github/workflows/plugin-tests.yml` | The `spec-interview` job (skill-text tests) removed; header comment updated | Approved (owner, 2026-11-14, decision card) |
 | H-0218 | `docs/adr/0029-interview-in-a-terminal-command.md` (new), ADR 0025 status, `docs/adr/README.md`, `README.md`, `engine/README.md`, a version note in F-005, F-006 and F-009 pointing their skill steps to F-018 | Record the decision and describe the command in place of the skill | Approved (owner, 2026-11-14, decision card) |
+| H-0220 | `docs/interface-contracts.md` (Engine control channel, `engine.status` row) | Each feature in `engine.status` gains `activity?`, one of `analyst_reviewing`, `analyst_researching`, `analyst_writing_spec`, `security_reviewing`, `readiness_check`, `advisor_working`, `waiting_for_owner`, `paused`, `idle` (F-018 FR-14). Clients ignore codes they don't know and treat a missing `activity` as unknown | Pending |
 | H-0219 | `docs/interface-contracts.md` (Engine control channel, "Owner approval" and the `interview.open` row), `docs/adr/0014-owner-approval-github-device-flow.md` (amendment note) | `interview.open` returns no `approval` when the project is at `rapid-prototype` and an earlier session of this engine run was approved (F-018 FR-13); clients treat a missing `approval` as an approved session, as with v1.1. ADR 0014 gains an amendment line pointing to F-018 FR-13 and SR-8 | Approved (owner, 2026-11-14, decision card) |
 
 ## 11. Readiness gate
@@ -179,7 +182,7 @@ adds no new channel, file, network or permission.
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit (A-1, A-2 approved)
-- [x] Blocking decisions resolved (OQ-1, OQ-2, SR-1 to SR-8, H-0215 to H-0219)
+- [ ] Blocking decisions resolved (FR-14 and H-0220 pending)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -190,6 +193,7 @@ adds no new channel, file, network or permission.
 | 4 | 2026-11-14 | H-0215 to H-0218 approved; readiness gate passed; status Approved | Owner, 2026-11-14 (decision card) |
 | 5 | 2026-11-14 | FR-13, AC-13, SR-8 (accepted risk) from the owner's choice "Once per engine start" for GitHub approval until Alpha; H-0219 drafted | Owner, 2026-11-14 (decision card, choice and risk); H-0219 pending |
 | 6 | 2026-11-14 | H-0219 approved and applied; readiness gate passed | Owner, 2026-11-14 (decision card) |
+| 7 | 2026-11-14 | FR-14 and AC-14 (live status while waiting, owner's request), FR-8 widened for it; H-0220 drafted (claims the next free hygiene id) | Pending |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
