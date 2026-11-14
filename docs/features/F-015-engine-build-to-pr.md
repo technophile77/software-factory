@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
-- **Spec version:** 11
+- **Spec version:** 12
 
 This is engine increment 4, "Build to PR" (F-007 section 13). It is a draft
 written before the owner interview, from the baseline spec, the ADRs and the
@@ -219,7 +219,13 @@ them per repo.
   by the engine from the JUnit results (FR-6); the agent fills
   `criteria_map`.
 
-### H-0196 (draft): Semgrep venv for Gate 2
+### H-0196 (approved, applied): Semgrep venv for Gate 2
+Approved by the owner 2026-11-14 (decision card: the six advisories accepted
+as unreachable for 90 days). Applied: `engine/config/semgrep-requirements.txt`
+(74 entries across platforms, resolved with a 14-day cut-off),
+`engine/osv-scanner.toml` entries expiring 2027-02-12, and the `engine.yml`
+lockfile scan.
+
 `engine/config/semgrep-requirements.txt`: Semgrep 1.183.0 and its 66
 dependencies, each with the SHA-256 of every wheel for Windows x64, macOS
 arm64 and Linux x86_64. The engine installs it into a venv under the engine
@@ -264,3 +270,4 @@ Asked one at a time on decision cards. None is assumed.
 | 9 | 2026-11-13 | No containers until Beta: agents run as one SDK session per role in engine worktrees on the owner's machine; build tools are the owner's installed ones; OQ-6 superseded (FR-3, FR-6) | Owner, 2026-11-13 (thread) |
 | 10 | 2026-11-14 | Developer and test engineer get a full shell on the owner's PC until Beta, accepted risk under ADR 0026 (FR-3, SR-1). The ADR for OQ-2 is renumbered to 0028 because 0026 went to the no-containers decision | Owner, 2026-11-14 (decision card) |
 | 11 | 2026-11-14 | Gate 2 runs Semgrep from a hash-pinned PyPI venv on the owner's PC, not Docker (FR-8, H-0196); ADR 0024 amended with the S4.1 recheck. Also: acceptance criteria AC-1 to AC-18, ADR 0028, hygiene drafts H-0190 to H-0196 | Owner, 2026-11-14 (decision card, Semgrep); rest drafts |
+| 12 | 2026-11-14 | H-0196 approved and applied: the six Semgrep dependency advisories accepted as unreachable until 2027-02-12 | Owner, 2026-11-14 (decision card) |
