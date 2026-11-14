@@ -56,6 +56,12 @@ describe("F-011 inbox on GitHub issues", () => {
     w = await world();
   });
 
+  it("items filed at the same moment get different ids (live trial: two analyststop items both took D-0001)", async () => {
+    const ids = await Promise.all([w.inbox.file(decision()), w.inbox.file(decision({ title: "Second" })), w.inbox.file(decision({ title: "Third" }))]);
+    expect(ids).toEqual(["D-0001", "D-0002", "D-0003"]);
+    expect((await w.inbox.records()).map((r) => r.title).sort()).toEqual(["Choose a session store", "Second", "Third"]);
+  });
+
   it("AC-1: files each kind as one issue with its title, labels and one action comment per action", async () => {
     const { id, issue } = await filed(w, decision());
     expect(id).toBe("D-0001");

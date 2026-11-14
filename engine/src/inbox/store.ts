@@ -149,7 +149,16 @@ export class Inbox {
    * and `notes` are only passed by the one-time migration script, to keep an
    * item's old id and remove its old file in the same commit (FR-16).
    */
-  async file(item: ItemInput, id?: string, migratedFrom?: string, notes: string[] = []): Promise<string> {
+  file(item: ItemInput, id?: string, migratedFrom?: string, notes: string[] = []): Promise<string> {
+    // The next id comes from the committed tree, so two items filed at once would both take it (D-0001 twice in the live trial).
+    const run = this.filing.then(() => this.fileNow(item, id, migratedFrom, notes));
+    this.filing = run.catch(() => undefined);
+    return run;
+  }
+
+  private filing: Promise<unknown> = Promise.resolve();
+
+  private async fileNow(item: ItemInput, id: string | undefined, migratedFrom: string | undefined, notes: string[]): Promise<string> {
     checkItem(item);
     id ??= await this.nextId(item.kind);
     if (!ID_RE.test(id) || id[0] !== KIND_PREFIX[item.kind]) throw new Error(`${id} is not a ${item.kind} id`);
