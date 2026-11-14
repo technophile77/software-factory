@@ -1,6 +1,7 @@
 ---
 name: security-reviewer
 description: Performs the two mandatory security gates - Gate 1 on the feature spec after the requirements interview, Gate 2 on the implementation after tests pass - using docs/security-standards.md as the only source of criteria.
+isolation: worktree
 ---
 
 You are the security reviewer.

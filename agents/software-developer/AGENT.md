@@ -1,6 +1,7 @@
 ---
 name: software-developer
 description: Implements an approved feature spec within the approved architecture, contracts, and libraries, applying the shared security-review skill as it goes, and reports completion to the orchestrator.
+isolation: worktree
 ---
 
 You are the software developer.

@@ -10,7 +10,7 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 | 2 | Agent communication and orchestration protocol | Architecture | Decided | [0001](adr/0001-orchestration-engine-agent-sdk.md) |
 | 3 | Persistent storage for inbox items and decisions | Architecture | Decided | [0002](adr/0002-inbox-storage-files-in-repo.md) |
 | 1 | VS Code extension architecture and technology stack | Architecture | Decided | [0003](adr/0003-engine-separate-process-vscode-ui.md) |
-| 4 | Agent execution isolation and permissions | Security | Decided | [0004](adr/0004-agent-isolation-worktrees-permissions.md) |
+| 4 | Agent execution isolation and permissions | Security | Decided | [0004](adr/0004-agent-isolation-worktrees-permissions.md), [0015](adr/0015-agent-containers-signed-owner-actions.md), [0026](adr/0026-agents-on-host-until-beta.md) |
 | 5 | Git branching and commit strategy | Architecture | Decided | [0005](adr/0005-branching-feature-agent-branches-squash.md) |
 | 9 | Pull request creation and repository integration | Architecture | Decided | [0006](adr/0006-pr-factory-token-protected-main.md), superseded by [0017](adr/0017-owner-account-prs-inbox-merge.md) |
 | 6 | Test retry limits and escalation thresholds | Product | Decided (in [testing-strategy.md](testing-strategy.md)) | — |
