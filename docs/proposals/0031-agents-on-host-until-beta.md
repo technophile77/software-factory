@@ -125,7 +125,11 @@ already runs. Claude Code's isolated worktree adds nothing the engine's own
 worktrees don't already give. If the owner wants containers gone, C keeps the
 most important protection: agents can't act as him on GitHub.
 
-## 6. H-0202 draft: requirement wording until Beta (awaiting owner approval)
+## 6. H-0202 draft: requirement wording until Beta (not taken)
+
+The owner chose on 2026-11-14 (decision card) to reopen F-007, F-008 and
+F-010 each through its own interview instead. This draft is kept as the
+starting point for those interviews.
 
 Each requirement keeps its id and its original text, which takes effect
 again at Beta. Until then, the text below applies. Each spec gets one line
