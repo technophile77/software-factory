@@ -94,15 +94,18 @@ and they do not limit reads or network
    | F-007 | FR-8, AC-16, SR-6, SR-9, SR-18 (container limits) | Analyst and web reader in containers on an internal network |
    | F-008 | FR-2, AC-3, SR-6, SR-8 | Gate 1 reviewer in a container; report read after the container is gone |
    | F-010 | FR-4, AC-5, SR-2, SR-25; A-2 | Triager and confirmation with no network and no writable mount; reproduction in the agent container |
-   | F-013 | FR-3, FR-5, AC-17, SR-9, SR-18; the 46 accepted LiteLLM CVEs | LiteLLM in its own container reachable only through the proxy |
    | F-016 (draft) | SR-11, AC-14 | Readiness session under the reviewer's container rules |
    | F-015 (draft) | FR-3, FR-6, OQ-6 | Developer, test engineer and the engine's test run in containers |
    | F-006 | FR-7, SR-9 | A future advisor shell checked against an OS sandbox |
 
 ## Consequences
 - Docker Desktop is no longer needed for agent sessions until Beta.
-  Whether the F-013 LiteLLM router still runs in a container is a separate
-  owner decision.
+- The F-013 LiteLLM router stays in its own container, started only when a
+  project configures a model endpoint (owner, 2026-11-14, decision card).
+  Docker is needed only for those projects. F-013's container requirements
+  and its accepted LiteLLM CVEs stand unchanged. An endpoint rung still
+  goes only to a role with no shell and no network tool (F-013 SR-9), and
+  that rule now rests on the role's tool list.
 - Amends ADR 0004 (back to worktree plus engine policy, its own original
   position) and suspends ADR 0015 decision 1 until Beta. ADR 0017's residual
   risk widens to include agent-run code until Beta.

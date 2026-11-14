@@ -99,6 +99,8 @@ Windows machine, run Claude Code inside a WSL2 distribution"
 - **LiteLLM (F-013):** either keep Docker for the router alone (Docker stays
   a requirement), or run it as a host Python process. It has 46 CVEs that
   were accepted on the basis that it runs in a container until 2026-12-13.
+  **Decided 2026-11-14 (owner, decision card):** it stays in its own
+  container, started only when a project configures a model endpoint.
 - **Documents:** a new ADR amending ADR 0015 decision 1 (decisions 2 and 3
   stay). Update ADR 0004 status, ADR 0017's residual risk, and Role policy
   contract container rules (H-0200). Re-open the affected SRs in F-007,
@@ -145,6 +147,6 @@ wording of the rows marked † with the H-0202 text in proposal 0031."
 | F-010 | SR-25 | Confirmation writes only its test (tool gate and end-of-session check) and fetches nothing named in an issue. "No network" is not enforced for the test it runs until Beta (accepted risk 2, ADR 0026). |
 | F-010 | A-2 | "In the agent container" reads "on the owner's PC". |
 
-Not covered here: F-013 (waits on where LiteLLM runs), F-015 and F-016
+Not covered here: F-013 (unchanged, since LiteLLM stays in its container), F-015 and F-016
 (drafts, owned by their threads), F-006 FR-7 and SR-9 (a future shell,
 unchanged until it is proposed).
