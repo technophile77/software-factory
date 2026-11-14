@@ -1165,7 +1165,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       }
       await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: false, evidence: r.check.evidence }], "gate 1: findings not resolved"));
       log.warn(`${f.id}: Gate 1 findings not resolved again: ${r.check.evidence}`);
-      await alert(p, `gate1unresolved:${f.id}:${f.state.gate1.reportAt}:${f.state.gate1.unresolvedSent}`, {
+      await alert(p, `gate1unresolved:${f.id}:${f.state.gate1.reportAt}:${f.state.gate1.unresolvedRounds}`, {
         title: `Gate 1 findings for ${f.id} still not taken up`, feature: f.id,
         context: `The interview went back to the analyst once already, and Security Gate 1's check still finds: ${r.check.evidence.slice(0, 1500)}`,
         impact: `${f.id} stays at Security Gate 1 with no analyst.`,
