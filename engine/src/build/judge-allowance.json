@@ -1,0 +1,11 @@
+{
+  "description": "Major findings the validation judge may log and still PASS, by maturity level (validation-judge AGENT.md § Verdict, open decision 8, approved by the owner 2026-11-08). null allows any number, each logged. A level not listed allows none. Minor findings never block.",
+  "version": 1,
+  "levels": {
+    "rapid-prototype": null,
+    "alpha": 3,
+    "beta": 1,
+    "release": 0,
+    "production-ready": 0
+  }
+}

@@ -22,6 +22,7 @@ export const REVIEWER_MD = "# Security reviewer (master)\n";
 export const ORCHESTRATOR_MD = "# Orchestrator (master)\n";
 export const DEVELOPER_MD = "# Software developer (master)\n";
 export const TESTER_MD = "# Test engineer (master)\n";
+export const JUDGE_MD = "# Validation judge (master)\n";
 
 let engines: EngineHandle[] = [];
 let clients: RpcClient[] = [];
@@ -78,16 +79,16 @@ export interface Script {
 type RoleScript = (s: Script, n: number) => AsyncGenerator<SdkMessage>;
 
 /** Each session is handed to the script for its role, told apart by its instructions. */
-export function scriptedSdk(scripts: { analyst: RoleScript; reviewer: RoleScript; orchestrator?: RoleScript; developer?: RoleScript; tester?: RoleScript }) {
+export function scriptedSdk(scripts: { analyst: RoleScript; reviewer: RoleScript; orchestrator?: RoleScript; developer?: RoleScript; tester?: RoleScript; judge?: RoleScript }) {
   const seen: SessionOptions[] = [];
   const prompts: Array<{ role: string; text: string }> = [];
-  const count = { analyst: 0, reviewer: 0, orchestrator: 0, developer: 0, tester: 0 };
+  const count = { analyst: 0, reviewer: 0, orchestrator: 0, developer: 0, tester: 0, judge: 0 };
   let tools: FactoryTool[] = [];
   const sdk: AgentSdk = {
     createFactoryServer: (t) => ((tools = t), { factory: true }),
     query: ({ prompt, options }) => {
       seen.push(options);
-      const byPrompt: Record<string, keyof typeof count> = { [REVIEWER_MD]: "reviewer", [ORCHESTRATOR_MD]: "orchestrator", [DEVELOPER_MD]: "developer", [TESTER_MD]: "tester" };
+      const byPrompt: Record<string, keyof typeof count> = { [REVIEWER_MD]: "reviewer", [ORCHESTRATOR_MD]: "orchestrator", [DEVELOPER_MD]: "developer", [TESTER_MD]: "tester", [JUDGE_MD]: "judge" };
       const role = byPrompt[String(options.systemPrompt)] ?? "analyst";
       const it = prompt[Symbol.asyncIterator]();
       const own = tools;
@@ -103,7 +104,7 @@ export function scriptedSdk(scripts: { analyst: RoleScript; reviewer: RoleScript
           return r.value.message.content;
         },
         call: async (name, args) => JSON.parse((await own.find((x) => x.name === name)!.handler(args)).content[0]!.text),
-      }, n), options, role === "reviewer" ? "security-reviewer-" : `${role}-`);
+      }, n), options, role === "reviewer" ? "security-reviewer-" : role === "judge" ? "validation-judge-" : `${role}-`);
     },
   };
   return { sdk, seen, prompts, count };
@@ -146,19 +147,25 @@ export const TESTER = {
   write: { allow: ["test/**"], deny: [...CHANGE_CONTROLLED_DENIES, ...SOURCE_DOCUMENT_DENIES] }, commands: { allow: [] }, network: { allow: [] },
 };
 
+/** F-015 FR-9: the judge only reads. */
+export const JUDGE = {
+  tools: { allow: ["Read", "Grep", "Glob"] }, read: { allow: ["**"], deny: [...SECRET_DENIES] },
+  write: { allow: [] }, commands: { allow: [] }, network: { allow: [] },
+};
+
 /**
  * A world whose pinned factory version has the reviewer's AGENT.md and the
  * security standards; with `orchestrator`, also the orchestrator's AGENT.md
  * and role, so the readiness gate runs a session (F-016).
  */
 export function world(masterExtra: Record<string, string | null> = {}, o: { orchestrator?: boolean; maturity?: string; build?: boolean } = {}): World {
-  const roles = { "security-reviewer": REVIEWER, ...(o.orchestrator ? { orchestrator: ORCHESTRATOR } : {}), ...(o.build ? { "software-developer": DEVELOPER, "test-engineer": TESTER } : {}) };
+  const roles = { "security-reviewer": REVIEWER, ...(o.orchestrator ? { orchestrator: ORCHESTRATOR } : {}), ...(o.build ? { "software-developer": DEVELOPER, "test-engineer": TESTER, "validation-judge": JUDGE } : {}) };
   const policy = o.orchestrator || o.build ? YAML.stringify({ policy: policyDoc(roles).policy }) : POLICY;
   const w = makeWorld({ manifest: manifestYaml({ extra: policy, ...(o.maturity ? { maturity: o.maturity } : {}) }) });
   const files: Record<string, string | null> = {
     "agents/security-reviewer/AGENT.md": REVIEWER_MD, "docs/security-standards.md": STANDARDS,
     ...(o.orchestrator ? { "agents/orchestrator/AGENT.md": ORCHESTRATOR_MD } : {}),
-    ...(o.build ? { "agents/software-developer/AGENT.md": DEVELOPER_MD, "agents/test-engineer/AGENT.md": TESTER_MD } : {}), ...masterExtra,
+    ...(o.build ? { "agents/software-developer/AGENT.md": DEVELOPER_MD, "agents/test-engineer/AGENT.md": TESTER_MD, "agents/validation-judge/AGENT.md": JUDGE_MD } : {}), ...masterExtra,
   };
   for (const [f, c] of Object.entries(files)) {
     const full = path.join(w.master, f);
