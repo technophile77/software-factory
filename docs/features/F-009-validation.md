@@ -20,7 +20,7 @@
 | M5: link text or image alt of only a backslash hard break (SR-8, AC-10 Not met) | **Resolved** | `document.ts:127` drops a `\` that ends a line before the blank test. Lines are split on CR, LF and CRLF first (`:250`), so CRLF is covered. LNK-10 ×16 and the four `document.test.ts` cases pass. In my probes all 7 round 4 forms are refused (inline, CRLF, hidden target, image alt, full reference, block quote, list item, `&nbsp;` on each side); commonmark.js and markdown-it both render each as a link with only `<br />` or an alt of `\n` |
 | D-3 (Addendum 4): shortcut reference link or image of only a backslash hard break | **Resolved** | `:186` and `:217` let a label hold an escaped line end (`\\[\s\S]`); `:212` blanks definition lines in place so offsets still map to lines; `:220-224` names every line a blank label's use covers. LNK-11 (7 cases) pass. Probes: shortcut, CRLF, collapsed, image shortcut and a two-line `&nbsp;` label are refused, naming the use's lines and the definition. Controls accepted: a shortcut of words, a shortcut label over two lines with words |
 | D-4: `&ThickSpace;` | **Resolved** | Added to `SPACE_ENTITIES` (`:119`). LNK-11 (8 cases) pass. Probes: link text, a table cell refused; `&ThickSpace;` in a code span as link text accepted (renders `<code>&amp;ThickSpace;</code>`) |
-| D-5: link text of only a variation selector | **Resolved** | `:137` treats U+FE0E and U+FE0F as blank in link text only; elsewhere they stay allowed for emoji (Gate 2 M1). LNK-11 (9 cases) pass. Probes: U+FE0F, `&#xFE0E;`, U+FE01 and U+E0100 refused; an emoji with U+FE0F accepted |
+| D-5: link text of only a variation selector | **Resolved** | `:137` treats U+FE0E and U+FE0F as blank in link text only; elsewhere they stay allowed for emoji (Code Review M1). LNK-11 (9 cases) pass. Probes: U+FE0F, `&#xFE0E;`, U+FE01 and U+E0100 refused; an emoji with U+FE0F accepted |
 | Code span content (part of the D-3 to D-5 fix) | New behaviour, correct | `:129` turns a code span with content into visible text before markup and entities are dropped, so a code span shows "as written". `:130` drops `` ` ``, `*`, `_`, `~` before entities are decoded, so `&#42;`, `&#96;` and `\*` count as visible. Controls in LNK-12 and my probes are accepted |
 | m7: dev report counts out of date | **Resolved** | `F-009-dev-report.md` § Tests now says 428 client tests and "707 or more" engine tests, pointing to the latest validation round for the exact count (765 in my run). Not wrong, though no longer exact |
 | m15: over-refusals that fail closed | **Partly** | link text `&#42;&nbsp;&#42;` (shows `* *`) is now accepted (`document.test.ts`). The rest stays, and two more are listed below |
@@ -112,7 +112,7 @@ On `17d2459`, Linux container, Node 22, Python 3.13, running as root. `engine/no
 | Comments | Met, with finding | New comments say why (`:121-124`, `:128`, `:136`, `:211`, `:214-215`). One older comment is now misplaced (m17) |
 | Test tools | Met | Vitest 5.1.0 with the F-007 harness (OQ-9), `unittest` (F-005), `@vitest/coverage-v8` 5.1.0. commonmark.js, markdown-it and micromark with GFM were used only in scratch areas (test engineer; commonmark.js and markdown-it by the judge). No substitute tool |
 | Documentation | Met, with findings | Test plan (round 4 row), test report (Addendum 4), dev report (M5 and D-3 to D-5 notes, counts). Findings: M6, m6, m18 |
-| Security | Met | Gate 1 and Gate 2 present. Gate 2 is PASS with conditions and has no Critical finding. Gate 2 hasn't re-reviewed later fixes (m5) |
+| Security | Met | Security and Testability Review and Code Review present. Code Review is PASS with conditions and has no Critical finding. Code Review hasn't re-reviewed later fixes (m5) |
 
 ## Findings
 
@@ -131,7 +131,7 @@ None.
 | # | Location | Finding |
 |---|---|---|
 | m3 | `engine/src/interview/document.ts` (`specLine`) | Unchanged. The lock binds only the first line found for a ref. The owner sees the line in the item, so the owner check would catch a wrong one. |
-| m5 | `F-009-security-gate2.md` | Unchanged. Gate 2 reviewed `7106e02` and hasn't re-reviewed its fixes, v9 to v11, or the validation fixes. Not required at Rapid prototype; should confirm before Alpha. |
+| m5 | `F-009-code-review.md` | Unchanged. Code Review reviewed `7106e02` and hasn't re-reviewed its fixes, v9 to v11, or the validation fixes. Not required at Rapid prototype; should confirm before Alpha. |
 | m6 | `docs/features/` | No `F-009-orchestrator-review.md` yet. Per the orchestrator, it is written after this verdict, so it doesn't count against PASS. Needed before the PR. |
 | m9 | `plugins/.../spec-interview/tests/windows`; CI | Unchanged. GitHub CI doesn't run the plugin's Python tests, and nobody ran the Windows tests. Known issue for promotion. |
 | m10 | Spec SR-2 | Unchanged. SR-2's wording doesn't name the approved exception for quotes in the source confirmation. |
@@ -147,7 +147,7 @@ Known issues carried, not graded:
 - Real-analyst evaluation of AC-4 to AC-8 against sample documents: blocks promotion to Alpha (owner, spec v12).
 - SR-13: deferred to Alpha by the owner.
 - Existing project manifests must add the two Role policy v2.6 denies, or the engine refuses the project. This includes the e2e trial config repo (dev report).
-- Failed starts can leave unreferenced, unpushed git objects (Gate 2 Info).
+- Failed starts can leave unreferenced, unpushed git objects (Code Review Info).
 - Test engineer's Addendum 4 observations, not asserted and not graded here: GFM footnotes are refused (whether footnotes are in SR-8's scope is for the owner, with m14); markdown-it drops entities from an image's alt (renderer quirk).
 
 ## Counts

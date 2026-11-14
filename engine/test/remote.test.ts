@@ -200,7 +200,7 @@ describe("fetch (TR-11: SR-17 on fetch)", () => {
     expect(securityItems(w.config).length).toBe(before + 1);
   });
 
-  it("sync(): refuses a remote change to inbox records and files a Security item (F-016 Gate 2 M1)", async () => {
+  it("sync(): refuses a remote change to inbox records and files a Security item (F-016 Code Review M1)", async () => {
     const { w, bare } = await remoteWorld();
     const e = await boot(w);
     const c = await RpcClient.connect(engineJson(w).path);

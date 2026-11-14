@@ -11,7 +11,7 @@ export interface SecurityAlert {
   confirm: string;
   hold: string;
   recommendation: "A" | "B";
-  /** Engine values the item's effect needs, such as the manifest commit a pins item names (Gate 2 M2). */
+  /** Engine values the item's effect needs, such as the manifest commit a pins item names (Code Review M2). */
   effectData?: Record<string, string | number>;
   /** F-021 FR-4: detail shown only in the console, never on GitHub. */
   private?: Array<{ name: string; text: string }>;

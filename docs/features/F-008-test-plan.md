@@ -1,24 +1,24 @@
-# F-008 test plan: Security Gate 1 on the engine
+# F-008 test plan: Security and Testability Review on the engine
 
-- **Feature:** F-008 Run Security Gate 1 on the real engine, spec v12
+- **Feature:** F-008 Run Security and Testability Review on the real engine, spec v12
 - **Author:** test-engineer, 2026-11-12
 - **Written from:** the spec (§2, FR-1 to FR-13, AC-1 to AC-18, §6 edge
   cases, SR-1 to SR-12, H-0095, H-0096), `interface-contracts.md` (Agent
   report v1.3 security-reviewer body, Inbox item v1.1, Interview tools v1.0,
   Role policy v2.5, Engine control channel v1.3 `engine.status`),
-  `docs/security-standards.md` (Gate 1 checklist, severity table) and the
+  `docs/security-standards.md` (Security and Testability Review checklist, severity table) and the
   template's `security-reviewer` role policy. How to drive the engine came
   from the existing harness and the engine's seams (`src/engine.ts`,
-  `src/agent/reviewer.ts`, `src/gate1/*`, read for how to start and observe
+  `src/agent/reviewer.ts`, `src/st-review/*`, read for how to start and observe
   a run, not for what to expect). The developer's report and tests
-  (`F-008-dev-report.md`, `test/gate1.test.ts`, `test/gate1-run.test.ts`)
+  (`F-008-dev-report.md`, `test/st-review.test.ts`, `test/st-review-run.test.ts`)
   were not read.
-- **Where:** `engine/test/acceptance/gate1.test.ts` (tests G1-1 to G1-40),
-  with `support/gate1.ts`. `support/agents.ts` gained one change: the fake
+- **Where:** `engine/test/acceptance/st-review.test.ts` (tests G1-1 to G1-40),
+  with `support/st-review.ts`. `support/agents.ts` gained one change: the fake
   SDK tells a reviewer session (no factory tools) from an analyst's
   (interview tools) and a reader's (`fetch_page`).
 - **Run:** from `engine/`, `npx vitest run --config
-  test/acceptance/vitest.config.mts gate1`.
+  test/acceptance/vitest.config.mts st-review`.
 
 ## Approach
 
@@ -33,7 +33,7 @@ SDK seam (`F-007-test-plan.md`, "Milestone 2"). On top of that:
 | Analyst (`playAnalyst`) | One step per session: writes the spec in its container, may ask one question and wait for the owner's reply turn, then calls `interview_spec_ready`. On a return session it asks the finding's question with the requirement as `suggested` and writes the SR the test asks for |
 | Owner | Opens an interview session over the channel, approves it on the fake GitHub and replies (`answer` or `defer`) |
 | Reviewer (`playReviewer`) | Reads its turn, takes the report path the engine names in it, and writes from inside its container (`docker exec`): a valid report, a broken one, a link, an oversize or deeply nested one, extra files. AC-4 tests also change the reviewer's worktree on the host mid-session, standing for "by any means" |
-| Report content | Built from the spec and contract: the v1.3 envelope and body, the Gate 1 checklist questions read from the pinned standards file by the test itself, answers citing spec sections |
+| Report content | Built from the spec and contract: the v1.3 envelope and body, the Security and Testability Review checklist questions read from the pinned standards file by the test itself, answers citing spec sections |
 
 Stage is read from `engine.status`; runs from the engine record; reports,
 renderings and inbox items from git (`factory/state` and the feature
@@ -53,7 +53,7 @@ the engine's log folder; what reached each agent from the fake SDK.
 | AC-7 | G1-12, G1-13 (spec fails checks), G1-14 (SR Draft), G1-15 (owner's own wording) |
 | AC-8 | G1-16, G1-17 (with a requirement finding too) |
 | AC-9 | G1-18 (killed mid-session), G1-19 (graceful stop mid-session) |
-| AC-10 | G1-20 ×3 (models.yaml, limits.yaml `security_reviewer`, limits.yaml `security_gate_1`) |
+| AC-10 | G1-20 ×3 (models.yaml, limits.yaml `security_reviewer`, limits.yaml `security_testability_review`) |
 | AC-11 | Out of scope: the real trial on the owner's F-002 project. Not run here |
 | AC-12 | G1-23, G1-24 (SR-7: answers must cite the spec) |
 | AC-13 | G1-25 (symlink), G1-26 (over 256 KiB; exactly 256 KiB as control), G1-27 (nested 50,000 deep), G1-28 ×3 (another file in the report folder) |
@@ -81,7 +81,7 @@ the engine's log folder; what reached each agent from the fake SDK.
 | Agent report v1.3: envelope (`schema`, `role`, `feature`, `stage`, `commit`, `outcome`), body `gate`, `findings`, `checklist`, `items_filed`, engine-filled `model` | G1-3, G1-16, G1-10 |
 | Agent report: `outcome` `blocked` with `items_filed` for a choice, `failed` for a failed run | G1-16, G1-11 |
 | Inbox item v1.1: `category: Security`, `status: open`, `feature`, `options` (id, label), `recommendation`; front matter engine-written only; fixed body headings | G1-16, G1-29 |
-| Interview tools v1.0: Gate 1 requirement as an ordinary question with `suggested` | G1-12 |
+| Interview tools v1.0: Security and Testability Review requirement as an ordinary question with `suggested` | G1-12 |
 | Role policy v2.5: the reviewer's tools, write rule, no commands or hosts | G1-6, G1-7, G1-28 |
 | Engine control channel: `engine.status` stage | G1-1, G1-3 and every stage wait |
 
@@ -91,13 +91,13 @@ the engine's log folder; what reached each agent from the fake SDK.
 |---|---|
 | Spec or transcript telling the reviewer to report no findings | G1-23 |
 | Markdown or YAML meant to break the rendering or an item's front matter | G1-29 |
-| The spec changes on the branch while Gate 1 runs | Not tested: the spec states no expected outcome |
+| The spec changes on the branch while Security and Testability Review runs | Not tested: the spec states no expected outcome |
 | A finding cites an SR the analyst later removes or downgrades | G1-14 (Draft), G1-37 (removed) |
 | Reviewer finishes without writing the report, or writes it twice | G1-10, G1-11 ("no report"); G1-28 (a second report file) |
 | Additions file missing, a link, too large | G1-35 (link), G1-34 (too large); missing not tested (no outcome stated) |
 | Spec changed outside the engine | Not tested: no outcome stated beyond F-007's chain checks |
 | A reviewer that keeps finding new issues | G1-36, G1-40 |
-| Owner rejects or defers a Gate 1 requirement | G1-37, G1-39 |
+| Owner rejects or defers a Security and Testability Review requirement | G1-37, G1-39 |
 | A quoted secret in a finding | G1-30 |
 | Additions trying to relax or redefine factory rules | G1-31, G1-33 |
 
@@ -132,15 +132,15 @@ test per fixed bug; no stochastic tests.
    it. Interfaces.
 2. **`blocked` has no channel surface.** `engine.status` gives only the
    stage. Product or Interfaces.
-3. **How a requirement cites a finding** ("Gate 1 #n") isn't in the spec;
+3. **How a requirement cites a finding** ("Security and Testability Review #n") isn't in the spec;
    tests follow the wording the engine gives the analyst.
 4. **Text caps and the nesting limit** have no numbers in the spec; tests
    use 100,000 characters and 50,000 levels.
 5. **SR-11 "the correction resume included"** can be read either way;
    tests count distinct runs.
-6. **Whether a failed run's report counts as "a Gate 1 report" (FR-1).**
+6. **Whether a failed run's report counts as "a Security and Testability Review report" (FR-1).**
    Tests expect a failed run to be followed by a new one at the next start,
    up to SR-11's limit.
 7. **Owner's own wording (coordinator note on `8f3a566`, point 2).** The
    spec (§2 step 6, FR-9) accepts an SR matching the owner's answer; the
-   code now also needs a Gate 1 assumption. G1-15 tests the spec as written.
+   code now also needs a Security and Testability Review assumption. G1-15 tests the spec as written.

@@ -9,20 +9,20 @@ import type { RunUsed } from "../state/record";
 import type { WorktreeCommitResult } from "./worktree-commit";
 import type { Breach } from "./write-check";
 
-/** SR-1, AC-3: the most a Gate 1 reviewer may have, whatever the project's policy says. */
+/** SR-1, AC-3: the most a Security and Testability Review reviewer may have, whatever the project's policy says. */
 const REVIEWER_TOOLS = new Set(["Read", "Grep", "Glob", "Write", "Skill"]);
 /** F-016 SR-11: the readiness orchestrator gets the reviewer's rules, without skills. */
 const ORCHESTRATOR_TOOLS = new Set(["Read", "Grep", "Glob", "Write"]);
 
 /**
- * The project's `security-reviewer` policy, narrowed for one Gate 1 run:
+ * The project's `security-reviewer` policy, narrowed for one Security and Testability Review run:
  * refused if it has a tool, command or network host beyond SR-1. The report
  * comes back as structured output, so the role writes nothing (F-020 FR-10);
  * only a session that must write its report file (F-020 A-2, SR-11) gets
  * `Write`, for the run's one report path (SR-12).
  */
 export function reviewerPolicy(manifest: unknown, repoName: string | undefined, reportPath?: string): RolePolicy {
-  return reportOnlyPolicy(manifest, "security-reviewer", REVIEWER_TOOLS, "Gate 1", repoName, reportPath);
+  return reportOnlyPolicy(manifest, "security-reviewer", REVIEWER_TOOLS, "Security and Testability Review", repoName, reportPath);
 }
 
 /** The project's `orchestrator` policy narrowed the same way for one readiness run (F-016 FR-7, SR-11). */
@@ -97,7 +97,7 @@ export interface ReviewerResult {
 }
 
 /**
- * One Gate 1 run's sessions (F-008 FR-2 to FR-5): the reviewer in its
+ * One Security and Testability Review run's sessions (F-008 FR-2 to FR-5): the reviewer in its
  * container with a read-only worktree and its report folder, then the
  * worktree check and the report check; an invalid report gets one resumed
  * session with the reasons. Every failure before a session starts means no

@@ -134,7 +134,7 @@ jobs:
         with:
           persist-credentials: false
       # The release binary, not osv-scanner-action, whose container image is
-      # pinned only by tag (Gate 1 report, review 7).
+      # pinned only by tag (Security and Testability Review report, review 7).
       - name: Install OSV-Scanner 2.7.1
         run: |
           curl -sSfL -o "$RUNNER_TEMP/osv-scanner" \

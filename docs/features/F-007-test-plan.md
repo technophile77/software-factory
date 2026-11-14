@@ -7,7 +7,7 @@
   device flow, transcript and hash chain, gitleaks scan, git with safe
   overrides, the interview tools as engine functions, readiness checks.
   Containers, the proxy, Agent SDK sessions and `fetch_page` are milestone 2.
-- **Written from:** the spec, `F-007-security-gate1.md` (findings and the
+- **Written from:** the spec, `F-007-security-testability-review.md` (findings and the
   gitleaks review), `interface-contracts.md` (Engine control channel v1.3,
   Interview tools v1.0, Project manifest v1.3, Role policy v2.5, Inbox item
   v1.1, Agent report), ADRs 0005, 0009, 0012, 0014, 0015, F-005 AC-7 and

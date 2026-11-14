@@ -174,7 +174,7 @@ or a one-word command.
 
 ## 9. Security considerations
 Carried items keep their approval; items whose scope widens from phone
-actions to every action, or that are new, are re-checked at Gate 1.
+actions to every action, or that are new, are re-checked at Security and Testability Review.
 
 | Id | Requirement | Source | Status |
 |---|---|---|---|
@@ -194,11 +194,11 @@ actions to every action, or that are new, are re-checked at Gate 1.
 | SR-14 | The `main` ruleset has no bypass actors in owner-token mode, so required CI applies to every merge, including the owner's in GitHub's UI and the engine's under FR-10. | v19 SR-4 | Accepted (owner, 2026-11-13) |
 | SR-15 | The engine merges only under FR-10; FR-14 enforces it in CI. Residual risk, stated: anything holding the owner's token can merge a green PR without the owner, and GitHub can't tell (v19 SR-7). | v19 SR-5, SR-7 | Accepted (owner, 2026-11-13) |
 | SR-16 | The engine merges under FR-10 only on an Approve of that Hygiene item recorded under SR-2 and confirmed under SR-3 (🚀 or `/confirm <code>`), at the revision whose diff is compared. Replaces v19 SR-9 (signed approval). Residual risk, stated: anything holding the owner's GitHub session or token could approve and confirm a hygiene change, and it then reaches `main`; that holder could already merge any green PR directly (SR-15). | v19 SR-9; OQ-11 | Accepted (owner, 2026-11-13, decision card) |
-| SR-17 | The engine keeps the id of every comment it posts and never reads those as commands; every engine comment template starts with a fixed word that is not a command, checked by a unit test that renders each template with fields starting `/`. | Gate 1 r2 #1 (S2.1, S6.2) | Accepted (owner, 2026-11-13, decision card) |
-| SR-18 | A command is only the comment's first line and must match its fixed pattern (Gate 1 r2 #2), case-sensitive; the option or step must exist at the current revision; anything else records nothing and gets "Not recorded: not a command". A command comment edited after posting is refused (as SR-8). | Gate 1 r2 #2 (S1.1, S6.2) | Accepted (owner, 2026-11-13, decision card) |
-| SR-19 | Security-category items and security notices get the title `<id> Decision (Security): needs your decision`; details only in the body. | Gate 1 r2 #3 (S3.1, S8.1; owner rule 2026-11-12) | Accepted (owner, 2026-11-13, decision card) |
-| SR-20 | Migration (FR-16) carries only open items, re-renders each through its template and the secrets scan, and copies an owner action into the record only if its commit is signed per ADR 0015, otherwise drops it and notes that. | Gate 1 r2 #4 (S2.1, S3.3) | Accepted (owner, 2026-11-13, decision card) |
-| SR-21 | The factory installs nothing in the owner's VS Code; onboarding offers the query block, names the extension by its id `GitHub.vscode-pull-request-github`, and states once that the extension runs with the owner's GitHub sign-in. | Gate 1 r2 #5 (S4) | Accepted (owner, 2026-11-13, decision card) |
+| SR-17 | The engine keeps the id of every comment it posts and never reads those as commands; every engine comment template starts with a fixed word that is not a command, checked by a unit test that renders each template with fields starting `/`. | Security and Testability Review r2 #1 (S2.1, S6.2) | Accepted (owner, 2026-11-13, decision card) |
+| SR-18 | A command is only the comment's first line and must match its fixed pattern (Security and Testability Review r2 #2), case-sensitive; the option or step must exist at the current revision; anything else records nothing and gets "Not recorded: not a command". A command comment edited after posting is refused (as SR-8). | Security and Testability Review r2 #2 (S1.1, S6.2) | Accepted (owner, 2026-11-13, decision card) |
+| SR-19 | Security-category items and security notices get the title `<id> Decision (Security): needs your decision`; details only in the body. | Security and Testability Review r2 #3 (S3.1, S8.1; owner rule 2026-11-12) | Accepted (owner, 2026-11-13, decision card) |
+| SR-20 | Migration (FR-16) carries only open items, re-renders each through its template and the secrets scan, and copies an owner action into the record only if its commit is signed per ADR 0015, otherwise drops it and notes that. | Security and Testability Review r2 #4 (S2.1, S3.3) | Accepted (owner, 2026-11-13, decision card) |
+| SR-21 | The factory installs nothing in the owner's VS Code; onboarding offers the query block, names the extension by its id `GitHub.vscode-pull-request-github`, and states once that the extension runs with the owner's GitHub sign-in. | Security and Testability Review r2 #5 (S4) | Accepted (owner, 2026-11-13, decision card) |
 
 Withdrawn from v19, because our extension no longer merges: SR-1 (head
 pinned in the merge call; GitHub's required checks on the current head now
@@ -397,7 +397,7 @@ token (from v19).
 | 20 | 2026-11-13 | Revised for ADR 0022: items are GitHub issues in the config repo, viewed in GitHub's VS Code extension and GitHub Mobile, acted on by 👍 or command comment, risky actions confirmed by 🚀 or `/confirm`; PRs merged in GitHub's PR view; F-012 folded in, F-001 view retired; migration of item files; OQ-11, OQ-12, OQ-13 opened | — (draft) |
 | 21 | 2026-11-13 | OQ-11 decided (a): hygiene auto-merge kept, proven by the confirmed GitHub approval (SR-16 replaces v19 SR-9) | Owner, 2026-11-13 (decision card) |
 | 22 | 2026-11-13 | OQ-12 decided (b): PRs are not inbox issues; the owner uses GitHub's PR list; the engine posts definition-of-done evidence on the PR and reads `/changes` there (FR-9); Pull request kind removed | Owner, 2026-11-13 (decision card) |
-| 23 | 2026-11-13 | Security Gate 1, second review (`F-011-security-gate1-r2.md`): 0 Critical, 0 High, 2 Medium, 3 Low; SR-17 to SR-21 proposed | — |
+| 23 | 2026-11-13 | Security and Testability Review, second review (`F-011-security-testability-review-r2.md`): 0 Critical, 0 High, 2 Medium, 3 Low; SR-17 to SR-21 proposed | — |
 | 24 | 2026-11-13 | Section 10: draft of Inbox item v3.0 (H-0165) | — |
 | 25 | 2026-11-13 | OQ-13 decided (a): every item is assigned to the owner and notifies | Owner, 2026-11-13 (decision card) |
 | 26 | 2026-11-13 | SR-17 to SR-21 approved; SR-1, SR-2, SR-4 approved as widened to every action | Owner, 2026-11-13 (decision card) |

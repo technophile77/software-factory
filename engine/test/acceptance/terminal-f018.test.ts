@@ -346,9 +346,9 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
     expect(s.out).toMatch(/finished.*build_and_test_prep stage/);
   });
 
-  test("AC-14: Gate 1 keeps the command waiting, with the security reviewer's status", async () => {
+  test("AC-14: Security and Testability Review keeps the command waiting, with the security reviewer's status", async () => {
     engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["a"] })]);
-    activities(["security_reviewing"], () => undefined, "security_gate_1");
+    activities(["security_reviewing"], () => undefined, "security_testability_review");
     const { s } = await run(["1"], "F-1");
     expect(s.out).toContain("Security reviewer is reviewing the specification");
     expect(s.out).not.toContain("finished");
@@ -358,7 +358,7 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
     engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["a"] })]);
     engine.hooks["engine.status"] = (conn, msg) => {
       conn.respond(msg, ["result", { version: "1.4", capabilities: ["document"], uptime_s: 1,
-        features: [{ id: "F-1", stage: "security_gate_1", active_agents: 0, activity: "waiting_for_decision", waiting_on: ["D-0007", "S-0002", "\u001b[2Jfake"] }] }]);
+        features: [{ id: "F-1", stage: "security_testability_review", active_agents: 0, activity: "waiting_for_decision", waiting_on: ["D-0007", "S-0002", "\u001b[2Jfake"] }] }]);
       return true;
     };
     // F-021 FR-11 offers the decisions first; "Not now" goes back to the live status.

@@ -1323,7 +1323,7 @@ class FR07RolePolicy(Base):
                 data = self.manifest()
                 data["repos"][0]["policy"]["roles"]["software-developer"]["write"] = {"allow": [glob]}
                 self.assertRejected(data, f"repo override writes {glob}")
-        # H-0046 (Gate 2 R2-2): the dialect is literal segments, `*` and `**`, so `?` and classes are refused too.
+        # H-0046 (Code Review R2-2): the dialect is literal segments, `*` and `**`, so `?` and classes are refused too.
         for glob in ("src/[abc]*.py", "lib/?/**"):
             with self.subTest(where="outside the dialect", glob=glob):
                 data = self.manifest()

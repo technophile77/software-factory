@@ -25,7 +25,7 @@
 
 ## Tests run locally (affected suites only, owner's rule 2026-11-14)
 
-- Unit: `test/units.test.ts` (sign-in setting, pins, manifest, activity codes), `test/mcp-bundle.test.ts`, `test/terminal-pipe.test.ts` (AC-12), and `test/engine.test.ts`, `readiness.test.ts`, `gate1-run.test.ts`, `interview.test.ts`, `f016-run.test.ts` (status assertions): all pass.
+- Unit: `test/units.test.ts` (sign-in setting, pins, manifest, activity codes), `test/mcp-bundle.test.ts`, `test/terminal-pipe.test.ts` (AC-12), and `test/engine.test.ts`, `readiness.test.ts`, `stReview-run.test.ts`, `interview.test.ts`, `f016-run.test.ts` (status assertions): all pass.
 - Acceptance: `terminal-f018` (30), `approval`, `sessions`, `pinning`, `channel`, `features`, `interview-tools`, and the ported `mcp-tools`, `mcp-f005`, `mcp-f006`, `mcp-f009`, `mcp-e2e`, `mcp-f005-timing`: all pass.
 - `npm run typecheck`, `python3 scripts/check_docs.py`: pass.
 - Not run here: the onboarding skill's Python tests (no pytest in this container; CI runs them) and Windows (CI runs `terminal-pipe.test.ts` in the platform suite).

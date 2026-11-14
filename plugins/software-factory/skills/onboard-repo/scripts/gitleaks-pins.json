@@ -1,5 +1,5 @@
 {
-  "_comment": "gitleaks for the onboard-repo checker (ADR 0020). The same release and binary SHA-256 values as the engine (engine/src/constants.ts, F-007 Gate 1 component review 5); CI checks they match (H-0147).",
+  "_comment": "gitleaks for the onboard-repo checker (ADR 0020). The same release and binary SHA-256 values as the engine (engine/src/constants.ts, F-007 Security and Testability Review component review 5); CI checks they match (H-0147).",
   "version": "8.30.1",
   "url": "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/",
   "platforms": {

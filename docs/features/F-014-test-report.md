@@ -48,7 +48,7 @@ Three Windows CI runs failed one acceptance test each with "connection closed" f
 Cause: the channel refuses a client that the engine started, by walking the client's parent pids and checking each against the engine and its live children. Windows records a parent's pid and never clears it, and reuses pids at once. When an ancestor of the client (the test process here; Explorer's exited parent on a desktop) had exited, its pid could be held by an engine child or grandchild (the git behind a Git for Windows launcher), so the walk ended at "our child" and refused the client. Before F-014 git processes lived for milliseconds, so the overlap was rare; readers live for seconds.
 
 Fix (`proc.ts`, `os/ffi.ts`, `git-reader.ts`):
-- At every step of the walk the engine compares creation order: Windows' per-boot process sequence number (`NtQueryInformationProcess`, `ProcessSequenceNumber`). A recorded parent created after its child is a reused pid, so the chain ends there and the client isn't refused for it. An unknown rank keeps the old answer. A first version used creation times (`GetProcessTimes`); Gate 2 L8 showed that setting the clock back could reorder them, so the owner chose the sequence number.
+- At every step of the walk the engine compares creation order: Windows' per-boot process sequence number (`NtQueryInformationProcess`, `ProcessSequenceNumber`). A recorded parent created after its child is a reused pid, so the chain ends there and the client isn't refused for it. An unknown rank keeps the old answer. A first version used creation times (`GetProcessTimes`); Code Review L8 showed that setting the clock back could reorder them, so the owner chose the sequence number.
 - A child's pid is dropped from the list when it exits, not when its pipes close, and a listed pid with no running process is not a parent.
 - The refusal log names the pids the walk went through.
 
@@ -75,15 +75,15 @@ Tests: `units.test.ts` "a recorded parent pid that one of our children took over
 
 | SR | Test |
 |---|---|
-| SR-1, SR-5 | `git-reader.test.ts` tree parsing tests (modes, bad entries, git's order (Gate 2 L2), crafted tree), parity test |
+| SR-1, SR-5 | `git-reader.test.ts` tree parsing tests (modes, bad entries, git's order (Code Review L2), crafted tree), parity test |
 | SR-2 | `git-reader.test.ts` "starts the reader with the same overrides and environment", "names the reader isn't given go to plain git" |
 | SR-3 | `remote.test.ts` L7 test |
 | SR-4 | `git-reader.test.ts` "keeps one reader per repo" |
-| SR-6 | `git-reader.test.ts` "a body over the limit is refused before it is read", out-of-step test, "a catBlobs call over the read limit in total fails" (Gate 2 M1), "output a timed-out reader writes later never reaches the next reader" (Gate 2 M2; fails when both protections, the output guard and the listener removal, are taken out) |
+| SR-6 | `git-reader.test.ts` "a body over the limit is refused before it is read", out-of-step test, "a catBlobs call over the read limit in total fails" (Code Review M1), "output a timed-out reader writes later never reaches the next reader" (Code Review M2; fails when both protections, the output guard and the listener removal, are taken out) |
 | SR-7 | `git-reader.test.ts` "a reader that hangs times out, is killed" |
 | SR-8 | `units.test.ts` commit test after an outside move |
 
-## Gate 2 fixes with tests
+## Code Review fixes with tests
 
 | Item | Test |
 |---|---|
@@ -92,4 +92,4 @@ Tests: `units.test.ts` "a recorded parent pid that one of our children took over
 
 ## Known issues
 
-Gate 2 L3 (a repo re-cloned at the same path reads as missing until its reader idles out, up to 2 s) and validation m6 (some errors in crafted or corrupt repos are worded differently from `main`) both fail closed. The owner chose to record both as known issues for Alpha (spec v9, §5).
+Code Review L3 (a repo re-cloned at the same path reads as missing until its reader idles out, up to 2 s) and validation m6 (some errors in crafted or corrupt repos are worded differently from `main`) both fail closed. The owner chose to record both as known issues for Alpha (spec v9, §5).

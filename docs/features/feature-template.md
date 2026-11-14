@@ -37,7 +37,7 @@ Other features, services, libraries, data.
 | A-1 | | | Pending |
 
 ## 9. Security considerations
-| Id | Requirement | Source (analyst / Gate 1) | Status |
+| Id | Requirement | Source (analyst / Security and Testability Review) | Status |
 |---|---|---|---|
 | SR-1 | | | |
 

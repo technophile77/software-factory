@@ -7,7 +7,7 @@
 - **Maturity level:** Rapid prototype. Any number of Major findings is allowed if each is logged. A Blocking finding or a Not met line still fails.
 - **Verdict:** **FAIL**
   - B1 is Blocking. `assess` crashes ("duplicate gap ids", exit 2) on any workflow that uses the same unpinned action twice, for example `actions/checkout@v4` in two jobs. Most real repos have such a workflow, so the assessment, which every later step needs, can't be produced for them.
-  - FR-2 is Not met because of B1. Gate 2 (`F-003-security-gate2.md`, written while I worked and not yet committed) passes at Rapid prototype, but it did not catch B1.
+  - FR-2 is Not met because of B1. Code Review (`F-003-code-review.md`, written while I worked and not yet committed) passes at Rapid prototype, but it did not catch B1.
   - Two lines are Needs owner (FR-6, AC-10), and M8 is another owner question (see M6, M7, M8). FAIL takes precedence, but these can go to the owner now, in parallel with the fixes.
   - 9 Major and 18 Minor findings are logged.
 
@@ -24,7 +24,7 @@ On `b77b825`, from the repo root:
 | Extra fuzzing: 50,000 random inputs (seed 12345) into `parse_yaml` and `scan_workflow` | No exception other than `YamlError` |
 | `git status` after all runs | Clean (`__pycache__/` is ignored by the new root `.gitignore` line) |
 
-There is no test engineer run report, no developer completion report, and no orchestrator review note for F-003 in `docs/features/`. The Gate 2 report appeared, untracked, while I was writing this report; I read it and cross-reference its findings below. The tests in `skills/onboard-repo/tests/` were added in the developer's commit (`ec05f44`). So the AC evidence below comes from my own run of the developer's tests and from my probes, not from an independent test engineer run (M5).
+There is no test engineer run report, no developer completion report, and no orchestrator review note for F-003 in `docs/features/`. The Code Review report appeared, untracked, while I was writing this report; I read it and cross-reference its findings below. The tests in `skills/onboard-repo/tests/` were added in the developer's commit (`ec05f44`). So the AC evidence below comes from my own run of the developer's tests and from my probes, not from an independent test engineer run (M5).
 
 ### Probes (fixture repos under `/tmp/claude-0/judge/`)
 
@@ -120,7 +120,7 @@ There is no test engineer run report, no developer completion report, and no orc
 | Code quality, readability, maintainability | Met, with findings | The script is one 1,231-line file, readable and sectioned. Detection is keyword-based and fails open in several places (M1, M3). The duplicate-id guard turns a naming bug into a crash (B1). Minor findings: m4, m5, m6, m7, m8 |
 | Comments | Met (see m9) | Comments explain why: `:4-7`, `:54-56`, `:270`, `:296-297`, `:628`, `:674-675`, `:743`, `:844`, `:853`; tests `:24`, `:492`. One misleading comment: `:467-468` says line-by-line reading means anything unreadable is a gap, but it is also why comment text counts as evidence (M1, m9) |
 | Documentation | Met | The spec names no required docs. `SKILL.md` is the user doc. The schema states it is internal (`assessment.schema.json:4`) |
-| Security | Met | Gate 1 (`F-003-security-gate1.md`) and Gate 2 (`F-003-security-gate2.md`, untracked, so it needs committing) are both present. Gate 2 result: PASS, no Critical findings; 1 High, 11 Medium and 12 Low are known issues. Its High #1 (the branch protection the skill applies still lets the factory token merge after an approval) is the most important thing to fix before a real onboarding. Overlaps with this report: Gate 2 #2 = M2, #3 = M1 and M7, #5 = m4, #10 = M6(b), #12 and #19 = m13, #15 = m16, #23 = m15. Gate 2 did not find B1 |
+| Security | Met | Security and Testability Review (`F-003-security-testability-review.md`) and Code Review (`F-003-code-review.md`, untracked, so it needs committing) are both present. Code Review result: PASS, no Critical findings; 1 High, 11 Medium and 12 Low are known issues. Its High #1 (the branch protection the skill applies still lets the factory token merge after an approval) is the most important thing to fix before a real onboarding. Overlaps with this report: Code Review #2 = M2, #3 = M1 and M7, #5 = m4, #10 = M6(b), #12 and #19 = m13, #15 = m16, #23 = m15. Code Review did not find B1 |
 
 ## Findings
 
@@ -138,7 +138,7 @@ There is no test engineer run report, no developer completion report, and no orc
 | M2 | `factory_check.py:37`, `:332-333`, `:630-637`, `:768-769` | `SKIP_DIRS` (`build`, `dist`, `vendor`, `target`, `venv` and others) is applied to git-tracked files too. Tracked files there are left out of the file list, so the S3.1 secret scan never sees them. They are also not counted in `files_skipped`, so the report doesn't say so (probe p3: a key in tracked `build/deploy.sh` was not reported). The spec allows skipping only files over 1 MB and binaries, and only if the report says so. Fix: apply `SKIP_DIRS` only in the `os.walk` fallback, or count and list skipped folders. |
 | M3 | `factory_check.py:595-596`, `:689`, `:713` | Tests are detected by folder name, and the patterns include `spec/` and `features/`. A repo with `docs/spec/` and no tests gets no `tests:unit` or `tool:test-framework` gap. A repo with `src/features/` gets no `tests:acceptance` gap (probe p3). Both are false passes that feed the starting-level evidence (FR-4, AC-8). Fix: require test-file naming inside those folders, or test-framework evidence, before counting them. |
 | M4 | `factory_check.py:727-728`, `:740-741`; test `tests/test_factory_check.py:262-265` | `docs:purpose` and `factory:state-branch` gaps have `evidence: []`. FR-2 and AC-7 need evidence on every gap ("file and line, or the check that found it"). The test checks only that the key exists. Fix: add an evidence entry naming the check, and assert non-empty evidence in `test_ac7_assessment_shape`. |
-| M5 | `docs/features/` | There is no test engineer run report, no developer completion report and no orchestrator review note (DoD 4 to 6). All tests came with the developer's commit, so no independent test exists for any AC, and the AC evidence rests on my run of the developer's tests. The Gate 2 report exists but is untracked; commit it with the feature. |
+| M5 | `docs/features/` | There is no test engineer run report, no developer completion report and no orchestrator review note (DoD 4 to 6). All tests came with the developer's commit, so no independent test exists for any AC, and the AC evidence rests on my run of the developer's tests. The Code Review report exists but is untracked; commit it with the feature. |
 | M6 | `templates/maturity.yaml:1-3`; `templates/roles.yaml`; `templates/claude-md-section.md:13-15` | The skill makes three choices that need an owner decision, and files none of them. (a) `maturity.yaml` is a new format, `repo-maturity/1.0`. The template says it is "pending an Interfaces decision", but nothing raises one, and step 5 writes it to every repo. (b) FR-6 says to copy roles.yaml "from the master default", but the master has none. The template becomes the default role policy for every managed repo. That is security policy (ADR 0004; CLAUDE.md rule 2) and needs a Security decision, or approval as the master default. (c) The CLAUDE.md section defines which files are change-controlled in managed repos. It names "this section", while the roles template denies writes to all of `CLAUDE.md`. That is factory configuration. |
 | M7 | `SKILL.md:86-88`; `templates/ci-workflow.yml:29-33` | AC-10 needs the generated workflow to audit all dependencies. For Python, Go and Rust, the audit tool is an external component, and S4.1 needs a review before it is used. The skill resolves this by leaving the step commented out, so AC-10 isn't met for those stacks until a tool decision is made. Together with M1, the commented-out step even counts as an audit. This trade-off between AC-10 and S4.1 is the owner's call. `plan-items` also files no audit-tool item; the SKILL leaves that to the agent. |
 | M8 | `SKILL.md:123-132` | (a) "Fix every error before committing" means that adding a Rapid prototype repo to an existing Alpha project makes the agent lower the project's `maturity` to pass the rule. That is a Product decision taken silently. (b) For an existing project, step 7 opens a PR on the config repo, while approved assumption A-2 says the config repo is committed to directly. The PR is the safer choice, but it differs from the approved spec, so ask the owner. |
@@ -157,13 +157,13 @@ There is no test engineer run report, no developer completion report, and no orc
 | m7 | `factory_check.py:374` | A Go module with no dependencies has no `go.sum`, yet it gets a `lock-missing:go` gap. |
 | m8 | `factory_check.py:1126,1131` | Items say `created_by: orchestrator`, but the onboarding skill files them in the owner's session. |
 | m9 | `factory_check.py:467-468` | Misleading comment: it presents line-by-line reading as the SR-8 safeguard, but that reading is what lets comments count as evidence (M1). Update it when M1 is fixed. |
-| m10 | `factory_check.py:807-857` | `gate2` and `known-issues` are always unmet, so the recommendation is always Rapid prototype. That is stated honestly in the note, but FR-4 is effectively constant. The Rapid prototype evidence leaves out "builds and a smoke test runs". |
+| m10 | `factory_check.py:807-857` | `codeReview` and `known-issues` are always unmet, so the recommendation is always Rapid prototype. That is stated honestly in the note, but FR-4 is effectively constant. The Rapid prototype evidence leaves out "builds and a smoke test runs". |
 | m11 | `SKILL.md:94-105,153-157` | Step 5 describes only first-time setup. It doesn't say to commit the new assessment on a re-run. Two runs on the same date overwrite `<date>-assessment.*`. |
 | m12 | `SKILL.md:136-145` | AC-14: step 8 doesn't say in so many words "if declined, change nothing and list the step as open". Steps 8 and 9 together imply it. |
 | m13 | `SKILL.md:142-145` | The token link says "access to this repo only". For a second repo, ADR 0006 talks about extending the existing token. |
 | m14 | `SKILL.md:30` | `python3 -I` is often not on PATH on Windows (`py -3`). The spec requires Windows support. |
 | m15 | `skills/onboard-repo/`; `.gitignore` | `skills/` is change-controlled under CLAUDE.md rule 3. A-1 (approved) puts the skill there, so I don't count this as an unapproved edit. The PR should name it, along with the new root `.gitignore` line `__pycache__/`. Later fixes inside this folder are edits to change-controlled files. |
-| m16 | `factory_check.py:300-305,317` | `git ls-files` runs in the target repo and honours its local config (for example `core.fsmonitor`). A clone can't carry that config, so the risk is low. Gate 2 #15 reproduced it. |
+| m16 | `factory_check.py:300-305,317` | `git ls-files` runs in the target repo and honours its local config (for example `core.fsmonitor`). A clone can't carry that config, so the risk is low. Code Review #15 reproduced it. |
 | m17 | `templates/claude-md-section.md:16-17` | FR-5 asks for links to the pinned version's rules. The section names the docs but gives no URLs at `<FACTORY_VERSION>`. |
 | m18 | `tests/test_factory_check.py` | About 89% of lines are covered, with no branch measure. That is fine at Rapid prototype ("Reported"). The untested paths include the B1 `raise`, `assess` with GitHub data, the "since last assessment" Markdown, the `plan-items` CLI, and most manifest error messages. |
 
@@ -177,7 +177,7 @@ There is no test engineer run report, no developer completion report, and no orc
 ## To reach PASS at Rapid prototype
 
 1. Fix B1 and add a regression test with the same unpinned action in two jobs.
-2. Commit the Gate 2 report, and have the test engineer run against the final commit (M5, DoD 5). Fix Gate 2 High #1 before any repo is onboarded for real.
+2. Commit the Code Review report, and have the test engineer run against the final commit (M5, DoD 5). Fix Code Review High #1 before any repo is onboarded for real.
 3. Raise these with the owner: the `maturity.yaml` format (Interfaces), the default `roles.yaml` and change-controlled set (Security), AC-10 versus S4.1 for non-npm audit tools, and the two step-7 questions in M8.
 
 Before Alpha, at most 3 Major findings are allowed. M1 to M4 and M9 are detection and robustness fixes that should come first.
@@ -187,7 +187,7 @@ Before Alpha, at most 3 Major findings are allowed. M1 to M4 and M9 are detectio
 ## Re-validation (2026-11-10)
 
 - **Commit:** `875d295` (`claude/project-thread-g2huhl`, diff `origin/main...HEAD`, `origin/main` = `6c3fdca`)
-- **Inputs:** `F-003-dev-report.md` (two fix rounds), `F-003-security-gate2.md` (with its "Re-review after fixes" section), `F-003-test-report.md` (test engineer), `tests/test_acceptance.py`
+- **Inputs:** `F-003-dev-report.md` (two fix rounds), `F-003-code-review.md` (with its "Re-review after fixes" section), `F-003-test-report.md` (test engineer), `tests/test_acceptance.py`
 - **Maturity level:** Rapid prototype
 - **Verdict:** **NEEDS HUMAN REVIEW**
   - B1 is fixed and there are no Blocking findings. Every FR, AC and SR line is Met except the two below, so no line is Not met.
@@ -201,7 +201,7 @@ Before Alpha, at most 3 Major findings are allowed. M1 to M4 and M9 are detectio
 | `python3 -m unittest discover -s skills/onboard-repo/tests` | **160 run, 160 passed**, 0 failed, 0 skipped. Property seeds this run: acceptance 352840173 / 2379770016; developer 2199296433 / 3292709202 / 2236190835 / 2877869817 |
 | `git diff 1890675 875d295` | Only `test_acceptance.py` (+3 tests) and `F-003-test-report.md` changed, so the test engineer's run on `1890675` covers the product code at HEAD. Their 160 of 160 matches my run |
 | My original probes p1 to p4, re-run | All now behave correctly (see the table below) |
-| New probes on Gate 2 re-review residuals (`/tmp/claude-0/judge/r1`) | A one-line flow-style workflow and a JSON-form workflow both get `action-unpinned` gaps, and the JSON one also gets `workflow-write-all`. An AWS-format key in a `uses:` ref is redacted to `[redacted aws-access-key]` and appears in neither the JSON nor the Markdown. `echo don't # npm audit secret-scan acceptance` no longer counts as an audit, secret scan or acceptance job. An indented `ref: x#onboard:<key>` in an item body no longer stops the Security item from being filed |
+| New probes on Code Review re-review residuals (`/tmp/claude-0/judge/r1`) | A one-line flow-style workflow and a JSON-form workflow both get `action-unpinned` gaps, and the JSON one also gets `workflow-write-all`. An AWS-format key in a `uses:` ref is redacted to `[redacted aws-access-key]` and appears in neither the JSON nor the Markdown. `echo don't # npm audit secret-scan acceptance` no longer counts as an audit, secret scan or acceptance job. An indented `ref: x#onboard:<key>` in an item body no longer stops the Security item from being filed |
 | 50,000-case fuzz (seed 12345) of `parse_yaml` and `scan_workflow` | No exception other than `YamlError` |
 | Coverage | The test engineer reports 93.7% line coverage on `1890675`, each test traced in its own process; I accept the figure. The bar at Rapid prototype is "Reported" |
 | `git status` | Clean apart from this report |
@@ -215,7 +215,7 @@ Before Alpha, at most 3 Major findings are allowed. M1 to M4 and M9 are detectio
 | M2 | Major | **Fixed** | Every tracked file is scanned; `VENDORED` folders affect only stack and test detection (`:37-40,337,355-357`). Skipped files are listed in `skipped_files`. Probe p3 now gets `secret:aws-access-key:build/deploy.sh:1`. Test: `test_m2_secrets_in_vendored_folders_are_scanned` |
 | M3 | Major | **Fixed** | A test file must be a code file outside `docs/`, and `features/` and `spec/` folders no longer count (`:626-631,760-766`). Probe p3 now gets `tests:unit`, `tests:acceptance` and `tool:test-framework` gaps. Found tests are listed in `test_files_found`. Test: `test_m3_docs_and_feature_folders_are_not_tests` |
 | M4 | Major | **Fixed** | Both gaps now carry evidence (`:781-783,795-796`). No gap in probes p1 to p4 has empty evidence. Tests: `test_m4_every_gap_has_evidence`; `AC07Schema` checks non-empty evidence with an independent validator |
-| M5 | Major | **Fixed** | Developer report and test engineer report are present. The 101 acceptance tests were written from the spec by the test engineer, and every AC has a mapped test or a stated inspection (`F-003-test-report.md`, criteria map). Gate 2 and its re-review are present. A small residual is logged as m19 |
+| M5 | Major | **Fixed** | Developer report and test engineer report are present. The 101 acceptance tests were written from the spec by the test engineer, and every AC has a mapped test or a stated inspection (`F-003-test-report.md`, criteria map). Code Review and its re-review are present. A small residual is logged as m19 |
 | M6 | Major | **Open, Needs owner** | `templates/maturity.yaml:1-3` (the format is proposed, and SKILL step 5 tells the agent to say so), `templates/roles.yaml` (default role policy), and `claude-md-section.md:13-15` (change-controlled set). All are on the owner's decision card, still pending. The dev report lists them as "Not done (needs the owner)" |
 | M7 | Major | **Needs owner** (declared deviation) | `SKILL.md:110-114`; dev report, "Spec deviations". The `cve-audit-missing` gap stays visible until the tool decision is made (`AC10GeneratedWorkflow`). That is correct behaviour, but it departs from AC-10's wording, so the owner should accept it or amend AC-10. I no longer count it as a Major defect; only the line status remains |
 | M8 | Major | **Fixed** | `SKILL.md:38-40`: owner values are never changed to make a check pass. `:161-163`: a validation error in an owner-set value goes to the owner. `:156-157`: an existing config repo is committed to directly, per A-2 |
@@ -232,9 +232,9 @@ Before Alpha, at most 3 Major findings are allowed. M1 to M4 and M9 are detectio
 | m10 | Minor | Open (accepted by design) | The recommendation can't rise above Rapid prototype. The test report's O3 also notes this for the owner |
 | m11 | Minor | Open | Step 5 still describes only first-time setup; two runs on the same date overwrite `<date>-assessment.*` |
 | m12 | Minor | Fixed | `SKILL.md:192-193` |
-| m13 | Minor | Fixed | `SKILL.md:195-206`: machine account with the Write role, 90-day expiry, and the ADR 0009 scope gap told to the owner. This also answers Gate 2 re-review High #1 and #12 as that review asked |
+| m13 | Minor | Fixed | `SKILL.md:195-206`: machine account with the Write role, 90-day expiry, and the ADR 0009 scope gap told to the owner. This also answers Code Review re-review High #1 and #12 as that review asked |
 | m14 | Minor | Open | `python3` and `core.hooksPath=/dev/null` (`SKILL.md:19-20,47`) on Windows are untested. The test report states that Windows and macOS were not run |
-| m15 | Minor | Open | Change control: the dev report says merging PR #9 approves `skills/onboard-repo/**`. Gate 2 #23 still asks for hygiene items in the PR, as F-001 did. The orchestrator should make the PR body name them |
+| m15 | Minor | Open | Change control: the dev report says merging PR #9 approves `skills/onboard-repo/**`. Code Review #23 still asks for hygiene items in the PR, as F-001 did. The orchestrator should make the PR body name them |
 | m16 | Minor | Fixed | `run_git` disables fsmonitor and hooks (`:305-307`); `test_sr2_*` |
 | m17 | Minor | Open | The CLAUDE.md section names the rule documents but doesn't give links at the pinned version |
 | m18 | Minor | Fixed | 93.7% line coverage reported, with the uncovered lines explained (test report) |
@@ -256,7 +256,7 @@ Before Alpha, at most 3 Major findings are allowed. M1 to M4 and M9 are detectio
 | AC-1 to AC-9, AC-11 to AC-13, AC-15 | Met (developer tests) | **Met**, now with independent acceptance tests (test report map) |
 | AC-10 | Needs owner | **Needs owner** (M7, declared deviation). Met for npm (`AC10GeneratedWorkflow`) |
 | AC-14, AC-16 (agent side), AC-17 (calibration) | Met by inspection | **Met by inspection**, confirmed by the test engineer. AC-14 now has explicit wording at `SKILL.md:192-193` |
-| Security | Met | **Met**. Gate 2 re-review passes at Rapid prototype. Its High (#1 and #12, the token on the owner's admin account) is resolved by `SKILL.md:195-206`, which puts the token on a machine account with the Write role. Gate 2 hasn't re-read that last change; that is not required at this level, but it should be confirmed before Alpha. Gate 2's remaining items are Low and recorded as known issues |
+| Security | Met | **Met**. Code Review re-review passes at Rapid prototype. Its High (#1 and #12, the token on the owner's admin account) is resolved by `SKILL.md:195-206`, which puts the token on a machine account with the Write role. Code Review hasn't re-read that last change; that is not required at this level, but it should be confirmed before Alpha. The Code Review's remaining items are Low and recorded as known issues |
 | Comments | Met | **Met**. The new comments explain why (`:37-40`, `:305`, `weekly_or_more`, `_protection`'s "Without these…", `ENV_SECRET`). None are redundant or misleading |
 | Architecture / Interfaces | Met | **Met**. No diff to `interface-contracts.md` or ADRs. Items keep Inbox item v1.0. The roles template has the six core roles and stricter deny lists (Role policy v1.0: tightening is non-breaking) |
 
@@ -272,7 +272,7 @@ Before Alpha, at most 3 Major findings are allowed. M1 to M4 and M9 are detectio
 1. The owner answers the M6 card: the `maturity.yaml` format (Interfaces), the default `roles.yaml` (Security), and the CLAUDE.md change-controlled list.
 2. The owner accepts the AC-10 deviation for non-npm audit tools, or amends AC-10 (M7).
 
-No code change is needed for PASS at Rapid prototype. Before Alpha: Gate 2's open Low items, m2, m5 and m20, and a Windows run (m14).
+No code change is needed for PASS at Rapid prototype. Before Alpha: the Code Review's open Low items, m2, m5 and m20, and a Windows run (m14).
 
 ---
 
@@ -284,8 +284,8 @@ No code change is needed for PASS at Rapid prototype. Before Alpha: Gate 2's ope
 - **Maturity level:** Rapid prototype
 - **Verdict:** **FAIL**
   - The owner items are resolved, and my own probes found no defect in the product code that would block at this level.
-  - It fails on evidence. Since the test engineer's run (`1890675`, spec v2) and Gate 2 (`1890675`), ten commits have changed the product. They add FR-14, FR-15, the policy validator, the stack-audit checks, a CI template that downloads and runs binaries, and the plugin move. No test engineer run exists on the final commit (DoD 5). AC-18 to AC-21 have no independent test at all. Gate 2 has not reviewed any of this code (DoD 7). The developer also rewrote some of the test engineer's assertions (M10).
-  - Route (development-workflow "Going backwards", stage 8 FAIL): to the **test engineer** for a run on the final commit against spec v6, and to the **security reviewer** for a Gate 2 re-review of `1890675..5382f0a`. If both come back clean, this should become PASS without a code change. M13 is worth fixing in the same round.
+  - It fails on evidence. Since the test engineer's run (`1890675`, spec v2) and Code Review (`1890675`), ten commits have changed the product. They add FR-14, FR-15, the policy validator, the stack-audit checks, a CI template that downloads and runs binaries, and the plugin move. No test engineer run exists on the final commit (DoD 5). AC-18 to AC-21 have no independent test at all. Code Review has not reviewed any of this code (DoD 7). The developer also rewrote some of the test engineer's assertions (M10).
+  - Route (development-workflow "Going backwards", stage 8 FAIL): to the **test engineer** for a run on the final commit against spec v6, and to the **security reviewer** for a Code Review re-review of `1890675..5382f0a`. If both come back clean, this should become PASS without a code change. M13 is worth fixing in the same round.
 
 ### My own run
 
@@ -341,7 +341,7 @@ The required evidence is "a passing test id from the test engineer's run on the 
 | Id | Status | Evidence |
 |---|---|---|
 | SR-1 to SR-8 | Met (code unchanged in these paths; tests pass) | As in the last report. The new code adds no process calls (`test_sr6_*` passes) |
-| SR-5 (template) | Met by inspection and tests | Every downloaded scanner is version-pinned and checked with `sha256sum --check --strict` before it runs (`ci-workflow.yml:40-56,77-89`). govulncheck is installed with `go install …@v1.9.0` and checked against the Go checksum database. `contents: read` and `persist-credentials: false` are kept. Not yet reviewed by Gate 2 (B3) |
+| SR-5 (template) | Met by inspection and tests | Every downloaded scanner is version-pinned and checked with `sha256sum --check --strict` before it runs (`ci-workflow.yml:40-56,77-89`). govulncheck is installed with `go install …@v1.9.0` and checked against the Go checksum database. `contents: read` and `persist-credentials: false` are kept. Not yet reviewed by Code Review (B3) |
 
 #### Other lines
 
@@ -353,7 +353,7 @@ The required evidence is "a passing test id from the test engineer's run on the 
 | Comments | Met (see m24) | The new comments explain why (`factory_check.py:400-405,738-740,1158,1165`, `ci-workflow.yml:36-39,57-59,71-74`). Outdated: `test_factory_check.py:612` docstring ("Role policy v2.0"); test headers `test_acceptance.py:1,7` and `test_factory_check.py:3` (old path; acceptance says "spec v2") |
 | Test tools | Not applied to F-003 | H-0020 postdates F-003's start, and the orchestrator says it applies to later features. That scope isn't written in `testing-strategy.md` or the H-0020 commit (m25). There is no tool choice table. Since the test engineer has to re-run anyway (B2), adding one is cheap: unittest (stdlib), stdlib `trace` for line coverage only, and hand-rolled property tests |
 | Documentation | Met, with findings | `interface-contracts.md`, `maturity-levels.md`, `testing-strategy.md` and `README.md` are updated, and `check_docs.py` passes. The README install command is wrong (M11). Stale references are listed in m24 |
-| Security | **Not met** | Both gate reports are present and Gate 2 has no blocking finding, but Gate 2 (`F-003-security-gate2.md:3-5`, re-review at `:68`) covers `skills/onboard-repo/` at `1890675`, spec v2. The security-relevant changes since then are unreviewed (B3) |
+| Security | **Not met** | Both gate reports are present and Code Review has no blocking finding, but Code Review (`F-003-code-review.md:3-5`, re-review at `:68`) covers `skills/onboard-repo/` at `1890675`, spec v2. The security-relevant changes since then are unreviewed (B3) |
 
 ### Status of earlier findings
 
@@ -374,7 +374,7 @@ The required evidence is "a passing test id from the test engineer's run on the 
 | # | Location | Finding |
 |---|---|---|
 | B2 | `docs/features/F-003-test-report.md:3-7`; DoD 5 | There is no test engineer run on the final commit. The report covers spec v2 at `1890675`, at the old `skills/onboard-repo/` path, with 160 tests. Since then the checker gained about 150 lines, SKILL.md was largely rewritten, and three templates were added or replaced. AC-18, AC-19, AC-20 and AC-21 have no independent test, and AC-10 and AC-11 rest on assertions the developer rewrote (M10). The coverage figure (93.7%) is stale too. Fix: the test engineer writes tests for AC-18 to AC-21 from spec v6, confirms or replaces the developer's edits to AC-10 and AC-11, and reports a run on the final commit with coverage. |
-| B3 | `docs/features/F-003-security-gate2.md:3-5,68`; DoD 7 | Gate 2 has not reviewed `1890675..5382f0a`. Changes it hasn't seen include: a CI template that downloads and runs third-party binaries (and the cargo-audit SHA-256 taken by hand, with no published checksum); the default role policy and its validator (M13); plugin distribution, where the owner runs code from the marketplace with their `gh` login; and the step 8 machine-account text, which the last report already said Gate 2 should re-read. Fix: a Gate 2 re-review of that range. |
+| B3 | `docs/features/F-003-code-review.md:3-5,68`; DoD 7 | Code Review has not reviewed `1890675..5382f0a`. Changes it hasn't seen include: a CI template that downloads and runs third-party binaries (and the cargo-audit SHA-256 taken by hand, with no published checksum); the default role policy and its validator (M13); plugin distribution, where the owner runs code from the marketplace with their `gh` login; and the step 8 machine-account text, which the last report already said Code Review should re-read. Fix: a Code Review re-review of that range. |
 
 #### Major (allowed at Rapid prototype; logged)
 
@@ -390,7 +390,7 @@ The required evidence is "a passing test id from the test engineer's run on the 
 | # | Location | Finding |
 |---|---|---|
 | m22 | `factory_check.py:973`, `:395,977` | `tests/test_integration_api.py` is typed unit: the integration pattern needs a folder or an `integration_test` suffix. Any test file that contains the word "hypothesis" or "rapid" counts as stochastic. |
-| m23 | `factory_check.py:1190-1202` | Following the contract, a repo override's `tools.allow` replaces the project's, so a repo can give the security reviewer `Bash` and `WebFetch` and still validate (probe p3). The contract says loosening needs a Security decision, but nothing checks for one; only SKILL.md (`:180-182`) tells the agent not to. For Gate 2 to weigh. |
+| m23 | `factory_check.py:1190-1202` | Following the contract, a repo override's `tools.allow` replaces the project's, so a repo can give the security reviewer `Bash` and `WebFetch` and still validate (probe p3). The contract says loosening needs a Security decision, but nothing checks for one; only SKILL.md (`:180-182`) tells the agent not to. For Code Review to weigh. |
 | m24 | `docs/interface-contracts.md:243`; `test_factory_check.py:3,612`; `test_acceptance.py:1,7`; `F-003-dev-report.md:70,75`; `F-003-orchestrator-review.md:3` | Stale text: `policy` is called "Role policy v2.0" in the manifest contract. The test headers give the old run path. The dev report says re-runs read `maturity.yaml`, which is gone. The orchestrator review is for spec v2. |
 | m25 | `docs/testing-strategy.md` § Test tools | H-0020 doesn't say which features it applies to. The "only features started after it" scope I was given is recorded nowhere. |
 
@@ -404,18 +404,18 @@ The required evidence is "a passing test id from the test engineer's run on the 
 ### To reach PASS at Rapid prototype
 
 1. Test engineer: write tests for AC-18 to AC-21 from spec v6, take over or replace the developer's edits to AC-10 and AC-11, and report a run on the final commit with coverage. Adding the tool choice table is recommended.
-2. Security reviewer: re-review `1890675..5382f0a` at Gate 2.
+2. Security reviewer: re-review `1890675..5382f0a` at Code Review.
 3. Recommended in the same round, though not required for PASS: fix M11 (README) and M13 (`..` in policy globs). Raise M12 with the owner as a hygiene item.
 
 ## Re-validation 3 (8dd0d19)
 
-- **Commit:** `8dd0d19` (`claude/project-thread-g2huhl`). Since re-validation 2: `543c9ae` (M11, M13), `bf85988` (H-0021, M12), `538177f` (Role policy v2.1 amended), `c553230` (Gate 2 re-review 2 fixes), `8dd0d19` (F3 fix in `to_markdown`, plus the test engineer's tests and report).
+- **Commit:** `8dd0d19` (`claude/project-thread-g2huhl`). Since re-validation 2: `543c9ae` (M11, M13), `bf85988` (H-0021, M12), `538177f` (Role policy v2.1 amended), `c553230` (Code Review re-review 2 fixes), `8dd0d19` (F3 fix in `to_markdown`, plus the test engineer's tests and report).
 - **Spec:** v6. **Maturity level:** Rapid prototype.
 - **Verdict:** **FAIL**
-  - The evidence gaps from re-validation 2 are closed: the test engineer ran spec v6 on `c553230` with independent tests for AC-18 to AC-21 and took over M10, and Gate 2 re-reviewed `1890675..543c9ae` with nothing blocking.
+  - The evidence gaps from re-validation 2 are closed: the test engineer ran spec v6 on `c553230` with independent tests for AC-18 to AC-21 and took over M10, and Code Review re-reviewed `1890675..543c9ae` with nothing blocking.
   - It fails on a regression in the last commit. The F3 fix (`factory_check.py:1049`) uses a backslash inside an f-string expression. Python before 3.12 rejects that, so the checker doesn't even load on Python 3.10 or 3.11. FR-12 and the spec's platform constraint require 3.10+ (B4). The same line also lets a test file's name inject Markdown into the assessment the agent reads (M15).
   - Owner item: the `538177f` contract amendment and the changes to the default role policy after the owner approved it "as drafted" have no recorded owner decision (DoD 10; Needs owner). They only tighten, so approval should be quick, but it has to be recorded.
-  - Route: **developer** fixes B4 and M15 (`to_markdown` only). The **test engineer** adds a test that would have caught B4 and confirms on the new commit. **Orchestrator** gets the owner's approval for the H-0008 amendment. If the fix stays within `to_markdown`, it is a narrow change, and I would accept a confirming test-engineer run plus my own run as evidence. Gate 2 only needs to look at M15.
+  - Route: **developer** fixes B4 and M15 (`to_markdown` only). The **test engineer** adds a test that would have caught B4 and confirms on the new commit. **Orchestrator** gets the owner's approval for the H-0008 amendment. If the fix stays within `to_markdown`, it is a narrow change, and I would accept a confirming test-engineer run plus my own run as evidence. Code Review only needs to look at M15.
 
 ### My own run
 
@@ -436,11 +436,11 @@ On 3.13 it does: the product diff is only `to_markdown`, the other product files
 
 It doesn't cover the platform claim. The supposedly narrow change broke the checker on every Python below 3.12, and neither run could see it, because both used 3.13 and the 3.10 syntax test can't detect it. So FR-12 (3.10+) and AC-15 are Not met on `8dd0d19`.
 
-### Is Gate 2 up to `543c9ae` enough?
+### Is Code Review up to `543c9ae` enough?
 
 For `c553230`, yes, at Rapid prototype. Every change there carries out a finding of that re-review, almost all of them tighten something (longer deny lists, a shell/interpreter ban, no added tools, a symlinked-inbox refusal, `--no-resolve --no-call-analysis=go`, `cache: false`, `npm audit` at any level), and the test engineer tested each one independently (`FR07RolePolicy`, `AC21StackScanners`). The new code paths are small. One is the `git ls-files` call (`factory_check.py:335`, argument list, SR-6). The other is the `factory:dir-in-repo` gap (`:712-717`).
 
-For `8dd0d19`, no. It adds new output built from repo-controlled text, and that output has the injection in M15. Gate 2 should look at the fix for M15. That's a narrow re-check, not a full re-review.
+For `8dd0d19`, no. It adds new output built from repo-controlled text, and that output has the injection in M15. Code Review should look at the fix for M15. That's a narrow re-check, not a full re-review.
 
 ### Evidence checklist
 
@@ -459,14 +459,14 @@ For `8dd0d19`, no. It adds new output built from repo-controlled text, and that 
 | Comments | Met | New comments explain why (`factory_check.py:341-342,1183-1184,1192-1193`). Stale text from m24 remains: `test_factory_check.py:3` (old path), `:612` ("Role policy v2.0"), `interface-contracts.md:243` ("Role policy v2.0"), `F-003-dev-report.md:70` (`maturity.yaml`) |
 | Test tools | Met for F-003 (see m25, m27) | The test engineer gave a tool choice table (`F-003-test-report.md`, "Tool choice"). Coverage uses stdlib `trace` for line coverage only, and the test engineer leaves coverage.py open as a tool decision instead of substituting. That is correct under H-0020. There is no branch figure, so the prototype bar "Reported (line / branch)" is only half met (m27) |
 | Documentation | Met | README install fixed (M11). `interface-contracts.md`, the S4.1 audit-tool review, and the dev and test reports are updated. `check_docs.py` passes |
-| Security | Met at Rapid prototype, with M15 | Gate 1 is present. Gate 2 re-review 2 found no blocking findings. The `c553230` fixes are tested. Open owner items R2-1 (sandbox), R2-2, R2-4, R2-8 and R2-10 are known issues and don't block at this level. `8dd0d19` is unreviewed (M15) |
+| Security | Met at Rapid prototype, with M15 | Security and Testability Review is present. Code Review re-review 2 found no blocking findings. The `c553230` fixes are tested. Open owner items R2-1 (sandbox), R2-2, R2-4, R2-8 and R2-10 are known issues and don't block at this level. `8dd0d19` is unreviewed (M15) |
 
 ### Status of earlier findings
 
 | # | Now | Evidence |
 |---|---|---|
 | B2 | **Resolved** | Test engineer run on `c553230`, 227 tests, with tests for AC-18 to AC-21 |
-| B3 | **Resolved** | `F-003-security-gate2.md` "Re-review 2 (1890675..543c9ae)": PASS at Rapid prototype |
+| B3 | **Resolved** | `F-003-code-review.md` "Re-review 2 (1890675..543c9ae)": PASS at Rapid prototype |
 | M10 | **Resolved** | The test engineer reviewed and took over the developer's edits ("Developer edits to my tests") |
 | M11 | **Resolved** | `README.md:20-24` matches the working install form |
 | M12 | **Resolved** | H-0021 (`bf85988`), `CLAUDE.md` rule 3 |
@@ -487,7 +487,7 @@ For `8dd0d19`, no. It adds new output built from repo-controlled text, and that 
 | # | Location | Finding |
 |---|---|---|
 | M14 | `docs/interface-contracts.md:181-185` (`538177f`); `templates/factory-project.yaml:60-114` (`c553230`) | The Role policy v2.1 amendment and the post-approval change to the default role policy have no recorded owner decision. `interface-contracts.md:3-4` ("Nothing here changes without an approved decision in the Interfaces category"), CLAUDE.md rules 2 and 3, and DoD 10 apply even to tightening. The "Compatibility" line only decides that it's non-breaking. Fix: owner approval, recorded as the H-0008 amendment (commit message and the contract's status line). This is the Needs owner line above. |
-| M15 | `factory_check.py:1049` | Inventory paths go into the Markdown with only `|` escaped. Every other table cell also replaces newlines (`:1044`). A tracked test file whose name contains a newline or backtick breaks out of the row and code span. It can then plant headings or text, for example a forged "Owner note", in the assessment that SKILL.md step 2 tells the agent to read (probe p4). SKILL.md:16 still says to treat repo text as data, so this isn't a direct SR-1 break. But it lets hostile repo text pass as the factory's own report. Fix: replace newlines and control characters, and render the path so a backtick can't close the code span (for example with a JSON-escaped path). Gate 2 should check the fix. |
+| M15 | `factory_check.py:1049` | Inventory paths go into the Markdown with only `|` escaped. Every other table cell also replaces newlines (`:1044`). A tracked test file whose name contains a newline or backtick breaks out of the row and code span. It can then plant headings or text, for example a forged "Owner note", in the assessment that SKILL.md step 2 tells the agent to read (probe p4). SKILL.md:16 still says to treat repo text as data, so this isn't a direct SR-1 break. But it lets hostile repo text pass as the factory's own report. Fix: replace newlines and control characters, and render the path so a backtick can't close the code span (for example with a JSON-escaped path). Code Review should check the fix. |
 
 #### Minor (logged; never block)
 
@@ -512,12 +512,12 @@ For `8dd0d19`, no. It adds new output built from repo-controlled text, and that 
 
 ## Re-validation 4 (d45aca1)
 
-- **Commit:** `d45aca1` (`claude/project-thread-g2huhl`). Since re-validation 3: `ee6be85` (B4, M15, m26), `16f88c6` (test engineer on `ee6be85`: F4, F5), `794c830` (H-0008 amendment) and `c4e8fb6` (F4, F5, R3-1 to R3-7), `3acd48d` (test engineer on `c4e8fb6`: F6, F7), `9b84007` (R4-1, R4-2, R4-4, R4-5, F6, F7, plus Gate 2 re-review 4), `d45aca1` (docs only).
+- **Commit:** `d45aca1` (`claude/project-thread-g2huhl`). Since re-validation 3: `ee6be85` (B4, M15, m26), `16f88c6` (test engineer on `ee6be85`: F4, F5), `794c830` (H-0008 amendment) and `c4e8fb6` (F4, F5, R3-1 to R3-7), `3acd48d` (test engineer on `c4e8fb6`: F6, F7), `9b84007` (R4-1, R4-2, R4-4, R4-5, F6, F7, plus Code Review re-review 4), `d45aca1` (docs only).
 - **Spec:** v6. **Maturity level:** Rapid prototype.
 - **Verdict:** **NEEDS HUMAN REVIEW**
   - B4 is fixed. The checker compiles and the full suite passes on Python 3.11 and 3.13, and the test engineer ran 3.11, 3.12 and 3.13 on `c4e8fb6`. M15 is fixed in its Markdown-structure sense (R3-1 fixed; residual R4-3 Low). F6 and F7 now pass.
   - Every line is Met except Interface contracts, which is **Needs owner** (M14). It is the only thing outstanding. The owner's approval of the H-0008 amendments (`538177f`, `794c830`) and of the tightened default policy in `templates/factory-project.yaml` is still unrecorded. Once the owner approves it and the approval is recorded (commit message plus `interface-contracts.md:8-13` and `:165`), this becomes PASS at Rapid prototype with no further run needed.
-  - New: M16. `9b84007` narrowed the interpreter families, so names that `c4e8fb6` refused now validate (`pythonw`, `rubyw`, `pypyw`, `luajit`, `nodemon`, `perlbrew`, `tclkit`). Neither the test engineer nor Gate 2 has seen `9b84007`. Major findings are allowed at Rapid prototype, so this is logged and doesn't block.
+  - New: M16. `9b84007` narrowed the interpreter families, so names that `c4e8fb6` refused now validate (`pythonw`, `rubyw`, `pypyw`, `luajit`, `nodemon`, `perlbrew`, `tclkit`). Neither the test engineer nor Code Review has seen `9b84007`. Major findings are allowed at Rapid prototype, so this is logged and doesn't block.
 
 ### My own run
 
@@ -553,7 +553,7 @@ That is not enough for the parts no test covers. Probe p7 shows `9b84007` also l
 | Comments | Met | The new comments say why (`:1216-1217`, `:1262`, `:1496-1499`). m24's stale text remains: `test_factory_check.py:3` (old run path), `interface-contracts.md:246` ("Role policy v2.0"), `F-003-dev-report.md:70` (`maturity.yaml`) |
 | Test tools | Met for F-003 (m25, m27 open) | Tool choice table in `F-003-test-report.md`. Line coverage only |
 | Documentation | Met | SKILL.md step 5 now matches the code and says to stop and tell the owner (O10, R4-2). Dev, test and gate reports are updated. `check_docs.py` passes |
-| Security | Met at Rapid prototype, with M16 | Gate 1 is present. Gate 2 re-review 4 (`ee6be85..c4e8fb6`) passes, with 5 Low findings and nothing Critical. `9b84007` fixes R4-1, R4-2, R4-4, R4-5 (probes p5, p6) and is unreviewed by Gate 2. My probes found one partial bypass of R4-5 (m28) and one regression of the R4-4 guard rail (M16). Both are Low on Gate 2's scale (the contract calls this a guard rail, and R2-1 stays High and open with the owner), so neither blocks at this level |
+| Security | Met at Rapid prototype, with M16 | Security and Testability Review is present. Code Review re-review 4 (`ee6be85..c4e8fb6`) passes, with 5 Low findings and nothing Critical. `9b84007` fixes R4-1, R4-2, R4-4, R4-5 (probes p5, p6) and is unreviewed by Code Review. My probes found one partial bypass of R4-5 (m28) and one regression of the R4-4 guard rail (M16). Both are Low on the Code Review's scale (the contract calls this a guard rail, and R2-1 stays High and open with the owner), so neither blocks at this level |
 
 ### Status of earlier findings
 
@@ -561,7 +561,7 @@ That is not enough for the parts no test covers. Probe p7 shows `9b84007` also l
 |---|---|---|
 | B4 | **Resolved** | My run on 3.11; the test engineer's run on 3.11 to 3.13 (`c4e8fb6`) |
 | M14 | **Open, Needs owner** | See the Interface contracts line |
-| M15 | **Resolved** | No line break reaches `assessment.md` or the inbox items (`SR01RepoTextInMarkdown`, Gate 2 re-review 4 on R3-1). Inline residual: R4-3 (Low, Gate 2) |
+| M15 | **Resolved** | No line break reaches `assessment.md` or the inbox items (`SR01RepoTextInMarkdown`, Code Review re-review 4 on R3-1). Inline residual: R4-3 (Low, Code Review) |
 | m26 | **Resolved** | `test_m26_symlinked_folders_above_the_working_folder_are_fine`; probe p5 (symlinked parent accepted) |
 | F4 to F7 (test report) | **Resolved** | The test engineer's tests pass on `d45aca1` |
 | m27 | Open | Branch coverage still waits on the coverage.py tool decision |
@@ -578,23 +578,23 @@ None.
 | # | Location | Finding |
 |---|---|---|
 | M14 | `docs/interface-contracts.md:8-13,165,181-190` (`538177f`, `794c830`); `templates/factory-project.yaml` | Same as re-validation 3, now also covering `794c830`. The owner must approve the Role policy v2.1 amendments and the tightened default policy, and the approval must be recorded. Needs owner. |
-| M16 | `plugins/software-factory/skills/onboard-repo/scripts/factory_check.py:1218`, `:1262-1264` | `9b84007` replaced the open-ended families (`python.*`, `pypy.*`, `node.*`, `ruby.*`, `perl.*`, `php.*`, `lua.*`, `tcl.*`) with exact stems matched after cutting at the first `-`, `.` or digit. Versioned names are now caught, but every interpreter whose suffix is a letter or `_` passes again: `pythonw` (Windows Python), `rubyw`, `pypyw`, `luajit`, `tclkit`, `php_cli`, `nodemon` and `perlbrew` (both run scripts). `c4e8fb6` refused all of them (probe p7). The dev report says only that names were "added". So a commit meant to tighten the rule loosened it, without saying so and without review: Gate 2 stops at `c4e8fb6`, and the test engineer's list has none of these names. The contract rule (`interface-contracts.md:186`, "may not name a shell, interpreter or command wrapper") is unconditional. Fix: match both the full name and the stem against the old open families, or add the lost names. The test engineer should add them to `test_commands_may_not_name_a_shell_or_interpreter`. |
+| M16 | `plugins/software-factory/skills/onboard-repo/scripts/factory_check.py:1218`, `:1262-1264` | `9b84007` replaced the open-ended families (`python.*`, `pypy.*`, `node.*`, `ruby.*`, `perl.*`, `php.*`, `lua.*`, `tcl.*`) with exact stems matched after cutting at the first `-`, `.` or digit. Versioned names are now caught, but every interpreter whose suffix is a letter or `_` passes again: `pythonw` (Windows Python), `rubyw`, `pypyw`, `luajit`, `tclkit`, `php_cli`, `nodemon` and `perlbrew` (both run scripts). `c4e8fb6` refused all of them (probe p7). The dev report says only that names were "added". So a commit meant to tighten the rule loosened it, without saying so and without review: Code Review stops at `c4e8fb6`, and the test engineer's list has none of these names. The contract rule (`interface-contracts.md:186`, "may not name a shell, interpreter or command wrapper") is unconditional. Fix: match both the full name and the stem against the old open families, or add the lost names. The test engineer should add them to `test_commands_may_not_name_a_shell_or_interpreter`. |
 
 #### Minor (logged; never block)
 
 | # | Location | Finding |
 |---|---|---|
-| m28 | `factory_check.py:1236` | The R4-5 fix refuses `[[` but not a POSIX class later in a bracket expression. `.factory/[x[:punct:]][x[:punct:]]/CLAUDE.md` validates as a factory-only orchestrator write with no change-controlled denies, and in bash it matches `.factory/../CLAUDE.md` (probe p6). This is the same Low as R4-5. Gate 2's own simpler suggestion would close it: refuse `[:`, `[.` and `[=` anywhere, or refuse `[` in globs altogether. |
+| m28 | `factory_check.py:1236` | The R4-5 fix refuses `[[` but not a POSIX class later in a bracket expression. `.factory/[x[:punct:]][x[:punct:]]/CLAUDE.md` validates as a factory-only orchestrator write with no change-controlled denies, and in bash it matches `.factory/../CLAUDE.md` (probe p6). This is the same Low as R4-5. The Code Review's own simpler suggestion would close it: refuse `[:`, `[.` and `[=` anywhere, or refuse `[` in globs altogether. |
 | m29 | `SKILL.md:150-152` | The step 5 edit leaves one 130-character line in a file wrapped at about 75. Cosmetic. |
 
 ### Counts (re-validation 4)
 
 - Blocking: 0. B4 is resolved.
 - Major: 2 open (M14 Needs owner, M16 new). M15 is resolved.
-- Minor: 16 open (m2, m3, m5, m6, m7, m8, m10, m11, m14, m21, m22, m24, m25, m27, m28, m29). m26 is resolved. Gate 2's R4-3 and the R3-6/R3-7 leftovers are tracked in the gate report.
+- Minor: 16 open (m2, m3, m5, m6, m7, m8, m10, m11, m14, m21, m22, m24, m25, m27, m28, m29). m26 is resolved. The Code Review's R4-3 and the R3-6/R3-7 leftovers are tracked in the gate report.
 - Lines: 0 Not met, 1 Needs owner (Interface contracts).
 
 ### To reach PASS at Rapid prototype
 
 1. Owner: approve the H-0008 amendments (`538177f`, `794c830`) and the tightened template policy on the open decision card. The orchestrator then records the approval in `interface-contracts.md` and in a commit. Nothing else is required.
-2. Recommended, not required: the developer fixes M16 and m28. The test engineer then adds the names lost in M16 to the command test and runs on the final commit, and Gate 2 checks `9b84007` and that fix narrowly.
+2. Recommended, not required: the developer fixes M16 and m28. The test engineer then adds the names lost in M16 to the command test and runs on the final commit, and Code Review checks `9b84007` and that fix narrowly.

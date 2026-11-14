@@ -3,7 +3,7 @@ import type { EndpointRoute, FallbackRecord } from "../src/agent/endpoint-servic
 import {
   ADVISORY_DESCRIPTION_MAX, advisoryBlock, matchRate, parseAdvisory, runAdvisory, verdictOf,
   type AdvisoryDeps, type AdvisoryHints, type AdvisorySession, type ClaudeFinding,
-} from "../src/gate1/advisory";
+} from "../src/st-review/advisory";
 import { MemoryLogger } from "../src/log";
 
 const STANDARDS = { criteria: new Set(["S1.1", "S6.1", "S8.2"]), severities: ["Critical", "High", "Medium", "Low"] };

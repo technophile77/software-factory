@@ -1,4 +1,5 @@
 import type { Entry } from "../state/transcript";
+import { currentStage, currentType } from "../legacy-names";
 import type { DocumentMeta } from "./document";
 
 export type ItemKind = "question" | "assumption" | "source_confirmation";
@@ -27,7 +28,7 @@ export interface SourceRef {
   spec_ref: string;
   section: string;
   quote: string;
-  /** The spec's own line for spec_ref, copied by the engine (Gate 2 M3). */
+  /** The spec's own line for spec_ref, copied by the engine (Code Review M3). */
   spec_line: string;
 }
 
@@ -101,8 +102,8 @@ export function content(src: Record<string, unknown>): ItemContent {
   return c;
 }
 
-/** A Gate 1 finding as the transcript keeps it (F-008): the reviewer's words, scanned before they were recorded. */
-export interface Gate1Record {
+/** A Security and Testability Review finding as the transcript keeps it (F-008): the reviewer's words, scanned before they were recorded. */
+export interface StReviewRecord {
   n: number;
   criterion: string;
   severity: string;
@@ -115,12 +116,12 @@ export interface Gate1Record {
   recorded?: boolean;
 }
 
-/** F-008: where the feature's Security Gate 1 stands. */
-export interface Gate1State {
+/** F-008: where the feature's Security and Testability Review stands. */
+export interface StReviewState {
   /** Reviewer runs started, the correction resume not counted separately (SR-11 counts runs). */
   runs: number;
   /** The findings of the last valid report. */
-  findings: Gate1Record[];
+  findings: StReviewRecord[];
   /** True from a report with findings until the FR-9 check passes. */
   pending: boolean;
   /** Why the feature waits on the owner, if it does. */
@@ -149,14 +150,14 @@ export interface Gate1State {
  * spec next passes the interview checks.
  */
 export interface Return {
-  why: "gate1_choice" | "gate1_reask" | "gate1_risk_accepted" | "gate1_unresolved" | "readiness_failed" | "signoff_changes" | "owner_note";
+  why: "st_review_choice" | "st_review_reask" | "st_review_risk_accepted" | "st_review_unresolved" | "readiness_failed" | "signoff_changes" | "owner_note";
   item?: string;
   finding?: number;
   option?: string;
   label?: string;
   note?: string;
   checks?: Array<{ name: string; evidence: string }>;
-  /** F-016 FR-15: what Gate 1's check found missing. */
+  /** F-016 FR-15: what the Security and Testability Review check found missing. */
   evidence?: string;
 }
 
@@ -186,11 +187,12 @@ export class InterviewState {
   readonly undelivered: string[] = [];
   researchCalls = 0;
   lastSpecReady: { passed: boolean; at: string; spec_path: string; spec_version: number } | null = null;
-  readonly gate1: Gate1State = { runs: 0, findings: [], pending: false, blocked: null, riskFiled: [], reportAt: null, itemsAtReport: 0, decided: new Map(), accepted: new Map(), extraRuns: 0, unresolvedSent: 0, unresolvedRounds: 0 };
+  readonly stReview: StReviewState = { runs: 0, findings: [], pending: false, blocked: null, riskFiled: [], reportAt: null, itemsAtReport: 0, decided: new Map(), accepted: new Map(), extraRuns: 0, unresolvedSent: 0, unresolvedRounds: 0 };
   readonly readiness: ReadinessState = { last: null, runs: 0, signoff: null, signedOff: null };
   returns: Return[] = [];
 
-  apply(e: Entry): void {
+  apply(entry: Entry): void {
+    const e = current(entry);
     switch (e.type) {
       case "feature_started":
         this.title = e.title as string;
@@ -257,33 +259,33 @@ export class InterviewState {
         break;
       case "returned":
         this.returns.push({ ...(e.return as Return) });
-        if ((e.return as Return).why === "gate1_unresolved") {
-          this.gate1.unresolvedRounds++;
-          if (!(e.return as Return).item) this.gate1.unresolvedSent++;
+        if ((e.return as Return).why === "st_review_unresolved") {
+          this.stReview.unresolvedRounds++;
+          if (!(e.return as Return).item) this.stReview.unresolvedSent++;
         }
         break;
-      case "gate1_decided":
-        this.gate1.decided.set(e.finding as number, { item: e.item as string, option: e.option as string, label: e.label as string });
+      case "st_review_decided":
+        this.stReview.decided.set(e.finding as number, { item: e.item as string, option: e.option as string, label: e.label as string });
         break;
-      case "gate1_risk_accepted":
-        this.gate1.accepted.set(e.finding as number, e.item as string);
+      case "st_review_risk_accepted":
+        this.stReview.accepted.set(e.finding as number, e.item as string);
         break;
-      case "gate1_reask": {
+      case "st_review_reask": {
         const n = e.finding as number;
-        this.gate1.riskFiled = this.gate1.riskFiled.filter((x) => x !== n);
-        this.gate1.accepted.delete(n);
-        this.gate1.decided.delete(n);
+        this.stReview.riskFiled = this.stReview.riskFiled.filter((x) => x !== n);
+        this.stReview.accepted.delete(n);
+        this.stReview.decided.delete(n);
         // F-016 H-0182: a re-asked finding is settled by an interview question now, not by its Security item.
-        const rec = this.gate1.findings.find((x) => x.n === n);
+        const rec = this.stReview.findings.find((x) => x.n === n);
         if (rec) rec.needs_owner = false;
         break;
       }
-      case "gate1_unblocked":
-        this.gate1.blocked = null;
+      case "st_review_unblocked":
+        this.stReview.blocked = null;
         break;
-      case "gate1_extra_run":
-        this.gate1.extraRuns++;
-        this.gate1.blocked = null;
+      case "st_review_extra_run":
+        this.stReview.extraRuns++;
+        this.stReview.blocked = null;
         break;
       case "readiness_run":
         this.readiness.runs++;
@@ -304,28 +306,28 @@ export class InterviewState {
       case "stage":
         this.stage = e.stage as string;
         break;
-      case "gate1_run":
-        this.gate1.runs++;
+      case "st_review_run":
+        this.stReview.runs++;
         break;
-      case "gate1_report":
-        this.gate1.findings = (e.findings as Gate1Record[]).map((f) => ({ ...f }));
-        this.gate1.pending = this.gate1.findings.some((f) => !f.recorded);
-        this.gate1.riskFiled = [];
-        this.gate1.reportAt = e.at;
-        this.gate1.itemsAtReport = this.order.length;
-        this.gate1.decided.clear();
-        this.gate1.accepted.clear();
-        this.gate1.unresolvedSent = 0;
-        this.gate1.unresolvedRounds = 0;
+      case "st_review_report":
+        this.stReview.findings = (e.findings as StReviewRecord[]).map((f) => ({ ...f }));
+        this.stReview.pending = this.stReview.findings.some((f) => !f.recorded);
+        this.stReview.riskFiled = [];
+        this.stReview.reportAt = e.at;
+        this.stReview.itemsAtReport = this.order.length;
+        this.stReview.decided.clear();
+        this.stReview.accepted.clear();
+        this.stReview.unresolvedSent = 0;
+        this.stReview.unresolvedRounds = 0;
         break;
-      case "gate1_blocked":
-        this.gate1.blocked = e.reason as string;
-        for (const n of (e.risk as number[] | undefined) ?? []) if (!this.gate1.riskFiled.includes(n)) this.gate1.riskFiled.push(n);
+      case "st_review_blocked":
+        this.stReview.blocked = e.reason as string;
+        for (const n of (e.risk as number[] | undefined) ?? []) if (!this.stReview.riskFiled.includes(n)) this.stReview.riskFiled.push(n);
         break;
-      case "gate1_resolved":
+      case "st_review_resolved":
         if (e.passed) {
-          this.gate1.pending = false;
-          this.gate1.blocked = null;
+          this.stReview.pending = false;
+          this.stReview.blocked = null;
         }
         break;
       default:
@@ -351,4 +353,14 @@ export class InterviewState {
     const n = this.list(kind).length + 1;
     return `${{ question: "Q", assumption: "A", source_confirmation: "S" }[kind]}-${String(n).padStart(3, "0")}`;
   }
+}
+
+/** Entries written before the gate rename read as if written with the new ids (see legacy-names.ts). */
+function current(e: Entry): Entry {
+  const type = currentType(e.type as string);
+  const stage = typeof e.stage === "string" ? currentStage(e.stage) : e.stage;
+  const ret = e.return as Return | undefined;
+  const why = ret && typeof ret.why === "string" ? (currentType(ret.why) as Return["why"]) : undefined;
+  if (type === e.type && stage === e.stage && why === ret?.why) return e;
+  return { ...e, type, ...(stage !== undefined ? { stage } : {}), ...(ret ? { return: { ...ret, why: why! } } : {}) } as Entry;
 }

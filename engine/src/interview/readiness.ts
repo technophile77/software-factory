@@ -174,7 +174,7 @@ export function readinessChecks(input: {
   specVersion: number;
   state: InterviewState;
   chainIntact: boolean;
-  /** For a document-started feature: whether the branch's copy still matches the stored hash (Gate 2 L1). */
+  /** For a document-started feature: whether the branch's copy still matches the stored hash (Code Review L1). */
   sourceIntact?: boolean;
 }): Check[] {
   const { spec, state } = input;

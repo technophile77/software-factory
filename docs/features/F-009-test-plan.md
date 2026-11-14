@@ -107,7 +107,7 @@ can show.
 | FR-7 | QT-1 to QT-3; client `test_fr7_question_type_is_shown` |
 | FR-8 | SRC-1 to SRC-6, SRC-13, DOC-19; client `test_fr8_*` |
 | FR-8 (v11 spec-line lock) | SRC-1 (exact `spec_line`), SPL-5 (table row, a line opening with the ref, a heading starting with it), SPL-6 ×2 (rewording FR-1's line or changing SR-1's status cell after confirmation fails `sources_confirmed` until a new item shows the new line and is confirmed), SPL-7 (control: changing an uncited line keeps it); client `test_fr8_v11_each_spec_ref_shows_its_own_spec_line_as_data` |
-| Interview tools v1.1 `source_unchanged` (Gate 2 L1, contract amended) | SRC-14 (passes on the untouched copy, fails once the branch copy differs) |
+| Interview tools v1.1 `source_unchanged` (Code Review L1, contract amended) | SRC-14 (passes on the untouched copy, fails once the branch copy differs) |
 | FR-9 | Stochastic (QT-1 checks a conflict can cite the standards) |
 | Channel v1.4 capability rule (v9; replaced the version rule) | DOC-7 (`"document"` in engine.json and `engine.status`), CAP-1 (same list in both, plain names, at most 32); client `ChannelVersion`: no list, an empty list or only other names refuses before the document is opened and sends no `feature.start` (on v1.4 and v1.9); with `"document"` listed the document is sent on v1.2, v1.3 and v1.4, unknown names ignored; an engine without the capability gets no document; an old engine's -32602 is explained; no document still works |
 | -32009 display | Client `Err32009Display`: each reason explained, lines named, malformed `data` (string lines, booleans, negatives, a rule with spaces or over 100 characters, an unknown reason, extra keys, a non-object) never shown |

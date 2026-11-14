@@ -1,5 +1,5 @@
 import * as crypto from "node:crypto";
-import { plain } from "../gate1/render";
+import { plain } from "../st-review/render";
 import {
   ActionId, InboxRecord, ItemInput, KIND_TITLE, Kind, Part, Priority, SECTIONS,
 } from "./model";

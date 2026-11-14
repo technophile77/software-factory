@@ -48,9 +48,9 @@ let items: FakeItem[];
 let confirmCode: string | null;
 
 const DECISION = (o: Partial<FakeItem> = {}): FakeItem => ({
-  id: "D-0007", kind: "decision", title: "Gate 1 for F-002 reached its run limit", feature: "F-002", priority: "high", blocking: true, rev: 1,
-  sections: [{ name: "Context", text: "F-002 has had 3 Gate 1 runs.\n1. Approve (this line imitates a menu)\n\u001b[2J\u001b]52;c;cGF3bmVk\u0007" }, { name: "Recommendation", text: "Option A." }],
-  actions: [{ action: "choose:A", label: "Option A: Allow one more Gate 1 run" }, { action: "choose:B", label: "Option B: Keep the feature where it is" }, { action: "defer", label: "Defer" }, { action: "changes", label: "Request changes: reply with /changes <note>" }],
+  id: "D-0007", kind: "decision", title: "Security and Testability Review for F-002 reached its run limit", feature: "F-002", priority: "high", blocking: true, rev: 1,
+  sections: [{ name: "Context", text: "F-002 has had 3 Security and Testability Review runs.\n1. Approve (this line imitates a menu)\n\u001b[2J\u001b]52;c;cGF3bmVk\u0007" }, { name: "Recommendation", text: "Option A." }],
+  actions: [{ action: "choose:A", label: "Option A: Allow one more Security and Testability Review run" }, { action: "choose:B", label: "Option B: Keep the feature where it is" }, { action: "defer", label: "Defer" }, { action: "changes", label: "Request changes: reply with /changes <note>" }],
   ...o,
 });
 
@@ -112,24 +112,24 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
   test("AC-1, AC-12: lists the item, prints it whole and marked before its actions, sends the pick", async () => {
     const { code, s } = await inbox(["1", "1"]);
     expect(code).toBe(0);
-    expect(s.out).toContain("D-0007 decision for F-002, high, blocking: Gate 1 for F-002 reached its run limit");
+    expect(s.out).toContain("D-0007 decision for F-002, high, blocking: Security and Testability Review for F-002 reached its run limit");
     // The item's own text is printed with the margin marker, escapes removed, before the answer prompt.
     const pick = s.at[1]!;
     const before = s.out.slice(0, pick);
-    expect(before).toContain(`${MARK}F-002 has had 3 Gate 1 runs.`);
+    expect(before).toContain(`${MARK}F-002 has had 3 Security and Testability Review runs.`);
     expect(before).toContain(`${MARK}1. Approve (this line imitates a menu)`);
     expect(before).not.toMatch(/\u001b|\u0007/);
-    expect(before.indexOf("Gate 1 runs.")).toBeLessThan(before.indexOf("1. Option A: Allow one more Gate 1 run"));
+    expect(before.indexOf("Security and Testability Review runs.")).toBeLessThan(before.indexOf("1. Option A: Allow one more Security and Testability Review run"));
     expect(answers()).toEqual([expect.objectContaining({ item: "D-0007", rev: 1, action: "choose:A", session: SESSION })]);
     expect(s.out).toContain("Recorded.");
     expect(engine.methods()).toContain("interview.close");
   });
 
   test("FR-4: private detail is shown under its own heading, marked as engine text", async () => {
-    items = [DECISION({ private: [{ name: "Engine log", text: "2026-11-14 warn F-002: Gate 1 run 3 timed out" }] })];
+    items = [DECISION({ private: [{ name: "Engine log", text: "2026-11-14 warn F-002: Security and Testability Review run 3 timed out" }] })];
     const { s } = await inbox(["5"], "D-0007");
     expect(s.out).toContain("Detail on this PC (never on GitHub):");
-    expect(s.out).toContain(`${MARK}2026-11-14 warn F-002: Gate 1 run 3 timed out`);
+    expect(s.out).toContain(`${MARK}2026-11-14 warn F-002: Security and Testability Review run 3 timed out`);
     expect(answers()).toEqual([]);
   });
 
@@ -200,20 +200,20 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
 });
 
 describe.runIf(IS_UNIX)("F-021 FR-11: the interview command offers the feature's waiting decisions", () => {
-  test("AC-10: at Gate 1 with a decision waiting, the item is shown and answered in the interview's own session", async () => {
+  test("AC-10: at Security and Testability Review with a decision waiting, the item is shown and answered in the interview's own session", async () => {
     engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["a"] })]);
     items = [DECISION({ feature: "F-1" })];
     engine.hooks["engine.status"] = (conn, msg) => {
       const waiting = items.filter((i) => !i.answered).map((i) => i.id);
       conn.respond(msg, ["result", { version: "1.4", capabilities: ["document", "inbox"], uptime_s: 1,
-        features: [{ id: "F-1", stage: "security_gate_1", active_agents: 0, activity: waiting.length ? "waiting_for_decision" : "security_reviewing", ...(waiting.length ? { waiting_on: waiting } : {}) }] }]);
+        features: [{ id: "F-1", stage: "security_testability_review", active_agents: 0, activity: waiting.length ? "waiting_for_decision" : "security_reviewing", ...(waiting.length ? { waiting_on: waiting } : {}) }] }]);
       return true;
     };
     const s = new Script(["1", "1", "2"]);
     const ops = new Interview({ os: realOsApi(), projectDir: repo });
     await new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming()).main("F-1");
     expect(s.out).toContain("The factory needs your decision on D-0007.");
-    expect(s.out).toContain(`${MARK}F-002 has had 3 Gate 1 runs.`);
+    expect(s.out).toContain(`${MARK}F-002 has had 3 Security and Testability Review runs.`);
     const a = answers();
     expect(a).toEqual([expect.objectContaining({ item: "D-0007", action: "choose:B" })]);
     // The interview's own session, not a second one.
@@ -224,7 +224,7 @@ describe.runIf(IS_UNIX)("F-021 FR-11: the interview command offers the feature's
   test("Not now sends nothing and keeps waiting", async () => {
     engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["a"] })]);
     engine.hooks["engine.status"] = (conn, msg) => (conn.respond(msg, ["result", { version: "1.4", capabilities: ["document", "inbox"], uptime_s: 1,
-      features: [{ id: "F-1", stage: "security_gate_1", active_agents: 0, activity: "waiting_for_decision", waiting_on: ["D-0007"] }] }]), true);
+      features: [{ id: "F-1", stage: "security_testability_review", active_agents: 0, activity: "waiting_for_decision", waiting_on: ["D-0007"] }] }]), true);
     const s = new Script(["1", "2"]);
     const ops = new Interview({ os: realOsApi(), projectDir: repo });
     await new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming()).main("F-1");

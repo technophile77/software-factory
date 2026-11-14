@@ -8,9 +8,9 @@ stages:
   - id: requirements_interview
     owner: requirements-analyst
     exit: [spec_drafted, assumptions_filed]
-  - id: security_gate_1
+  - id: security_testability_review
     owner: security-reviewer
-    exit: [gate1_report_filed, approved_security_reqs_in_spec]
+    exit: [st_review_report_filed, approved_security_reqs_in_spec]
   - id: readiness_gate
     owner: orchestrator
     exit:
@@ -29,7 +29,7 @@ stages:
     owner: orchestrator   # engine code; the agent only classifies failures (F-015)
     exit: [tests_passed, test_run_complete]
     on_fail: { retry_policy: by_cause, then: testing_inbox }  # docs/testing-strategy.md
-  - id: security_gate_2
+  - id: code_review
     owner: security-reviewer
     exit: [no_blocking_findings]       # "blocking" pending decision 7
     on_fail: build_and_test_prep

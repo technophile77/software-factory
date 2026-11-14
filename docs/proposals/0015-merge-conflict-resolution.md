@@ -32,7 +32,7 @@ branches into the feature branch at gates.
 | Detect | Orchestrator | After each merge to `main`, merge `main` into every active feature branch (Q1). Clean merges go straight to verification. |
 | Classify | Orchestrator | By file: lockfiles and generated files; source; tests; spec and docs; interface contracts; change-controlled files. |
 | Resolve | The role that owns the files | Lockfiles and generated files: software developer regenerates them with the repo's tooling. Source: software developer. Tests: test engineer (the developer may not write tests). Feature spec: requirements analyst. Each works on its own agent branch, keeps the approved behavior of **both** sides, and records what it chose and why in its agent report. |
-| Verify | Engine and orchestrator | Full test suite and CI on the merged result. Security Gate 2 on the resolved hunks. If the feature had already passed validation, the judge re-checks the resolved hunks against both specs. The bar is the repo's maturity level, as always. |
+| Verify | Engine and orchestrator | Full test suite and CI on the merged result. Code Review on the resolved hunks. If the feature had already passed validation, the judge re-checks the resolved hunks against both specs. The bar is the repo's maturity level, as always. |
 
 **Escalation**, using the existing inboxes:
 - Resolving it would change approved behavior of either feature: Testing inbox.

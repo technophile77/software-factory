@@ -8,7 +8,7 @@
 const ANSI = /(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|(?:\x1b\]|\x9d)[^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)?|\x1b[@-_]/g;
 
 // Invisible characters in visible categories. Variation selectors can encode
-// arbitrary bytes the owner never sees but the model reads (F-005 Gate 2 #1).
+// arbitrary bytes the owner never sees but the model reads (F-005 Code Review #1).
 const INVISIBLE = /[͏ᅟᅠ឴឵᠋-᠍᠏⠀ㅤﾠ︀-️\u{16fe4}\u{e0100}-\u{e01ef}]/gu;
 
 // Whole categories, not a list of known characters: controls, format (bidi,

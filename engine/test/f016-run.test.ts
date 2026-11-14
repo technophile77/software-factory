@@ -113,7 +113,7 @@ async function start(w: World, d: FakeDocker, scripts: Parameters<typeof scripte
 }
 
 describe("F-016: answers in the inbox have their effects", () => {
-  it("AC-1, AC-12, AC-2: a Gate 1 choice is an issue the feature waits on; option B goes back to the analyst as data and an SR citing it reaches readiness_gate", async () => {
+  it("AC-1, AC-12, AC-2: a Security and Testability Review choice is an issue the feature waits on; option B goes back to the analyst as data and an SR citing it reaches readiness_gate", async () => {
     const w = world();
     const d = new FakeDocker();
     let feature = "";
@@ -121,13 +121,13 @@ describe("F-016: answers in the inbox have their effects", () => {
     const { e, c, s, gh } = await start(w, d, {
       analyst: analyst(w, () => feature, async (sc, input) => {
         returned = input;
-        writeSpec(w, feature, spec(feature, 4, ["| SR-1 | Inputs are validated. | Analyst | Approved |", "| SR-2 | Export on the server, never in the browser. | Gate 1 #1; D-0001 | Approved |"]));
+        writeSpec(w, feature, spec(feature, 4, ["| SR-1 | Inputs are validated. | Analyst | Approved |", "| SR-2 | Export on the server, never in the browser. | Security and Testability Review #1; D-0001 | Approved |"]));
         await sc.call("interview_spec_ready", { spec_path: `docs/features/${feature}-export.md`, spec_version: 4 });
       }),
       reviewer: reviewer(d, () => feature, [CHOICE]),
     });
     await interview(w, e, c, () => feature, (f) => (feature = f));
-    await until("blocked on the owner", () => !!e.feature(feature)?.state.gate1.blocked);
+    await until("blocked on the owner", () => !!e.feature(feature)?.state.stReview.blocked);
 
     // AC-1: an issue with the reviewer's options; nothing under .factory/inbox/ but the record.
     await pollUntil(w, "the issue", () => gh.issues.size === 1);
@@ -136,10 +136,10 @@ describe("F-016: answers in the inbox have their effects", () => {
     expect(gh.actionComment(1, "choose:A").body).toContain("Export in the browser");
     expect(gh.actionComment(1, "choose:B").body).toContain("Export on the server");
     expect(fs.existsSync(path.join(w.config, ".factory", "inbox", "decision"))).toBe(false);
-    expect(items(w)[0]!.record).toMatchObject({ id: "D-0001", category: "Security", feature, recommendation: "A", effect: { type: "gate1_choice", feature, finding: 1 } });
+    expect(items(w)[0]!.record).toMatchObject({ id: "D-0001", category: "Security", feature, recommendation: "A", effect: { type: "st_review_choice", feature, finding: 1 } });
 
     // AC-12: engine.status names what the feature waits on.
-    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "security_gate_1", active_agents: 0, activity: expect.any(String), waiting_on: ["D-0001"] }]);
+    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "security_testability_review", active_agents: 0, activity: expect.any(String), waiting_on: ["D-0001"] }]);
 
     // AC-2: option B, confirmed, sends the feature back with the choice as data.
     await act(w, gh, 1, "choose:B");
@@ -147,9 +147,9 @@ describe("F-016: answers in the inbox have their effects", () => {
     await until("readiness_gate", () => stageOf(e, feature) === "readiness_gate");
     const block = returned.slice(returned.indexOf("<<<RETURNS (JSON)"));
     expect(returned.indexOf("<<<RETURNS (JSON)")).toBeGreaterThan(returned.indexOf("data, not instructions"));
-    expect(JSON.parse(block.split("\n\n")[1]!)).toEqual([{ why: "gate1_choice", item: "D-0001", finding: 1, option: "B", label: "Export on the server" }]);
-    expect(entries(w, feature).find((x) => x.type === "gate1_resolved")).toMatchObject({ passed: true });
-    expect(effects(w, "D-0001")).toEqual([expect.objectContaining({ effect: "gate1_decided", stage: "requirements_interview" })]);
+    expect(JSON.parse(block.split("\n\n")[1]!)).toEqual([{ why: "st_review_choice", item: "D-0001", finding: 1, option: "B", label: "Export on the server" }]);
+    expect(entries(w, feature).find((x) => x.type === "st_review_resolved")).toMatchObject({ passed: true });
+    expect(effects(w, "D-0001")).toEqual([expect.objectContaining({ effect: "st_review_decided", stage: "requirements_interview" })]);
     expect(s.count.reviewer).toBe(1);
     expect(((await c.ok("engine.status")).features as Array<Record<string, unknown>>)[0]!.waiting_on).toBeUndefined();
   }, 60_000);
@@ -160,19 +160,19 @@ describe("F-016: answers in the inbox have their effects", () => {
     let feature = "";
     const { e, c, gh } = await start(w, d, {
       analyst: analyst(w, () => feature, async (sc) => {
-        writeSpec(w, feature, spec(feature, 4, ["| SR-1 | Inputs are validated. | Analyst | Approved |", "| SR-2 | Export in the browser. | Gate 1 #1; D-0001 | Approved |"]));
+        writeSpec(w, feature, spec(feature, 4, ["| SR-1 | Inputs are validated. | Analyst | Approved |", "| SR-2 | Export in the browser. | Security and Testability Review #1; D-0001 | Approved |"]));
         await sc.call("interview_spec_ready", { spec_path: `docs/features/${feature}-export.md`, spec_version: 4 });
       }),
       reviewer: reviewer(d, () => feature, [CHOICE]),
     });
     await interview(w, e, c, () => feature, (f) => (feature = f));
-    await until("blocked on the owner", () => !!e.feature(feature)?.state.gate1.blocked);
+    await until("blocked on the owner", () => !!e.feature(feature)?.state.stReview.blocked);
     await pollUntil(w, "the issue", () => gh.issues.size === 1);
     await act(w, gh, 1, "choose:B");
-    await pollUntil(w, "Gate 1 checked again", () => entries(w, feature).some((x) => x.type === "gate1_resolved"));
-    const res = entries(w, feature).filter((x) => x.type === "gate1_resolved").pop()!;
+    await pollUntil(w, "Security and Testability Review checked again", () => entries(w, feature).some((x) => x.type === "st_review_resolved"));
+    const res = entries(w, feature).filter((x) => x.type === "st_review_resolved").pop()!;
     expect(res).toMatchObject({ passed: false });
-    expect(String((res as any).evidence)).toContain("Gate 1 #1");
+    expect(String((res as any).evidence)).toContain("Security and Testability Review #1");
     expect(stageOf(e, feature)).not.toBe("readiness_gate");
   }, 60_000);
 
@@ -182,15 +182,15 @@ describe("F-016: answers in the inbox have their effects", () => {
     let feature = "";
     const { e, c, s, gh } = await start(w, d, { analyst: analyst(w, () => feature), reviewer: reviewer(d, () => feature, [CHOICE]) });
     await interview(w, e, c, () => feature, (f) => (feature = f));
-    await until("blocked on the owner", () => !!e.feature(feature)?.state.gate1.blocked);
+    await until("blocked on the owner", () => !!e.feature(feature)?.state.stReview.blocked);
     await pollUntil(w, "the issue", () => gh.issues.size === 1);
     await act(w, gh, 1, "defer", false);
     await pollUntil(w, "the effect", () => effects(w, "D-0001").length === 1);
     expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "none" });
     expect(gh.issues.get(1)!.state).toBe("open");
     expect(gh.issues.get(1)!.labels).toContain("priority:medium");
-    expect(stageOf(e, feature)).toBe("security_gate_1");
-    expect(e.feature(feature)!.state.gate1.blocked).toBeTruthy();
+    expect(stageOf(e, feature)).toBe("security_testability_review");
+    expect(e.feature(feature)!.state.stReview.blocked).toBeTruthy();
     expect(s.count.analyst).toBe(1);
   }, 60_000);
 
@@ -201,7 +201,7 @@ describe("F-016: answers in the inbox have their effects", () => {
     const scripts = { analyst: analyst(w, () => feature, async () => undefined), reviewer: reviewer(d, () => feature, [CHOICE]) };
     const first = await start(w, d, scripts);
     await interview(w, first.e, first.c, () => feature, (f) => (feature = f));
-    await until("blocked on the owner", () => !!first.e.feature(feature)?.state.gate1.blocked);
+    await until("blocked on the owner", () => !!first.e.feature(feature)?.state.stReview.blocked);
     await pollUntil(w, "the issue bound", () => items(w).find((i) => i.id === "D-0001")?.record.issue === 1);
     await first.e.stop();
     // The crash: the owner's 👍 on option B is on GitHub and in the record, its effect isn't.
@@ -215,11 +215,11 @@ describe("F-016: answers in the inbox have their effects", () => {
     const third = await start(w, d, scripts, first.gh);
     await new Promise((r) => setTimeout(r, 300));
     expect(effects(w, "D-0001")).toHaveLength(1);
-    expect(entries(w, feature).filter((x) => x.type === "gate1_decided")).toHaveLength(1);
+    expect(entries(w, feature).filter((x) => x.type === "st_review_decided")).toHaveLength(1);
     expect(third.e.feature(feature)).toBeTruthy();
     await third.e.stop();
 
-    // Gate 2 re-review R2: the same 👍 copied into a new entry is a replay, not a second answer.
+    // Code Review re-review R2: the same 👍 copied into a new entry is a replay, not a second answer.
     const state = path.join(w.config, ".factory");
     const rec = JSON.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.json"), "utf8"));
     rec.history.push({ ...rec.history.find((h: any) => h.by === "owner"), at: "2026-11-11T10:30:00Z" });
@@ -228,18 +228,18 @@ describe("F-016: answers in the inbox have their effects", () => {
     const fourth = await start(w, d, scripts, first.gh);
     await pollUntil(w, "the replay refused", () => effects(w, "D-0001").length === 2);
     expect(effects(w, "D-0001")[1]).toMatchObject({ effect: "unverified" });
-    expect(entries(w, feature).filter((x) => x.type === "gate1_decided")).toHaveLength(1);
+    expect(entries(w, feature).filter((x) => x.type === "st_review_decided")).toHaveLength(1);
     expect(fourth.e.feature(feature)).toBeTruthy();
   }, 60_000);
 
-  it("Gate 2 M1: a recorded answer GitHub doesn't show is not carried out after a restart", async () => {
+  it("Code Review M1: a recorded answer GitHub doesn't show is not carried out after a restart", async () => {
     const w = world();
     const d = new FakeDocker();
     let feature = "";
     const scripts = { analyst: analyst(w, () => feature, async () => undefined), reviewer: reviewer(d, () => feature, [CHOICE]) };
     const first = await start(w, d, scripts);
     await interview(w, first.e, first.c, () => feature, (f) => (feature = f));
-    await until("blocked on the owner", () => !!first.e.feature(feature)?.state.gate1.blocked);
+    await until("blocked on the owner", () => !!first.e.feature(feature)?.state.stReview.blocked);
     await pollUntil(w, "the issue bound", () => items(w).find((i) => i.id === "D-0001")?.record.issue === 1);
     await first.e.stop();
     // Someone with write access to factory/state adds an owner answer with no 👍 behind it.
@@ -250,18 +250,18 @@ describe("F-016: answers in the inbox have their effects", () => {
     expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "unverified" });
     expect(items(w).some((i) => i.record.category === "Security" && /D-0001 in factory\/state isn't on GitHub/.test(i.record.title))).toBe(true);
     expect(stageOf(second.e, feature)).not.toBe("requirements_interview");
-    expect(entries(w, feature).filter((x) => x.type === "gate1_decided")).toHaveLength(0);
+    expect(entries(w, feature).filter((x) => x.type === "st_review_decided")).toHaveLength(0);
     expect(second.s.count.analyst).toBe(0);
   }, 60_000);
 
-  it("Gate 2 M1: a recorded answer whose real 👍 and /confirm came after the 15-minute window is not carried out", async () => {
+  it("Code Review M1: a recorded answer whose real 👍 and /confirm came after the 15-minute window is not carried out", async () => {
     const w = world();
     const d = new FakeDocker();
     let feature = "";
     const scripts = { analyst: analyst(w, () => feature, async () => undefined), reviewer: reviewer(d, () => feature, [CHOICE]) };
     const first = await start(w, d, scripts);
     await interview(w, first.e, first.c, () => feature, (f) => (feature = f));
-    await until("blocked on the owner", () => !!first.e.feature(feature)?.state.gate1.blocked);
+    await until("blocked on the owner", () => !!first.e.feature(feature)?.state.stReview.blocked);
     await pollUntil(w, "the issue bound", () => items(w).find((i) => i.id === "D-0001")?.record.issue === 1);
     await first.e.stop();
     const ac = first.gh.actionComment(1, "choose:B");
@@ -270,7 +270,7 @@ describe("F-016: answers in the inbox have their effects", () => {
     const second = await start(w, d, scripts, first.gh);
     await pollUntil(w, "the answer refused", () => effects(w, "D-0001").length === 1);
     expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "unverified" });
-    expect(entries(w, feature).filter((x) => x.type === "gate1_decided")).toHaveLength(0);
+    expect(entries(w, feature).filter((x) => x.type === "st_review_decided")).toHaveLength(0);
   }, 60_000);
 });
 
@@ -296,7 +296,7 @@ describe("F-016: Security item effects (H-0182)", () => {
   const FIX = "The export never includes card numbers.";
   const REQUIREMENT = { criterion: "S3.2", severity: "High", location: "FR-1", explanation: "Exports may hold card numbers.", fix: FIX, needs_owner: false };
 
-  it("FR-19, AC-21: at Rapid prototype, findings below Critical are recorded as known issues and Gate 1 goes on to the readiness gate without questions", async () => {
+  it("FR-19, AC-21: at Rapid prototype, findings below Critical are recorded as known issues and Security and Testability Review goes on to the readiness gate without questions", async () => {
     const w = world({}, { maturity: "rapid-prototype" });
     const d = new FakeDocker();
     let feature = "";
@@ -304,12 +304,12 @@ describe("F-016: Security item effects (H-0182)", () => {
     const { e, c, s } = await start(w, d, { analyst: analyst(w, () => feature, async () => undefined), reviewer: reviewer(d, () => feature, [low, { ...low, criterion: "S4.4", severity: "High" }]) });
     await interview(w, e, c, () => feature, (f) => (feature = f));
     await until("readiness_gate", () => stageOf(e, feature) === "readiness_gate");
-    expect(e.feature(feature)!.state.gate1.findings.map((f) => f.recorded)).toEqual([true, true]);
-    expect(e.feature(feature)!.state.gate1.pending).toBe(false);
-    expect([...e.feature(feature)!.state.items.values()].some((i) => i.text.startsWith("Gate 1"))).toBe(false);
+    expect(e.feature(feature)!.state.stReview.findings.map((f) => f.recorded)).toEqual([true, true]);
+    expect(e.feature(feature)!.state.stReview.pending).toBe(false);
+    expect([...e.feature(feature)!.state.items.values()].some((i) => i.text.startsWith("Security and Testability Review"))).toBe(false);
     expect(s.count.analyst).toBe(1);
     const branch = e.feature(feature)!.state.branch;
-    expect(git(w.config, "show", `${branch}:docs/features/${feature}-security-gate1.md`)).toContain("Known issue, open until fixed before promotion");
+    expect(git(w.config, "show", `${branch}:docs/features/${feature}-security-testability-review.md`)).toContain("Known issue, open until fixed before promotion");
   }, 60_000);
 
   it("FR-19: at Alpha a High finding still goes to the interview, and only it is asked", async () => {
@@ -322,7 +322,7 @@ describe("F-016: Security item effects (H-0182)", () => {
       reviewer: reviewer(d, () => feature, [REQUIREMENT, { ...REQUIREMENT, severity: "Low", criterion: "S4.4", fix: "Pin dev tools." }]),
     });
     await interview(w, e, c, () => feature, (f) => (feature = f));
-    await until("the analyst's Gate 1 turn", () => second !== "");
+    await until("the analyst's Security and Testability Review turn", () => second !== "");
     expect(stageOf(e, feature)).toBe("requirements_interview");
     expect(second).toContain(FIX);
     expect(second).not.toContain("Pin dev tools.");
@@ -337,29 +337,29 @@ describe("F-016: Security item effects (H-0182)", () => {
     const { e, c, s, gh } = await start(w, d, {
       analyst: analyst(w, () => feature, async (sc, input, n) => {
         if (n === 2) {
-          await sc.call("interview_ask", { text: "Gate 1 #1: exports may leak card numbers", why: "Security Gate 1 found it.", suggested: FIX });
+          await sc.call("interview_ask", { text: "Security and Testability Review #1: exports may leak card numbers", why: "Security and Testability Review found it.", suggested: FIX });
           await sc.next();
           writeSpec(w, feature, spec(feature, 4));
           await sc.call("interview_spec_ready", { spec_path: `docs/features/${feature}-export.md`, spec_version: 4 });
           return;
         }
         third = input;
-        writeSpec(w, feature, spec(feature, 5, ["| SR-1 | Inputs are validated. | Analyst | Approved |", "| SR-2 | Card numbers may appear in exports; the owner accepted it. | Gate 1 #1; D-0001 | Accepted risk |"]));
+        writeSpec(w, feature, spec(feature, 5, ["| SR-1 | Inputs are validated. | Analyst | Approved |", "| SR-2 | Card numbers may appear in exports; the owner accepted it. | Security and Testability Review #1; D-0001 | Accepted risk |"]));
         await sc.call("interview_spec_ready", { spec_path: `docs/features/${feature}-export.md`, spec_version: 5 });
       }),
       reviewer: reviewer(d, () => feature, [REQUIREMENT]),
     });
     session = await interview(w, e, c, () => feature, (f) => (feature = f));
-    await until("the Gate 1 question", () => [...(e.feature(feature)?.state.items.values() ?? [])].some((i) => i.text.startsWith("Gate 1 #1")));
-    const q = [...e.feature(feature)!.state.items.values()].find((i) => i.text.startsWith("Gate 1 #1"))!;
+    await until("the Security and Testability Review question", () => [...(e.feature(feature)?.state.items.values() ?? [])].some((i) => i.text.startsWith("Security and Testability Review #1")));
+    const q = [...e.feature(feature)!.state.items.values()].find((i) => i.text.startsWith("Security and Testability Review #1"))!;
     await c.ok("interview.reply", { session, item: q.id, revision: 0, reply_id: "r2", kind: "answer", text: "No, card numbers are fine here." });
-    await until("the risk item", () => items(w).some((i) => i.record.effect?.type === "gate1_risk"));
+    await until("the risk item", () => items(w).some((i) => i.record.effect?.type === "st_review_risk"));
     await pollUntil(w, "the issue", () => gh.issues.size === 1);
     await act(w, gh, 1, "choose:A");
     await pollUntil(w, "the third analyst session", () => s.count.analyst === 3);
     await until("readiness_gate", () => stageOf(e, feature) === "readiness_gate");
-    expect(e.feature(feature)!.state.gate1.accepted.get(1)).toBe("D-0001");
-    expect(third).toContain('"why": "gate1_risk_accepted"');
+    expect(e.feature(feature)!.state.stReview.accepted.get(1)).toBe("D-0001");
+    expect(third).toContain('"why": "st_review_risk_accepted"');
   }, 60_000);
 
   it("FR-16, AC-18: a risk item filed before the spec took the finding up is withdrawn at the next start", async () => {
@@ -370,7 +370,7 @@ describe("F-016: Security item effects (H-0182)", () => {
     const scripts = {
       analyst: analyst(w, () => feature, async (sc, _input, n) => {
         if (n !== 2) return;
-        await sc.call("interview_ask", { text: "Gate 1 #1: exports may leak card numbers", why: "Security Gate 1 found it.", suggested: FIX });
+        await sc.call("interview_ask", { text: "Security and Testability Review #1: exports may leak card numbers", why: "Security and Testability Review found it.", suggested: FIX });
         await sc.next();
         // The answer is the suggested requirement, but the spec leaves it out, so a risk item is filed.
         writeSpec(w, feature, spec(feature, 4));
@@ -380,16 +380,16 @@ describe("F-016: Security item effects (H-0182)", () => {
     };
     const first = await start(w, d, scripts);
     session = await interview(w, first.e, first.c, () => feature, (f) => (feature = f));
-    await until("the Gate 1 question", () => [...(first.e.feature(feature)?.state.items.values() ?? [])].some((i) => i.text.startsWith("Gate 1 #1")));
-    const q = [...first.e.feature(feature)!.state.items.values()].find((i) => i.text.startsWith("Gate 1 #1"))!;
+    await until("the Security and Testability Review question", () => [...(first.e.feature(feature)?.state.items.values() ?? [])].some((i) => i.text.startsWith("Security and Testability Review #1")));
+    const q = [...first.e.feature(feature)!.state.items.values()].find((i) => i.text.startsWith("Security and Testability Review #1"))!;
     await first.c.ok("interview.reply", { session, item: q.id, revision: 0, reply_id: "r2", kind: "answer", text: FIX });
-    await until("the risk item", () => items(w).some((i) => i.record.effect?.type === "gate1_risk"));
-    await pollUntil(w, "the issue bound", () => items(w).find((i) => i.record.effect?.type === "gate1_risk")!.record.issue === 1);
+    await until("the risk item", () => items(w).some((i) => i.record.effect?.type === "st_review_risk"));
+    await pollUntil(w, "the issue bound", () => items(w).find((i) => i.record.effect?.type === "st_review_risk")!.record.issue === 1);
     const branch = first.e.feature(feature)!.state.branch;
     await first.e.stop();
 
     // The spec now has the row. The other title FR-16 allowed would fail spec_structure (FR-17) here.
-    const fixed = spec(feature, 4, ["| SR-1 | Inputs are validated. | Analyst | Approved |", `| SR-2 | ${FIX} | Gate 1 #1 | Approved |`]);
+    const fixed = spec(feature, 4, ["| SR-1 | Inputs are validated. | Analyst | Approved |", `| SR-2 | ${FIX} | Security and Testability Review #1 | Approved |`]);
     const wt = path.join(w.root, "fix-wt");
     git(w.config, "worktree", "add", "-q", "--detach", wt, branch);
     fs.writeFileSync(path.join(wt, "docs", "features", `${feature}-export.md`), fixed);
@@ -399,7 +399,7 @@ describe("F-016: Security item effects (H-0182)", () => {
 
     const second = await start(w, d, scripts, first.gh);
     await until("readiness_gate", () => stageOf(second.e, feature) === "readiness_gate");
-    const risk = items(w).find((i) => i.record.effect?.type === "gate1_risk")!;
+    const risk = items(w).find((i) => i.record.effect?.type === "st_review_risk")!;
     await until("the item withdrawn", () => items(w).find((i) => i.id === risk.id)!.record.status === "closed");
     await until("the issue closed", () => first.gh.issues.get(1)!.state === "closed");
   }, 60_000);
@@ -413,7 +413,7 @@ describe("F-016: Security item effects (H-0182)", () => {
     const { e, c, s, gh } = await start(w, d, {
       analyst: analyst(w, () => feature, async (sc, input, n) => {
         if (n === 2) {
-          await sc.call("interview_ask", { text: "Gate 1 #1: exports may leak card numbers", why: "Security Gate 1 found it.", suggested: FIX });
+          await sc.call("interview_ask", { text: "Security and Testability Review #1: exports may leak card numbers", why: "Security and Testability Review found it.", suggested: FIX });
           await sc.next();
           writeSpec(w, feature, spec(feature, 4));
           await sc.call("interview_spec_ready", { spec_path: `docs/features/${feature}-export.md`, spec_version: 4 });
@@ -424,17 +424,17 @@ describe("F-016: Security item effects (H-0182)", () => {
       reviewer: reviewer(d, () => feature, [REQUIREMENT]),
     });
     session = await interview(w, e, c, () => feature, (f) => (feature = f));
-    await until("the Gate 1 question", () => [...(e.feature(feature)?.state.items.values() ?? [])].some((i) => i.text.startsWith("Gate 1 #1")));
-    const q = [...e.feature(feature)!.state.items.values()].find((i) => i.text.startsWith("Gate 1 #1"))!;
+    await until("the Security and Testability Review question", () => [...(e.feature(feature)?.state.items.values() ?? [])].some((i) => i.text.startsWith("Security and Testability Review #1")));
+    const q = [...e.feature(feature)!.state.items.values()].find((i) => i.text.startsWith("Security and Testability Review #1"))!;
     await c.ok("interview.reply", { session, item: q.id, revision: 0, reply_id: "r2", kind: "answer", text: "No." });
-    await until("the risk item", () => items(w).some((i) => i.record.effect?.type === "gate1_risk"));
+    await until("the risk item", () => items(w).some((i) => i.record.effect?.type === "st_review_risk"));
     await pollUntil(w, "the issue", () => gh.issues.size === 1);
     await act(w, gh, 1, "choose:B");
     await pollUntil(w, "the third analyst session", () => s.count.analyst === 3);
     expect(stageOf(e, feature)).toBe("requirements_interview");
-    expect(third).toContain('"why": "gate1_reask"');
+    expect(third).toContain('"why": "st_review_reask"');
     expect(third).toContain("ask one interview question");
-    expect(e.feature(feature)!.state.gate1.accepted.size).toBe(0);
+    expect(e.feature(feature)!.state.stReview.accepted.size).toBe(0);
   }, 60_000);
 
   it("AC-6: option A on a write-outside-the-rules item restarts the analyst; the same violation files a new item; option B restarts nothing", async () => {
@@ -470,7 +470,7 @@ describe("F-016: Security item effects (H-0182)", () => {
   }, 60_000);
 });
 
-describe("F-016 H-0182: chain and Gate 1 run limit items", () => {
+describe("F-016 H-0182: chain and Security and Testability Review run limit items", () => {
   it("chain, option A: a transcript still changed files a new item; once restored, option A reopens the feature and the analyst runs again", async () => {
     const w = world();
     const d = new FakeDocker();
@@ -519,15 +519,15 @@ describe("F-016 H-0182: chain and Gate 1 run limit items", () => {
     await until("the analyst ran again", () => s.count.analyst === 2);
   }, 60_000);
 
-  it("gate1cap, option A: the feature gets one more Gate 1 run than its limit", async () => {
+  it("streviewcap, option A: the feature gets one more Security and Testability Review run than its limit", async () => {
     // A Windows checkout may give the file CRLF line endings.
-    const limits = fs.readFileSync(path.join(__dirname, "..", "config", "limits.yaml"), "utf8").replace(/\r\n/g, "\n").replace(/(security_gate_1:\n\s+runs_per_feature:) \d+/, "$1 1");
-    expect(limits).toMatch(/security_gate_1:\n\s+runs_per_feature: 1/);
+    const limits = fs.readFileSync(path.join(__dirname, "..", "config", "limits.yaml"), "utf8").replace(/\r\n/g, "\n").replace(/(security_testability_review:\n\s+runs_per_feature:) \d+/, "$1 1");
+    expect(limits).toMatch(/security_testability_review:\n\s+runs_per_feature: 1/);
     const w = world({ "engine/config/limits.yaml": limits });
     const d = new FakeDocker();
     let feature = "";
     const s = scriptedSdk({
-      // The first spec's section 5 is empty, so the readiness code checks send it back and the next spec needs a second Gate 1 run.
+      // The first spec's section 5 is empty, so the readiness code checks send it back and the next spec needs a second Security and Testability Review run.
       analyst: analyst(w, () => feature, async (sc) => {
         writeSpec(w, feature, spec(feature, 4));
         await sc.call("interview_spec_ready", { spec_path: `docs/features/${feature}-export.md`, spec_version: 4 });
@@ -542,20 +542,20 @@ describe("F-016 H-0182: chain and Gate 1 run limit items", () => {
     const gh = new FakeIssues();
     const { e, c } = await boot(w, runtime(d, s.sdk), { issues: () => gh });
     await interview(w, e, c, () => feature, (f) => (feature = f));
-    await until("the run limit item", () => items(w).some((i) => i.record.effect?.type === "gate1cap"));
+    await until("the run limit item", () => items(w).some((i) => i.record.effect?.type === "streviewcap"));
     expect(s.count.reviewer).toBe(1);
     expect(s.count.analyst).toBe(2);
     await pollUntil(w, "the issue", () => gh.issues.size === 1);
     await act(w, gh, 1, "choose:A");
     await pollUntil(w, "the extra run", () => s.count.reviewer === 2);
-    expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "gate1_extra_run" });
-    expect(e.feature(feature)!.state.gate1.extraRuns).toBe(1);
-    expect(entries(w, feature).filter((x) => x.type === "gate1_extra_run")).toHaveLength(1);
+    expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "st_review_extra_run" });
+    expect(e.feature(feature)!.state.stReview.extraRuns).toBe(1);
+    expect(entries(w, feature).filter((x) => x.type === "st_review_extra_run")).toHaveLength(1);
   }, 60_000);
 });
 
 describe("F-016 SR-9: the token's Issues permission", () => {
-  it("a token GitHub refuses issues to turns the inbox off, says why, and polls nothing (Gate 2 L4)", async () => {
+  it("a token GitHub refuses issues to turns the inbox off, says why, and polls nothing (Code Review L4)", async () => {
     const w = world();
     const d = new FakeDocker();
     const gh = new FakeIssues();
@@ -570,7 +570,7 @@ describe("F-016 SR-9: the token's Issues permission", () => {
 });
 
 describe("F-016 SR-8: breach restarts are capped", () => {
-  it("after MAX_RESUMES restarts, option A files a Notice and restarts nothing (Gate 2 L3)", async () => {
+  it("after MAX_RESUMES restarts, option A files a Notice and restarts nothing (Code Review L3)", async () => {
     const w = world();
     const d = new FakeDocker();
     let feature = "";
@@ -610,7 +610,7 @@ describe("F-016 OQ-3: pinned keys changed, approved in the inbox", () => {
   }
   const pinnedOwner = (w: World) => new PinStore(w.home).get(realPath(w.config))!.owner.github_id;
 
-  it("a confirmed A from the pinned owner pins the manifest commit the item named; an older item's A pins nothing (Gate 2 M2)", async () => {
+  it("a confirmed A from the pinned owner pins the manifest commit the item named; an older item's A pins nothing (Code Review M2)", async () => {
     const w = world();
     const d = new FakeDocker();
     const rt = runtime(d, scriptedSdk({ analyst: analyst(w, () => ""), reviewer: reviewer(d, () => "") }).sdk);
@@ -864,10 +864,10 @@ describe("F-016 FR-13, FR-14: an analyst run that stopped (issues #64, #65)", ()
   }, 60_000);
 });
 
-describe("F-016 FR-15: Gate 1 findings the interview didn't take up", () => {
+describe("F-016 FR-15: Security and Testability Review findings the interview didn't take up", () => {
   const FINDING = { criterion: "S5.2", severity: "Medium", location: "FR-1", explanation: "Errors may show stack traces.", fix: "Errors show no internals.", needs_owner: false };
 
-  it("AC-17: the feature goes back to the analyst once with the evidence; the second time an item is filed; option B leaves it at Gate 1", async () => {
+  it("AC-17: the feature goes back to the analyst once with the evidence; the second time an item is filed; option B leaves it at Security and Testability Review", async () => {
     const w = world();
     const d = new FakeDocker();
     let feature = "";
@@ -883,12 +883,12 @@ describe("F-016 FR-15: Gate 1 findings the interview didn't take up", () => {
     };
     const { e, c, gh } = await start(w, d, scripts);
     await interview(w, e, c, () => feature, (f) => (feature = f));
-    await until("the item", () => items(w).some((i) => i.record.effect?.type === "gate1unresolved"));
+    await until("the item", () => items(w).some((i) => i.record.effect?.type === "streviewunresolved"));
     expect(inputs).toHaveLength(2);
-    expect(inputs[1]).toContain("gate1_unresolved");
-    expect(inputs[1]).toContain("Gate 1 #1 has no interview question asked after the report");
-    expect(items(w).filter((i) => i.record.effect?.type === "gate1unresolved")).toHaveLength(1);
-    const item = items(w).find((i) => i.record.effect?.type === "gate1unresolved")!;
+    expect(inputs[1]).toContain("st_review_unresolved");
+    expect(inputs[1]).toContain("Security and Testability Review #1 has no interview question asked after the report");
+    expect(items(w).filter((i) => i.record.effect?.type === "streviewunresolved")).toHaveLength(1);
+    const item = items(w).find((i) => i.record.effect?.type === "streviewunresolved")!;
     await pollUntil(w, "the issue", () => !!items(w).find((i) => i.id === item.id)?.record.revisions.at(-1)?.action_comments.length);
     await act(w, gh, items(w).find((i) => i.id === item.id)!.record.issue, "choose:B");
     await pollUntil(w, "the effect", () => effects(w, item.id).length === 1);
@@ -910,7 +910,7 @@ describe("F-016 FR-15: Gate 1 findings the interview didn't take up", () => {
     };
     const { e, c, gh } = await start(w, d, scripts);
     await interview(w, e, c, () => feature, (f) => (feature = f));
-    const unresolved = () => items(w).filter((i) => i.record.effect?.type === "gate1unresolved");
+    const unresolved = () => items(w).filter((i) => i.record.effect?.type === "streviewunresolved");
     await until("the first item", () => unresolved().length === 1);
     const first = unresolved()[0]!;
     await pollUntil(w, "the issue", () => !!items(w).find((i) => i.id === first.id)?.record.revisions.at(-1)?.action_comments.length);

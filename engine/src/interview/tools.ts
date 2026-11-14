@@ -9,7 +9,7 @@ import * as path from "node:path";
 import { DocumentMeta, SourceRow, sha256, sourcesTable, specLine, tableHash, tableProblems } from "./document";
 import { Finding, ItemContent, QUESTION_TYPES, QuestionType, WireItem } from "./model";
 import { Check, SpecPathRefused, readSpec, readinessChecks } from "./readiness";
-import { gate1QuestionProblem } from "../gate1/flow";
+import { stReviewQuestionProblem } from "../st-review/flow";
 
 export type ToolErrorCode = "one_at_a_time" | "invalid" | "limit" | "unknown_item" | "wrong_status" | "unavailable";
 export type ToolResult<T = unknown> = { ok: true; result: T } | { ok: false; error: { code: ToolErrorCode; message: string } };
@@ -87,7 +87,7 @@ function itemContent(a: Record<string, unknown>, full: boolean, fromDocument = f
   return c;
 }
 
-/** The branch's copy of the source document, read without following links, against the recorded hash (Gate 2 L1). */
+/** The branch's copy of the source document, read without following links, against the recorded hash (Code Review L1). */
 function branchCopyIntact(worktree: string, d: DocumentMeta): boolean {
   let fd: number;
   try {
@@ -129,7 +129,7 @@ export interface ToolContext {
    * SHA-256 in the transcript (F-009 FR-4); null if it is missing or changed.
    */
   documentText?(): Promise<string | null>;
-  /** The project's maturity level, for the Gate 1 severity bar (F-016 FR-20). */
+  /** The project's maturity level, for the Security and Testability Review severity bar (F-016 FR-20). */
   maturity?: string;
 }
 
@@ -202,7 +202,7 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
       run("interview_ask", async () => {
         const c = itemContent(obj(args, ["text", "why", "suggested", "options", "findings", "type"]), true, fromDocument());
         if (f.openQuestion()) fail("one_at_a_time", "An earlier question is still open.");
-        const g1 = gate1QuestionProblem(c.text, c.suggested, f.state.gate1.findings, ctx.maturity ?? "");
+        const g1 = stReviewQuestionProblem(c.text, c.suggested, f.state.stReview.findings, ctx.maturity ?? "");
         if (g1) fail("invalid", g1);
         await checkItemCap();
         return { item: await f.create("question", c) };
@@ -228,7 +228,7 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
         if (item.kind !== "question" || item.status !== "researching") {
           fail("wrong_status", "Only a question the owner asked more information on can be revised.");
         }
-        const g1 = gate1QuestionProblem(c.text, c.suggested, f.state.gate1.findings, ctx.maturity ?? "");
+        const g1 = stReviewQuestionProblem(c.text, c.suggested, f.state.stReview.findings, ctx.maturity ?? "");
         if (g1) fail("invalid", g1);
         return { revision: await f.revise(id, c) };
       }),

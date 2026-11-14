@@ -54,6 +54,6 @@ describe("F-016 FR-17, AC-19: the spec's structure is checked against the JSON d
     expect(bad.find((c) => c.name === "spec_structure")?.passed).toBe(false);
     const good = readinessChecks({ spec: templateSpec().join("\n"), specVersion: 1, state, chainIntact: true });
     expect(good.find((c) => c.name === "spec_structure")).toMatchObject({ passed: true });
-    expect(structureText()).toContain("## 9. Security considerations, whose first table's header row is | Id | Requirement | Source (analyst / Gate 1) | Status |");
+    expect(structureText()).toContain("## 9. Security considerations, whose first table's header row is | Id | Requirement | Source (analyst / Security and Testability Review) | Status |");
   });
 });

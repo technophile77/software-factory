@@ -293,7 +293,7 @@ export class StateRepo {
   }
 
   /**
-   * Security Gate 2, L7: the clone's own config can still redirect a fetch or
+   * Code Review, L7: the clone's own config can still redirect a fetch or
    * push, and the token with it, to another host (`url.*.insteadOf`), send it
    * through a proxy or with extra headers (`http.*`), add a credential helper,
    * or pull in another file (`include*`). The system and global files are
@@ -308,7 +308,7 @@ export class StateRepo {
    * `git remote get-url origin` prints once `url.*` rules are refused, or
    * null when there is none or more than one, so git is asked (F-014 FR-5).
    * Several values, or an empty one (which resets the list from git 2.46),
-   * are where git versions differ (Gate 2 L4).
+   * are where git versions differ (Code Review L4).
    */
   async refuseRedirectingConfig(): Promise<string | null> {
     const out = (await this.git.run(this.repoRoot, ["config", "--list", "-z", "--show-scope", "--no-includes"])).stdout.toString("utf8");

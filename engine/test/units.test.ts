@@ -153,7 +153,7 @@ describe("secrets (SR-20, OQ-7)", () => {
     }
   });
 
-  it.runIf(process.platform === "win32")("Windows ranks a child and a grandchild strictly after their parents (Gate 2 L10)", async () => {
+  it.runIf(process.platform === "win32")("Windows ranks a child and a grandchild strictly after their parents (Code Review L10)", async () => {
     const win = realOsApi().windows();
     const script = "const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},20000)']);console.log(c.pid);setTimeout(()=>c.kill(),20000)";
     const child = spawn(process.execPath, ["-e", script], { stdio: ["ignore", "pipe", "ignore"] });
@@ -497,7 +497,7 @@ describe("GitHub device flow (SR-23, ADR 0014)", () => {
   });
 });
 
-describe("gitleaks (Gate 1 component review 5)", () => {
+describe("gitleaks (Security and Testability Review component review 5)", () => {
   it("runs dir mode with exactly the approved flags, from an empty folder, without GITLEAKS_* variables", async () => {
     const root = tmpdir();
     const fake = fakeGitleaks(path.join(root, "bin"));
@@ -819,7 +819,7 @@ describe("engine.status activity codes (F-018 FR-14, H-0225)", () => {
     expect(a("requirements_interview", true, ["answered", "open"])).toBe("analyst_reviewing");
     expect(a("requirements_interview", true, ["researching"])).toBe("analyst_researching");
     expect(a("requirements_interview", true, ["answered"])).toBe("analyst_writing_spec");
-    expect(a("security_gate_1", true, [])).toBe("security_reviewing");
+    expect(a("security_testability_review", true, [])).toBe("security_reviewing");
     expect(a("readiness_gate", true, [])).toBe("readiness_check");
     expect(a("requirements_interview", false, ["open"])).toBe("waiting_for_owner");
     expect(a("build_and_test_prep", false, [])).toBe("idle");
@@ -828,13 +828,13 @@ describe("engine.status activity codes (F-018 FR-14, H-0225)", () => {
   it("says a decision is pending, and idle only with nothing pending and no work queued (F-021 FR-12, AC-11)", async () => {
     const { activityOf } = await import("../src/interview/activity");
     const a = (stage: string, running: boolean, statuses: Array<"open" | "answered">, decisions: string[] = []) => activityOf({ stage, paused: false, running, statuses, decisions });
-    expect(a("security_gate_1", false, ["answered"], ["D-0007"])).toBe("waiting_for_decision");
+    expect(a("security_testability_review", false, ["answered"], ["D-0007"])).toBe("waiting_for_decision");
     expect(a("readiness_gate", false, [], ["S-0001"])).toBe("waiting_for_decision");
     expect(a("requirements_interview", false, ["open"], ["D-0002"])).toBe("waiting_for_decision");
     // An agent at work is reported as its work even while an item waits.
-    expect(a("security_gate_1", true, [], ["D-0007"])).toBe("security_reviewing");
+    expect(a("security_testability_review", true, [], ["D-0007"])).toBe("security_reviewing");
     // Queued work at a stage the engine works on is not idle.
-    expect(a("security_gate_1", false, [])).toBe("security_reviewing");
+    expect(a("security_testability_review", false, [])).toBe("security_reviewing");
     expect(a("readiness_gate", false, [])).toBe("readiness_check");
     expect(a("requirements_interview", false, ["answered"])).toBe("analyst_writing_spec");
     expect(a("build_and_test_prep", false, [], [])).toBe("idle");
