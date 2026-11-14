@@ -1,5 +1,6 @@
 import type { Inbox } from "../inbox/store";
 import type { Part } from "../inbox/model";
+import { actionLabel } from "../inbox/render";
 
 export interface SecurityAlert {
   title: string;
@@ -45,6 +46,8 @@ export interface DecisionItem {
   context: Part[];
   impact: string;
   options: Array<{ id: string; label: string; detail?: string }>;
+  /** Who wrote the labels, when not the engine; the body then fences them (SR-10). */
+  optionsBy?: string;
   recommendation: string;
   costOfDelay: string;
   effect: { type: string; [k: string]: unknown };
@@ -52,15 +55,27 @@ export interface DecisionItem {
 
 /** A Security item with 2 to 4 options (F-008 FR-8, FR-13). Labels are rendered as plain text by the inbox. */
 export async function fileDecisionItem(inbox: Inbox, d: DecisionItem): Promise<string> {
+  const options = d.options.map((o) => ({ id: o.id, label: o.label.replace(/\s+/g, " ").trim() }));
   return inbox.file({
     kind: "decision", title: d.title, category: "Security", priority: "high", blocking: true, created_by: "engine",
     ...(d.feature ? { feature: d.feature } : {}),
-    options: d.options.map((o) => ({ id: o.id, label: o.label.replace(/\s+/g, " ").trim() })),
+    options,
     recommendation: d.recommendation,
     effect: d.effect,
     sections: {
       Context: d.context,
-      Options: [{ engine: "Each option is an action comment below." }, ...d.options.filter((o) => o.detail).map((o) => ({ engine: `${o.id}: ${o.detail}` }))],
+      // Inbox item v3.1: the options numbered in the body too, besides their action comments.
+      Options: d.optionsBy
+        ? [
+          { engine: "The options, in the order of their action comments:" },
+          { outside: options.map((o, i) => `${i + 1}. ${o.id}: ${o.label}`).join("\n"), author: d.optionsBy },
+          ...d.options.filter((o) => o.detail).map((o) => ({ engine: `${o.id}: ${o.detail}` })),
+          { engine: "To choose, react 👍 on that option's action comment below." },
+        ]
+        : [
+          ...options.map((o, i) => ({ engine: `${i + 1}. ${actionLabel({ options }, `choose:${o.id}`)}.${d.options[i]!.detail ? ` ${d.options[i]!.detail}` : ""}` })),
+          { engine: "To choose, react 👍 on that option's action comment below." },
+        ],
       "Project impact": [{ engine: d.impact }],
       Recommendation: [{ engine: `Option ${d.recommendation}.` }],
       "Cost of delay": [{ engine: d.costOfDelay }],

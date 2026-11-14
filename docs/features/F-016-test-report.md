@@ -48,6 +48,18 @@ Each failing test is kept as it is. None was weakened or skipped.
 - **Expected:** an engine log line naming the feature and that its readiness report was refused.
 - **Actual:** the transcript says why ("The readiness session failed: its report was still invalid after one correction."), the branch is unchanged and no item is filed. The engine log has no line about it at any level; its last line is "F-001: Gate 1 run … filed 0 finding(s); the feature is at readiness_gate."
 
+## After the report (developer, 2026-11-14)
+
+The developer fixed all three product failures. The test engineer's tests are unchanged, and all 30 now pass.
+
+| # | Fix |
+|---|---|
+| 1 | A decision item's body lists its options, numbered, before the action comments. A Gate 1 choice item's labels come from the reviewer, so they are fenced as the reviewer's text (F-011 SR-10). |
+| 2 | FR-9: when the branch moved, the engine reopens the same sign-off item, on GitHub too, and the next readiness pass revises it to the new commit (F-011 FR-8) instead of filing a second one. |
+| 3 | AC-14: a refused readiness report writes a warning to the engine log naming the feature and the reason. |
+
+Test code note: the developer's `f016-run.test.ts` AC-14 fake now keeps the commit across the correction, and the test checks the reason. The `chain` and `gate1cap` effects now have tests in `f016-run.test.ts` ("F-016 H-0182: chain and Gate 1 run limit items").
+
 ## Test code note
 
 `f016-run.test.ts` "AC-14: a report invalid twice fails closed" passes, but not for the reason it states. Its fake orchestrator reads `at commit <sha>` from every session's first turn. The engine's one correction comes as a resumed session whose first turn has no commit, so the fake throws and the session fails. The transcript then reads "the session failed (Cannot read properties of null (reading '1'))", not "still invalid after one correction". The test checks only that the run failed, so it passes. The new test (`f016-acceptance.test.ts:599`) uses a fake that survives the correction and checks the reason. I did not edit the developer's test; the orchestrator decides.

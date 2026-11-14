@@ -48,12 +48,16 @@ function reviewer(d: FakeDocker, feature: () => string, findings: unknown[] = []
 
 /** An orchestrator that writes the report `make` returns for each session, or nothing. */
 function orchestrator(d: FakeDocker, feature: () => string, make: (commit: string, n: number) => string | null = (c) => readiness(feature(), c)) {
+  // The engine's one correction is a resumed session whose first message names no commit, so the last one seen is kept.
+  let commit = "";
+  let run = 0;
   return async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
     const first = (await sc.next())!;
-    const commit = /at commit ([0-9a-f]{40})/.exec(first)![1]!;
+    const named = /at commit ([0-9a-f]{40})/.exec(first)?.[1];
+    if (named) [commit, run] = [named, n];
     for (let turn = 0; ; turn++) {
       const text = make(commit, n);
-      if (text !== null) fs.writeFileSync(path.join(orchestratorDir(d), `orchestrator-${n}.json`), text);
+      if (text !== null) fs.writeFileSync(path.join(orchestratorDir(d), `orchestrator-${run}.json`), text);
       const next = await sc.next();
       if (next === null) break;
       if (turn > 2) throw new Error("too many turns");
@@ -360,6 +364,84 @@ describe("F-016: Security item effects (H-0182)", () => {
   }, 60_000);
 });
 
+describe("F-016 H-0182: chain and Gate 1 run limit items", () => {
+  it("chain, option A: a transcript still changed files a new item; once restored, option A reopens the feature and the analyst runs again", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    const s = scriptedSdk({
+      analyst: async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
+        await sc.next();
+        yield { type: "result", subtype: "success", session_id: `a-${n}` };
+      },
+      reviewer: reviewer(d, () => feature),
+    });
+    const gh = new FakeIssues();
+    const { e, c } = await boot(w, runtime(d, s.sdk), { issues: () => gh });
+    feature = (await c.ok("feature.start", { request: "Export" })).feature as string;
+    await until("the analyst ran", () => s.count.analyst === 1);
+    const state = path.join(w.config, ".factory");
+    const file = path.join(state, "interviews", feature, "transcript.jsonl");
+    const original = fs.readFileSync(file, "utf8");
+    const commit = (m: string) => execFileSync("git", ["-C", state, "-c", "user.name=someone", "-c", "user.email=someone@example.invalid", "-c", "core.hooksPath=/dev/null", "commit", "-qam", m, "--no-verify"]);
+    fs.writeFileSync(file, original.replace("Export", "Forged"));
+    commit("tidy");
+    await e.sync();
+    await until("the chain item", () => items(w).some((i) => i.record.effect?.type === "chain"));
+    expect(e.feature(feature)!.chainIntact).toBe(false);
+    await pollUntil(w, "the issue", () => gh.issues.size === 1);
+    await act(w, gh, 1, "choose:A");
+    await pollUntil(w, "the effect", () => effects(w, "D-0001").length === 1);
+    expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "chain_still_broken" });
+    await until("a new chain item", () => items(w).filter((i) => i.record.effect?.type === "chain").length === 2);
+    expect(e.feature(feature)!.chainIntact).toBe(false);
+    // The engine is quiet between polls once the second issue is up, so the hand-made commit below races nothing.
+    await pollUntil(w, "the second issue", () => gh.issues.size === 2);
+
+    fs.writeFileSync(file, original);
+    commit("restore");
+    await e.sync();
+    await act(w, gh, 2, "choose:A");
+    await pollUntil(w, "the effect", () => effects(w, "D-0002").length === 1);
+    expect(effects(w, "D-0002")[0]).toMatchObject({ effect: "chain_reopened" });
+    expect(e.feature(feature)!.chainIntact).toBe(true);
+    await until("the analyst ran again", () => s.count.analyst === 2);
+  }, 60_000);
+
+  it("gate1cap, option A: the feature gets one more Gate 1 run than its limit", async () => {
+    const limits = fs.readFileSync(path.join(__dirname, "..", "config", "limits.yaml"), "utf8").replace(/(security_gate_1:\n\s+runs_per_feature:) \d+/, "$1 1");
+    expect(limits).toMatch(/security_gate_1:\n\s+runs_per_feature: 1/);
+    const w = world({ "engine/config/limits.yaml": limits });
+    const d = new FakeDocker();
+    let feature = "";
+    const s = scriptedSdk({
+      // The first spec has no section 5, so the readiness code checks send it back and the next spec needs a second Gate 1 run.
+      analyst: analyst(w, () => feature, async (sc) => {
+        writeSpec(w, feature, spec(feature, 4));
+        await sc.call("interview_spec_ready", { spec_path: `docs/features/${feature}-export.md`, spec_version: 4 });
+      }, (f) => spec(f, 3).replace(/## 5\. Constraints\nRuns in the existing web app; no new services\.\n/, "")),
+      reviewer: async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
+        const commit = /at commit ([0-9a-f]{40})/.exec((await sc.next())!)![1]!;
+        fs.writeFileSync(path.join(reportDir(d), `security-reviewer-${n}.json`), report(feature, commit, []));
+        await sc.next();
+        yield { type: "result", subtype: "success", session_id: `r-${n}`, num_turns: 3 };
+      },
+    });
+    const gh = new FakeIssues();
+    const { e, c } = await boot(w, runtime(d, s.sdk), { issues: () => gh });
+    await interview(w, e, c, () => feature, (f) => (feature = f));
+    await until("the run limit item", () => items(w).some((i) => i.record.effect?.type === "gate1cap"));
+    expect(s.count.reviewer).toBe(1);
+    expect(s.count.analyst).toBe(2);
+    await pollUntil(w, "the issue", () => gh.issues.size === 1);
+    await act(w, gh, 1, "choose:A");
+    await pollUntil(w, "the extra run", () => s.count.reviewer === 2);
+    expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "gate1_extra_run" });
+    expect(e.feature(feature)!.state.gate1.extraRuns).toBe(1);
+    expect(entries(w, feature).filter((x) => x.type === "gate1_extra_run")).toHaveLength(1);
+  }, 60_000);
+});
+
 describe("F-016 SR-9: the token's Issues permission", () => {
   it("a token GitHub refuses issues to turns the inbox off, says why, and polls nothing (Gate 2 L4)", async () => {
     const w = world();
@@ -572,7 +654,7 @@ describe("F-016: the full readiness gate", () => {
     expect(runsOf(w, feature, "orchestrator")).toHaveLength(1);
     expect(s.count.orchestrator).toBe(2);
     expect(s.prompts.filter((x) => x.role === "orchestrator").pop()!.text).toContain("This is your one correction.");
-    expect(entries(w, feature).find((x) => x.type === "readiness_session")).toMatchObject({ status: "stopped" });
+    expect(entries(w, feature).find((x) => x.type === "readiness_session")).toMatchObject({ status: "stopped", reason: expect.stringMatching(/invalid after one correction/) });
     expect(stageOf(e, feature)).toBe("readiness_gate");
     expect(items(w)).toHaveLength(0);
     expect(e.feature(feature)!.state.readiness.signoff).toBeFalsy();

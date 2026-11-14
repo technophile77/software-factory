@@ -198,6 +198,22 @@ export class Inbox {
   }
 
   /**
+   * F-016 FR-9: an answered item is opened again so it can be revised
+   * (F-011 FR-8), on GitHub too. If the issue can't be reopened now, the
+   * next poll reopens it, since the record is open.
+   */
+  async reopen(id: string): Promise<void> {
+    const r = await this.read(id);
+    if (!r) throw new Error(`no inbox record ${id}`);
+    if (r.status === "open") return;
+    r.status = "open";
+    // "reopened" is written only once the issue is open again; until then the poll's check reopens it.
+    const opened = this.c && r.issue !== undefined && (await this.api.updateIssue(this.repo, r.issue, { state: "open" }).then(() => true, () => false));
+    if (opened) r.history.push({ at: iso(this.o.clock.now()), by: "engine", action: "reopened" });
+    await this.write(r, "reopened for a revision");
+  }
+
+  /**
    * The record change that says an effect ran (F-016 H-0180, SR-5, SR-7),
    * for the caller to commit in the same commit as the feature's stage.
    */
@@ -426,7 +442,9 @@ export class Inbox {
     }
     if (!wasBound) await this.write(r, `revision ${rev.rev} action comments found`);
     if (issue.state === "closed") {
-      if (!r.history.some((h) => h.action === "reopened")) {
+      // Reopened once after the engine last closed it, so an owner who closes it again by hand isn't fought.
+      const lastClosed = r.history.map((h) => h.action === "closed").lastIndexOf(true);
+      if (!r.history.slice(lastClosed + 1).some((h) => h.action === "reopened")) {
         await this.api.updateIssue(this.repo, r.issue!, { state: "open" });
         await this.reply(r, engineText.reopened());
         r.history.push({ at: iso(this.o.clock.now()), by: "engine", action: "reopened" });

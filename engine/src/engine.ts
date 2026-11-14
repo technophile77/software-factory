@@ -42,6 +42,7 @@ import { Git } from "./git";
 import { GitHubClient, GitHubError, GitHubUnreachable, HttpGitHub, checkBase } from "./github";
 import { HttpIssues, IssuesApi } from "./inbox/github-issues";
 import { Inbox, Recorded } from "./inbox/store";
+import type { ItemInput } from "./inbox/model";
 import { osNotifier } from "./os/notify";
 import { Gitleaks, SecretsScanner } from "./gitleaks";
 import { FeatureInterview } from "./interview/feature";
@@ -1398,7 +1399,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           { outside: `${fd.criterion}, ${fd.severity}, at ${fd.location}: ${fd.explanation}\nWhat the options decide: ${fd.fix}`, author: "the security reviewer" },
         ],
         impact: `${f.id} waits at Security Gate 1 until this is decided.`,
-        options: fd.options!.map((op) => ({ id: op.id, label: op.label })),
+        options: fd.options!.map((op) => ({ id: op.id, label: op.label })), optionsBy: "the security reviewer",
         recommendation: fd.recommendation!,
         costOfDelay: `${f.id} can't reach the readiness gate.`,
       }));
@@ -1588,6 +1589,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         const head = await git.revParse(p.real!, `refs/heads/${f!.state.branch}`).catch(() => null);
         if (head !== so.commit) {
           await done("signoff_stale", [{ type: "signoff_withdrawn", item: r.id, reason: "the feature branch moved after the item was filed" }]);
+          // FR-9: the same item is revised to the new commit once the gate passes again.
+          await p.inbox!.reopen(r.id);
           startReadiness(p, f!);
           return;
         }
@@ -1811,6 +1814,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (result.invalid || !got) {
         // Fails closed (AC-14): nothing from the run is used; the gate runs again at the next engine start.
         runs.finish(run.id, "failed", result.invalid ?? "its report couldn't be read");
+        log.warn(`${f.id}: the readiness report was refused (${result.invalid ?? "its report couldn't be read"}); nothing from the run is used and the gate runs again at the next start.`);
         await f.exclusive(() => f.append([{ type: "readiness_session", status: "stopped", reason: `The readiness session failed: ${result.invalid ?? "its report couldn't be read"}.` }], "readiness failed",
           [agentReport({ feature: f.id, stage: READINESS_STAGE, role: READINESS_ROLE, n, commit, outcome: "failed", summary: `The readiness session failed: ${result.invalid ?? "no report"}.`, body: { gate: "readiness", checks: code }, facts })]));
         return;
@@ -1852,8 +1856,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   /** F-016 FR-8: the Spec sign-off item; the orchestrator's evidence is outside text (F-011 SR-10). */
   async function fileSignoff(p: Project, f: FeatureInterview, a: { specPath: string; version: number | null; commit: string; checks: Check[] }): Promise<string> {
     const accepted = [...f.state.gate1.accepted.entries()].map(([n, item]) => `${findingRef(n)} accepted as a risk in ${item}`);
-    return p.inbox!.file({
-      kind: "spec", title: `${f.id} ${f.state.title}, spec v${a.version ?? "?"}`, priority: "high", blocking: true, created_by: "engine", feature: f.id,
+    const item: ItemInput = {
+      kind: "spec", key: `signoff:${f.id}`, title: `${f.id} ${f.state.title}, spec v${a.version ?? "?"}`, priority: "high", blocking: true, created_by: "engine", feature: f.id,
       links: [{ kind: "file", ref: a.specPath }],
       effect: { type: "spec_signoff", feature: f.id, commit: a.commit, version: a.version },
       sections: {
@@ -1864,7 +1868,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         ],
         "Open items": [{ engine: accepted.length ? accepted.join("; ") + "." : "None." }],
       },
-    });
+    };
+    // FR-9: a sign-off item reopened because the branch moved is revised, not filed again.
+    const open = await p.inbox!.openByKey(item.key!);
+    if (open) {
+      await p.inbox!.revise(open.id, item);
+      return open.id;
+    }
+    return p.inbox!.file(item);
   }
 
   // F-011 FR-5: each project's inbox is read every poll while the engine runs.
