@@ -21,7 +21,7 @@ export interface ProjectChannel {
 }
 
 export interface EngineControl {
-  status(): { version: string; capabilities: string[]; uptime_s: number; features: Array<{ id: string; stage: string; active_agents: number }> };
+  status(): { version: string; capabilities: string[]; uptime_s: number; features: Array<{ id: string; stage: string; active_agents: number; activity?: string }> };
   pause(feature?: string): string[];
   resume(feature?: string): string[];
   shutdown(): void;

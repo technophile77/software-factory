@@ -1,4 +1,5 @@
-// Pinned owner keys (SR-5, AC-20): owner.*, allowed_repo_owners and enabled
+// Pinned owner keys (SR-5, AC-20): owner.*, allowed_repo_owners, enabled and
+// (F-018 FR-15) settings.interview_sign_in
 // are pinned on first approval; any change, or a new listed path, stops the
 // project until the owner confirms and the previously pinned owner approves.
 import { afterEach, describe, expect, it } from "vitest";
@@ -51,6 +52,7 @@ describe("AC-20 / SR-5: a change to a pinned key stops the project", () => {
   it.each([
     ["the OAuth client id", (t: string) => t.replace(/oauth_client_id: \S+/, "oauth_client_id: Iv1.someoneelse")],
     ["the allow list", (t: string) => t.replace(/allowed_repo_owners:\n/, "allowed_repo_owners:\n  - { login: intruder, id: 6666 }\n")],
+    ["the interview sign-in setting (F-018 FR-15)", (t: string) => t.replace("settings:\n", "settings:\n  interview_sign_in: { every: hours, hours: 24 }\n")],
     ["enabled (false, then true again)", null],
   ])("[PIN-2] SR-5: a change to %s stops the project until the previous owner confirms", async (_n, edit) => {
     w = await World.create();

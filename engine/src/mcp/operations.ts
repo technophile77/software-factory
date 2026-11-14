@@ -138,8 +138,8 @@ function approval(a: unknown): Obj {
   if (typeof code !== "string" || !USER_CODE_RE.test(code) || uri !== DEVICE_URI || typeof expires !== "string" || !TIMESTAMP_RE.test(expires)) {
     throw new ChannelFailure("bad_response", "The engine sent an invalid GitHub approval code.", { sent: true });
   }
-  // A bare URL isn't made clickable by every chat surface (issue #63); a Markdown link is, and it still reads as the URL where Markdown isn't rendered.
-  const display = `Approve this interview session on GitHub (your phone is fine). Open this link:\n\n[${DEVICE_URI}](${DEVICE_URI})\n\n`
+  // A bare URL on its own line: terminals make it clickable, and F-018 shows no Markdown (issue #63's chat surface goes with the skill).
+  const display = `Approve this interview session on GitHub (your phone is fine). Open this link:\n\n${DEVICE_URI}\n\n`
     + `Sign in as yourself and enter the code ${code}. It expires at ${expires}.`;
   return { approval: { user_code: code, verification_uri: uri, expires_at: expires }, approval_display: display };
 }
@@ -224,6 +224,8 @@ export class Interview {
       features: feats.map((f) => engineId(f.id, "feature")),
       // Each feature's stage, so the skill can tell a finished interview from an analyst still at work.
       stages: Object.fromEntries(feats.filter((f) => typeof f.stage === "string" && STAGE_RE.test(f.stage)).map((f) => [f.id, f.stage])),
+      // Codes only; the terminal command maps them to its own words (F-018 FR-14).
+      activities: Object.fromEntries(feats.filter((f) => typeof f.activity === "string" && STAGE_RE.test(f.activity)).map((f) => [f.id, f.activity])),
     };
     // Only a plain version number gets through.
     if (typeof r.version === "string" && VERSION_RE.test(r.version)) out.version = r.version;

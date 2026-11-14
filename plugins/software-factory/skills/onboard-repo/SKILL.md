@@ -118,6 +118,15 @@ On an onboarded repo, skip this step (see "Re-running").
   proposal; otherwise use the assessment's suggestion. Only write
   `complexity` to the manifest once F-002 is merged in the pinned master.
   Never write per-agent `rung` values; F-002's calibration fills them.
+- **Interview sign-in** (new projects only, F-018 FR-15): ask how often the
+  owner signs in to GitHub to answer interview questions: never (only at
+  Rapid prototype), once per engine start, every session, or once every N
+  hours (1 to 168). Offer the level's default first: never at Rapid
+  prototype, every session above it. Say the risk: while no sign-in is
+  asked, any program running as the owner on the PC can answer for them
+  (F-018 SR-8). Write the answer to `settings.interview_sign_in` in step 7;
+  never leave the key out. Changing it later stops the project until the
+  owner runs `factory-engine confirm`.
 
 ### 4. Prepare the onboarding pull request (code repo)
 

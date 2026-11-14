@@ -1,21 +1,20 @@
-// F-005 v10's new criteria for the MCP mode itself (ADR 0025): AC-13
-// (FR-15, FR-17), AC-14 (FR-16, SR-18), AC-16's tool-set version (FR-18),
-// SR-20's annotations, FR-19's project directory, and SR-19's "no network
-// port". AC-16's skill side (telling the owner to update) is skill text,
-// reviewed with the rewritten skill (H-0176), not here.
+// F-005 v10's criteria for the interview operations, which the
+// `factory-engine interview` command (F-018) now runs in-process: AC-13
+// (FR-15, FR-17), AC-14 (FR-16, SR-18), AC-16's tool-set version (FR-18) and
+// FR-19's project directory. The MCP-only checks (tool listing, annotations,
+// the server process's sockets) went with the MCP mode (ADR 0029).
 
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { FIELDS } from "../../src/mcp/operations";
 import { question } from "./support/mcp-fake-engine";
 import {
-  IS_UNIX, Mcp, TOOL_NAMES, type ToolResult, buildEngine, expectCleanFailure, expectNothingSent, expectOk, makeRepo, removeTmp, tmp, traffic,
+  IS_UNIX, Ops, type ToolResult, buildEngine, expectCleanFailure, expectNothingSent, expectOk, makeRepo, removeTmp, tmp, traffic,
 } from "./support/mcp-harness";
 import { McpWorld } from "./support/mcp-world";
 
 let bundle: string;
 let w: McpWorld | undefined;
-const extra: Mcp[] = [];
+const extra: Ops[] = [];
 
 beforeAll(async () => {
   bundle = await buildEngine();
@@ -27,9 +26,9 @@ afterEach(async () => {
 });
 afterAll(() => removeTmp());
 
-async function startMcp(projectDir: string | undefined): Promise<{ m: Mcp; startedIn: number }> {
+async function startMcp(projectDir: string | undefined): Promise<{ m: Ops; startedIn: number }> {
   const t0 = Date.now();
-  const m = await Mcp.start(bundle, projectDir);
+  const m = await Ops.start(bundle, projectDir);
   extra.push(m);
   return { m, startedIn: Date.now() - t0 };
 }
@@ -42,14 +41,10 @@ const describeText = (r: ToolResult) => `${r.out?.error?.code ?? ""}\n${r.out?.e
 // AC-13 (FR-15, FR-17): tools listed at once with no engine; status then fails
 // ---------------------------------------------------------------------------
 
-describe("AC-13: tools listed within 5 s with no engine running", () => {
+describe("AC-13: with no engine running, status says so", () => {
   it.runIf(IS_UNIX)("with a factory repo whose engine isn't running (no engine.json)", async () => {
     const { repo } = makeRepo("state");
-    const t0 = Date.now();
     const { m } = await startMcp(repo);
-    const { tools } = await m.client.listTools();
-    expect(Date.now() - t0, "the nine tools must be listed within 5 seconds of start").toBeLessThan(5000);
-    expect(tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());
     const r = await m.call("interview_status");
     expectCleanFailure(r);
     expect(describeText(r)).toMatch(NOT_REACHABLE);
@@ -58,32 +53,18 @@ describe("AC-13: tools listed within 5 s with no engine running", () => {
   it.runIf(IS_UNIX)("with a stale engine.json whose socket is gone", async () => {
     w = await McpWorld.create(bundle);
     await w.engine.stop();
-    const t0 = Date.now();
     const { m } = await startMcp(w.repo);
-    const { tools } = await m.client.listTools();
-    expect(Date.now() - t0).toBeLessThan(5000);
-    expect(tools).toHaveLength(9);
     const r = await m.call("interview_status");
     expectCleanFailure(r);
     expect(describeText(r)).toMatch(NOT_REACHABLE);
   });
 
-  it("Claude Code started outside a factory repo (section 6): the server still starts and lists its tools", async () => {
-    const dir = tmp();
-    const t0 = Date.now();
-    const { m } = await startMcp(dir);
-    const { tools } = await m.client.listTools();
-    expect(Date.now() - t0).toBeLessThan(5000);
-    expect(tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());
-  });
-
-  it.runIf(IS_UNIX)("FR-17: starting and listing tools never contacts the engine", async () => {
+  it.runIf(IS_UNIX)("FR-17: starting never contacts the engine", async () => {
     w = await McpWorld.create(bundle);
     const before = traffic(w.engine);
-    const { m } = await startMcp(w.repo);
-    await m.client.listTools();
+    await startMcp(w.repo);
     await new Promise((r) => setTimeout(r, 300));
-    expectNothingSent(w.engine, before, "the MCP mode contacted the engine before any tool call");
+    expectNothingSent(w.engine, before, "the operations contacted the engine before any call");
   });
 
   it.runIf(IS_UNIX)("FR-17: it connects for each tool call (a new connection per call)", async () => {
@@ -118,11 +99,10 @@ describe("FR-19: the project directory", () => {
     expect(describeText(r)).toMatch(/factory\/state/);
   });
 
-  it.runIf(IS_UNIX)("the MCP process's own working directory is not used in place of CLAUDE_PROJECT_DIR", async () => {
+  it.runIf(IS_UNIX)("a project folder that isn't a factory repo is refused even while a factory repo's engine runs", async () => {
     w = await McpWorld.create(bundle);
-    // Started inside the factory repo, but pointed at a folder that is not one.
     const elsewhere = tmp();
-    const m = await Mcp.start(bundle, elsewhere, { cwd: w.repo });
+    const m = await Ops.start(bundle, elsewhere);
     extra.push(m);
     const before = traffic(w.engine);
     expectCleanFailure(await m.call("interview_status"));
@@ -139,7 +119,7 @@ describe.runIf(IS_UNIX)("AC-14: the session token stays in the process", () => {
     w = await McpWorld.create(bundle);
     w.engine.addFeature("F-1", "t", [question("Q1"), question("Q2", "deferred"), question("Q3")]);
     const results: ToolResult[] = [];
-    const call = async (tool: string, args: Record<string, unknown> = {}, on?: Mcp) => {
+    const call = async (tool: string, args: Record<string, unknown> = {}, on?: Ops) => {
       const r = await w!.call(tool, args, on);
       results.push(r);
       return r;
@@ -221,12 +201,8 @@ describe.runIf(IS_UNIX)("AC-14: the session token stays in the process", () => {
 
   it("no tool accepts a session token as an input", async () => {
     w = await McpWorld.create(bundle);
-    const { tools } = await w.mcp.client.listTools();
-    for (const t of tools) {
-      const props = Object.keys((t.inputSchema as { properties?: Record<string, unknown> }).properties ?? {});
-      expect(props, t.name).not.toContain("session");
-    }
-    // An unknown `session` field is refused by the MCP mode's own check, not silently used.
+    for (const [op, fields] of Object.entries(FIELDS)) expect(fields, op).not.toContain("session");
+    // An unknown `session` field is refused by the operations' own check, not silently used.
     w.oneQuestion();
     const tok = w.engine.openSession("F-1");
     w.expectRefusedBeforeConnecting(await w.call("next", { feature: "F-1", session: tok }));
@@ -244,71 +220,21 @@ describe("AC-16 / FR-18: interview_status reports the tool-set version", () => {
     expect(Number.isInteger(a.tools_version) && a.tools_version > 0, JSON.stringify(a)).toBe(true);
     const b = expectOk(await w.call("status", {}, await w.another()));
     expect(b.tools_version).toBe(a.tools_version);
-    // The MCP server names the same version in its initialize answer.
-    expect(String(w.mcp.client.getServerVersion()?.version)).toBe(String(a.tools_version));
   });
 });
 
-describe("SR-20: annotations", () => {
-  it("only interview_status, interview_list and interview_state carry readOnlyHint true; no tool carries idempotentHint", async () => {
-    const { m } = await startMcp(tmp());
-    const { tools } = await m.client.listTools();
-    expect(tools).toHaveLength(9);
-    const readOnly = tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort();
-    expect(readOnly).toEqual(["interview_list", "interview_state", "interview_status"]);
-    for (const t of tools) {
-      expect(t.annotations?.idempotentHint, `${t.name} carries idempotentHint`).toBeUndefined();
-      expect(t.annotations ?? {}, t.name).not.toHaveProperty("idempotentHint");
-    }
-  });
-
-  it("FR-15: each tool's inputs are the old subcommands' inputs, with feature in place of session", async () => {
-    const { m } = await startMcp(tmp());
-    const { tools } = await m.client.listTools();
-    const props = Object.fromEntries(tools.map((t) => [t.name,
-      Object.keys((t.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}).sort()]));
-    expect(props).toEqual({
-      interview_status: [], interview_list: [],
-      interview_start: ["document", "request"],
-      interview_open: ["feature", "takeover"],
-      interview_approval: ["feature", "wait_s"],
-      interview_next: ["feature", "wait_s"],
-      interview_reply: ["feature", "item", "kind", "reply_id", "revision", "status", "text", "wait_s"],
-      interview_state: ["feature", "item"],
-      interview_close: ["feature"],
+describe("FR-15: inputs", () => {
+  it("each operation's inputs are the old subcommands' inputs, with feature in place of session", () => {
+    const sorted = Object.fromEntries(Object.entries(FIELDS).map(([op, f]) => [op, [...f].sort()]));
+    expect(sorted).toEqual({
+      status: [], list: [],
+      start: ["document", "request"],
+      open: ["feature", "takeover"],
+      approval: ["feature", "wait_s"],
+      next: ["feature", "wait_s"],
+      reply: ["feature", "item", "kind", "reply_id", "revision", "status", "text", "wait_s"],
+      state: ["feature", "item"],
+      close: ["feature"],
     });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// SR-19: the MCP mode opens no network port (Linux: /proc)
-// ---------------------------------------------------------------------------
-
-describe.runIf(process.platform === "linux")("SR-19: no network port", () => {
-  it("the MCP mode process holds no listening TCP or UDP socket after a tool call", async () => {
-    const { m } = await startMcp(tmp());
-    await m.client.listTools();
-    await m.call("interview_status");
-    const pid = m.transport.pid!;
-    const inodes = new Set<string>();
-    for (const fd of fs.readdirSync(`/proc/${pid}/fd`)) {
-      try {
-        const link = fs.readlinkSync(path.join(`/proc/${pid}/fd`, fd));
-        const mm = /^socket:\[(\d+)\]$/.exec(link);
-        if (mm) inodes.add(mm[1]!);
-      } catch {
-        /* closed meanwhile */
-      }
-    }
-    const listening: string[] = [];
-    for (const table of ["tcp", "tcp6", "udp", "udp6"]) {
-      const file = `/proc/${pid}/net/${table}`;
-      if (!fs.existsSync(file)) continue;
-      for (const line of fs.readFileSync(file, "utf8").split("\n").slice(1)) {
-        const cols = line.trim().split(/\s+/);
-        if (cols.length > 9 && inodes.has(cols[9]!)) listening.push(`${table} ${line.trim()}`);
-      }
-    }
-    expect(listening).toEqual([]);
   });
 });
