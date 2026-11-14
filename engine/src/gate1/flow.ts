@@ -1,4 +1,4 @@
-import blocking from "../../../plugins/software-factory/security-blocking.json";
+import blocking from "../../../plugins/software-factory/skills/onboard-repo/scripts/security-blocking.json";
 import type { Check } from "../interview/readiness";
 import { norm, specSecurityRequirements } from "../interview/readiness";
 import type { Gate1Record, InterviewState, Return } from "../interview/model";

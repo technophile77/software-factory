@@ -29,7 +29,7 @@ import tempfile
 
 SCHEMA = "onboarding-assessment/1.0"
 # H-0235: the one copy of the blocking table, shipped at the plugin's root and read by the engine too.
-with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "security-blocking.json"), encoding="utf-8") as _f:
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "security-blocking.json"), encoding="utf-8") as _f:
     _BLOCKING = json.load(_f)
 LEVELS = _BLOCKING["levels"]
 SEVERITY_BLOCKS = _BLOCKING["blocks_from"]
