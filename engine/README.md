@@ -45,6 +45,12 @@ npm run test:platform  # only the files that exercise OS-specific code (what PRs
 npm run coverage   # the same with V8 coverage; reported, not gated
 ```
 
+To put `factory-engine` on your PATH, run `npm link` once in this folder
+after the first build. npm adds a `factory-engine` command (a `.cmd` shim on
+Windows) in its global bin folder that points at this checkout's
+`dist/engine.js`, so later builds need no relink. `npm unlink -g
+software-factory-engine` removes it.
+
 CI splits the suite across several runners per OS. `FACTORY_TEST_SHARD=k/n`
 runs only shard k of n: every test file, but only its share of each file's
 tests (`test/shard.ts`). Unset, everything runs. To rerun one CI shard
