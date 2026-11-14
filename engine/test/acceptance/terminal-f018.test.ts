@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { Interview } from "../../src/mcp/operations";
 import { realOsApi } from "../../src/os/ffi";
-import { TerminalInterview, render } from "../../src/terminal/interview";
+import { TerminalInterview, render, type Timing } from "../../src/terminal/interview";
 import { FakeEngine, assumption, errorHook, proposal, question, recordThenDrop, sourceConfirmation, type Json } from "./support/mcp-fake-engine";
 import { ENGINE_DIR, IS_UNIX, buildEngine, makeRepo, removeTmp, writeEngineJson } from "./support/mcp-harness";
 import { spawnSync } from "node:child_process";
@@ -26,15 +26,46 @@ class Script {
   constructor(private readonly lines: string[]) {}
 
   write = (t: string) => {
+    expect(this.spinning, "nothing is printed over a spinner").toBe(false);
     this.out += t;
   };
 
+  busyLabels: string[] = [];
+  spinning = false;
+
+  busy = (label: string) => {
+    expect(this.spinning).toBe(false);
+    this.busyLabels.push(label);
+    this.spinning = true;
+    this.out += `<spin:${label}>`;
+    return () => {
+      this.spinning = false;
+      this.out += "</spin>";
+    };
+  };
+
+  private idlePolls = 0;
+
+  /** Once the script has run out, a wait with no prompt stops after a few polls, as Ctrl+C would stop it. */
+  aborted = () => this.lines.length === 0 && ++this.idlePolls > 5;
+
   line = async (prompt: string) => {
+    // The spinner is always cleared before a prompt.
+    expect(this.spinning).toBe(false);
     this.prompts.push(prompt);
     this.at.push(this.out.length);
     this.out += prompt;
     return this.lines.length ? this.lines.shift()! : null;
   };
+}
+
+/** Sleeps take no real time, so a 30-minute wait runs in milliseconds. */
+function fastTiming(): Timing {
+  let t = Date.parse("2026-11-14T08:00:00Z");
+  return { now: () => t, sleep: async (ms) => {
+    t += ms;
+    await new Promise((r) => setImmediate(r));
+  } };
 }
 
 let engine: FakeEngine;
@@ -54,7 +85,7 @@ afterEach(async () => {
 async function run(lines: string[], feature?: string): Promise<{ code: number; s: Script }> {
   const s = new Script(lines);
   const ops = new Interview({ os: realOsApi(), projectDir: repo });
-  const code = await new TerminalInterview((op, req) => ops.run(op, req), s, MARK).main(feature);
+  const code = await new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming()).main(feature);
   return { code, s };
 }
 
@@ -264,6 +295,54 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
       expect(s.out).not.toContain(t);
     }
     expect(s.out).toContain("[session]");
+  });
+
+  /** engine.status answers with each activity in turn; `then` runs once they are used up. */
+  function activities(codes: Array<string | undefined>, then: () => void, stage = "requirements_interview"): void {
+    let n = 0;
+    engine.hooks["engine.status"] = (conn, msg) => {
+      // Only calls after the owner's first reply count, so the command's own earlier status calls don't use up the list.
+      const counting = engine.transcript.length > 0;
+      const code = codes[Math.min(n, codes.length - 1)];
+      if (counting && n++ === codes.length) then();
+      conn.respond(msg, ["result", { version: "1.4", capabilities: ["document"], uptime_s: 1,
+        features: [{ id: "F-1", stage, active_agents: 1, ...(code ? { activity: code } : {}) }] }]);
+      return true;
+    };
+  }
+
+  test("AC-14: each change of activity is printed with the time and a spinner, then the item arrives whole", async () => {
+    engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["a"] })]);
+    // Each code three times, so the reply's own status call can't skip one.
+    activities(["analyst_reviewing", "analyst_writing_spec", "mystery_code", "waiting_for_owner"].flatMap((c) => [c, c, c]),
+      () => engine.features.get("F-1")!.items.push(assumption("A1")));
+    const { s } = await run(["1", "1"], "F-1");
+    const out = s.out;
+    const order = ["Analyst is reviewing your answers", "Analyst is writing the specification", "] Working", "Getting your next question", "Assume A1 holds."];
+    const at = order.map((t) => out.indexOf(t));
+    expect(at.every((x) => x >= 0), out).toBe(true);
+    expect([...at].sort((x, y) => x - y)).toEqual(at);
+    // A code repeated across polls prints once.
+    expect(out.match(/\] Analyst is reviewing your answers/g)).toHaveLength(1);
+    expect(out).toMatch(/\[\d\d:\d\d:\d\d\] Analyst is writing the specification/);
+    expect(s.busyLabels).toContain("Analyst is writing the specification");
+    expect(replies().map((x) => x.kind)).toEqual(["answer", "approve_assumption"]);
+  });
+
+  test("AC-14: when the feature leaves the interview stages, the command says so and stops waiting", async () => {
+    engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["a"] })]);
+    activities(["analyst_writing_spec"], () => undefined, "build_and_test_prep");
+    const { code, s } = await run(["1"], "F-1");
+    expect(code).toBe(0);
+    expect(s.out).toMatch(/finished.*build_and_test_prep stage/);
+  });
+
+  test("AC-14: Gate 1 keeps the command waiting, with the security reviewer's status", async () => {
+    engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["a"] })]);
+    activities(["security_reviewing"], () => undefined, "security_gate_1");
+    const { s } = await run(["1"], "F-1");
+    expect(s.out).toContain("Security reviewer is reviewing the specification");
+    expect(s.out).not.toContain("finished");
   });
 });
 

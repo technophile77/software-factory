@@ -221,6 +221,8 @@ export class Interview {
       features: feats.map((f) => engineId(f.id, "feature")),
       // Each feature's stage, so the skill can tell a finished interview from an analyst still at work.
       stages: Object.fromEntries(feats.filter((f) => typeof f.stage === "string" && STAGE_RE.test(f.stage)).map((f) => [f.id, f.stage])),
+      // Codes only; the terminal command maps them to its own words (F-018 FR-14).
+      activities: Object.fromEntries(feats.filter((f) => typeof f.activity === "string" && STAGE_RE.test(f.activity)).map((f) => [f.id, f.activity])),
     };
     // Only a plain version number gets through.
     if (typeof r.version === "string" && VERSION_RE.test(r.version)) out.version = r.version;

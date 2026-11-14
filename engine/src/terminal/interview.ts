@@ -16,7 +16,49 @@ export interface TerminalIo {
   write(text: string): void;
   /** One line as typed, without its line ending; null once input has ended (Ctrl+D, Ctrl+C, closed). */
   line(prompt: string): Promise<string | null>;
+  /**
+   * Shows `label` with a spinner and the elapsed time on a line redrawn in
+   * place, after `delayMs` (FR-14); the returned function clears it. Absent
+   * where nothing is drawn, as in tests.
+   */
+  busy?(label: string, delayMs: number): () => void;
+  /** True once the owner pressed Ctrl+C, so a wait with no prompt can stop too. */
+  aborted?(): boolean;
 }
+
+export interface Timing {
+  now(): number;
+  sleep(ms: number): Promise<void>;
+}
+
+const realTiming: Timing = { now: () => Date.now(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)) };
+
+/** The command's own words for each `activity` code (F-018 FR-14, H-0225); engine text is never shown as status. */
+export const ACTIVITY: Record<string, string> = {
+  analyst_reviewing: "Analyst is reviewing your answers",
+  analyst_researching: "Analyst is researching",
+  analyst_writing_spec: "Analyst is writing the specification",
+  security_reviewing: "Security reviewer is reviewing the specification",
+  readiness_check: "Checking readiness",
+  advisor_working: "Advisor is working",
+  waiting_for_owner: "Getting your next question",
+  paused: "The feature is paused",
+  idle: "The factory is idle",
+};
+
+/** Stages from which the interview can still send the owner items, so the command keeps waiting. */
+const WAIT_STAGES = new Set(["requirements_interview", "security_gate_1", "readiness_gate"]);
+
+const POLL_MS = 2000;
+const NEXT_EVERY_MS = 15_000;
+const ASK_AFTER_MS = 30 * 60_000;
+const BUSY_DELAY_MS = 1000;
+
+const BUSY: Partial<Record<Operation, string>> = {
+  status: "Connecting to the engine", start: "Sending your request", list: "Getting the feature list",
+  open: "Opening the feature", approval: "Waiting for your approval on GitHub", next: "Waiting for the analyst",
+  reply: "Sending your reply", state: "Checking the item", close: "Closing the session",
+};
 
 /** The owner stopped: input ended or they picked Stop. */
 class Stop extends Error {}
@@ -73,7 +115,22 @@ export class TerminalInterview {
   /** The last reply sent, so a lost one can be checked and, on the owner's word, resent. */
   private lastSent: { item: Item; kind: string; text: string } | null = null;
 
-  constructor(private readonly run: Runner, private readonly io: TerminalIo, private readonly marker: string) {}
+  constructor(
+    private readonly runner: Runner,
+    private readonly io: TerminalIo,
+    private readonly marker: string,
+    private readonly timing: Timing = realTiming,
+  ) {}
+
+  /** Every engine call shows the spinner once it takes over a second (FR-14). */
+  private async run(op: Operation, req: Obj): Promise<Obj> {
+    const stop = this.io.busy?.(BUSY[op] ?? "Working", BUSY_DELAY_MS);
+    try {
+      return await this.runner(op, req);
+    } finally {
+      stop?.();
+    }
+  }
 
   /** Exit code (FR-11): 0 when the owner stopped or the interview finished, 1 when the engine was unreachable. */
   async main(featureArg?: string): Promise<number> {
@@ -272,14 +329,14 @@ export class TerminalInterview {
   private async handle(feature: string, r: Obj): Promise<Obj | null> {
     if (r.ok !== true) return this.failed(feature, r);
     const item = (r.item ?? r.next ?? null) as Item | null;
+    // Gate 1 and the readiness check can still send the feature back with new questions.
+    if (item === null && typeof r.stage === "string" && WAIT_STAGES.has(r.stage)) return this.waitForItem(feature);
     this.show(r);
     if (r.advice_running === true) this.say("The advisor is still working on this question. You can reply now, or check for its advice.");
     if (item === null) {
       if (r.interview_done === true) return null;
       if (r.waiting === true) return this.waitOrDefer(feature, null);
-      const c = await this.choose([{ label: "Check again", key: "again" }, { label: "Stop for now", key: "stop" }]);
-      if (!("key" in c) || c.key === "stop") return null;
-      return this.run("next", { feature, wait_s: WAIT_S });
+      return this.waitForItem(feature);
     }
     if (item.status === "researching" || r.waiting === true) return this.waitOrDefer(feature, item);
     const reply = await this.ask(item, r.advice_running === true);
@@ -296,7 +353,68 @@ export class TerminalInterview {
     const c = await this.choose(choices);
     if (!("key" in c) || c.key === "stop") return null;
     if (c.key === "defer" && item) return this.send(feature, item, "defer", "Defer");
-    return this.run("next", { feature, wait_s: WAIT_S });
+    return this.waitForItem(feature);
+  }
+
+  /**
+   * Waits for the next item, printing each change of the feature's activity
+   * with the time and a spinner on the current one (FR-14). Returns the item's
+   * `next` result, or null when the interview is over or the owner stops.
+   */
+  private async waitForItem(feature: string): Promise<Obj | null> {
+    let since = this.timing.now();
+    let shown: string | null = null;
+    let asked = 0;
+    let stop: (() => void) | undefined;
+    const clear = () => {
+      stop?.();
+      stop = undefined;
+    };
+    try {
+      for (;;) {
+        if (this.io.aborted?.()) throw new Stop();
+        const st = await this.runner("status", {});
+        if (st.ok !== true) {
+          clear();
+          this.show(st);
+          return null;
+        }
+        const stage = (st.stages as Record<string, string> | undefined)?.[feature];
+        if (stage !== undefined && !WAIT_STAGES.has(stage)) {
+          clear();
+          this.say(`The interview for ${feature} is finished: the feature has moved on to the ${stage} stage.`);
+          return null;
+        }
+        const label = ACTIVITY[(st.activities as Record<string, string> | undefined)?.[feature] ?? ""] ?? "Working";
+        const now = this.timing.now();
+        const changed = label !== shown;
+        if (changed) {
+          clear();
+          this.say(`[${new Date(now).toTimeString().slice(0, 8)}] ${label}`);
+          stop = this.io.busy?.(label, 0);
+          shown = label;
+        }
+        if (changed || now - asked >= NEXT_EVERY_MS) {
+          asked = now;
+          const n = await this.runner("next", { feature });
+          if (n.ok !== true || (n.item ?? null) !== null) {
+            clear();
+            return n;
+          }
+        }
+        if (now - since >= ASK_AFTER_MS) {
+          clear();
+          this.say("Still waiting after 30 minutes.");
+          const c = await this.choose([{ label: "Keep waiting", key: "wait" }, { label: "Stop for now", key: "stop" }]);
+          if (!("key" in c) || c.key === "stop") return null;
+          since = this.timing.now();
+          shown = null;
+        }
+        await this.timing.sleep(POLL_MS);
+      }
+    } finally {
+      clear();
+    }
   }
 
   /** The item's choices; its display was printed just before (FR-4). */

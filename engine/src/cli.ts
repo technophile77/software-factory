@@ -105,8 +105,31 @@ async function readSecret(): Promise<string> {
   });
 }
 
+/** A spinner with the elapsed time, redrawn in place on stdout until stopped (F-018 FR-14). */
+function spinner(label: string, delayMs: number, ascii: boolean): () => void {
+  const frames = ascii ? ["|", "/", "-", "\\"] : ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  const start = Date.now();
+  let n = 0;
+  let drawn = false;
+  const draw = () => {
+    const s = Math.floor((Date.now() - start) / 1000);
+    process.stdout.write(`\r\x1b[2K${frames[n++ % frames.length]} ${label} (${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")})`);
+    drawn = true;
+  };
+  let timer: NodeJS.Timeout | undefined;
+  const begin = setTimeout(() => {
+    draw();
+    timer = setInterval(draw, 100);
+  }, delayMs);
+  return () => {
+    clearTimeout(begin);
+    if (timer) clearInterval(timer);
+    if (drawn) process.stdout.write("\r\x1b[2K");
+  };
+}
+
 /** Lines from the terminal. Ctrl+C or Ctrl+D ends input, so the session is closed before exit (FR-9). */
-function terminalIo(): TerminalIo & { close(): void } {
+function terminalIo(ascii: boolean): TerminalIo & { close(): void } {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true, historySize: 0 });
   let ended = false;
   let pending: ((l: string | null) => void) | null = null;
@@ -132,6 +155,8 @@ function terminalIo(): TerminalIo & { close(): void } {
       });
     }),
     close: () => rl.close(),
+    busy: (label, delayMs) => spinner(label, delayMs, ascii),
+    aborted: () => ended,
   };
 }
 
@@ -155,8 +180,9 @@ async function interview(rest: string[]): Promise<number> {
   }
   const ops = new Interview({ os: realOsApi(), projectDir: path.resolve(f.project ?? process.cwd()) });
   // Windows consoles without Windows Terminal may not draw box characters.
-  const marker = process.platform === "win32" && !process.env.WT_SESSION ? "| " : "\u2502 ";
-  const io = terminalIo();
+  const ascii = process.platform === "win32" && !process.env.WT_SESSION;
+  const marker = ascii ? "| " : "\u2502 ";
+  const io = terminalIo(ascii);
   try {
     return await new TerminalInterview((op, req) => ops.run(op, req), io, marker).main(feature);
   } finally {
