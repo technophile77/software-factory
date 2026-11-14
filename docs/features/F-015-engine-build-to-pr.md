@@ -265,6 +265,20 @@ lands, since both change the same contract.
   run report, the spec and the diff, and writes only its report.
 - `Bash` for the developer and test engineer as SR-1 accepts.
 
+### H-0197 (approved, applied): stage 6 numbers in limits.yaml
+Approved by the owner 2026-11-14 17:44Z (decision card, option B). The
+failure table's numbers (reruns by cause, fix cycles per role, flaky count,
+disagreements, agent hours) are a `stage6` section of
+`engine/config/limits.yaml`, next to the H-0190 `test_run` caps, not a new
+file. A project may only lower them.
+
+### H-0198 (approved, applied): target repo and feature dependencies
+Approved by the owner 2026-11-14 17:44Z (decision card, option A).
+`feature-template.md` gains an optional `- **Repo:** <repos[].name>` header
+line; a single-repo project omits it (FR-16). A feature waits before stage 5
+on every feature of the same project listed by id in its section 7
+Dependencies until that feature's PR merges (AC-15).
+
 ### H-0193 (approved, applied): Project manifest v1.7
 Approved by the owner 2026-11-14 (decision card, argument lists) and applied
 in `interface-contracts.md`.
@@ -369,3 +383,4 @@ Asked one at a time on decision cards. None is assumed.
 | 18 | 2026-11-14 | H-0192 rest, H-0194 and H-0195 approved; H-0194 (Agent report v1.5) and H-0195 (workflow, orchestrator AGENT.md, F-007 v46) applied | Owner, 2026-11-14 (decision card) |
 | 19 | 2026-11-14 | Security and Testability Review folded in: SR-2 (token per project) and SR-6 (confirm once per public repo) chosen, SR-3 to SR-15 approved as worded; S9.1 service table, abuse cases, AC-19 to AC-31. Readiness gate passed | Owner, 2026-11-14 (decision cards); orchestrator (gate) |
 | 19 (sign-off) | 2026-11-14 | Signed off: status Approved; the build waits on increment 3 (F-016) | Owner, 2026-11-14 (decision card) |
+| 20 | 2026-11-14 | Build decisions: H-0197 (stage 6 numbers in `limits.yaml`) and H-0198 (Repo header line; dependencies listed in section 7 wait for their PR to merge) | Owner, 2026-11-14 17:44Z (decision cards) |

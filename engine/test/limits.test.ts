@@ -29,6 +29,16 @@ describe("engine/config/limits.yaml (H-0087)", () => {
       security_testability_review: { runs_per_feature: 3, report_kib: 256, additions_kib: 64 },
       orchestrator: { turns: 40, output_tokens: 60000, dollars: 2, wall_time_minutes: 20, cpus: 1, memory_mib: 1024, pids: 128, tmp_mib: 256 },
       readiness_gate: { runs_per_feature: 5, report_kib: 64 },
+      // F-015 H-0190, H-0197.
+      software_developer: { turns: 300, output_tokens: 500000, dollars: 15, wall_time_minutes: 240 },
+      test_engineer: { turns: 200, output_tokens: 300000, dollars: 10, wall_time_minutes: 180 },
+      failure_classifier: { turns: 30, output_tokens: 50000, dollars: 2, wall_time_minutes: 20 },
+      validation_judge: { turns: 100, output_tokens: 200000, dollars: 5, wall_time_minutes: 60 },
+      test_run: { wall_time_minutes: 30, output_kib: 1024, ci_wait_minutes: 60 },
+      stage6: {
+        environment_reruns: 2, incomplete_reruns: 1, product_fix_cycles: 3, test_fix_cycles: 3,
+        unclear_investigations: 1, flaky_per_test: 3, disagreements: 2, agent_hours: 4,
+      },
     });
   });
 });

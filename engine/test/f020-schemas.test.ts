@@ -24,8 +24,9 @@ const COMMIT = "a".repeat(40);
 const testReport = (body: Record<string, unknown>) => ({
   schema: "agent-report/1.0", role: "test-engineer", feature: "F-012", stage: "build_and_test_prep", commit: COMMIT, outcome: "complete", summary: "Done.", body,
 });
+// Agent report v1.5 (F-015): the engine fills the run fields from the JUnit results, so the test engineer returns only these two.
 const TEST_BODY = {
-  tests_run: 3, passed: 3, failed: 0, skipped: 0, criteria_map: { "AC-1": ["t1"] }, failures: [], not_run: [],
+  criteria_map: { "AC-1": ["t1"] },
   tool_choices: [{ test_type: "acceptance", tool: "vitest", reason: "already in the engine", approval_ref: null }],
 };
 
@@ -80,6 +81,10 @@ describe("F-020 agent reports", () => {
       expect(r.success).toBe(false);
     }
     expect(modelReport("test-engineer").safeParse(testReport(TEST_BODY)).success).toBe(true);
+  });
+
+  it("v1.5: a test engineer report that sets the engine's run fields is refused", () => {
+    expect(modelReport("test-engineer").safeParse(testReport({ ...TEST_BODY, tests_run: 3 })).success).toBe(false);
   });
 
   it("FR-8 (AC-9): a test engineer report without tool_choices is refused; a developer report needs docs_updated", () => {

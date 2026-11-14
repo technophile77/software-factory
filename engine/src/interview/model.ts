@@ -172,6 +172,18 @@ export interface ReadinessState {
   signedOff: { item: string; commit: string; version: number | null } | null;
 }
 
+/** One `build` transcript entry: the action and what the engine recorded with it. */
+export interface BuildEvent {
+  action: string;
+  at: string;
+  [k: string]: unknown;
+}
+
+export interface BuildRecord {
+  actions: string[];
+  events: BuildEvent[];
+}
+
 /** Everything the engine knows about one feature's interview, rebuilt from its transcript. */
 export class InterviewState {
   title = "";
@@ -190,6 +202,8 @@ export class InterviewState {
   readonly stReview: StReviewState = { runs: 0, findings: [], pending: false, blocked: null, riskFiled: [], reportAt: null, itemsAtReport: 0, decided: new Map(), accepted: new Map(), extraRuns: 0, unresolvedSent: 0, unresolvedRounds: 0 };
   readonly readiness: ReadinessState = { last: null, runs: 0, signoff: null, signedOff: null };
   returns: Return[] = [];
+  /** F-015: the build's recorded actions in order; the build machine is rebuilt from them (ADR 0031). */
+  readonly build: BuildRecord = { actions: [], events: [] };
 
   apply(entry: Entry): void {
     const e = current(entry);
@@ -306,6 +320,12 @@ export class InterviewState {
       case "stage":
         this.stage = e.stage as string;
         break;
+      case "build": {
+        const { type: _t, at: _a, ...data } = e as Record<string, unknown>;
+        this.build.actions.push(String(e.action));
+        this.build.events.push({ ...data, at: e.at } as BuildEvent);
+        break;
+      }
       case "st_review_run":
         this.stReview.runs++;
         break;

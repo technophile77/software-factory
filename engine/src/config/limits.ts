@@ -16,7 +16,8 @@ const MAX_FILE = 64 * 1024;
 
 type Kind = "int" | "num";
 const CONTAINER = { cpus: "num", memory_mib: "num", pids: "int", tmp_mib: "num" } as const;
-const SESSION = { turns: "int", output_tokens: "int", dollars: "num", wall_time_minutes: "int", ...CONTAINER } as const;
+const HOST_SESSION = { turns: "int", output_tokens: "int", dollars: "num", wall_time_minutes: "int" } as const;
+const SESSION = { ...HOST_SESSION, ...CONTAINER } as const;
 
 /** Every key the file and a manifest's `limits:` may hold. `num` keys take fractions; `int` keys don't. */
 export const LIMIT_KEYS = {
@@ -31,6 +32,15 @@ export const LIMIT_KEYS = {
   security_testability_review: { runs_per_feature: "int", report_kib: "int", additions_kib: "int" },
   orchestrator: SESSION,
   readiness_gate: { runs_per_feature: "int", report_kib: "int" },
+  software_developer: HOST_SESSION,
+  test_engineer: HOST_SESSION,
+  failure_classifier: HOST_SESSION,
+  validation_judge: HOST_SESSION,
+  test_run: { wall_time_minutes: "int", output_kib: "int", ci_wait_minutes: "int" },
+  stage6: {
+    environment_reruns: "int", incomplete_reruns: "int", product_fix_cycles: "int", test_fix_cycles: "int",
+    unclear_investigations: "int", flaky_per_test: "int", disagreements: "int", agent_hours: "num",
+  },
 } as const satisfies Record<string, Record<string, Kind>>;
 
 /**
@@ -39,7 +49,10 @@ export const LIMIT_KEYS = {
  */
 const LEGACY_ST_REVIEW_SECTION = "security_gate_1";
 
-export const OPTIONAL_SECTIONS = ["security_reviewer", "security_testability_review", "orchestrator", "readiness_gate"] as const;
+export const OPTIONAL_SECTIONS = [
+  "security_reviewer", "security_testability_review", "orchestrator", "readiness_gate",
+  "software_developer", "test_engineer", "failure_classifier", "validation_judge", "test_run", "stage6",
+] as const;
 type Optional = (typeof OPTIONAL_SECTIONS)[number];
 
 type Keys = typeof LIMIT_KEYS;
@@ -157,7 +170,7 @@ export function mergeLimits(defaults: Limits, project: PartialLimits | null): { 
 const bytes = (mib: number) => Math.max(1, Math.floor(mib * MiB));
 
 /** SR-18 session caps. Dollars apply in API key (tokens) mode only (H-0087). */
-export function sessionCaps(l: Limits["analyst"], billing: Manifest["billingMode"]): SessionCaps {
+export function sessionCaps(l: Pick<Limits["analyst"], "turns" | "output_tokens" | "dollars" | "wall_time_minutes">, billing: Manifest["billingMode"]): SessionCaps {
   return {
     maxTurns: l.turns,
     maxOutputTokens: l.output_tokens,
@@ -221,4 +234,30 @@ export function maxPageBytes(l: Limits): number {
 
 export function worktreeLimits(l: Limits): WorktreeLimits {
   return { maxFiles: l.worktree_commit.max_files, maxTotalBytes: bytes(l.worktree_commit.max_total_mib), maxFileBytes: bytes(l.worktree_commit.max_file_mib) };
+}
+
+/** F-015 (H-0190, H-0197): everything the build needs, or the sections this factory version lacks. */
+export interface BuildLimits {
+  developer: SessionCaps;
+  tester: SessionCaps;
+  classifier: SessionCaps;
+  judge: SessionCaps;
+  reviewer: SessionCaps;
+  testRun: { wallTimeMs: number; outputBytes: number; ciWaitMs: number };
+  stage6: Full["stage6"];
+}
+
+export function buildLimits(l: Limits, billing: Manifest["billingMode"]): BuildLimits | { missing: string[] } {
+  const need = ["software_developer", "test_engineer", "failure_classifier", "validation_judge", "security_reviewer", "test_run", "stage6"] as const;
+  const missing = need.filter((k) => !l[k]);
+  if (missing.length) return { missing: [...missing] };
+  return {
+    developer: sessionCaps(l.software_developer!, billing),
+    tester: sessionCaps(l.test_engineer!, billing),
+    classifier: sessionCaps(l.failure_classifier!, billing),
+    judge: sessionCaps(l.validation_judge!, billing),
+    reviewer: sessionCaps(l.security_reviewer!, billing),
+    testRun: { wallTimeMs: l.test_run!.wall_time_minutes * 60_000, outputBytes: l.test_run!.output_kib * 1024, ciWaitMs: l.test_run!.ci_wait_minutes * 60_000 },
+    stage6: l.stage6!,
+  };
 }

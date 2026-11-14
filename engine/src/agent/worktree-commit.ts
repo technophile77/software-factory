@@ -29,6 +29,8 @@ export interface WorktreeCommitInput {
   tmpDir: string;
   message: string;
   limits: WorktreeLimits;
+  /** F-015 FR-17: code-repo commits are the owner's; config-repo commits keep the engine's identity. */
+  identity?: { name: string; email: string };
 }
 
 export type WorktreeCommitResult =
@@ -194,7 +196,7 @@ export async function commitWorktree(i: WorktreeCommitInput): Promise<WorktreeCo
     }
     for (const p of removed) await i.git.run(i.worktree, g(["update-index", "--force-remove", "--", p]), { indexFile: index });
     const written = await i.git.out(i.worktree, g(["write-tree"]), { indexFile: index });
-    const commit = await i.git.out(i.worktree, g(["commit-tree", written, "-p", i.base, "-F", "-"]), { input: `${i.message}\n` });
+    const commit = await i.git.out(i.worktree, g(["commit-tree", written, "-p", i.base, "-F", "-"]), { input: `${i.message}\n`, ...(i.identity ? { identity: i.identity } : {}) });
     const found = await writeBreaches(i.git, i.worktree, i.base, commit, i.policy, ["--git-dir", i.gitDir]);
     if (found.length) return { status: "rejected", breaches: found };
     await i.git.run(i.worktree, g(["update-ref", `refs/heads/${i.branch}`, commit, i.base]));

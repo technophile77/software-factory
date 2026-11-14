@@ -17,6 +17,18 @@
     "orchestrator": {
       "type": "string",
       "maxLength": 200
+    },
+    "software-developer": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "test-engineer": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "validation-judge": {
+      "type": "string",
+      "maxLength": 200
     }
   },
   "required": [

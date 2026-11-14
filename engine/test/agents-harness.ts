@@ -7,7 +7,7 @@ import type { AgentSdk, FactoryTool, SdkMessage, SessionOptions } from "../src/a
 import type { DockerCli } from "../src/docker/cli";
 import type { EngineHandle, EngineOptions } from "../src/engine";
 import { parseStandards } from "../src/st-review/standards";
-import { SECRET_DENIES } from "../src/policy/role-policy";
+import { CHANGE_CONTROLLED_DENIES, SECRET_DENIES, SOURCE_DOCUMENT_DENIES } from "../src/policy/role-policy";
 import { EngineRecord } from "../src/state/record";
 import { parseTranscript } from "../src/state/transcript";
 import { FakeDocker } from "./fakes";
@@ -20,6 +20,8 @@ export const CHECKLIST = parseStandards(STANDARDS).checklist;
 export const ANALYST_MD = "# Requirements analyst (master)\n";
 export const REVIEWER_MD = "# Security reviewer (master)\n";
 export const ORCHESTRATOR_MD = "# Orchestrator (master)\n";
+export const DEVELOPER_MD = "# Software developer (master)\n";
+export const TESTER_MD = "# Test engineer (master)\n";
 
 let engines: EngineHandle[] = [];
 let clients: RpcClient[] = [];
@@ -76,16 +78,17 @@ export interface Script {
 type RoleScript = (s: Script, n: number) => AsyncGenerator<SdkMessage>;
 
 /** Each session is handed to the script for its role, told apart by its instructions. */
-export function scriptedSdk(scripts: { analyst: RoleScript; reviewer: RoleScript; orchestrator?: RoleScript }) {
+export function scriptedSdk(scripts: { analyst: RoleScript; reviewer: RoleScript; orchestrator?: RoleScript; developer?: RoleScript; tester?: RoleScript }) {
   const seen: SessionOptions[] = [];
   const prompts: Array<{ role: string; text: string }> = [];
-  const count = { analyst: 0, reviewer: 0, orchestrator: 0 };
+  const count = { analyst: 0, reviewer: 0, orchestrator: 0, developer: 0, tester: 0 };
   let tools: FactoryTool[] = [];
   const sdk: AgentSdk = {
     createFactoryServer: (t) => ((tools = t), { factory: true }),
     query: ({ prompt, options }) => {
       seen.push(options);
-      const role = options.systemPrompt === REVIEWER_MD ? "reviewer" : options.systemPrompt === ORCHESTRATOR_MD ? "orchestrator" : "analyst";
+      const byPrompt: Record<string, keyof typeof count> = { [REVIEWER_MD]: "reviewer", [ORCHESTRATOR_MD]: "orchestrator", [DEVELOPER_MD]: "developer", [TESTER_MD]: "tester" };
+      const role = byPrompt[String(options.systemPrompt)] ?? "analyst";
       const it = prompt[Symbol.asyncIterator]();
       const own = tools;
       const n = ++count[role];
@@ -133,17 +136,29 @@ export const ORCHESTRATOR = {
   write: { allow: [".factory/runs/**/orchestrator-*.json"] }, commands: { allow: [] }, network: { allow: [] },
 };
 
+/** F-015: the developer writes code and docs, never tests; the test engineer writes tests only. */
+export const DEVELOPER = {
+  tools: { allow: ["Read", "Grep", "Glob", "Write", "Edit", "Bash"] }, read: { allow: ["**"], deny: [...SECRET_DENIES] },
+  write: { allow: ["**"], deny: ["test/**", ...CHANGE_CONTROLLED_DENIES, ...SOURCE_DOCUMENT_DENIES] }, commands: { allow: [] }, network: { allow: [] },
+};
+export const TESTER = {
+  tools: { allow: ["Read", "Grep", "Glob", "Write", "Edit", "Bash"] }, read: { allow: ["**"], deny: [...SECRET_DENIES] },
+  write: { allow: ["test/**"], deny: [...CHANGE_CONTROLLED_DENIES, ...SOURCE_DOCUMENT_DENIES] }, commands: { allow: [] }, network: { allow: [] },
+};
+
 /**
  * A world whose pinned factory version has the reviewer's AGENT.md and the
  * security standards; with `orchestrator`, also the orchestrator's AGENT.md
  * and role, so the readiness gate runs a session (F-016).
  */
-export function world(masterExtra: Record<string, string | null> = {}, o: { orchestrator?: boolean; maturity?: string } = {}): World {
-  const policy = o.orchestrator ? YAML.stringify({ policy: policyDoc({ "security-reviewer": REVIEWER, orchestrator: ORCHESTRATOR }).policy }) : POLICY;
+export function world(masterExtra: Record<string, string | null> = {}, o: { orchestrator?: boolean; maturity?: string; build?: boolean } = {}): World {
+  const roles = { "security-reviewer": REVIEWER, ...(o.orchestrator ? { orchestrator: ORCHESTRATOR } : {}), ...(o.build ? { "software-developer": DEVELOPER, "test-engineer": TESTER } : {}) };
+  const policy = o.orchestrator || o.build ? YAML.stringify({ policy: policyDoc(roles).policy }) : POLICY;
   const w = makeWorld({ manifest: manifestYaml({ extra: policy, ...(o.maturity ? { maturity: o.maturity } : {}) }) });
   const files: Record<string, string | null> = {
     "agents/security-reviewer/AGENT.md": REVIEWER_MD, "docs/security-standards.md": STANDARDS,
-    ...(o.orchestrator ? { "agents/orchestrator/AGENT.md": ORCHESTRATOR_MD } : {}), ...masterExtra,
+    ...(o.orchestrator ? { "agents/orchestrator/AGENT.md": ORCHESTRATOR_MD } : {}),
+    ...(o.build ? { "agents/software-developer/AGENT.md": DEVELOPER_MD, "agents/test-engineer/AGENT.md": TESTER_MD } : {}), ...masterExtra,
   };
   for (const [f, c] of Object.entries(files)) {
     const full = path.join(w.master, f);

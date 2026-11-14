@@ -68,3 +68,41 @@ orchestrator:
 readiness_gate:
   runs_per_feature: 5
   report_kib: 64
+# F-015 build stages (owner decision H-0190). Same keys as the analyst's,
+# minus the container keys: no containers until Beta (ADR 0026). A factory
+# version without these sections runs no build.
+software_developer:
+  turns: 300
+  output_tokens: 500000
+  dollars: 15 # API key (tokens) mode only
+  wall_time_minutes: 240
+test_engineer:
+  turns: 200
+  output_tokens: 300000
+  dollars: 10 # API key (tokens) mode only
+  wall_time_minutes: 180
+failure_classifier: # the orchestrator's stage 6 session
+  turns: 30
+  output_tokens: 50000
+  dollars: 2 # API key (tokens) mode only
+  wall_time_minutes: 20
+validation_judge:
+  turns: 100
+  output_tokens: 200000
+  dollars: 5 # API key (tokens) mode only
+  wall_time_minutes: 60
+test_run:
+  wall_time_minutes: 30
+  output_kib: 1024 # the most of the test command's output the engine keeps per run
+  ci_wait_minutes: 60 # CI not finished by then is an incomplete run
+# The stage 6 failure table in docs/testing-strategy.md (owner decision
+# H-0197). Dependency failures go to the Testing inbox with no rerun.
+stage6:
+  environment_reruns: 2 # environment, infrastructure, flaky
+  incomplete_reruns: 1
+  product_fix_cycles: 3 # developer
+  test_fix_cycles: 3 # test engineer
+  unclear_investigations: 1
+  flaky_per_test: 3 # the same test flaky this often goes to the inbox even if it passed
+  disagreements: 2 # developer and test engineer on the same test, then a Decision item
+  agent_hours: 4 # stage 6 agent time before escalation

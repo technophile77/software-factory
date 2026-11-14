@@ -71,6 +71,8 @@ export interface GitRunOptions {
   okCodes?: number[];
   askpassToken?: string;
   timeoutMs?: number;
+  /** F-015 SR-15: the commit identity, which reaches git only through GIT_AUTHOR_* and GIT_COMMITTER_*. */
+  identity?: { name: string; email: string };
 }
 
 export class Git {
@@ -129,6 +131,10 @@ export class Git {
   async run(cwd: string, args: string[], o: GitRunOptions = {}): Promise<RunResult> {
     const extra: NodeJS.ProcessEnv = {};
     if (o.indexFile) extra.GIT_INDEX_FILE = o.indexFile;
+    if (o.identity) {
+      extra.GIT_AUTHOR_NAME = extra.GIT_COMMITTER_NAME = o.identity.name;
+      extra.GIT_AUTHOR_EMAIL = extra.GIT_COMMITTER_EMAIL = o.identity.email;
+    }
     let full = this.args(cwd, args);
     if (o.askpassToken !== undefined) {
       extra.GIT_ASKPASS = this.askpass;

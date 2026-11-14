@@ -77,6 +77,15 @@ export const ROLE_BODIES = {
 
 export type ReportRole = keyof typeof ROLE_BODIES;
 
+/**
+ * v1.5 (F-015 FR-6): the engine runs the tests, so the test engineer returns
+ * only its criteria map and tool choices; the run fields are the engine's.
+ */
+const MODEL_BODIES = {
+  ...ROLE_BODIES,
+  "test-engineer": ROLE_BODIES["test-engineer"].pick({ criteria_map: true, tool_choices: true }),
+} as const;
+
 /** The report an agent returns: no engine-filled field is allowed (SR-7). */
 export function modelReport<R extends ReportRole>(role: R) {
   return z.strictObject({
@@ -87,7 +96,7 @@ export function modelReport<R extends ReportRole>(role: R) {
     commit: z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/),
     outcome,
     summary: text(4000),
-    body: ROLE_BODIES[role],
+    body: MODEL_BODIES[role],
   });
 }
 

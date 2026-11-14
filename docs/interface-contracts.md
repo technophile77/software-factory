@@ -513,12 +513,13 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
-## Role policy — v2.8
+## Role policy — v2.9
 
 - Status: Approved (v2.2); v2.3 draft, awaiting owner approval (H-0040);
   v2.4 approved (H-0061, H-0076); v2.5 approved (H-0083); v2.7 approved
   (H-0201, ADR 0026; owner, 2026-11-14, decision card, as drafted); v2.8
-  approved (F-020 H-0244; owner, 2026-11-14, decision card)
+  approved (F-020 H-0244; owner, 2026-11-14, decision card); v2.9 approved
+  (F-015 H-0192 and SR-7; owner, 2026-11-14, decision cards)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
@@ -553,7 +554,9 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   from the `security-reviewer` and `orchestrator` roles, whose report is now
   the session's structured result, and mounts no report folder; only an
   endpoint session that must write its report file gets `Write`, for that
-  one path (F-020 A-2, SR-11). No manifest changes.
+  one path (F-020 A-2, SR-11). No manifest changes. v2.9 (F-015 H-0192,
+  SR-7) adds the read-only spec folder for code repo sessions and the
+  ask-list subcommands; both tighten, so no manifest changes.
 
 **Location:** the `policy:` key of the project manifest (change-controlled),
 with optional per-repo overrides under `repos[].policy`. Effective policy
@@ -612,7 +615,11 @@ refusal, or no answer within 30 minutes, denies it and tells the agent why.
 The wait doesn't count toward the session's wall-time cap. The ask list is
 `gh`, `aws`, `az`, `gcloud`, `gsutil`, `bq`, `railway`, `vercel`,
 `netlify`, `fly`, `flyctl`, `heroku`, `doppler`, `op`, `vault`, `kubectl`,
-`helm`, `terraform`, `pulumi`, `docker` and `ssh`. A project adds programs
+`helm`, `terraform`, `pulumi`, `docker` and `ssh`. From v2.9 (F-015 SR-7)
+it also holds these subcommands, matched when the program is followed by
+the subcommand within the next few words, so options in between still
+match: `git push`, `git remote`, `git credential`, `npm publish`,
+`npm login`, `twine upload` and `cargo publish`. A project adds programs
 under `policy.ask` in its manifest but can't remove listed ones. The gate
 matches every word of the command, with any folder path and `.exe`, `.cmd`
 or `.bat` stripped and case ignored. A command it can't split into words
@@ -623,6 +630,22 @@ and test commands are not agent tool calls and are not covered. It doesn't
 catch a program started by code the agent runs, such as a test or a
 package script, or code that reads a login file directly. Those stay under
 ADR 0026's accepted risks.
+
+**Code repo sessions (v2.9, F-015 H-0192).** The software developer and the
+test engineer each work in their own engine-made worktree of the feature's
+code repo, from an engine-owned clone with no remote and an empty
+credential helper (F-015 SR-7). The approved spec and the contracts are
+placed for reading at a fixed folder outside the worktree; the file tools
+may read there under the role's `read` rules and no role may write there.
+The test engineer runs after the developer, on its own branch from the
+feature branch; its file-tool `read.deny` covers the developer's branch,
+report and transcript. With a full shell (F-015 SR-1) that is a rule, not a
+boundary, and its instructions forbid reading them. The developer's
+`write.deny` keeps the test engineer's test paths. Both roles' `write.deny`
+also holds `.github/workflows/**`, `.github/actions/**` and the repo's
+`test_results` path (F-015 SR-3); the engine adds these whatever the
+manifest says. The failure classifier (`orchestrator`) gets `Read`, `Grep`
+and `Glob` only and returns its report as structured output.
 
 **Container per agent session (H-0045 and H-0052, owner, 2026-11-10;
 wording approved by decision card; suspended until Beta by v2.7).** The engine runs every agent
