@@ -480,6 +480,8 @@ describe("F-016 H-0182: chain and Gate 1 run limit items", () => {
     expect(e.feature(feature)!.chainIntact).toBe(false);
     // The engine is quiet between polls once the second issue is up, so the hand-made commit below races nothing.
     await pollUntil(w, "the second issue", () => bound(1));
+    // The stopped analyst's own item writes too; wait until every item is bound, so the engine is quiet.
+    await pollUntil(w, "every issue bound", () => items(w).every((i) => !!i.record.revisions.at(-1)?.action_comments.length));
 
     fs.writeFileSync(file, original);
     commit("restore");
