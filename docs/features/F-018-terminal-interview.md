@@ -1,10 +1,10 @@
 # Feature: Answer interview questions in a terminal command
 
 - **Id:** F-018
-- **Status:** In review (readiness gate waits on H-0215 to H-0218)
+- **Status:** Approved (owner, 2026-11-14; readiness gate passed)
 - **Requested by / date:** Alex, 2026-11-14 ("not the analyst, the agent
   that is presenting me the questions"; "Start F-018 option B")
-- **Spec version:** 3
+- **Spec version:** 4
 - **Depends on:** F-005 (interview channel and MCP mode), F-006 (advisor),
   F-009 (start from a document), F-016 (PR #60, engine increment 3)
 
@@ -164,10 +164,10 @@ adds no new channel, file, network or permission.
 
 | Id | File(s) | Change | Status |
 |---|---|---|---|
-| H-0215 | `plugins/software-factory/skills/spec-interview/` (removed), `plugins/software-factory/.mcp.json` (removed), `plugins/software-factory/.claude-plugin/plugin.json` | Skill and MCP server removed; `userConfig.engine_path` removed; description names onboarding only; version 0.5.0 to 0.6.0 | Pending |
-| H-0216 | `agents/requirements-analyst/AGENT.md` | "The owner answers through the engine, often from the `spec-interview` skill in Claude Code (F-005)" becomes "The owner answers through the engine, in the `factory-engine interview` terminal command (F-018)" | Pending |
-| H-0217 | `.github/workflows/plugin-tests.yml` | The `spec-interview` job (skill-text tests) removed; header comment updated | Pending |
-| H-0218 | `docs/adr/0029-interview-in-a-terminal-command.md` (new), ADR 0025 status, `docs/adr/README.md`, `README.md`, `engine/README.md`, a version note in F-005, F-006 and F-009 pointing their skill steps to F-018 | Record the decision and describe the command in place of the skill | Pending |
+| H-0215 | `plugins/software-factory/skills/spec-interview/` (removed), `plugins/software-factory/.mcp.json` (removed), `plugins/software-factory/.claude-plugin/plugin.json` | Skill and MCP server removed; `userConfig.engine_path` removed; description names onboarding only; version 0.5.0 to 0.6.0 | Approved (owner, 2026-11-14, decision card) |
+| H-0216 | `agents/requirements-analyst/AGENT.md` | "The owner answers through the engine, often from the `spec-interview` skill in Claude Code (F-005)" becomes "The owner answers through the engine, in the `factory-engine interview` terminal command (F-018)" | Approved (owner, 2026-11-14, decision card) |
+| H-0217 | `.github/workflows/plugin-tests.yml` | The `spec-interview` job (skill-text tests) removed; header comment updated | Approved (owner, 2026-11-14, decision card) |
+| H-0218 | `docs/adr/0029-interview-in-a-terminal-command.md` (new), ADR 0025 status, `docs/adr/README.md`, `README.md`, `engine/README.md`, a version note in F-005, F-006 and F-009 pointing their skill steps to F-018 | Record the decision and describe the command in place of the skill | Approved (owner, 2026-11-14, decision card) |
 | H-0219 | Reserved | — | — |
 
 ## 11. Readiness gate
@@ -176,7 +176,7 @@ adds no new channel, file, network or permission.
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit (A-1, A-2 approved)
-- [ ] Blocking decisions resolved (OQ-1, OQ-2, SR-1 to SR-7 done; H-0215 to H-0218 pending)
+- [x] Blocking decisions resolved (OQ-1, OQ-2, SR-1 to SR-7, H-0215 to H-0218)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -184,6 +184,7 @@ adds no new channel, file, network or permission.
 | 1 | 2026-11-14 | Draft from the owner's choice of option B | — |
 | 2 | 2026-11-14 | Security Gate 1 ([F-018-security-gate1.md](F-018-security-gate1.md)): 5 findings (0 Critical, 0 High, 3 Medium, 2 Low), none blocking; SR-1 to SR-3 and SR-7 sharpened from it | — |
 | 3 | 2026-11-14 | OQ-1 decided (a): retire skill, plugin MCP server, `mcp` mode and MCP SDK in this build; ADR 0029 supersedes 0025; FR-12 and section 10 rewritten, H-0215 to H-0218 drafted. OQ-2 decided (a): Enter on an empty line ends a typed answer (FR-6). A-1, A-2 and SR-1 to SR-7 approved, SR-3 residual accepted | Owner, 2026-11-14 (decision cards; recording confirmed in the thread) |
+| 4 | 2026-11-14 | H-0215 to H-0218 approved; readiness gate passed; status Approved | Owner, 2026-11-14 (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
