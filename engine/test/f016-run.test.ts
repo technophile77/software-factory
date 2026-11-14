@@ -204,15 +204,11 @@ describe("F-016: answers in the inbox have their effects", () => {
     const first = await start(w, d, scripts);
     await interview(w, first.e, first.c, () => feature, (f) => (feature = f));
     await until("blocked on the owner", () => !!first.e.feature(feature)?.state.gate1.blocked);
-    await pollUntil(w, "the issue", () => first.gh.issues.size === 1);
+    await pollUntil(w, "the issue bound", () => items(w).find((i) => i.id === "D-0001")?.record.issue === 1);
     await first.e.stop();
-    // The crash: the owner's choice is in the record, its effect isn't.
-    const state = path.join(w.config, ".factory");
-    const rec = YAML.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.yaml"), "utf8"));
-    rec.status = "chosen";
-    rec.history.push({ at: "2026-11-11T10:05:00Z", by: "owner", action: "chosen", option: "B", rev: 1, source: "reaction", actor_id: OWNER, comment_id: 1, ref: "https://github.com/o/cfg/issues/1" });
-    fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), YAML.stringify(rec));
-    execFileSync("git", ["-C", state, "-c", "user.name=crash test", "-c", "user.email=crash@example.invalid", "commit", "-qam", "D-0001: chosen B by the owner"]);
+    // The crash: the owner's 👍 on option B is on GitHub and in the record, its effect isn't.
+    const ac = first.gh.actionComment(1, "choose:B");
+    crashAfterRecording(w, ac.id, first.gh.react(ac.id, "+1"), first.gh.say(1, "/confirm K7QX").id);
 
     const second = await start(w, d, scripts, first.gh);
     await until("back in the interview", () => stageOf(second.e, feature) === "requirements_interview");
@@ -224,7 +220,41 @@ describe("F-016: answers in the inbox have their effects", () => {
     expect(entries(w, feature).filter((x) => x.type === "gate1_decided")).toHaveLength(1);
     expect(third.e.feature(feature)).toBeTruthy();
   }, 60_000);
+
+  it("Gate 2 M1: a recorded answer GitHub doesn't show is not carried out after a restart", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    const scripts = { analyst: analyst(w, () => feature, async () => undefined), reviewer: reviewer(d, () => feature, [CHOICE]) };
+    const first = await start(w, d, scripts);
+    await interview(w, first.e, first.c, () => feature, (f) => (feature = f));
+    await until("blocked on the owner", () => !!first.e.feature(feature)?.state.gate1.blocked);
+    await pollUntil(w, "the issue bound", () => items(w).find((i) => i.id === "D-0001")?.record.issue === 1);
+    await first.e.stop();
+    // Someone with write access to factory/state adds an owner answer with no 👍 behind it.
+    crashAfterRecording(w, first.gh.actionComment(1, "choose:B").id, 999);
+
+    const second = await start(w, d, scripts, first.gh);
+    await pollUntil(w, "the answer refused", () => effects(w, "D-0001").length === 1);
+    expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "unverified" });
+    expect(items(w).some((i) => i.record.category === "Security" && /D-0001 in factory\/state isn't on GitHub/.test(i.record.title))).toBe(true);
+    expect(stageOf(second.e, feature)).not.toBe("requirements_interview");
+    expect(entries(w, feature).filter((x) => x.type === "gate1_decided")).toHaveLength(0);
+    expect(second.s.count.analyst).toBe(0);
+  }, 60_000);
 });
+
+/** Writes an owner's choice of B on D-0001 into the record and commits it, as an engine that crashed before the effect would leave it. */
+function crashAfterRecording(w: World, commentId: number, reactionId: number, confirmId = 0): void {
+  const state = path.join(w.config, ".factory");
+  const rec = YAML.parse(fs.readFileSync(path.join(state, "inbox", "D-0001.yaml"), "utf8"));
+  rec.status = "chosen";
+  // A Security choice is risky, so the owner confirmed it (F-011 FR-9).
+  rec.history.push({ at: "2026-11-11T10:04:00Z", by: "engine", action: "confirm_requested", pending: "choose:B", code: "K7QX" });
+  rec.history.push({ at: "2026-11-11T10:05:00Z", by: "owner", action: "chosen", option: "B", rev: 1, source: "reaction", actor_id: OWNER, comment_id: commentId, reaction_id: reactionId, ref: "https://github.com/o/cfg/issues/1", confirmed_by: { source: "command", comment_id: confirmId } });
+  fs.writeFileSync(path.join(state, "inbox", "D-0001.yaml"), YAML.stringify(rec));
+  execFileSync("git", ["-C", state, "-c", "user.name=crash test", "-c", "user.email=crash@example.invalid", "commit", "-qam", "D-0001: chosen B by the owner"]);
+}
 
 describe("F-016: Security item effects (H-0182)", () => {
   const FIX = "The export never includes card numbers.";

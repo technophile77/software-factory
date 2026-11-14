@@ -184,10 +184,10 @@ describe("fetch (TR-11: SR-17 on fetch)", () => {
     const c = await RpcClient.connect(engineJson(w).path);
     const feature = (await c.ok("feature.start", { request: "Export" })).feature as string;
     c.close();
-    forge(w, bare, { "inbox/answers/D-0001.md": "answered\n" });
+    forge(w, bare, { "notes/D-0001.md": "answered\n" });
     await e.sync();
-    expect(git(w.config, "show", "factory/state:inbox/answers/D-0001.md")).toBe("answered");
-    expect(fs.readFileSync(path.join(w.config, ".factory", "inbox", "answers", "D-0001.md"), "utf8")).toBe("answered\n");
+    expect(git(w.config, "show", "factory/state:notes/D-0001.md")).toBe("answered");
+    expect(fs.readFileSync(path.join(w.config, ".factory", "notes", "D-0001.md"), "utf8")).toBe("answered\n");
     expect(e.feature(feature)!.chainIntact).toBe(true);
 
     const before = securityItems(w.config).length;
@@ -198,5 +198,21 @@ describe("fetch (TR-11: SR-17 on fetch)", () => {
     await e.sync();
     expect(e.feature(feature)!.chainIntact).toBe(false);
     expect(securityItems(w.config).length).toBe(before + 1);
+  });
+
+  it("sync(): refuses a remote change to inbox records and files a Security item (F-016 Gate 2 M1)", async () => {
+    const { w, bare } = await remoteWorld();
+    const e = await boot(w);
+    const c = await RpcClient.connect(engineJson(w).path);
+    await c.ok("feature.start", { request: "Export" });
+    c.close();
+    const before = securityItems(w.config).length;
+    const forged = forge(w, bare, { "inbox/D-0009.yaml": "id: D-0009\nhistory: []\n" });
+    await e.sync();
+    expect(git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", "inbox")).not.toContain("D-0009");
+    expect(git(w.config, "rev-parse", "factory/state")).not.toBe(forged);
+    const items = securityItemsIn(w.config);
+    expect(items.length).toBe(before + 1);
+    expect(items.some((i) => /inbox records the engine didn't write/.test(i.record.title))).toBe(true);
   });
 });

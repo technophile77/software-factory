@@ -75,4 +75,4 @@
 ## Known gaps
 
 - Agents still run in containers through the current runner. Moving to host sessions (ADR 0026) belongs to the worktree thread. The readiness session follows the Gate 1 reviewer's runner, so it moves with it.
-- `pendingEffects` trusts owner entries in records on `factory/state`. Another writer to that branch could forge one. This is the same trust the engine already gives the transcript under the hash chain, but records have no chain. Raised for Gate 2.
+- Gate 2 M1 is fixed: an answer the engine didn't read from GitHub in the same run is checked on GitHub before its effect, and remote changes under `inbox/` are refused. See the fixes table in `F-016-security-gate2.md`.

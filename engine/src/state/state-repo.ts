@@ -358,6 +358,13 @@ export class StateRepo {
     return out.split("\0").filter(Boolean);
   }
 
+  /** Paths the remote changed since it and the local branch last shared a commit, so the engine's own unpushed commits don't count. */
+  async remoteChanges(local: string, remote: string): Promise<string[]> {
+    const r = await this.git.run(this.repoRoot, ["merge-base", local, remote], { okCodes: [1] });
+    const base = r.code === 0 ? r.stdout.toString("utf8").trim() : local;
+    return this.changedPaths(base, remote);
+  }
+
   /**
    * Moves factory/state forward to `to` (a descendant of `from`) and writes
    * the changed files from their blobs, as the first checkout does.

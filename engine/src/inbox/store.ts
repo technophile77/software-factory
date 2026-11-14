@@ -232,6 +232,44 @@ export class Inbox {
 
   // ---- privacy (F-011 FR-15, SR-9) ----
 
+  /**
+   * F-016 Gate 2 M1 (owner decision 2026-11-14): an answer this engine didn't
+   * record in this run is checked on GitHub before it has any effect. The
+   * pinned owner's 👍 must still be on the workflow's action comment for that
+   * action, or the owner's command comment must still say it, and a risky
+   * action needs its 🚀 or `/confirm` still there too. A GitHub that can't be
+   * reached throws, so the answer waits; anything else that doesn't match is
+   * false.
+   */
+  async verify(rec: Recorded): Promise<boolean> {
+    const r = rec.record;
+    const e = rec.entry;
+    const action = actionOfEntry(e);
+    if (e.by !== "owner" || e.actor_id !== this.ownerId || !r.issue || e.comment_id === undefined || !action) return false;
+    const comments = await this.api.comments(this.repo, r.issue);
+    const c = comments.find((x) => x.id === e.comment_id);
+    if (!c) return false;
+    if (e.source === "reaction") {
+      const ac = r.revisions.flatMap((v) => v.action_comments).find((a) => a.id === e.comment_id);
+      if (!ac || ac.action !== action || c.author !== WORKFLOW_LOGIN || sha256(normalBody(c.body)) !== ac.sha256) return false;
+      if (!(await this.api.reactions(this.repo, c.id)).some((x) => x.id === e.reaction_id && x.userId === this.ownerId && x.content === "+1")) return false;
+    } else {
+      const cmd = c.authorId === this.ownerId && !r.engine_comments.includes(c.id) ? parseCommand(c.body) : null;
+      if (!cmd || cmd.kind !== "action" || cmd.action !== action || (cmd.note ?? undefined) !== (e.note ?? undefined)) return false;
+    }
+    if (!isRisky(r, action)) return true;
+    const k = e.confirmed_by;
+    if (!k) return false;
+    const cc = comments.find((x) => x.id === k.comment_id);
+    if (!cc) return false;
+    if (k.source === "reaction") {
+      return r.engine_comments.includes(cc.id) && (await this.api.reactions(this.repo, cc.id)).some((x) => x.id === k.reaction_id && x.userId === this.ownerId && x.content === "rocket");
+    }
+    const cmd = cc.authorId === this.ownerId && !r.engine_comments.includes(cc.id) ? parseCommand(cc.body) : null;
+    const asked = r.history.filter((h) => h.action === "confirm_requested" && h.pending === action).pop();
+    return cmd?.kind === "confirm" && cmd.code === asked?.code;
+  }
+
   async checkPrivacy(): Promise<{ ok: boolean; reason: string }> {
     try {
       const p = await this.api.repoPrivacy(this.repo);
@@ -594,3 +632,21 @@ function checkItem(item: ItemInput): void {
   }
   if (item.kind === "testing" && !(item.steps?.length && item.steps.length <= 9)) throw new Error("a testing item needs 1 to 9 steps");
 }
+
+/** The action an owner history entry recorded, as action comments name it. */
+function actionOfEntry(e: History): ActionId | null {
+  switch (e.action) {
+    case "chosen": return e.option ? `choose:${e.option}` : null;
+    case "step_chosen": return e.step ? `step:${e.step}` : null;
+    case "approved": return "approve";
+    case "rejected": return "reject";
+    case "changes_requested": return "changes";
+    case "research_requested": return "research";
+    case "deferred": return "defer";
+    case "restored": return "restore";
+    case "dismissed": return "dismiss";
+    default: return null;
+  }
+}
+
+

@@ -563,8 +563,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
    * there that the local branch doesn't already hold is refused: nothing of
    * it is adopted, a Security item is filed, and the feature's readiness
    * checks fail. The interview itself goes on, since the engine's own local
-   * transcript is intact. Other changes (an answered inbox item) are adopted
-   * when they fast-forward.
+   * transcript is intact. Inbox records are refused the same way (F-016
+   * Gate 2 M1, owner decision 2026-11-14): only the engine records answers,
+   * from GitHub. Other changes are adopted when they fast-forward.
    */
   async function checkRemote(p: Project): Promise<void> {
     if (!o.push || !p.token || !p.state_repo || dead) return;
@@ -578,7 +579,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const local = await p.state_repo.head();
     if (!remote || remote === local || (await p.state_repo.isAncestor(remote, local))) return;
     const touched = new Set<string>();
-    for (const c of await p.state_repo.changedPaths(local, remote)) {
+    const changed = await p.state_repo.changedPaths(local, remote);
+    for (const c of changed) {
       const m = /^interviews\/([^/]+)\//.exec(c);
       if (m) touched.add(m[1]!);
     }
@@ -593,7 +595,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         confirm: "Investigate and restore factory/state on the remote", hold: "Leave it as it is", recommendation: "A",
       });
     }
-    if (touched.size) return;
+    const inboxChanged = (await p.state_repo.remoteChanges(local, remote)).some((c) => c.startsWith("inbox/"));
+    if (inboxChanged) {
+      await alert(p, `fetch:inbox:${remote}`, {
+        title: "Remote factory/state holds inbox records the engine didn't write",
+        context: `The remote factory/state at ${remote.slice(0, 12)} adds or changes files under inbox/ that this engine has no record of writing (F-016, Gate 2 M1). None of it was adopted, so no answer in it has any effect.`,
+        impact: "The engine's pushes of factory/state fail while the remote holds these commits. Answers you give on GitHub are still read there.",
+        confirm: "Investigate and restore factory/state on the remote", hold: "Leave it as it is", recommendation: "A",
+      });
+    }
+    if (touched.size || inboxChanged) return;
     if (await p.state_repo.isAncestor(local, remote)) {
       await p.state_repo.fastForward(local, remote);
       log.info(`${p.name}: factory/state moved forward to the remote ${remote.slice(0, 12)}`);
@@ -1861,6 +1872,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const pollers: Promise<void>[] = [];
   /** F-016 SR-7: failed effects, by item id; after 3 a Notice is filed and the item is left alone until the engine restarts. */
   const effectTries = new Map<string, number>();
+  /** Gate 2 M1: answers this run recorded itself, as `project/id@at`; any other pending answer is checked on GitHub first. */
+  const recordedHere = new Set<string>();
+  const answerKey = (p: Project, r: Recorded): string => `${p.name}/${r.id}@${r.entry.at}`;
 
   /** Carries out every recorded answer without an effect yet: new ones, ones a crash left, and ones that failed before (FR-2, SR-7). */
   async function applyAnswers(p: Project): Promise<void> {
@@ -1872,9 +1886,27 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const tries = effectTries.get(id) ?? 0;
       if (tries >= 3) continue;
       try {
+        if (!recordedHere.has(answerKey(p, r))) {
+          // Not connected yet: the answer waits, since it can't be checked.
+          if (!p.inbox!.connected) continue;
+          if (!(await p.inbox!.verify(r))) {
+            log.warn(`${id}: the recorded answer doesn't match GitHub, so it was not carried out (Gate 2 M1).`);
+            await alert(p, `unverified:${id}@${r.entry.at}`, {
+              title: `An answer on ${id} in factory/state isn't on GitHub`, ...(r.record.feature ? { feature: r.record.feature } : {}),
+              context: `factory/state records an owner answer on ${id} at ${r.entry.at} that the engine didn't read itself in this run, and the issue on GitHub doesn't show it: the owner's reaction or command, or its confirmation, isn't there (F-016 Gate 2 M1). It was not carried out.`,
+              impact: `Nothing changed. If you did answer ${id}, answer it again on its issue.`,
+              confirm: "Investigate who wrote factory/state", hold: "Leave it as it is", recommendation: "A",
+            });
+            await p.inbox!.effectDone(id, "unverified");
+            continue;
+          }
+          recordedHere.add(answerKey(p, r));
+        }
         await onAnswer(p, r);
         effectTries.delete(id);
       } catch (e) {
+        // An unreachable GitHub during the check isn't a failed effect: the answer waits for the next poll.
+        if (e instanceof GitHubUnreachable) continue;
         effectTries.set(id, tries + 1);
         log.warn(`${id}: its effect wasn't applied (${engineWords(e)}); try ${tries + 1} of 3.`);
         if (tries + 1 === 3) {
@@ -1891,7 +1923,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   async function pollInbox(p: Project): Promise<void> {
     while (!polling.signal.aborted && !dead && (p.state === "running" || p.pinsWaiting)) {
       try {
-        await p.inbox!.poll();
+        for (const r of await p.inbox!.poll()) recordedHere.add(answerKey(p, r));
         await applyAnswers(p);
       } catch (e) {
         log.warn(`${p.name}: the inbox couldn't be read this poll (${engineWords(e)}); it is read again at the next.`);
