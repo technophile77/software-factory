@@ -1,6 +1,6 @@
 # 0005. Feature branches with per-agent sub-branches, squash-merged to main
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by 0028 (code repos hold only code and tests)
 - **Date:** 2026-11-08
 - **Decided by:** owner
 - **Decision item:** open decision 5; write-up in `docs/proposals/0005-branching-commits.md`
