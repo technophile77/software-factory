@@ -194,7 +194,7 @@ export interface TurnFacts {
  * in as a quoted value.
  */
 /** Where a fix comes from besides stage 6 test failures (F-015 AC-9, AC-10). */
-export type FixFrom = "code_review" | "validation" | "owner";
+export type FixFrom = "code_review" | "validation" | "owner" | "conflict";
 
 export function buildTurn(role: BuildRole, t: TurnFacts): string {
   const common = [
@@ -203,6 +203,12 @@ export function buildTurn(role: BuildRole, t: TurnFacts): string {
     "The engine commits your changes when your session ends. Don't commit, push, add remotes or change git config yourself.",
     `Your report goes back as your structured result, with feature "${t.feature}", stage "${t.stage}" and commit "${t.commit}" (the commit you started from).`,
   ];
+  if (t.fix !== undefined && t.fixFrom === "conflict") {
+    // ADR 0013: each role resolves only its own files and keeps the approved behavior of both sides.
+    const own = role === "software-developer" ? "product code, lockfiles and generated files" : "tests";
+    const task = `A merge into this branch conflicted. The engine committed it with git's conflict markers so that you can resolve the files listed below, which are your ${own}. In each one, keep the approved behavior of both sides, remove every conflict marker, and regenerate a lockfile or generated file instead of editing it by hand. Don't change any other file. In your report's summary, say how you resolved each file.`;
+    return [task, ...common, t.fix].join("\n\n");
+  }
   if (t.fix !== undefined) {
     const why = t.fixFrom === "code_review" ? "Code Review found security problems that block the feature" : t.fixFrom === "validation" ? "The validation judge failed the feature" : t.fixFrom === "owner" ? "The owner asked for changes on the pull request" : "Tests fail";
     const fixTask = role === "software-developer"

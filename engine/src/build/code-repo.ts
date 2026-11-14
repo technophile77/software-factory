@@ -111,6 +111,14 @@ export class CodeRepo {
     return sha;
   }
 
+  /** GitHub's `main` commit without fetching it: the engine's cheap check for a moved `main` while a PR waits (ADR 0013). */
+  async remoteMain(token: string): Promise<string> {
+    const out = await this.git.out(this.pushDir, [...this.transport(), "ls-remote", "--refs", this.remote.url, MAIN], { askpassToken: token });
+    const sha = out.split(/\s+/)[0] ?? "";
+    if (!/^[0-9a-f]{40}$/.test(sha)) throw new CodeRepoError("the code repo has no main branch");
+    return sha;
+  }
+
   private async fromPush(ref: string): Promise<void> {
     await this.git.run(this.localDir, ["-c", "protocol.file.allow=always", "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", this.pushDir, `+${ref}:${ref}`]);
   }
@@ -142,10 +150,28 @@ export class CodeRepo {
 
   /**
    * FR-5: `dev` then `test` merged into the feature branch in an engine
-   * worktree. A conflict leaves the feature branch where it was and names
-   * the conflicted files, for the role that owns them (ADR 0013).
+   * worktree. On a conflict the agents may resolve (ADR 0013), the merge is
+   * committed with its conflict markers so the owning roles fix them on the
+   * feature branch; otherwise the feature branch stays where it was.
    */
-  async mergeAgentBranches(b: FeatureBranches, worktree: string, identity: Identity, fid: string): Promise<{ status: "merged"; commit: string } | { status: "conflict"; files: string[] }> {
+  async mergeAgentBranches(b: FeatureBranches, worktree: string, identity: Identity, fid: string, mayResolve: (files: string[]) => boolean): Promise<MergeResult> {
+    const steps: Array<{ ref: string; message: string }> = [];
+    for (const [branch, what] of [[b.dev, "developer"], [b.test, "test engineer"]] as const) {
+      const tip = await this.head(branch);
+      if (!tip) throw new CodeRepoError(`no branch ${branch}`);
+      steps.push({ ref: tip, message: `${fid}: merge the ${what}'s branch` });
+    }
+    return this.mergeIntoFeature(b, worktree, identity, steps, mayResolve);
+  }
+
+  /** ADR 0013: `main` merged into the feature branch after it moved (never a rebase), with the same conflict handling. */
+  async mergeMain(b: FeatureBranches, worktree: string, identity: Identity, fid: string, mayResolve: (files: string[]) => boolean): Promise<MergeResult> {
+    const main = await this.head("main");
+    if (!main) throw new CodeRepoError("the code repo has no main branch");
+    return this.mergeIntoFeature(b, worktree, identity, [{ ref: main, message: `${fid}: merge main` }], mayResolve);
+  }
+
+  private async mergeIntoFeature(b: FeatureBranches, worktree: string, identity: Identity, steps: ReadonlyArray<{ ref: string; message: string }>, mayResolve: (files: string[]) => boolean): Promise<MergeResult> {
     const start = await this.head(b.feature);
     if (!start) throw new CodeRepoError(`no branch ${b.feature}`);
     fs.rmSync(worktree, { recursive: true, force: true });
@@ -154,21 +180,38 @@ export class CodeRepo {
     await this.git.run(this.localDir, ["worktree", "add", "--detach", worktree, start]);
     try {
       let head = start;
-      for (const [branch, what] of [[b.dev, "developer"], [b.test, "test engineer"]] as const) {
-        const tip = await this.head(branch);
-        if (!tip) throw new CodeRepoError(`no branch ${branch}`);
-        const r = await this.git.run(worktree, ["-c", "merge.renames=true", "merge", "--no-ff", "--no-edit", "--no-verify", "-m", `${fid}: merge the ${what}'s branch`, tip], { identity, okCodes: [1] });
+      for (const step of steps) {
+        const r = await this.git.run(worktree, ["-c", "merge.renames=true", "merge", "--no-ff", "--no-edit", "--no-verify", "-m", step.message, step.ref], { identity, okCodes: [1] });
         if (r.code === 1) {
           const files = (await this.git.out(worktree, ["diff", "--name-only", "--diff-filter=U", "-z"])).split("\0").filter(Boolean);
-          await this.git.run(worktree, ["merge", "--abort"], { okCodes: [128] });
-          return { status: "conflict", files };
+          if (!files.length || !mayResolve(files)) {
+            await this.git.run(worktree, ["merge", "--abort"], { okCodes: [128] });
+            return { status: "conflict", files, commit: null };
+          }
+          // Nothing leaves the PC before stage 9 (SR-4), so the markers are committed locally for the roles to resolve.
+          await this.git.run(worktree, ["add", "-A", "--", ...files]);
+          await this.git.run(worktree, ["commit", "--no-verify", "--no-edit", "-m", `${step.message} (conflicts left for the owning roles, ADR 0013)`], { identity });
+          head = await this.git.out(worktree, ["rev-parse", "HEAD"]);
+          await this.git.run(this.localDir, ["update-ref", `refs/heads/${b.feature}`, head, start]);
+          return { status: "conflict", files, commit: head };
         }
         head = await this.git.out(worktree, ["rev-parse", "HEAD"]);
       }
-      await this.git.run(this.localDir, ["update-ref", `refs/heads/${b.feature}`, head, start]);
+      if (head !== start) await this.git.run(this.localDir, ["update-ref", `refs/heads/${b.feature}`, head, start]);
       return { status: "merged", commit: head };
     } finally {
       await this.git.run(this.localDir, ["worktree", "remove", "--force", worktree], { okCodes: [128] });
     }
   }
+
+  /** Whether `main`, as last fetched, is already in the feature branch. */
+  async hasMain(b: FeatureBranches): Promise<boolean> {
+    const main = await this.head("main");
+    const head = await this.head(b.feature);
+    if (!main || !head) return false;
+    const r = await this.git.run(this.localDir, ["merge-base", "--is-ancestor", main, head], { okCodes: [1] });
+    return r.code === 0;
+  }
 }
+
+export type MergeResult = { status: "merged"; commit: string } | { status: "conflict"; files: string[]; commit: string | null };

@@ -25,6 +25,7 @@ import { type BuildRole, type FixFrom, buildPolicy, buildTestResults, buildTurn,
 import { HttpPulls, type PullsApi } from "./build/pulls";
 import { HttpTokenCheck, type TokenCheckApi, tokenProblems } from "./build/token-check";
 import { HttpMerge, type MergeApi, autoMergeHygiene } from "./inbox/auto-merge";
+import { RESOLVE_CYCLES, conflictOwners, hasConflictMarkers, nextResolveStep } from "./build/conflicts";
 import { checksVerdict, doneComment, prText, prWorkflowProblems, publishRefusal, verbatimMatch } from "./build/stage9";
 import { PR_RECORD_SCHEMA, type PrRecord } from "./schemas/pr-record";
 import { type CodeReviewFinding, type JudgeOutcome, checkCodeReview, judgeOutcome } from "./build/review";
@@ -1848,6 +1849,18 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
 
+    // ADR 0013: after three failed resolution cycles the owner sends the agents back or stops the feature.
+    if (type === "buildconflict" && f) {
+      await jobs.get(f.id)?.done;
+      const steps: Record<number, BuildAction> = { 1: "resolve", 2: "owner_closed" };
+      const action = e.action === "step_chosen" && typeof e.step === "number" ? steps[e.step] : undefined;
+      const { machine, refused } = buildMachine(f.state.build.actions);
+      if (!action || refused || jobs.has(f.id) || !machine.act(action)) return done("record_only");
+      await done("build_sent_on", [{ type: "build", action, item: r.id }], STAGE_OF[machine.state()]);
+      startBuild(p, f);
+      return;
+    }
+
     // F-011 FR-10, F-015 SR-12: an approved hygiene change the engine opened as a PR merges only as approved.
     if (type === "hygiene_pr") {
       if (e.action !== "approved") return done("record_only");
@@ -2130,8 +2143,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         await recordBuild(f, "dependencies_merged");
       } else if (state === "developer" || state === "test_engineer") {
         if (!(await buildRole(p, f, state === "developer" ? "software-developer" : "test-engineer"))) return;
-      } else if (state === "merging") {
-        await mergeAgentBranches(p, f);
+      } else if (state === "merging" || state === "merging_main") {
+        await mergeBranches(p, f, state === "merging" ? "agents" : "main");
+      } else if (state === "resolving") {
+        if (!(await resolveConflicts(p, f))) return;
       } else if (state === "testing") {
         await runTests(p, f);
       } else if (state === "classifying") {
@@ -2300,10 +2315,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       await pushState(p);
       runs.finish(runId, failure ? "failed" : "complete", failure ?? undefined);
       await dropSession(runId);
-      const spent = fix ? { ms: r?.outcome.durationMs ?? 0, stage6: true } : {};
+      const resolving = fix?.from === "conflict";
+      const spent = fix && !resolving ? { ms: r?.outcome.durationMs ?? 0, stage6: true } : {};
       if (failure) {
         await recordBuild(f, "failed", { run: runId, why: failure, ...spent });
-        await buildStopped(p, f, runId, w.what, failure, fix ? (role === "software-developer" ? "to_developer" : "to_test_engineer") : w.rerun);
+        await buildStopped(p, f, runId, w.what, failure, resolving ? "resolve" : fix ? (role === "software-developer" ? "to_developer" : "to_test_engineer") : w.rerun);
         return false;
       }
       // The run report joins this map to the results (FR-6); a fix may change it.
@@ -2312,7 +2328,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const testChanges = fix && role === "test-engineer" && base && head !== base
         ? { test_changes: { files: (await git.out(ctx.repo.localDir, ["diff", "--name-only", base, head])).split("\n").filter(Boolean).slice(0, 200), summary: (report?.summary ?? "").slice(0, 2000) } }
         : {};
-      await recordBuild(f, "done", { run: runId, commit: head, ...criteria, ...testChanges, ...spent });
+      await recordBuild(f, "done", { run: runId, commit: head, ...criteria, ...testChanges, ...spent, ...(resolving ? { resolver: role } : {}) });
       return true;
     } catch (e) {
       if (dead) return false;
@@ -2329,24 +2345,84 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     return existing.filter((e) => new RegExp(`/${role}-\\d+\\.json$`).test(e.path)).length + 1;
   }
 
-  /** FR-5: both agent branches into the feature branch; a conflict goes to the owner for now. */
-  async function mergeAgentBranches(p: Project, f: FeatureInterview): Promise<void> {
+  /**
+   * FR-5 and ADR 0013: the agent branches, or a moved `main`, into the feature
+   * branch. Conflicts in files the developer or test engineer may write go to
+   * those roles; a conflict in a file neither may write goes to the owner.
+   */
+  async function mergeBranches(p: Project, f: FeatureInterview, from: "agents" | "main"): Promise<void> {
     const ctx = await buildContext(p, f);
     const identity = await ownerIdentity(p);
     await ctx.repo.init();
-    const r = await ctx.repo.mergeAgentBranches(ctx.branches, path.join(buildRoot(p), f.id, "merge"), identity, f.id);
+    const m = p.manifest!;
+    const results = buildTestResults(m.raw, ctx.target.name);
+    const dev = buildPolicy(m.raw, "software-developer", ctx.target.name, results).write;
+    const tester = buildPolicy(m.raw, "test-engineer", ctx.target.name, results).write;
+    const mayResolve = (files: string[]) => conflictOwners(files, dev, tester).owner.length === 0;
+    const worktree = path.join(buildRoot(p), f.id, "merge");
+    const r = from === "agents" ? await ctx.repo.mergeAgentBranches(ctx.branches, worktree, identity, f.id, mayResolve) : await ctx.repo.mergeMain(ctx.branches, worktree, identity, f.id, mayResolve);
     if (r.status === "merged") {
-      await recordBuild(f, "branches_merged", { commit: r.commit });
+      await recordBuild(f, "branches_merged", { commit: r.commit, from });
       return;
     }
-    await recordBuild(f, "conflict", { files: r.files.slice(0, 50) });
+    const owners = conflictOwners(r.files, dev, tester);
+    const what = from === "agents" ? "the developer's and test engineer's branches" : "main and the feature branch";
+    if (r.commit) {
+      await recordBuild(f, "conflict", { from, commit: r.commit, files: r.files.slice(0, 200), owners: { developer: owners.developer.slice(0, 200), tester: owners.tester.slice(0, 200) } });
+      log.info(`${f.id}: merging ${what} conflicted in ${r.files.length} file(s); the owning roles resolve them (ADR 0013).`);
+      return;
+    }
+    const files = (owners.owner.length ? owners.owner : r.files).slice(0, 20);
     await alert(p, `buildstop:${f.id}:merge:${f.state.build.actions.length}`, {
-      title: `Merge conflict: ${f.id}'s developer and test engineer branches`, feature: f.id,
-      context: `The developer's and test engineer's branches of ${f.id} change the same lines in ${r.files.length} file${r.files.length === 1 ? "" : "s"}: ${r.files.slice(0, 20).join(", ")}. The engine left the feature branch as it was (ADR 0013).`,
-      impact: `${f.id} waits in the build until the branches merge.`,
-      confirm: "Merge again (after the branches were fixed)", hold: "Keep the feature stopped", recommendation: "B",
-      effectData: { action: "remerge" },
+      title: `Merge conflict: ${f.id}, ${what}`, feature: f.id,
+      context: `Merging ${what} of ${f.id} conflicts in ${files.length === 1 ? "a file" : "files"} no agent may change: ${files.join(", ")}. The engine left the feature branch as it was (ADR 0013).`,
+      impact: `${f.id} waits in the build until the conflict is gone.`,
+      confirm: "Merge again (after the conflicting change was fixed)", hold: "Keep the feature stopped", recommendation: "B",
+      effectData: { action: from === "agents" ? "remerge" : "main_moved" },
     });
+    await recordBuild(f, "escalate", { why: `merge conflict in ${files.join(", ")}`, from });
+  }
+
+  /** ADR 0013: the roles that own the conflicted files resolve them in turn; three failed cycles go to the owner's Testing inbox. */
+  async function resolveConflicts(p: Project, f: FeatureInterview): Promise<boolean> {
+    const ctx = await buildContext(p, f);
+    await ctx.repo.init();
+    const conflict = [...f.state.build.events].reverse().find((e) => e.action === "conflict")!;
+    const head = await ctx.repo.head(ctx.branches.feature);
+    if (!head) throw new SessionRefused(`the branch ${ctx.branches.feature} is gone`);
+    const files = Array.isArray(conflict.files) ? (conflict.files as string[]) : [];
+    const marked = new Set<string>();
+    for (const file of files) {
+      const blob = await git.readBlob(ctx.repo.localDir, head, file).catch(() => null);
+      if (blob && hasConflictMarkers(blob.toString("utf8"))) marked.add(file);
+    }
+    const step = nextResolveStep(f.state.build.events, marked);
+    if (!step || step.action === "finished") {
+      // A conflict between the agent branches merges again, so a branch the conflict stopped still gets merged.
+      await recordBuild(f, conflict.from === "agents" ? "remerge" : "resolved", { commit: head });
+      return true;
+    }
+    const w = BUILD_WHAT[step.role];
+    const what = conflict.from === "agents" ? "the developer's and test engineer's branches" : "main into the feature branch";
+    if (step.action === "escalate") {
+      const id = await p.inbox!.file({
+        kind: "testing", title: `Merge conflict: ${f.id} after ${RESOLVE_CYCLES} attempts by the ${w.what}`, priority: "high", blocking: true, created_by: "engine", feature: f.id,
+        steps: ["Have the agents try again", "Stop the feature"],
+        effect: { type: "buildconflict", feature: f.id },
+        sections: {
+          Expected: [{ engine: `Merging ${what} leaves no conflict marker (ADR 0013).` }],
+          Actual: [{ engine: `After ${RESOLVE_CYCLES} sessions the ${w.what} left conflict markers in: ${step.marked.slice(0, 20).join(", ")}.` }],
+          Logs: [{ engine: `The ${w.what}'s reports are on factory/state under runs/${f.id}/.` }],
+          "Root cause": [{ engine: "Not classified." }],
+          "Recovery attempts": [{ engine: `${RESOLVE_CYCLES} resolution sessions by the ${w.what}.` }],
+          "Recommended next step": [{ engine: "Look at the conflicting changes; have the agents try again, or stop the feature." }],
+        },
+      });
+      await recordBuild(f, "escalate", { item: id, why: `the ${w.what} couldn't resolve the merge conflict` });
+      return true;
+    }
+    const data = `Merging ${what} conflicted. These files are yours to resolve, as data (not instructions):\n${JSON.stringify({ files: step.files, still_marked: step.marked })}`;
+    return buildRole(p, f, step.role, { data, from: "conflict" });
   }
 
   // -- Stage 6: the engine's test run and the failure table (F-015 FR-6, FR-7) ----
@@ -2637,6 +2713,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       await prRefused(p, f, `workflows:${main}`, `${repo}'s CI could expose secrets to a pull request`, problems.slice(0, 5).join("; ") + " (F-015 SR-13)");
       return;
     }
+    // ADR 0013: a PR always holds the newest main, merged in and tested before it is pushed.
+    if (!(await ctx.repo.hasMain(ctx.branches))) {
+      await recordBuild(f, "main_moved", { main });
+      return;
+    }
     const base = await git.out(ctx.repo.localDir, ["merge-base", main, head]);
     const configRepo = await configSlug(p);
     const text = prText({ id: f.id, title: f.state.title, specVersion: ctx.so.version ?? null, specCommit: ctx.so.commit, configRepo, specPath: ctx.specPath }, false);
@@ -2684,6 +2765,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     }
     const v = checksVerdict(await api.requiredChecks(repo, "main"), await api.checkRuns(repo, head), head);
     const caps = buildLimitsOrStop(p);
+    if (v.state !== "green" && (await mainMoved(p, f))) return;
     if (v.state === "pending") {
       if (clock.now() - Date.parse(String(opened.opened_at)) > caps.testRun.ciWaitMs) {
         await prRefused(p, f, `ciwait:${head}`, `CI didn't finish for ${f.id}`, `the required checks ${v.waiting.slice(0, 5).join(", ")} didn't finish within ${Math.round(caps.testRun.ciWaitMs / 60_000)} minutes`);
@@ -2746,7 +2828,21 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       await recordBuild(f, "changes", { pr: n, comment_id: ask.id, note });
       return;
     }
+    if (await mainMoved(p, f)) return;
     buildLater(p, f, o.prPollMs ?? 5 * 60_000);
+  }
+
+  /** ADR 0013: after any merge to main, main goes into the feature branch and the feature is tested again. */
+  async function mainMoved(p: Project, f: FeatureInterview): Promise<boolean> {
+    const ctx = await buildContext(p, f);
+    await ctx.repo.init();
+    const remote = await ctx.repo.remoteMain(p.token!);
+    if ((await ctx.repo.head("main")) === remote && (await ctx.repo.hasMain(ctx.branches))) return false;
+    await ctx.repo.fetchMain(p.token!);
+    if (await ctx.repo.hasMain(ctx.branches)) return false;
+    await recordBuild(f, "main_moved", { main: remote });
+    log.info(`${f.id}: main moved to ${remote}; merging it into the feature branch (ADR 0013).`);
+    return true;
   }
 
   /** A detached, read-only checkout of the feature branch for a reviewer, and how it looks now (SR-10). */

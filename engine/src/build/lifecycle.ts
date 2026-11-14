@@ -10,6 +10,8 @@ export const BUILD_STATES = [
   "developer",
   "test_engineer",
   "merging",
+  "resolving",
+  "merging_main",
   "testing",
   "classifying",
   "fixing_product",
@@ -59,6 +61,9 @@ export const BUILD_ACTIONS = [
   "rerun_developer",
   "rerun_test_engineer",
   "remerge",
+  "resolved",
+  "main_moved",
+  "resolve",
 ] as const;
 export type BuildAction = (typeof BUILD_ACTIONS)[number];
 
@@ -73,8 +78,20 @@ test_engineer 'done' -> merging;
 test_engineer 'failed' -> blocked;
 
 merging 'branches_merged' -> testing;
-merging 'conflict' -> blocked;
+merging 'conflict' -> resolving;
+merging 'escalate' -> blocked;
 merging 'failed' -> blocked;
+
+resolving 'done' -> resolving;
+resolving 'remerge' -> merging;
+resolving 'resolved' -> testing;
+resolving 'escalate' -> blocked;
+resolving 'failed' -> blocked;
+
+merging_main 'branches_merged' -> testing;
+merging_main 'conflict' -> resolving;
+merging_main 'escalate' -> blocked;
+merging_main 'failed' -> blocked;
 
 testing 'passed' -> code_review;
 testing 'tests_failed' -> classifying;
@@ -104,17 +121,22 @@ validation 'failed' -> blocked;
 
 opening_pr 'opened' -> ci_wait;
 opening_pr 'refused' -> blocked;
+opening_pr 'main_moved' -> merging_main;
 ci_wait 'green' -> pr_ready;
 ci_wait 'red' -> classifying;
 ci_wait 'refused' -> blocked;
+ci_wait 'main_moved' -> merging_main;
 
 pr_ready 'changes' -> fixing_product;
 pr_ready 'owner_merged' -> merged;
 pr_ready 'owner_closed' -> closed;
+pr_ready 'main_moved' -> merging_main;
 
 blocked 'rerun_developer' -> developer;
 blocked 'rerun_test_engineer' -> test_engineer;
 blocked 'remerge' -> merging;
+blocked 'resolve' -> resolving;
+blocked 'main_moved' -> merging_main;
 blocked 'retest' -> testing;
 blocked 'to_developer' -> fixing_product;
 blocked 'to_test_engineer' -> fixing_tests;
@@ -139,6 +161,8 @@ export const BUILD_MACHINE: MachineSpec<BuildState, BuildAction, BuildFinal> = {
     developer: role("software-developer"),
     test_engineer: role("test-engineer"),
     merging: engine("merges the dev and test branches into the feature branch (FR-5)"),
+    resolving: engine("hands each conflicted file to the developer or test engineer who owns it, then checks no conflict marker is left (ADR 0013)"),
+    merging_main: engine("merges main into the feature branch after main moved (ADR 0013)"),
     testing: engine("runs the repo's test command and reads its results (FR-6)"),
     classifying: role("orchestrator"),
     fixing_product: role("software-developer"),
@@ -158,6 +182,8 @@ export const STAGE_OF: Readonly<Record<BuildState, string>> = {
   developer: "build_and_test_prep",
   test_engineer: "build_and_test_prep",
   merging: "build_and_test_prep",
+  resolving: "build_and_test_prep",
+  merging_main: "build_and_test_prep",
   testing: "orchestrator_review",
   classifying: "orchestrator_review",
   fixing_product: "orchestrator_review",
