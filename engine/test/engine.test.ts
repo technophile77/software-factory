@@ -19,6 +19,7 @@ import YAML from "yaml";
 import {
   GIT_ENV, GIT_PATH, MASTER_FILES, OWNER_ID, ORG_ID, OTHER_ID, driveClock, RpcClient, World, engineJson, git, initRepo, makeWorld, manifestYaml, start,
 } from "./helpers";
+import { securityItemsIn } from "./inbox-items";
 
 // F-014 AC-2. On main before F-014 the first start took 22.
 const BUDGET_FIRST_START = 13;
@@ -46,8 +47,7 @@ async function connect(w: World) {
 }
 
 function securityItems(w: World): string[] {
-  const out = git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", "inbox/decision");
-  return out ? out.split("\n") : [];
+  return securityItemsIn(w.config).map((i) => i.id);
 }
 
 describe("engine start (FR-1 to FR-4)", () => {
@@ -112,7 +112,7 @@ describe("engine start (FR-1 to FR-4)", () => {
     expect(acme!.reason).toMatch(/isn't on allowed_repo_owners/);
     expect(beta).toMatchObject({ state: "running" });
     expect(securityItems(w)).toHaveLength(1);
-    const item = git(w.config, "show", `factory/state:${securityItems(w)[0]}`);
+    const item = securityItemsIn(w.config)[0]!.text;
     expect(item).toContain("category: Security");
     expect(item).not.toContain("github_pat_");
   });
@@ -195,7 +195,7 @@ describe("pinned keys (SR-5, AC-20)", () => {
     const e = await boot(w);
     expect(e.projects[0]!.state).toBe("stopped");
     expect(e.projects[0]!.reason).toMatch(/change to owner/);
-    const item = git(w.config, "show", `factory/state:${securityItems(w)[0]}`);
+    const item = securityItemsIn(w.config)[0]!.text;
     expect(item).toContain("Pinned owner keys changed");
   });
 
@@ -376,7 +376,7 @@ describe("limits (H-0087, Project manifest v1.4)", () => {
     expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringContaining("analyst.turns") });
     expect(e.projects[0]!.reason).not.toContain("proxy.pids");
     expect(securityItems(w)).toHaveLength(1);
-    const item = git(w.config, "show", `factory/state:${securityItems(w)[0]}`);
+    const item = securityItemsIn(w.config)[0]!.text;
     expect(item).toContain("category: Security");
     expect(item).toContain("analyst.turns");
     expect(() => e.limits("acme")).toThrow(/No running project/);
@@ -425,7 +425,7 @@ describe("factory.version sources (spec v30)", () => {
     ["a tag with an oversized limits.yaml", (w: World) => (commitMaster(w, { "engine/config/limits.yaml": MASTER_FILES["engine/config/limits.yaml"]! + `# ${"x".repeat(70_000)}\n` }, "v0.2.0"), "v0.2.0"), /over 64 KiB/],
     ["a tag without limits.yaml", (w: World) => (commitMaster(w, { "engine/config/limits.yaml": null }, "v0.2.0"), "v0.2.0"), /missing/],
     ["a tag without models.yaml", (w: World) => (commitMaster(w, { "engine/config/models.yaml": null }, "v0.2.0"), "v0.2.0"), /models.yaml is missing/],
-    ["a models.yaml naming an unknown role", (w: World) => (commitMaster(w, { "engine/config/models.yaml": MASTER_FILES["engine/config/models.yaml"] + "orchestrator: m\n" }, "v0.2.0"), "v0.2.0"), /not a role the engine runs/],
+    ["a models.yaml naming an unknown role", (w: World) => (commitMaster(w, { "engine/config/models.yaml": MASTER_FILES["engine/config/models.yaml"] + "test-wizard: m\n" }, "v0.2.0"), "v0.2.0"), /not a role the engine runs/],
     ["a models.yaml missing a role", (w: World) => (commitMaster(w, { "engine/config/models.yaml": "requirements-analyst: m\n" }, "v0.2.0"), "v0.2.0"), /'web-reader' needs a model id/],
     ["a models.yaml with an empty model id", (w: World) => (commitMaster(w, { "engine/config/models.yaml": "requirements-analyst: ''\nweb-reader: m\n" }, "v0.2.0"), "v0.2.0"), /'requirements-analyst' needs a model id/],
     ["a models.yaml with a non-string model id", (w: World) => (commitMaster(w, { "engine/config/models.yaml": "requirements-analyst: [a]\nweb-reader: m\n" }, "v0.2.0"), "v0.2.0"), /needs a model id/],
@@ -444,7 +444,7 @@ describe("factory.version sources (spec v30)", () => {
     const w = makeWorld();
     commitMaster(w, { "engine/config/models.yaml": "requirements-analyst: newer\nweb-reader: newer\n" });
     const e = await boot(w);
-    expect(e.models("acme")).toEqual({ "requirements-analyst": "claude-opus-5-5", "web-reader": "claude-haiku-5-5", "security-reviewer": "claude-sonnet-5-5" });
+    expect(e.models("acme")).toEqual({ "requirements-analyst": "claude-opus-5-5", "web-reader": "claude-haiku-5-5", "security-reviewer": "claude-sonnet-5-5", orchestrator: "claude-sonnet-5-5" });
   });
 
   it("follows an annotated tag of an annotated tag to its commit", async () => {
@@ -536,6 +536,6 @@ describe("factory.version sources (spec v30)", () => {
     const e = await boot(w);
     expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringMatching(re) });
     expect(securityItems(w)).toHaveLength(1);
-    expect(git(w.config, "show", `factory/state:${securityItems(w)[0]}`)).toContain("category: Security");
+    expect(securityItemsIn(w.config)[0]!.text).toContain("category: Security");
   });
 });

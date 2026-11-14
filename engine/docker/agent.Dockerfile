@@ -39,6 +39,10 @@ COPY --from=build /out/claude /opt/claude/claude
 # read-only, so a session can't change the skills it runs with.
 COPY skills/ /opt/factory/skills/
 RUN chown -R 0:0 /opt/factory && chmod -R a-w,a+rX /opt/factory
+# The session volume mounts here. Docker gives a new named volume the image
+# folder's owner; without this folder the volume is root's, Claude Code can't
+# keep its conversation, and a resumed run finds none.
+RUN mkdir -p /home/node/.claude && chown 1000:1000 /home/node/.claude && chmod 0700 /home/node/.claude
 USER 1000:1000
 WORKDIR /workspace
 ENTRYPOINT []

@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { DockerCli } from "../docker/cli";
+import { DockerError, type DockerCli } from "../docker/cli";
 import { ensureOwnerDir, realPath } from "../fsutil";
 import type { Git } from "../git";
 import type { FeatureInterview } from "../interview/feature";
@@ -127,8 +127,18 @@ const NAME_RE = /^factory-[a-z0-9-]{1,200}$/;
  * files are sensitive.
  */
 export async function sweepLeftovers(docker: DockerCli, keep: Set<string>, log: Logger): Promise<void> {
-  const list = async (args: string[]) => (await docker.out(args)).split("\n").map((s) => s.trim()).filter((s) => NAME_RE.test(s));
-  for (const c of await list(["ps", "--all", "--filter", "label=factory.run", "--format", "{{.Names}}"])) {
+  const list = async (args: string[], o: { timeoutMs?: number } = {}) => (await docker.out(args, o)).split("\n").map((s) => s.trim()).filter((s) => NAME_RE.test(s));
+  let containers: string[];
+  try {
+    // A list answers in well under a second; a Docker Desktop stuck starting accepts the pipe but never answers a filtered list.
+    containers = await list(["ps", "--all", "--filter", "label=factory.run", "--format", "{{.Names}}"], { timeoutMs: 15_000 });
+  } catch (e) {
+    if (e instanceof DockerError && /\(timeout\)/.test(e.message)) {
+      throw new DockerError("Docker didn't answer a container list within 15 s. Docker Desktop may be stuck starting: restart it, then restart the engine. Agent sessions fail until it answers.");
+    }
+    throw e;
+  }
+  for (const c of containers) {
     await docker.run(["rm", "--force", c], { okCodes: [1] });
     log.info(`removed leftover container ${c}`);
   }

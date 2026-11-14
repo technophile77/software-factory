@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { remaining, reviewerPolicy } from "../src/agent/reviewer";
 import { SessionRefused } from "../src/agent/analyst";
 import { Git } from "../src/git";
-import { analystGate1Turn, citesFinding, correctionTurn, gate1Resolution, records, reviewerTurn } from "../src/gate1/flow";
+import { analystGate1Turn, citesFinding, citesItem, correctionTurn, gate1Resolution, records, reviewerTurn } from "../src/gate1/flow";
 import { plain, renderReport } from "../src/gate1/render";
 import { Gate1Report, readReportFile, validateReport } from "../src/gate1/report";
 import { Standards, StandardsError, loadStandards, parseAdditions, parseStandards } from "../src/gate1/standards";
@@ -316,6 +316,22 @@ describe("FR-9 and FR-13: findings resolved", () => {
     expect(gate1Resolution(ownRow, own("rejected")).rejected).toEqual([1]);
   });
 
+  it("FR-18, AC-20: a written escape and a real line break count the same; other differences still fail", () => {
+    const fix = "Print 'Hello, world!\\n' to stdout.";
+    const findings = [{ n: 1, criterion: "S7.1", severity: "Medium", fix, explanation: "x", needs_owner: false }];
+    const withAnswer = (answer: string) => {
+      const s = new InterviewState();
+      s.apply(e("gate1_report", { run: "R-1", report: 1, findings }));
+      s.apply(e("item_created", { item: { id: "Q-001", kind: "question", text: "Gate 1 #1: output", why: "w", suggested: fix } }));
+      s.apply(e("reply", { reply_id: "r1", item: "Q-001", revision: 0, kind: "answer", text: answer, status: "answered" }));
+      return s;
+    };
+    const row = spec("| SR-5 | Print 'Hello, world!\\n' to stdout. | Gate 1 #1 | Approved |");
+    expect(gate1Resolution(row, withAnswer("Print 'Hello, world!\n' to stdout.")).check.passed).toBe(true);
+    expect(gate1Resolution(row, withAnswer(fix)).check.passed).toBe(true);
+    expect(gate1Resolution(row, withAnswer("Print 'Hello, world!' to stdout.")).check.passed).toBe(false);
+  });
+
   it("citesFinding reads lists of findings", () => {
     expect(citesFinding("Gate 1 #2, #13", 13)).toBe(true);
     expect(citesFinding("Gate 1 #2, #13", 1)).toBe(false);
@@ -330,5 +346,14 @@ describe("FR-9 and FR-13: findings resolved", () => {
     expect(s.gate1).toMatchObject({ runs: 1, pending: true, blocked: "waiting", riskFiled: [1] });
     s.apply(e("gate1_resolved", { passed: true }));
     expect(s.gate1).toMatchObject({ pending: false, blocked: null });
+  });
+});
+
+describe("citesItem (F-016 SR-6, Gate 2 L6)", () => {
+  it("matches a whole item id only", () => {
+    expect(citesItem("Gate 1 #1; D-0001", "D-0001")).toBe(true);
+    expect(citesItem("Gate 1 #1; D-00012", "D-0001")).toBe(false);
+    expect(citesItem("Gate 1 #1; XD-0001", "D-0001")).toBe(false);
+    expect(citesItem("D-0001, D-0002", "D-0002")).toBe(true);
   });
 });

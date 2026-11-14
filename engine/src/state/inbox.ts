@@ -1,6 +1,6 @@
-import YAML from "yaml";
-import { Clock, iso } from "../clock";
-import type { StateRepo } from "./state-repo";
+import type { Inbox } from "../inbox/store";
+import type { Part } from "../inbox/model";
+import { actionLabel } from "../inbox/render";
 
 export interface SecurityAlert {
   title: string;
@@ -11,97 +11,74 @@ export interface SecurityAlert {
   confirm: string;
   hold: string;
   recommendation: "A" | "B";
+  /** Engine values the item's effect needs, such as the manifest commit a pins item names (Gate 2 M2). */
+  effectData?: Record<string, string | number>;
 }
 
 /**
- * Files a Security item in the decision inbox (Inbox item v1.1) on the repo's
- * factory/state. Callers pass engine-written text only: never secrets,
- * owner replies or analyst text.
+ * Files an engine Security item (F-011 Inbox item v3.0) as an inbox issue.
+ * Callers pass engine-written text only: never secrets, owner replies or
+ * analyst text. `type` is the alert's kind (the part of its key before the
+ * first colon); it picks the item's effect when the owner answers, fixed in
+ * code (F-016 FR-6, H-0182, SR-4).
  */
-export async function fileSecurityItem(state: StateRepo, clock: Clock, a: SecurityAlert): Promise<string> {
-  const existing = await state.list("inbox/decision").catch(() => []);
-  let max = 0;
-  for (const e of existing) {
-    const m = /(?:^|\/)D-(\d{4,})\.md$/.exec(e.path);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  const id = `D-${String(max + 1).padStart(4, "0")}`;
-  const at = iso(clock.now());
-  const front: Record<string, unknown> = {
-    schema: "inbox-item/1.0",
-    id,
-    inbox: "decision",
-    title: a.title,
-    category: "Security",
-    priority: "high",
-    effective_priority: "high",
-    blocking: true,
-    status: "open",
+export async function fileSecurityItem(inbox: Inbox, type: string, a: SecurityAlert): Promise<string> {
+  return inbox.file({
+    kind: "decision", title: a.title, category: "Security", priority: "high", blocking: true, created_by: "engine",
     ...(a.feature ? { feature: a.feature } : {}),
-    created_by: "engine",
-    created_at: at,
-    options: [
-      { id: "A", label: a.confirm },
-      { id: "B", label: a.hold },
-    ],
+    options: [{ id: "A", label: a.confirm }, { id: "B", label: a.hold }],
     recommendation: a.recommendation,
-    links: [],
-    history: [{ at, by: "engine", action: "filed" }],
-  };
-  const body = [
-    `## Context\n\n${a.context}`,
-    `## Options\n\n- **A. ${a.confirm}.** Pro: work resumes. Con: wrong if you didn't make the change.\n- **B. ${a.hold}.** Pro: nothing runs until you've looked. Con: the project stays stopped.`,
-    `## Project impact\n\n${a.impact}`,
-    `## Recommendation\n\nOption ${a.recommendation}.`,
-    "## Cost of delay\n\nThe affected work stays stopped until this is decided.",
-  ].join("\n\n");
-  const text = `---\n${YAML.stringify(front)}---\n\n${body}\n`;
-  await state.commit([{ path: `inbox/decision/${id}.md`, content: text }], `${id}: ${a.title}`);
-  return id;
+    effect: { ...a.effectData, type, ...(a.feature ? { feature: a.feature } : {}) },
+    sections: {
+      Context: [{ engine: a.context }],
+      Options: [{ engine: `- **A. ${a.confirm}.** Pro: work resumes. Con: wrong if you didn't make the change.\n- **B. ${a.hold}.** Pro: nothing runs until you've looked. Con: the project stays stopped.` }],
+      "Project impact": [{ engine: a.impact }],
+      Recommendation: [{ engine: `Option ${a.recommendation}.` }],
+      "Cost of delay": [{ engine: "The affected work stays stopped until this is decided." }],
+    },
+  });
 }
 
 export interface DecisionItem {
   title: string;
   feature?: string;
-  /** Engine words, or reviewer text already made plain (F-008 SR-4). */
-  context: string;
+  /** Engine words, and reviewer text as outside parts (F-011 SR-10). */
+  context: Part[];
   impact: string;
-  /** `label` goes in the front matter as a YAML string; `shown` is the body's Markdown form of it, if different. */
-  options: Array<{ id: string; label: string; shown?: string; detail?: string }>;
+  options: Array<{ id: string; label: string; detail?: string }>;
+  /** Who wrote the labels, when not the engine; the body then fences them (SR-10). */
+  optionsBy?: string;
   recommendation: string;
   costOfDelay: string;
+  effect: { type: string; [k: string]: unknown };
 }
 
-/**
- * A Security item with any 2 to 4 options (F-008 FR-8, FR-13). The front
- * matter is engine-written only; labels go in it as YAML strings, so they
- * can't add keys. The commit runs the secrets scan (SR-9).
- */
-export async function fileDecisionItem(state: StateRepo, clock: Clock, d: DecisionItem): Promise<string> {
-  if (d.options.length < 2 || d.options.length > 4 || !d.options.some((o) => o.id === d.recommendation)) throw new Error("a decision item needs 2 to 4 options and one of them recommended");
-  const existing = await state.list("inbox/decision").catch(() => []);
-  let max = 0;
-  for (const e of existing) {
-    const m = /(?:^|\/)D-(\d{4,})\.md$/.exec(e.path);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  const id = `D-${String(max + 1).padStart(4, "0")}`;
-  const at = iso(clock.now());
-  const front: Record<string, unknown> = {
-    schema: "inbox-item/1.0", id, inbox: "decision", title: d.title, category: "Security",
-    priority: "high", effective_priority: "high", blocking: true, status: "open",
+/** A Security item with 2 to 4 options (F-008 FR-8, FR-13). Labels are rendered as plain text by the inbox. */
+export async function fileDecisionItem(inbox: Inbox, d: DecisionItem): Promise<string> {
+  const options = d.options.map((o) => ({ id: o.id, label: o.label.replace(/\s+/g, " ").trim() }));
+  return inbox.file({
+    kind: "decision", title: d.title, category: "Security", priority: "high", blocking: true, created_by: "engine",
     ...(d.feature ? { feature: d.feature } : {}),
-    created_by: "engine", created_at: at,
-    options: d.options.map((o) => ({ id: o.id, label: o.label })),
-    recommendation: d.recommendation, links: [], history: [{ at, by: "engine", action: "filed" }],
-  };
-  const body = [
-    `## Context\n\n${d.context}`,
-    `## Options\n\n${d.options.map((o) => `- **${o.id}. ${o.shown ?? o.label}.**${o.detail ? ` ${o.detail}` : ""}`).join("\n")}`,
-    `## Project impact\n\n${d.impact}`,
-    `## Recommendation\n\nOption ${d.recommendation}.`,
-    `## Cost of delay\n\n${d.costOfDelay}`,
-  ].join("\n\n");
-  await state.commit([{ path: `inbox/decision/${id}.md`, content: `---\n${YAML.stringify(front)}---\n\n${body}\n` }], `${id}: ${d.title}`);
-  return id;
+    options,
+    recommendation: d.recommendation,
+    effect: d.effect,
+    sections: {
+      Context: d.context,
+      // Inbox item v3.1: the options numbered in the body too, besides their action comments.
+      Options: d.optionsBy
+        ? [
+          { engine: "The options, in the order of their action comments:" },
+          { outside: options.map((o, i) => `${i + 1}. ${o.id}: ${o.label}`).join("\n"), author: d.optionsBy },
+          ...d.options.filter((o) => o.detail).map((o) => ({ engine: `${o.id}: ${o.detail}` })),
+          { engine: "To choose, react 👍 on that option's action comment below." },
+        ]
+        : [
+          ...options.map((o, i) => ({ engine: `${i + 1}. ${actionLabel({ options }, `choose:${o.id}`)}.${d.options[i]!.detail ? ` ${d.options[i]!.detail}` : ""}` })),
+          { engine: "To choose, react 👍 on that option's action comment below." },
+        ],
+      "Project impact": [{ engine: d.impact }],
+      Recommendation: [{ engine: `Option ${d.recommendation}.` }],
+      "Cost of delay": [{ engine: d.costOfDelay }],
+    },
+  });
 }

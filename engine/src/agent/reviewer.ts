@@ -11,6 +11,8 @@ import type { Breach } from "./write-check";
 
 /** SR-1, AC-3: the most a Gate 1 reviewer may have, whatever the project's policy says. */
 const REVIEWER_TOOLS = new Set(["Read", "Grep", "Glob", "Write", "Skill"]);
+/** F-016 SR-11: the readiness orchestrator gets the reviewer's rules, without skills. */
+const ORCHESTRATOR_TOOLS = new Set(["Read", "Grep", "Glob", "Write"]);
 
 /**
  * The project's `security-reviewer` policy, narrowed for one Gate 1 run:
@@ -18,15 +20,24 @@ const REVIEWER_TOOLS = new Set(["Read", "Grep", "Glob", "Write", "Skill"]);
  * write rule replaced by the run's one report path (SR-12).
  */
 export function reviewerPolicy(manifest: unknown, repoName: string | undefined, reportPath: string): RolePolicy {
+  return reportOnlyPolicy(manifest, "security-reviewer", REVIEWER_TOOLS, "Gate 1", repoName, reportPath);
+}
+
+/** The project's `orchestrator` policy narrowed the same way for one readiness run (F-016 FR-7, SR-11). */
+export function orchestratorPolicy(manifest: unknown, reportPath: string): RolePolicy {
+  return reportOnlyPolicy(manifest, "orchestrator", ORCHESTRATOR_TOOLS, "the readiness gate", undefined, reportPath);
+}
+
+function reportOnlyPolicy(manifest: unknown, role: string, allowed: Set<string>, what: string, repoName: string | undefined, reportPath: string): RolePolicy {
   let p: RolePolicy;
   try {
-    p = effectiveRole(manifest, "security-reviewer", repoName);
+    p = effectiveRole(manifest, role, repoName);
   } catch (e) {
     throw new SessionRefused(e instanceof PolicyError ? `Role policy: ${e.message}` : "the Role policy couldn't be read");
   }
-  const extra = p.tools.filter((t) => !REVIEWER_TOOLS.has(t));
-  if (extra.length) throw new SessionRefused(`the security-reviewer role has tools Gate 1 doesn't allow (${extra.join(", ")})`);
-  if (p.commands.length || p.network.length) throw new SessionRefused("the security-reviewer role has commands or network hosts, which Gate 1 doesn't allow");
+  const extra = p.tools.filter((t) => !allowed.has(t));
+  if (extra.length) throw new SessionRefused(`the ${role} role has tools ${what} doesn't allow (${extra.join(", ")})`);
+  if (p.commands.length || p.network.length) throw new SessionRefused(`the ${role} role has commands or network hosts, which ${what} doesn't allow`);
   return { ...p, write: { allow: [reportPath], deny: [...p.write.deny] } };
 }
 

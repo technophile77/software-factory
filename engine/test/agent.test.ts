@@ -9,7 +9,7 @@ import type { AgentSdk } from "../src/agent/sdk";
 import { CLAUDE_BIN, CONTAINER_FLAGS, SessionCaps, containerSpawn, hostRelative, preToolUseGate, runSession, sessionOptions, toolGate, unreadableUnder } from "../src/agent/session";
 import { DockerCli, DockerError, dockerName, isLocalEndpoint, localEndpoints, pickEndpoint, pipeExists, stderrTail } from "../src/docker/cli";
 import { findOnPath } from "../src/fsutil";
-import { BASE_IMAGE, agentBuildArgs, buildAgentImage, skillsPluginDir, writeBuildContext } from "../src/docker/image";
+import { BASE_IMAGE, agentBuildArgs, buildAgentImage, engineFilesDigest, skillsPluginDir, writeBuildContext } from "../src/docker/image";
 import { ContainerLimits, ContainerSpec, bindSourceMatches, inspectMismatches, runArgs } from "../src/docker/plan";
 import type { InterviewTools } from "../src/interview/tools";
 import { MemoryLogger } from "../src/log";
@@ -162,6 +162,11 @@ describe("docker command line (SR-14)", () => {
     expect(a).toContain(`factory.skills_sha256=${"d".repeat(64)}`);
     expect(a[a.indexOf("--tag") + 1]).toBe(`factory-agent:proj-${"c".repeat(12)}-${"d".repeat(12)}`);
     expect(() => agentBuildArgs("/e/ctx", "/e/w/iid", { ...id, masterCommit: "HEAD" })).toThrow(/identity/);
+    // A changed Dockerfile under the same factory.version still rebuilds: the image carries the engine files' digest.
+    const dir = path.join(__dirname, "..", "docker");
+    expect(agentBuildArgs("/e/ctx", "/e/w/iid", id, engineFilesDigest(dir))).toContain(`factory.engine_files_sha256=${engineFilesDigest(dir)}`);
+    // The session volume takes this folder's owner, so Claude Code (uid 1000) can keep its conversation for a resume.
+    expect(fs.readFileSync(path.join(dir, "agent.Dockerfile"), "utf8")).toMatch(/mkdir -p \/home\/node\/\.claude && chown 1000:1000 \/home\/node\/\.claude/);
     const sha = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docker", "claude-sha256.json"), "utf8"));
     expect(sha.version).toBe("2.1.311");
   });

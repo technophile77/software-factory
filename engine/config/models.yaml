@@ -6,3 +6,4 @@
 requirements-analyst: claude-opus-5-5
 web-reader: claude-haiku-5-5
 security-reviewer: claude-sonnet-5-5 # owner's choice, H-0095 (F-008)
+orchestrator: claude-sonnet-5-5 # owner's choice, H-0184 (F-016 readiness gate)
