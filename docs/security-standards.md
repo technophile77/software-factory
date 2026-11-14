@@ -4,7 +4,8 @@
 and the developer's `security-review` skill both read it. Do not copy these
 criteria anywhere else; link here.
 
-**Status:** criteria S1 to S7 are a draft for review. Severity levels and
+**Status:** approved. Criteria S1 to S7 were approved by the owner on
+2026-11-14 (H-0250). Severity levels and
 blocking rules were approved by the owner on 2026-11-08 (open decision 7,
 `proposals/0007-security-severity.md`). The least-privilege principle and S8
 were set by the owner on 2026-11-10 (H-0004), and so were the rules for

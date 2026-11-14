@@ -17,7 +17,7 @@ Order is the suggested order to decide them in: earlier ones shape later ones.
 | 7 | Security severity definitions | Security | Decided (in [security-standards.md](security-standards.md)) | — |
 | 8 | Validation judge scoring and evidence requirements | Product | Decided (in [validation-judge](../agents/validation-judge/AGENT.md)) | — |
 | 10 | Multiple features and concurrent workflows | Architecture | Decided | [0007](adr/0007-unlimited-feature-concurrency.md) |
-| 11 | Software maturity levels per repo and project (new requirement) | Product | Spec section 16 approved; criteria tables still draft ([maturity-levels.md](maturity-levels.md)) | — |
+| 11 | Software maturity levels per repo and project (new requirement) | Product | Decided (spec section 16; tables in [maturity-levels.md](maturity-levels.md), H-0250) | — |
 | 13 | Project boundaries and manifest (new item) | Architecture | Decided | [0010](adr/0010-project-config-repo.md) |
 | 12 | Continuous integration (new item) | Architecture | Decided | [0008](adr/0008-ci-required-gate-by-maturity.md) |
 | 14 | Project control and authorization, resumable runs, token budgets (new item) | Architecture, Security | Decided | [0012](adr/0012-project-control-resumable-runs-budgets.md) |
@@ -27,12 +27,8 @@ Numbers 1 to 10 match the spec's section 14 list. Later numbers are items added 
 
 ## Still open
 
-All ten section 14 items were decided on 2026-11-08. Still pending owner
-review:
-
-- Security criteria S1 to S7 in `security-standards.md` (draft).
-- The promotion criteria table and the requirements/test engineer rows of the
-  gate bar in `maturity-levels.md` (draft).
+All ten section 14 items were decided on 2026-11-08. Security criteria S1
+to S7 and the maturity tables were approved on 2026-11-14 (H-0250).
 
 Follow-on Interfaces decisions raised by the ADRs, approved 2026-11-08
 (PR #2) and recorded in `interface-contracts.md`:
