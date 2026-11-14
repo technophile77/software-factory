@@ -15,6 +15,9 @@ import { HttpGitHub } from "./github";
 import { FileLogger } from "./log";
 import { realOsApi } from "./os/ffi";
 import { serveMcp } from "./mcp/server";
+import { Interview } from "./mcp/operations";
+import { ID_RE } from "./mcp/limits";
+import { TerminalInterview, type TerminalIo } from "./terminal/interview";
 import { Children } from "./proc";
 import { OsCredentialStore, SecretError, isSecretName } from "./secrets";
 
@@ -27,6 +30,9 @@ const USAGE = `factory-engine <command>
   secret set <name>
           Stores a secret in the OS credential store, read from stdin.
           Names: model-credential, factory-token/<project name>.
+  interview [<feature id>] [--project <path>]
+          Answers the requirements analyst's questions in this terminal (F-018).
+          --project defaults to the current folder, inside the project's repo.
   mcp     Serves the spec interview's tools to Claude Code over stdio (ADR 0025).
           Started by the software-factory plugin, not by hand.
 `;
@@ -99,8 +105,68 @@ async function readSecret(): Promise<string> {
   });
 }
 
+/** Lines from the terminal. Ctrl+C or Ctrl+D ends input, so the session is closed before exit (FR-9). */
+function terminalIo(): TerminalIo & { close(): void } {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true, historySize: 0 });
+  let ended = false;
+  let pending: ((l: string | null) => void) | null = null;
+  const end = () => {
+    ended = true;
+    pending?.(null);
+    pending = null;
+  };
+  rl.on("close", end);
+  rl.on("SIGINT", () => {
+    process.stdout.write("\nStopping.\n");
+    rl.close();
+  });
+  process.once("SIGTERM", () => rl.close());
+  return {
+    write: (t) => process.stdout.write(t),
+    line: (prompt) => new Promise((resolve) => {
+      if (ended) return resolve(null);
+      pending = resolve;
+      rl.question(prompt, (a) => {
+        pending = null;
+        resolve(a);
+      });
+    }),
+    close: () => rl.close(),
+  };
+}
+
+async function interview(rest: string[]): Promise<number> {
+  const feature = rest[0] && !rest[0].startsWith("--") ? rest[0] : undefined;
+  let f: Record<string, string>;
+  try {
+    f = flags(feature ? rest.slice(1) : rest);
+  } catch {
+    process.stderr.write(USAGE);
+    return 2;
+  }
+  if (Object.keys(f).some((k) => k !== "project") || (feature !== undefined && !ID_RE.test(feature))) {
+    process.stderr.write(USAGE);
+    return 2;
+  }
+  // A script or a model's shell tool must not type answers for the owner (SR-3).
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    process.stderr.write("factory-engine interview runs only in a terminal, with you typing the answers.\n");
+    return 2;
+  }
+  const ops = new Interview({ os: realOsApi(), projectDir: path.resolve(f.project ?? process.cwd()) });
+  // Windows consoles without Windows Terminal may not draw box characters.
+  const marker = process.platform === "win32" && !process.env.WT_SESSION ? "| " : "\u2502 ";
+  const io = terminalIo();
+  try {
+    return await new TerminalInterview((op, req) => ops.run(op, req), io, marker).main(feature);
+  } finally {
+    io.close();
+  }
+}
+
 async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
+  if (cmd === "interview") return interview(rest);
   if (cmd === "mcp") {
     if (rest.length) {
       process.stderr.write(USAGE);
