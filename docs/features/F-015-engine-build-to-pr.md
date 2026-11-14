@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
-- **Spec version:** 10
+- **Spec version:** 11
 
 This is engine increment 4, "Build to PR" (F-007 section 13). It is a draft
 written before the owner interview, from the baseline spec, the ADRs and the
@@ -72,7 +72,7 @@ records stay in the private config repo (OQ-2, ADR 0028).
 | FR-5 | When both agents report done, the engine merges `dev` and `test` into the feature branch. A merge conflict between them is handled per ADR 0013. |
 | FR-6 | The engine runs the tests, not an agent (OQ-5). Each code repo's manifest entry declares its test command and the path of the JUnit XML results file it writes (H-0193), set at onboarding. The engine runs the command against the merged commit in a worktree of that commit on the owner's machine with no model, reads the results file, and builds the run report per `testing-strategy.md`: commit tested, counts, failures with expected, actual and logs, anything not run and why. The test engineer agent writes the tests and the acceptance-criteria-to-test map; the engine joins that map to the results. A missing or unreadable results file, or an unexplained skip, makes the run incomplete. |
 | FR-7 | Stage 6 applies the failure table in `testing-strategy.md` exactly: rerun counts by cause, at most 3 fix cycles per role, 2 developer/test-engineer disagreements on one test go to the Decision inbox, 4 hours of stage 6 agent time escalates. Every escalation is a Testing item with the fields of spec section 5. Engine code does the mechanical work: runs and reruns, counts fix cycles, files items, and in stage 9 pushes, opens the PR and reads CI (OQ-4). An orchestrator agent session, read-only with no shell, runs only when a test run fails: it names each failure's cause from the table and writes the evidence for the review note and any Testing item; the engine then applies the table to that cause. |
-| FR-8 | Stage 7 runs Semgrep CE from the image pinned in ADR 0024 on the feature diff, then the security reviewer (Gate 2) with the findings as evidence, reusing the F-008 report checks. Blocking per `security-standards.md` at the repo's maturity level. |
+| FR-8 | Stage 7 runs Semgrep CE 1.183.0 on the feature diff from a factory-owned venv on the owner's PC, installed with `pip install --require-hashes --only-binary :all:` from the change-controlled requirements file (H-0196), with `--metrics=off` and `--disable-nosem` (ADR 0024 as amended 2026-11-14; owner, decision card). If the venv can't be installed or verified, Gate 2 fails closed. Then the security reviewer (Gate 2) runs with the findings as evidence, reusing the F-008 report checks. Blocking per `security-standards.md` at the repo's maturity level. |
 | FR-9 | Stage 8 runs the validation judge with the spec, diff, run report and both gate reports. Its verdict is applied per `development-workflow.md` § Going backwards and the allowances in its `AGENT.md`. |
 | FR-10 | Stage 9: with items 1 to 11 met, the engine pushes the feature branch and opens a draft PR with the owner's token. It reads the required checks on the PR head; green marks the PR ready with its title and description updated and posts the F-011 FR-9 comment; red is a stage 6 failure. |
 | FR-11 | The engine never merges a feature PR (F-011 FR-14). |
@@ -219,6 +219,15 @@ them per repo.
   by the engine from the JUnit results (FR-6); the agent fills
   `criteria_map`.
 
+### H-0196 (draft): Semgrep venv for Gate 2
+`engine/config/semgrep-requirements.txt`: Semgrep 1.183.0 and its 66
+dependencies, each with the SHA-256 of every wheel for Windows x64, macOS
+arm64 and Linux x86_64. The engine installs it into a venv under the engine
+home and checks it before each Gate 2. `engine/osv-scanner.toml` gets
+entries for the four `mcp` 1.29.0 and two `opentelemetry-api` 1.37.0
+advisories, each with the unreachability reason in ADR 0024's recheck and a
+90-day expiry. CI scans the requirements file like the lockfiles.
+
 ### H-0195 (draft): documents
 `development-workflow.md`, `workflows/feature-development/workflow.yaml` and
 the orchestrator's `AGENT.md` say which steps are engine code and which run
@@ -254,3 +263,4 @@ Asked one at a time on decision cards. None is assumed.
 | 8 | 2026-11-13 | FR-17: the commit identity is whoever owns the project, derived from the config repo's pinned owner id and that GitHub account, with an optional manifest `owner.commit_name` override; nothing owner-specific in the master repo | Owner, 2026-11-13 (thread) |
 | 9 | 2026-11-13 | No containers until Beta: agents run as one SDK session per role in engine worktrees on the owner's machine; build tools are the owner's installed ones; OQ-6 superseded (FR-3, FR-6) | Owner, 2026-11-13 (thread) |
 | 10 | 2026-11-14 | Developer and test engineer get a full shell on the owner's PC until Beta, accepted risk under ADR 0026 (FR-3, SR-1). The ADR for OQ-2 is renumbered to 0028 because 0026 went to the no-containers decision | Owner, 2026-11-14 (decision card) |
+| 11 | 2026-11-14 | Gate 2 runs Semgrep from a hash-pinned PyPI venv on the owner's PC, not Docker (FR-8, H-0196); ADR 0024 amended with the S4.1 recheck. Also: acceptance criteria AC-1 to AC-18, ADR 0028, hygiene drafts H-0190 to H-0196 | Owner, 2026-11-14 (decision card, Semgrep); rest drafts |
