@@ -55,6 +55,11 @@ export interface ItemInput {
   effect?: { type: string; [k: string]: unknown };
   /** Keeps a type's item from being filed twice (engine `alert` keys). */
   key?: string;
+  /**
+   * F-021 FR-4: detail kept only on the PC and shown only in the console.
+   * Never rendered into the body, the record or anything sent anywhere (SR-5).
+   */
+  private?: Array<{ name: string; text: string }>;
 }
 
 /** An action's id, as the marker of its action comment names it: `choose:A`, `step:2`, `approve`, ... */
@@ -100,13 +105,18 @@ export interface History {
   option?: string;
   step?: number;
   rev?: number;
-  source?: "reaction" | "command";
+  /** `console` from F-021: answered through the engine channel, proven by the local answer file (FR-10). */
+  source?: "reaction" | "command" | "console";
+  /** Console answers only: whether the console session signed in to GitHub (FR-13). */
+  signed_in?: boolean;
+  /** Console answers only: sha256 of the entry without this field, as the local answer file holds it (FR-10). */
+  console_answer?: string;
   actor_id?: number;
   comment_id?: number;
   reaction_id?: number;
   ref?: string;
   note?: string;
-  confirmed_by?: { source: "reaction" | "command"; comment_id: number; reaction_id?: number };
+  confirmed_by?: { source: "reaction" | "command"; comment_id: number; reaction_id?: number } | { source: "console" };
   /** confirm_requested only. */
   pending?: ActionId;
   code?: string;

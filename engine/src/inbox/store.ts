@@ -3,14 +3,15 @@ import YAML from "yaml";
 import { Clock, iso } from "../clock";
 import type { Logger } from "../log";
 import type { StateRepo } from "../state/state-repo";
-import { confirmCode, looksLikeCommand, parseCommand } from "./commands";
+import { MAX_NOTE_CHARS, confirmCode, looksLikeCommand, parseCommand } from "./commands";
 import { IssueComment, IssuesApi, WORKFLOW_LOGIN } from "./github-issues";
 import {
-  ActionId, History, ID_RE, InboxRecord, ItemInput, KEEPS_OPEN, KIND_PREFIX, PRIORITIES, Revision, Status,
+  ActionId, History, ID_RE, InboxRecord, ItemInput, KEEPS_OPEN, KIND_PREFIX, PRIORITIES, Revision, SECTIONS, Status,
   actionsFor, bodyPath, currentRevision, isRisky, recordPath,
 } from "./model";
+import { InboxLocal, PrivateDetail, MAX_PRIVATE_SECTION_CHARS } from "./local";
 import {
-  ACTION_MARKER_RE, ITEM_MARKER_RE, RefuseReason, actionComment, actionWords, engineText, normalBody, priorityLower,
+  ACTION_MARKER_RE, ITEM_MARKER_RE, RefuseReason, actionComment, actionLabel, actionWords, engineText, normalBody, priorityLower,
   renderBody, renderLabels, renderTitle, sha256,
 } from "./render";
 
@@ -41,7 +42,23 @@ export interface InboxOptions {
   /** OS notification on the PC (F-011 FR-13, FR-15, section 6). */
   notify: (title: string, text: string) => void;
   random?: (n: number) => Buffer;
+  /** F-021: the engine-folder store for private detail and console answer proofs. Without it, items carry no private detail and console answers are refused. */
+  local?: InboxLocal;
+  /** F-021 SR-5: replaces any secret the scan finds in private detail before it is stored. */
+  scrub?: (text: string) => Promise<string>;
 }
+
+/** F-021 section 2 step 1: the fixed line an issue gets when its item has private detail. */
+export const privateLine = (id: string) =>
+  `More detail is on the PC that runs the factory: run \`factory-engine inbox ${id}\` there.`;
+
+/** What a console answer came to (F-021 FR-5 to FR-7; Engine control channel v1.6 `inbox.answer`). */
+export type ConsoleResult =
+  | { recorded: Recorded }
+  | { confirm: { words: string; code: string; expires_at: string } }
+  | { already: { by: "github" | "console" | "engine"; action?: string } }
+  | { changed: { rev: number } }
+  | { refused: "unknown item" | "not allowed" | "no console" | "confirm failed" | "note too long" };
 
 /**
  * The project's inbox on GitHub issues (F-011 H-0161). Filing writes the
@@ -64,6 +81,18 @@ export class Inbox {
 
   constructor(private readonly o: InboxOptions) {
     this.random = o.random ?? crypto.randomBytes;
+  }
+
+  /**
+   * F-021 FR-7: the poll, console answers and the engine's own changes to an
+   * item (revise, reopen, withdraw) take turns, so no record is written from
+   * two places at once and the first answer from either path wins.
+   */
+  private turn: Promise<unknown> = Promise.resolve();
+  private exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.turn.then(fn);
+    this.turn = run.catch(() => undefined);
+    return run;
   }
 
   connect(c: InboxConnection): void {
@@ -163,7 +192,8 @@ export class Inbox {
     id ??= await this.nextId(item.kind);
     if (!ID_RE.test(id) || id[0] !== KIND_PREFIX[item.kind]) throw new Error(`${id} is not a ${item.kind} id`);
     const at = iso(this.o.clock.now());
-    const body = renderBody(id, 1, item);
+    await this.keepPrivate(id, 1, item);
+    const body = renderBody(id, 1, this.withPrivateLine(id, item));
     const r: InboxRecord = {
       schema: "inbox-record/3.0", id, kind: item.kind, title: item.title,
       ...(item.category ? { category: item.category } : {}),
@@ -189,12 +219,17 @@ export class Inbox {
   }
 
   /** F-011 FR-8: a changed item gets a new revision; its old action comments are marked stale at the next poll. */
-  async revise(id: string, item: ItemInput): Promise<number> {
+  revise(id: string, item: ItemInput): Promise<number> {
+    return this.exclusive(() => this.reviseNow(id, item));
+  }
+
+  private async reviseNow(id: string, item: ItemInput): Promise<number> {
     checkItem(item);
     const r = await this.read(id);
     if (!r || r.status !== "open") throw new Error(`${id} is not open`);
     const rev = currentRevision(r).rev + 1;
-    const body = renderBody(id, rev, item);
+    await this.keepPrivate(id, rev, item);
+    const body = renderBody(id, rev, this.withPrivateLine(id, item));
     r.title = item.title;
     if (item.options) r.options = item.options;
     if (item.recommendation) r.recommendation = item.recommendation;
@@ -211,7 +246,11 @@ export class Inbox {
    * (F-011 FR-8), on GitHub too. If the issue can't be reopened now, the
    * next poll reopens it, since the record is open.
    */
-  async reopen(id: string): Promise<void> {
+  reopen(id: string): Promise<void> {
+    return this.exclusive(() => this.reopenNow(id));
+  }
+
+  private async reopenNow(id: string): Promise<void> {
     const r = await this.read(id);
     if (!r) throw new Error(`no inbox record ${id}`);
     if (r.status === "open") return;
@@ -223,7 +262,11 @@ export class Inbox {
   }
 
   /** F-016 FR-16: an open item the engine no longer needs answered is closed with the engine's reason. */
-  async withdraw(id: string, why: string): Promise<void> {
+  withdraw(id: string, why: string): Promise<void> {
+    return this.exclusive(() => this.withdrawNow(id, why));
+  }
+
+  private async withdrawNow(id: string, why: string): Promise<void> {
     const r = await this.read(id);
     if (!r || r.status !== "open") return;
     r.status = "closed";
@@ -283,6 +326,7 @@ export class Inbox {
   async verify(rec: Recorded): Promise<boolean> {
     const r = rec.record;
     const e = rec.entry;
+    if (e.source === "console") return this.verifyConsole(rec);
     const action = actionOfEntry(e);
     if (e.by !== "owner" || e.actor_id !== this.ownerId || !r.issue || e.comment_id === undefined || !action) return false;
     // An answer to an earlier revision is stale (F-011 FR-8); one whose comment or reaction an earlier answer
@@ -308,7 +352,7 @@ export class Inbox {
     // The confirm must answer the engine's request for this action, within 15 minutes of that request's comment on GitHub (FR-6).
     const k = e.confirmed_by;
     const asked = before.filter((h) => h.action === "confirm_requested" && h.pending === action && h.rev === e.rev).pop();
-    if (!k || !asked?.code) return false;
+    if (!k || k.source === "console" || !asked?.code) return false;
     const request = comments.find((x) => x.id === asked.comment_id && x.authorId === this.ownerId && x.body.startsWith("Confirm:") && x.body.includes(`/confirm ${asked.code}`));
     const cc = comments.find((x) => x.id === k.comment_id);
     if (!request || !cc) return false;
@@ -349,12 +393,18 @@ export class Inbox {
    * error ends this poll for the project; the next poll retries, and the
    * record's ids keep anything from being recorded twice (section 6).
    */
-  async poll(): Promise<Recorded[]> {
+  poll(): Promise<Recorded[]> {
+    return this.exclusive(() => this.pollNow());
+  }
+
+  private async pollNow(): Promise<Recorded[]> {
     if (!this.c) return [];
     const privacy = await this.checkPrivacy();
     if (!privacy.ok) return [];
     const recorded: Recorded[] = [];
-    const open = (await this.records()).filter((r) => r.status === "open");
+    const all = await this.records();
+    for (const r of all) if (r.status !== "open") await this.syncConsole(r);
+    const open = all.filter((r) => r.status === "open");
     let listed: Awaited<ReturnType<IssuesApi["openIssues"]>> | null = null;
     for (const r of open) {
       const rev = currentRevision(r);
@@ -439,8 +489,8 @@ export class Inbox {
         const c = (h as History & { chosen?: Chosen }).chosen;
         return !!c && (k.reaction_id !== undefined ? c.reaction_id === k.reaction_id : c.reaction_id === undefined && c.comment_id === k.comment_id);
       })()) ||
-      (k.reaction_id !== undefined && (h.reaction_id === k.reaction_id || h.confirmed_by?.reaction_id === k.reaction_id)) ||
-      (k.reaction_id === undefined && k.comment_id !== undefined && (h.comment_id === k.comment_id && h.source === "command" || h.confirmed_by?.comment_id === k.comment_id && h.confirmed_by.source === "command")));
+      (k.reaction_id !== undefined && (h.reaction_id === k.reaction_id || githubConfirm(h)?.reaction_id === k.reaction_id)) ||
+      (k.reaction_id === undefined && k.comment_id !== undefined && (h.comment_id === k.comment_id && h.source === "command" || githubConfirm(h)?.comment_id === k.comment_id && githubConfirm(h)?.source === "command")));
   }
 
   private async reply(r: InboxRecord, text: string): Promise<void> {
@@ -613,18 +663,7 @@ export class Inbox {
 
   private async record(r: InboxRecord, chosen: Chosen, confirmedBy?: History["confirmed_by"]): Promise<Recorded> {
     const [verb, arg] = chosen.action.split(":");
-    const map: Record<string, { action: History["action"]; status: Status }> = {
-      choose: { action: "chosen", status: "chosen" },
-      step: { action: "step_chosen", status: "approved" },
-      approve: { action: "approved", status: "approved" },
-      reject: { action: "rejected", status: "rejected" },
-      changes: { action: "changes_requested", status: "changes_requested" },
-      research: { action: "research_requested", status: "open" },
-      defer: { action: "deferred", status: "open" },
-      restore: { action: "restored", status: "open" },
-      dismiss: { action: "dismissed", status: "dismissed" },
-    };
-    const m = map[verb!]!;
+    const m = RECORDS[verb!]!;
     const entry: History = {
       at: iso(this.o.clock.now()), by: "owner", action: m.action,
       ...(verb === "choose" ? { option: arg! } : {}), ...(verb === "step" ? { step: Number(arg) } : {}),
@@ -650,6 +689,202 @@ export class Inbox {
     await this.write(r, "replied");
     return { id: r.id, record: r, entry };
   }
+  // ---- the console (F-021) ----
+
+  /** Console confirms waiting for their code, by item; one try each (SR-2). Kept in memory: a restart just asks again. */
+  private readonly confirms = new Map<string, { action: ActionId; note?: string; code: string; rev: number; at: number; session: number }>();
+
+  /** FR-4, SR-5: private detail goes to the engine folder only, after the secrets scan. */
+  private async keepPrivate(id: string, rev: number, item: ItemInput): Promise<void> {
+    if (!item.private?.length || !this.o.local) return;
+    const sections: PrivateDetail = [];
+    for (const s of item.private.slice(0, 10)) {
+      const text = s.text.slice(0, MAX_PRIVATE_SECTION_CHARS);
+      sections.push({ name: s.name.replace(/\s+/g, " ").trim().slice(0, 80) || "Detail", text: this.o.scrub ? await this.o.scrub(text) : text });
+    }
+    this.o.local.writePrivate(id, rev, sections);
+  }
+
+  /** The issue says detail exists, never what it is (FR-4). */
+  private withPrivateLine(id: string, item: ItemInput): ItemInput {
+    if (!item.private?.length || !this.o.local) return item;
+    const context = SECTIONS[item.kind][0]!;
+    return { ...item, sections: { ...item.sections, [context]: [...(item.sections[context] ?? []), { engine: privateLine(id) }] } };
+  }
+
+  /** FR-2: open items, blocking first, then by effective priority, then by id. */
+  async consoleList(): Promise<InboxRecord[]> {
+    const rank = (p: string) => PRIORITIES.indexOf(p as (typeof PRIORITIES)[number]);
+    return (await this.records()).filter((r) => r.status === "open")
+      .sort((a, b) => Number(b.blocking) - Number(a.blocking) || rank(a.effective_priority) - rank(b.effective_priority) || a.id.localeCompare(b.id));
+  }
+
+  /** FR-3: the current revision's body as the issue shows it, the private detail, and the actions in order. */
+  async consoleShow(id: string): Promise<{ record: InboxRecord; rev: number; body: string; private: PrivateDetail | null; actions: Array<{ action: ActionId; label: string }> } | null> {
+    const r = await this.read(id);
+    if (!r) return null;
+    const rev = currentRevision(r).rev;
+    const body = (await this.o.state.read(bodyPath(id, rev)))?.toString("utf8") ?? "";
+    const actions = actionsFor(shape(r)).map((a) => ({ action: a, label: actionLabel(r, a) }));
+    return { record: r, rev, body, private: this.o.local?.readPrivate(id, rev) ?? null, actions };
+  }
+
+  /**
+   * FR-5 to FR-7: an action picked in the console. Under the inbox's lock the
+   * record must still be open and at the revision the owner saw; otherwise
+   * the owner is told what happened instead. A risky action gets a code to
+   * confirm (FR-6) and records nothing yet.
+   */
+  consoleAnswer(a: { id: string; rev: number; action: string; note?: string; session: number; signedIn: boolean }): Promise<ConsoleResult> {
+    return this.exclusive(async () => {
+      const r = await this.read(a.id);
+      const gate = this.consoleGate(r, a.rev);
+      if (gate) return gate;
+      if (!this.o.local) return { refused: "no console" };
+      if (!actionsFor(shape(r!)).includes(a.action)) return { refused: "not allowed" };
+      const needsNote = a.action === "changes" || a.action === "research";
+      const note = needsNote ? (a.note ?? "").trim() : undefined;
+      if (needsNote && !note) return { refused: "not allowed" };
+      if (note !== undefined && note.length > MAX_NOTE_CHARS) return { refused: "note too long" };
+      if (isRisky(r!, a.action)) {
+        const code = confirmCode(this.random);
+        const at = this.o.clock.now();
+        this.confirms.set(a.id, { action: a.action, ...(note !== undefined ? { note } : {}), code, rev: a.rev, at, session: a.session });
+        return { confirm: { words: `Confirm: ${actionWords(r!, a.action)} ${confirmTarget(r!, a.action)}.`, code, expires_at: iso(at + CONFIRM_MS) } };
+      }
+      return { recorded: await this.recordConsole(r!, a.action, note, a.session, a.signedIn, false) };
+    });
+  }
+
+  /** FR-6, SR-2: the code from this engine's own confirm, for the same session, action's item and revision, within 15 minutes; one try. */
+  consoleConfirm(a: { id: string; rev: number; code: string; session: number; signedIn: boolean }): Promise<ConsoleResult> {
+    return this.exclusive(async () => {
+      const pending = this.confirms.get(a.id);
+      this.confirms.delete(a.id);
+      const r = await this.read(a.id);
+      const gate = this.consoleGate(r, a.rev);
+      if (gate) return gate;
+      if (!pending || pending.session !== a.session || pending.rev !== a.rev || pending.code !== a.code || this.o.clock.now() - pending.at > CONFIRM_MS) {
+        return { refused: "confirm failed" };
+      }
+      return { recorded: await this.recordConsole(r!, pending.action, pending.note, a.session, a.signedIn, true) };
+    });
+  }
+
+  /** FR-7: an item answered elsewhere, withdrawn or revised since the owner saw it. */
+  private consoleGate(r: InboxRecord | null, rev: number): ConsoleResult | null {
+    if (!r) return { refused: "unknown item" };
+    if (r.status !== "open") {
+      // Owner answers never leave "closed"; only the engine's withdrawal does (F-016 FR-16).
+      const lastOwner = [...r.history].reverse().find((h) => h.by === "owner");
+      if (r.status === "closed" || !lastOwner) return { already: { by: "engine" } };
+      const action = actionOfEntry(lastOwner);
+      return { already: { by: lastOwner.source === "console" ? "console" : "github", ...(action ? { action: actionWords(r, action) } : {}) } };
+    }
+    const now = currentRevision(r).rev;
+    return rev === now ? null : { changed: { rev: now } };
+  }
+
+  /**
+   * FR-8, FR-10: the record first, with the proof written to the engine
+   * folder just before it, then the issue. A GitHub that can't be reached
+   * leaves the comment and the close to the next poll (`syncConsole`).
+   */
+  private async recordConsole(r: InboxRecord, action: ActionId, note: string | undefined, session: number, signedIn: boolean, confirmed: boolean): Promise<Recorded> {
+    const [verb, arg] = action.split(":");
+    const m = RECORDS[verb!]!;
+    const entry: History = {
+      at: iso(this.o.clock.now()), by: "owner", action: m.action,
+      ...(verb === "choose" ? { option: arg! } : {}), ...(verb === "step" ? { step: Number(arg) } : {}),
+      rev: currentRevision(r).rev, source: "console", signed_in: signedIn,
+      ...(note !== undefined ? { note } : {}),
+      ...(confirmed ? { confirmed_by: { source: "console" as const } } : {}),
+    };
+    const hash = entryHash(entry);
+    this.o.local!.writeAnswer({ id: r.id, n: r.history.length, rev: entry.rev!, action, ...(note !== undefined ? { note } : {}), at: entry.at, session, entry_sha256: hash });
+    entry.console_answer = hash;
+    r.history.push(entry);
+    if (verb === "defer") r.effective_priority = priorityLower(r.effective_priority);
+    if (verb === "restore") r.effective_priority = r.priority;
+    r.status = m.status;
+    await this.write(r, `${m.action}${verb === "choose" ? ` ${arg}` : ""} by the owner in the console`);
+    if (KEEPS_OPEN.has(action)) {
+      // The item stays open, so its issue does too; a failed comment or label change is only cosmetic.
+      if (this.c && r.issue !== undefined) {
+        await this.reply(r, engineText.recordedConsole(actionWords(r, action))).catch(() => undefined);
+        if (verb === "defer" || verb === "restore") await this.api.updateIssue(this.repo, r.issue, { labels: renderLabels(r) }).catch(() => undefined);
+        await this.write(r, "console answer posted").catch(() => undefined);
+      }
+    } else {
+      await this.syncConsole(r).catch(() => undefined);
+    }
+    return { id: r.id, record: r, entry };
+  }
+
+  /** FR-8: closes the issue of an item answered in the console, once, with the fixed comment. */
+  private async syncConsole(r: InboxRecord): Promise<void> {
+    if (!this.c) return;
+    const i = r.history.map((h) => h.by === "owner").lastIndexOf(true);
+    const e = r.history[i];
+    if (!e || e.source !== "console") return;
+    const action = actionOfEntry(e);
+    if (!action || KEEPS_OPEN.has(action) || r.history.slice(i + 1).some((h) => h.by === "engine" && h.action === "closed")) return;
+    if (r.issue === undefined) {
+      if (currentRevision(r).dispatched) {
+        const found = (await this.api.openIssues(this.repo)).find((x) => x.author === WORKFLOW_LOGIN && ITEM_MARKER_RE.exec(normalBody(x.body))?.[1] === r.id);
+        // The workflow hasn't opened it yet: the next poll looks again.
+        if (!found) return;
+        r.issue = found.number;
+      }
+    }
+    if (r.issue !== undefined) {
+      await this.reply(r, engineText.recordedConsole(actionWords(r, action)));
+      await this.api.updateIssue(this.repo, r.issue, { state: "closed" });
+    }
+    r.history.push({ at: iso(this.o.clock.now()), by: "engine", action: "closed" });
+    await this.write(r, "answered in the console: issue closed");
+  }
+
+  /** FR-10: a console answer this run didn't record counts only if the engine folder holds its proof. */
+  private verifyConsole(rec: Recorded): boolean {
+    const r = rec.record;
+    const e = rec.entry;
+    const action = actionOfEntry(e);
+    const n = r.history.indexOf(e);
+    if (!this.o.local || e.by !== "owner" || !action || n < 0 || e.rev !== currentRevision(r).rev || !e.console_answer) return false;
+    const file = this.o.local.readAnswer(r.id, n);
+    return !!file && file.entry_sha256 === e.console_answer && entryHash(e) === e.console_answer && file.rev === e.rev && file.action === action && file.at === e.at;
+  }
+
+}
+
+/** What each action verb records and the status it leaves, for both answer paths. */
+const RECORDS: Record<string, { action: History["action"]; status: Status }> = {
+  choose: { action: "chosen", status: "chosen" },
+  step: { action: "step_chosen", status: "approved" },
+  approve: { action: "approved", status: "approved" },
+  reject: { action: "rejected", status: "rejected" },
+  changes: { action: "changes_requested", status: "changes_requested" },
+  research: { action: "research_requested", status: "open" },
+  defer: { action: "deferred", status: "open" },
+  restore: { action: "restored", status: "open" },
+  dismiss: { action: "dismissed", status: "dismissed" },
+};
+
+/** The record fields `actionsFor` reads. */
+const shape = (r: InboxRecord) => ({ kind: r.kind, ...(r.options ? { options: r.options } : {}), ...(r.steps ? { steps: r.steps } : {}) });
+
+/**
+ * F-021 FR-10: the hash of a console answer's history entry, without its
+ * own `console_answer`, over sorted keys so a record read back and written
+ * again in another key order still matches.
+ */
+export function entryHash(e: History): string {
+  const canon = (v: unknown): unknown =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(Object.keys(v).filter((k) => k !== "console_answer").sort().map((k) => [k, canon((v as Record<string, unknown>)[k])]))
+      : v;
+  return sha256(JSON.stringify(canon(e)));
 }
 
 interface Chosen {
@@ -684,6 +919,11 @@ function checkItem(item: ItemInput): void {
     if (!item.category) throw new Error("a decision item needs a category");
   }
   if (item.kind === "testing" && !(item.steps?.length && item.steps.length <= 9)) throw new Error("a testing item needs 1 to 9 steps");
+}
+
+/** A confirm given on GitHub; console confirms carry no comment or reaction. */
+function githubConfirm(h: History): { source: "reaction" | "command"; comment_id: number; reaction_id?: number } | undefined {
+  return h.confirmed_by && h.confirmed_by.source !== "console" ? h.confirmed_by : undefined;
 }
 
 /** The action an owner history entry recorded, as action comments name it. */

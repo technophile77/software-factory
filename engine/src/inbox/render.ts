@@ -102,6 +102,8 @@ export const engineText = {
   confirm: (what: string, target: string, code: string) =>
     `Confirm: ${what} ${target}. React 🚀 or reply /confirm ${code} within 15 minutes.`,
   recorded: (what: string) => `Recorded: ${what}.`,
+  /** F-021 FR-8, SR-7: the owner answered in the console. */
+  recordedConsole: (what: string) => `Recorded from the console: ${what}.`,
   notRecorded: (reason: RefuseReason) => `Not recorded: ${reason}.`,
   stale: (rev: number) => `Stale: revision ${rev} replaces this.`,
   reopened: () => "Reopened: the factory's record still has this item open. Act on it here, or Dismiss or Reject it.",
