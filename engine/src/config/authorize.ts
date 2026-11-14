@@ -52,7 +52,13 @@ export function billingMismatch(mode: Manifest["billingMode"], project: string, 
  * id GitHub reports for the repo, not by the URL text. Any failure refuses.
  * Resolves to warnings for the owner (public repos: factory/state is pushed).
  */
-export async function authorizeProject(m: Manifest, github: GitHubClient, token: string | null, log: Logger): Promise<string[]> {
+/**
+ * `config` is the config repo, where factory/state (transcripts, reports) is
+ * pushed; only its visibility exposes them. A public code repo only matters
+ * for stage 9, which pushes code there when onboarding recorded the owner's
+ * confirmation (F-015 SR-6).
+ */
+export async function authorizeProject(m: Manifest, github: GitHubClient, token: string | null, log: Logger, config?: { owner: string; repo: string }): Promise<string[]> {
   if (!token) throw new AuthorizationError(`No factory token stored for ${m.name}: run \`factory-engine secret set factory-token/${m.name}\`.`);
   const allowed = new Set(m.allowed_repo_owners.map((a) => a.id));
   const warnings: string[] = [];
@@ -69,7 +75,11 @@ export async function authorizeProject(m: Manifest, github: GitHubClient, token:
     if (!allowed.has(info.ownerId)) {
       throw new AuthorizationError(`${r.owner}/${r.repo} is owned by account id ${info.ownerId}, which isn't on allowed_repo_owners.`);
     }
-    if (info.private === false) warnings.push(`${r.owner}/${r.repo} is public, so interview transcripts pushed on factory/state are public too.`);
+    if (info.private === false && r.visibility !== "public") warnings.push(`${r.owner}/${r.repo} is public, and publishing to it wasn't confirmed at onboarding, so the engine won't push code to it (F-015 SR-6).`);
+  }
+  if (config) {
+    const info = await github.repo(config.owner, config.repo, token).catch(() => null);
+    if (info?.status === 200 && info.private === false) warnings.push(`The config repo ${config.owner}/${config.repo} is public, so interview transcripts pushed on factory/state are public too.`);
   }
   log.info(`${m.name}: ${m.repos.length} repo(s) authorized`);
   return warnings;

@@ -126,11 +126,12 @@ describe("engine start (FR-1 to FR-4)", () => {
     expect((await boot(w2)).projects[0]!.reason).toMatch(/No factory token/);
   });
 
-  it("warns when a repo is public, since factory/state is pushed", async () => {
+  it("warns when a code repo is public and publishing to it wasn't confirmed; factory/state goes only to the config repo", async () => {
     const w = makeWorld();
     w.github.repos.set("example-org/acme-web", { status: 200, ownerId: ORG_ID, private: false });
     const e = await boot(w);
-    expect(e.projects[0]!.warnings.join()).toMatch(/public/);
+    expect(e.projects[0]!.warnings.join()).toMatch(/acme-web is public, and publishing to it wasn't confirmed/);
+    expect(e.projects[0]!.warnings.join()).not.toMatch(/transcripts/);
   });
 
   it("a disabled project doesn't run and files nothing", async () => {
