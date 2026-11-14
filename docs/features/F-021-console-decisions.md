@@ -1,11 +1,11 @@
 # Feature: Answer factory decisions in the console
 
 - **Id:** F-021
-- **Status:** Draft
+- **Status:** In review (readiness gate passed on v6; waiting for the owner's sign-off)
 - **Requested by / date:** Alex, 2026-11-14 ("the console is actually the
   better method of communicating with the factory"; "the console app should
   also say when a decision is pending, not just factory is idle")
-- **Spec version:** 5
+- **Spec version:** 6
 - **Depends on:** F-011 (inbox on GitHub issues, ADR 0022), F-016 (answers
   and their effects, Gate 2 M1 check), F-018 (`factory-engine interview`,
   live status), F-020 (inbox records as JSON, `inbox-record/4.0`)
@@ -178,10 +178,10 @@ after the owner approves their text:
 
 | Id | File(s) | Change | Status |
 |---|---|---|---|
-| H-0245 | `docs/interface-contracts.md` (Engine control channel v1.6) | Replace "Inbox actions do **not** go through this channel" with: from v1.6 the owner can also answer inbox items here; the issue stays the record of what was asked. New methods: `inbox.open` (a console session per OQ-2, no feature lock), `inbox.close`, `inbox.list` (`{ session }` → `{ items: [{ id, kind, title, feature?, priority, blocking, rev }] }`), `inbox.show` (`{ session, item }` → `{ id, rev, kind, sections, private?, actions: [{ action, label }] }`), `inbox.answer` (`{ session, item, rev, action, note?, reply_id }` → `{ recorded: true }` or `{ confirm: { words, code, expires_at } }` or `{ already: { by: "github" \| "console" \| "engine", action? } }` or `{ changed: { rev } }`), `inbox.confirm` (`{ session, item, rev, code }` → `{ recorded: true }` or a refusal). Sessions per OQ-2. `activity` gains `waiting_for_decision` (FR-12). Adding methods is non-breaking. | Draft |
-| H-0246 | `docs/interface-contracts.md` (Inbox item, minor version on top of F-020's v4.0) | Owner history entries may have `source: console` with `console_answer` (sha256) and no comment, reaction or actor ids; `confirmed_by.source` may be `console`. New engine comment `Recorded from the console: <action>.` New optional Context line `More detail is on the PC that runs the factory: run factory-engine inbox <id> there.` Private detail and answer files (`inbox-private/1.0`, `console-answer/1.0`) live in the engine folder, never on `factory/state`. | Draft |
-| H-0247 | `docs/adr/0033-answer-inbox-items-in-the-console.md` (new), `docs/adr/README.md`, a note in ADR 0022 | Records the decision: the console is a second answer path for every inbox item, first answer wins, private detail stays on the PC. | Draft |
-| H-0248 | `README.md`, `engine/README.md` | Describe `factory-engine inbox` and the console answers (FR-15). | Draft |
+| H-0245 | `docs/interface-contracts.md` (Engine control channel v1.6) | Replace "Inbox actions do **not** go through this channel" with: from v1.6 the owner can also answer inbox items here; the issue stays the record of what was asked. New methods: `inbox.open` (a console session per OQ-2, no feature lock), `inbox.close`, `inbox.list` (`{ session }` → `{ items: [{ id, kind, title, feature?, priority, blocking, rev }] }`), `inbox.show` (`{ session, item }` → `{ id, rev, kind, sections, private?, actions: [{ action, label }] }`), `inbox.answer` (`{ session, item, rev, action, note?, reply_id }` → `{ recorded: true }` or `{ confirm: { words, code, expires_at } }` or `{ already: { by: "github" \| "console" \| "engine", action? } }` or `{ changed: { rev } }`), `inbox.confirm` (`{ session, item, rev, code }` → `{ recorded: true }` or a refusal). Sessions per OQ-2. `activity` gains `waiting_for_decision` (FR-12). Adding methods is non-breaking. | Approved (owner, 2026-11-14 10:30Z, decision card; text in the thread's file f021/hygiene-text.md); applied with the build |
+| H-0246 | `docs/interface-contracts.md` (Inbox item, minor version on top of F-020's v4.0) | Owner history entries may have `source: console` with `console_answer` (sha256) and no comment, reaction or actor ids; `confirmed_by.source` may be `console`. New engine comment `Recorded from the console: <action>.` New optional Context line `More detail is on the PC that runs the factory: run factory-engine inbox <id> there.` Private detail and answer files (`inbox-private/1.0`, `console-answer/1.0`) live in the engine folder, never on `factory/state`. | Approved (owner, 2026-11-14 10:30Z, decision card; text in the thread's file f021/hygiene-text.md); applied with the build |
+| H-0247 | `docs/adr/0033-answer-inbox-items-in-the-console.md` (new), `docs/adr/README.md`, a note in ADR 0022 | Records the decision: the console is a second answer path for every inbox item, first answer wins, private detail stays on the PC. | Approved (owner, 2026-11-14 10:30Z, decision card; text in the thread's file f021/hygiene-text.md); applied with the build |
+| H-0248 | `README.md`, `engine/README.md` | Describe `factory-engine inbox` and the console answers (FR-15). | Approved (owner, 2026-11-14 10:30Z, decision card; text in the thread's file f021/hygiene-text.md); applied with the build |
 
 ## 11. Readiness gate
 - [x] Clear objective
@@ -189,7 +189,7 @@ after the owner approves their text:
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit (A-1, A-2 approved)
-- [ ] Blocking decisions resolved (OQ-1, OQ-2 decided; SR-1 to SR-7 approved or accepted; pending H-0245 to H-0248)
+- [x] Blocking decisions resolved (OQ-1, OQ-2 decided; SR-1 to SR-7 approved or accepted; H-0245 to H-0248 approved)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -199,6 +199,7 @@ after the owner approves their text:
 | 3 | 2026-11-14 | OQ-1 decided (a): both the new `inbox` command and the interview command (FR-2, FR-11 stand as written) | Owner, 2026-11-14 10:27Z (decision card) |
 | 4 | 2026-11-14 | OQ-2 decided (a): console answers follow `settings.interview_sign_in`; FR-13 written out; SR-4 accepted risk | Owner, 2026-11-14 10:28Z (decision card) |
 | 5 | 2026-11-14 | A-1, A-2, SR-1 to SR-3 and SR-5 to SR-7 approved as written; H-0245 names `inbox.open` and `inbox.close`; exact H-0245 to H-0248 text drafted | Owner, 2026-11-14 10:29Z (decision card) |
+| 6 | 2026-11-14 | H-0245 to H-0248 approved as written; readiness gate passed (all six checks) | Owner, 2026-11-14 10:30Z (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
