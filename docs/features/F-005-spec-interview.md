@@ -5,6 +5,13 @@
 - **Requested by / date:** Alex, 2026-11-10
 - **Spec version:** 10
 
+> **Note (2026-11-14, F-018, ADR 0029):** the owner now answers in the
+> `factory-engine interview` terminal command. The `spec-interview` skill and
+> the engine's `mcp` mode named in this spec are retired; the skill's steps
+> here are carried out by that command, through the same interview
+> operations, and the requirements on what the owner sees and sends apply to
+> it.
+
 ## 1. Objective and business purpose
 The requirements analyst runs inside the engine, but the owner has no way to
 answer its interview questions. This feature adds a skill to the

@@ -86,7 +86,7 @@ describe("SR-16 / OQ-10: one engine, several projects", () => {
   });
 
   it("[FS-6] SR-16: the device sign-in uses the feature's own project's client id and owner; the other project's owner can't approve it", async () => {
-    w = await World.create([{ name: "a" }, { name: "b" }]);
+    w = await World.create([{ name: "a", maturity: "alpha" }, { name: "b", maturity: "alpha" }]);
     await w.boot();
     const f = await w.startFeature();
     const mine = w.projectOf(f)!;

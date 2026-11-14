@@ -4,7 +4,7 @@ import { Clock, iso } from "../clock";
 import { Git } from "../git";
 import { GitHubClient, startDeviceApproval } from "../github";
 import { Logger } from "../log";
-import { readManifest } from "./manifest";
+import { readManifest, type InterviewSignIn } from "./manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./paths-file";
 import { PinStore, comparePin, pinnedKeys } from "./pins";
 import type { OsApi } from "../os/ffi";
@@ -53,8 +53,9 @@ export async function confirmProject(o: {
   const now = pinnedKeys(m);
   o.io.say(cmp.status === "new_path" ? `New project path: ${real}` : `Changed keys: ${cmp.keys.join(", ")}`);
   o.io.say(`Manifest on main at ${m.commit}:`);
-  if (pin) o.io.say(`  pinned:  owner ${JSON.stringify(pin.owner)}, allowed_repo_owners ${JSON.stringify(pin.allowed_repo_owners)}, enabled ${pin.enabled}`);
-  o.io.say(`  on main: owner ${JSON.stringify(now.owner)}, allowed_repo_owners ${JSON.stringify(now.allowed_repo_owners)}, enabled ${now.enabled}`);
+  const signIn = (v: InterviewSignIn | null | undefined) => (v ? JSON.stringify(v) : "level default");
+  if (pin) o.io.say(`  pinned:  owner ${JSON.stringify(pin.owner)}, allowed_repo_owners ${JSON.stringify(pin.allowed_repo_owners)}, enabled ${pin.enabled}, interview sign-in ${signIn(pin.interview_sign_in)}`);
+  o.io.say(`  on main: owner ${JSON.stringify(now.owner)}, allowed_repo_owners ${JSON.stringify(now.allowed_repo_owners)}, enabled ${now.enabled}, interview sign-in ${signIn(now.interview_sign_in)}`);
   const typed = (await o.io.ask(`If you made this change, type the project name (${m.name}) to confirm: `)).trim();
   if (typed !== m.name) {
     o.io.say("Not confirmed; nothing changed.");

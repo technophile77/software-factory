@@ -79,10 +79,10 @@ factory-engine mcp                      # started by Claude Code, not by hand
   Then the previously pinned owner approves a GitHub device sign-in.
 - `secret set` stores `model-credential` or `factory-token/<project>` in the
   OS credential store, under the service `software-factory-engine` (SR-20).
-- `mcp` serves the spec interview's tools to Claude Code over stdio (F-005,
-  ADR 0025). The plugin's `.mcp.json` starts it with the `engine_path`
-  setting; it forwards each call to the running engine over the control
-  channel and never starts the engine itself.
+- `interview [<feature id>] [--project <path>]` is where the owner answers
+  the analyst (F-018, ADR 0029): it prints each item word for word and reads
+  the answer from the keyboard, talking to the running engine over the
+  control channel. It runs only in a terminal and never starts the engine.
 
 The gitleaks binary's absolute path comes from `--gitleaks` or from
 `gitleaks:` in `<engine home>/engine.yaml`. The engine refuses to run any

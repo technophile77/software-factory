@@ -1,8 +1,8 @@
 // F-005 v10 AC-17 for F-009 (start an interview from a document), client
-// side: plugins/software-factory/skills/spec-interview/tests/test_acceptance_f009.py
-// ported to the engine's `mcp` mode (F-009 FR-2 v14: the document path is a
-// tool argument, a relative path is read from the session's project
-// directory). Driven through the MCP SDK's stdio client against the fake
+// side, first ported to the engine's `mcp` mode (F-009 FR-2 v14: the
+// document path is an argument, a relative path is read from the project
+// directory) and now run on the interview operations in-process as
+// `factory-engine interview` (F-018) runs them, against the fake
 // engine's channel v1.4 ("Starting from a document", error -32009). Unix only
 // (the fake engine's socket, FIFOs, device nodes, symlinks).
 

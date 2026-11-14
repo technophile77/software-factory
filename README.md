@@ -32,12 +32,11 @@ See [`plugins/software-factory/skills/onboard-repo/SKILL.md`](plugins/software-f
 
 ## Answer the analyst's spec questions
 
-The same plugin (version 0.5.0 or later) holds the requirements analyst's
-interview in a Claude Code chat. Run it inside an onboarded repo or config
-repo whose factory engine is running:
+Answer the requirements analyst in a terminal on the PC where the factory
+engine runs (F-018, ADR 0029), inside an onboarded repo or config repo:
 
 ```
-/software-factory:spec-interview
+factory-engine interview [<feature id>] [--project <path>]
 ```
 
 Request a new feature, or pick a feature with questions waiting, then
@@ -45,12 +44,8 @@ answer, ask for more information, or defer each question, and approve or
 reject the analyst's assumptions. On any question you can also ask the
 advisor, a separate agent on a stronger model, and you approve or decline
 the analyst's own proposals to ask it (F-006); its advice is shown beside
-the question, labelled as the advisor's. The skill relays questions, advice
-and replies word for word and never answers for you. It needs a running
-factory engine; without it the skill says so and stops.
-
-The skill's tools come from the engine's `mcp` mode. When you enable the
-plugin, Claude Code asks for the `engine_path` setting: the `engine.js`
-file of your engine build (in its `dist` folder). Change it later in
-`/plugin` or `/config`. See
-[`plugins/software-factory/skills/spec-interview/SKILL.md`](plugins/software-factory/skills/spec-interview/SKILL.md).
+the question, labelled as the advisor's. The command prints each item word
+for word, with no model in between, and never answers for you. While the
+factory works it shows what it is doing. It needs a running factory engine;
+without it the command says so and stops. How often you sign in to GitHub
+to answer is the project's `settings.interview_sign_in` (F-018 FR-15).

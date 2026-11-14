@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "interview": {
-      "command": "node",
-      "args": ["${user_config.engine_path}", "mcp"]
-    }
-  }
-}

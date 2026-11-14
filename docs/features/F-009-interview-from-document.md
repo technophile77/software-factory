@@ -5,6 +5,13 @@
 - **Requested by / date:** Alex, 2026-11-12
 - **Spec version:** 14
 
+> **Note (2026-11-14, F-018, ADR 0029):** the owner now answers in the
+> `factory-engine interview` terminal command. The `spec-interview` skill and
+> the engine's `mcp` mode named in this spec are retired; the skill's steps
+> here are carried out by that command, through the same interview
+> operations, and the requirements on what the owner sees and sends apply to
+> it.
+
 ## 1. Objective and business purpose
 The owner often has a finished spec or a working document before a feature
 request starts. Today the only way in is `feature.start` with up to 4,000

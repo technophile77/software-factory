@@ -6,7 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { expect } from "vitest";
 import { FakeEngine, type Json } from "./mcp-fake-engine";
-import { Mcp, type ToolResult, type Traffic, expectCleanFailure, expectNothingSent, expectOk, makeRepo, traffic, writeEngineJson } from "./mcp-harness";
+import { Ops, type ToolResult, type Traffic, expectCleanFailure, expectNothingSent, expectOk, makeRepo, traffic, writeEngineJson } from "./mcp-harness";
 
 export interface WorldOptions {
   layout?: "state" | "plain" | "none";
@@ -18,12 +18,12 @@ export interface WorldOptions {
 
 export class McpWorld {
   engine!: FakeEngine;
-  mcp!: Mcp;
+  mcp!: Ops;
   root!: string;
   repo!: string;
   factory!: string;
   before: Traffic = { connections: 0, requests: 0 };
-  private extra: Mcp[] = [];
+  private extra: Ops[] = [];
   private engines: FakeEngine[] = [];
 
   constructor(readonly bundle: string, readonly o: WorldOptions = {}) {}
@@ -32,7 +32,7 @@ export class McpWorld {
     const w = new McpWorld(bundle, o);
     ({ root: w.root, repo: w.repo, factory: w.factory } = makeRepo(o.layout ?? "state"));
     w.engine = await w.startEngine();
-    w.mcp = await Mcp.start(bundle, w.repo);
+    w.mcp = await Ops.start(bundle, w.repo);
     return w;
   }
 
@@ -56,7 +56,7 @@ export class McpWorld {
   }
 
   /** Calls a tool on this world's MCP mode (or `on`), noting the engine traffic before it. */
-  async call(tool: string, args: Record<string, unknown> = {}, on: Mcp = this.mcp): Promise<ToolResult> {
+  async call(tool: string, args: Record<string, unknown> = {}, on: Ops = this.mcp): Promise<ToolResult> {
     this.before = traffic(this.engine);
     return on.call(`interview_${tool}`, args);
   }
@@ -69,13 +69,13 @@ export class McpWorld {
   }
 
   /** Opens `feature` and passes its GitHub approval, as the skill does. Returns open's result. */
-  async open(feature = "F-1", extra: Record<string, unknown> = {}, on: Mcp = this.mcp): Promise<Json> {
+  async open(feature = "F-1", extra: Record<string, unknown> = {}, on: Ops = this.mcp): Promise<Json> {
     const out = expectOk(await this.call("open", { feature, ...extra }, on));
     if (out.approval) expectOk(await this.call("approval", { feature, wait_s: 0 }, on));
     return out;
   }
 
-  reply(item: string, kind: string, text: string, extra: Record<string, unknown> = {}, on: Mcp = this.mcp): Promise<ToolResult> {
+  reply(item: string, kind: string, text: string, extra: Record<string, unknown> = {}, on: Ops = this.mcp): Promise<ToolResult> {
     return this.call("reply", { feature: "F-1", item, revision: 0, status: "open", kind, text, ...extra }, on);
   }
 
@@ -84,8 +84,8 @@ export class McpWorld {
   }
 
   /** A second MCP mode process, as another Claude Code session would start. */
-  async another(): Promise<Mcp> {
-    const m = await Mcp.start(this.bundle, this.repo);
+  async another(): Promise<Ops> {
+    const m = await Ops.start(this.bundle, this.repo);
     this.extra.push(m);
     return m;
   }

@@ -32,7 +32,7 @@ import { RoleAssignmentError, manifestAssignments, planAdvisory, planRole } from
 import { type Endpoint, EndpointsError, readEndpointsFile } from "./config/endpoints";
 import { Models, MODELS_FILE, readDefaultModels } from "./config/models";
 import { LIMITS_FILE, Limits, LimitsError, agentLimits, gate1Limits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, readinessLimits, roleContainerLimits, worktreeLimits } from "./config/limits";
-import { Manifest, readManifest } from "./config/manifest";
+import { Manifest, interviewSignIn, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
 import { PinStore, comparePin, pinnedKeys } from "./config/pins";
 import { ConfirmIo, confirmProject as runConfirm } from "./config/confirm";
@@ -45,6 +45,7 @@ import { Inbox, Recorded } from "./inbox/store";
 import type { ItemInput } from "./inbox/model";
 import { osNotifier } from "./os/notify";
 import { Gitleaks, SecretsScanner } from "./gitleaks";
+import { activityOf } from "./interview/activity";
 import { FeatureInterview } from "./interview/feature";
 import { InterviewTools, ResearchConfig, createInterviewTools } from "./interview/tools";
 import { FileLogger, Logger } from "./log";
@@ -455,7 +456,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       p.pinsWaiting = cmp.status === "changed";
       await alert(p, `pins:${p.manifest.commit}:${cmp.status}`, {
         title: cmp.status === "new_path" ? "New project path needs confirmation" : "Pinned owner keys changed",
-        context: `The engine found ${what} (manifest on main at ${p.manifest.commit.slice(0, 12)}). Owner ids, the OAuth client id, the allow list and enabled are pinned until you confirm a change (F-007 SR-5).`,
+        context: `The engine found ${what} (manifest on main at ${p.manifest.commit.slice(0, 12)}). Owner ids, the OAuth client id, the allow list, enabled and the interview sign-in setting are pinned until you confirm a change (F-007 SR-5, F-018 FR-15).`,
         impact: `The project is stopped. It runs again after you confirm this change here, or with \`factory-engine confirm\` and a GitHub device sign-in as the previously pinned owner, and restart the engine. A confirm here pins the manifest at ${p.manifest.commit.slice(0, 12)} only.`,
         confirm: "Confirm the change if you made it", hold: "Keep the project stopped and find out who changed it", recommendation: "B",
         ...(cmp.status === "changed" ? { effectData: { commit: p.manifest.commit } } : {}),
@@ -1507,7 +1508,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       features: projects.filter((p) => p.state === "running").flatMap((p) => [...p.features.values()].filter((f) => !ambiguous.has(f.id)).map((f) => {
         const waiting = p.inbox?.waitingOn(f.id) ?? [];
         // H-0183 (channel v1.5): the items the feature waits on, only when there are any.
-        return { id: f.id, stage: f.stage() || INTERVIEW_STAGE, active_agents: jobs.has(f.id) ? 1 : 0, ...(waiting.length ? { waiting_on: waiting } : {}) };
+        const stage = f.stage() || INTERVIEW_STAGE;
+        const activity = activityOf({ stage, paused: f.paused, running: jobs.has(f.id), statuses: f.state.list().map((it) => it.status) });
+        return { id: f.id, stage, active_agents: jobs.has(f.id) ? 1 : 0, activity, ...(waiting.length ? { waiting_on: waiting } : {}) };
       })),
     }),
     pause: (fid) => {
@@ -1531,12 +1534,17 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     for (const p of projects) {
       if (p.state !== "running" || !p.manifest || !p.state_repo) continue;
       const pin = pins.get(p.real!)!;
-      p.sessions = new SessionManager(p.manifest.name, { githubId: pin.owner.github_id, oauthClientId: pin.owner.oauth_client_id }, github, clock, log, async (fid, no) => {
+      const signInSetting = interviewSignIn(p.manifest);
+      p.sessions = new SessionManager(p.manifest.name, { githubId: pin.owner.github_id, oauthClientId: pin.owner.oauth_client_id }, github, clock, log, async (fid, no, signIn) => {
         const f = p.features.get(fid);
         if (f?.chainIntact) {
-          await f.exclusive(() => f.append([{ type: "session_approved", session: no, owner_id: pin.owner.github_id }], "session approved"));
+          // Without sign-in nothing proves who is answering, so the record doesn't claim the owner approved.
+          const entry = signIn
+            ? { type: "session_approved", session: no, owner_id: pin.owner.github_id }
+            : { type: "session_opened_without_sign_in", session: no, sign_in: signInSetting };
+          await f.exclusive(() => f.append([entry], "session approved"));
         }
-      });
+      }, signInSetting);
       const handler = methods(channelFor(p), control, clock);
       const onConnection = (c: Conn) => {
         p.conns.add(c);

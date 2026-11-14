@@ -1,7 +1,6 @@
 name: plugin-tests
 # The plugin's skill tests (H-0148). onboard-repo's run in the pinned tool
-# environment its own setup_tools.py builds (ADR 0020); spec-interview's use
-# only the standard library.
+# environment its own setup_tools.py builds (ADR 0020).
 on:
   pull_request:
     paths: ["plugins/**", "engine/config/limits.yaml", ".github/workflows/plugin-tests.yml"]
@@ -31,11 +30,3 @@ jobs:
       - run: |
           python3 -I scripts/setup_tools.py --home "$RUNNER_TEMP/sf-tools" > "$RUNNER_TEMP/tools-python"
           "$(cat "$RUNNER_TEMP/tools-python")" -m unittest discover -s tests
-  spec-interview:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - run: python3 -m unittest discover -s plugins/software-factory/skills/spec-interview/tests
