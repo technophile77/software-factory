@@ -159,9 +159,13 @@ export class StateRepo {
     return this.git.lsTree(this.repoRoot, commit ?? (await this.head()), dir);
   }
 
-  /** Commits `changes` on factory/state, one at a time per repo. Resolves to the new commit. */
-  commit(changes: Change[], message: string): Promise<string> {
-    return this.serial(() => this.commitNow(changes, message));
+  /**
+   * Commits `changes` on factory/state, one at a time per repo, removing
+   * `removes` in the same commit (only the F-011 one-time migration removes
+   * files). Resolves to the new commit.
+   */
+  commit(changes: Change[], message: string, removes: string[] = []): Promise<string> {
+    return this.serial(() => this.commitNow(changes, message, removes));
   }
 
   /** Every change to the factory/state ref goes through one queue, so none sees another half done. */
@@ -179,24 +183,24 @@ export class StateRepo {
    * to be removed again. The id git returns on writing must match the one
    * scanned, so the scan saw exactly what the commit holds.
    */
-  private async commitNow(changes: Change[], message: string): Promise<string> {
+  private async commitNow(changes: Change[], message: string, removes: string[]): Promise<string> {
     if (changes.length === 0) throw new GitError("nothing to commit");
-    for (const c of changes) checkStatePath(c.path);
+    for (const c of [...changes.map((x) => x.path), ...removes]) checkStatePath(c);
     const cached = this.headCache !== null;
     const parent = await this.head();
     try {
-      return await this.commitOn(parent, changes, message);
+      return await this.commitOn(parent, changes, message, removes);
     } catch (e) {
       // A held head that something else moved (A-1): the swap failed, so commit
       // once more on the moved head, as a fresh read would have (SR-8).
       if (!cached || e instanceof SecretFound || e instanceof ScanError) throw e;
       const fresh = await this.head();
       if (fresh === parent) throw e;
-      return this.commitOn(fresh, changes, message);
+      return this.commitOn(fresh, changes, message, removes);
     }
   }
 
-  private async commitOn(parent: string, changes: Change[], message: string): Promise<string> {
+  private async commitOn(parent: string, changes: Change[], message: string, removes: string[] = []): Promise<string> {
     const algo = parent.length === 64 ? "sha256" : "sha1";
     const blobs: Array<Blob & { path: string }> = changes.map((c) => {
       const content = typeof c.content === "string" ? Buffer.from(c.content, "utf8") : c.content;
@@ -220,7 +224,8 @@ export class StateRepo {
     if (this.lastIndex && !reuse) fs.rmSync(this.lastIndex.file, { force: true });
     this.lastIndex = null;
     const index = reuse ?? path.join(this.tmpDir, `index-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
-    const entries = blobs.map((b) => `100644 ${b.sha}\t${b.path}\0`).join("");
+    // Mode 0 drops a path from the index.
+    const entries = blobs.map((b) => `100644 ${b.sha}\t${b.path}\0`).join("") + removes.map((r) => `0 ${"0".repeat(algo === "sha256" ? 64 : 40)}\t${r}\0`).join("");
     let commit: string;
     try {
       if (!reuse) await this.git.run(this.factoryDir, ["read-tree", parent], { indexFile: index });
@@ -242,6 +247,7 @@ export class StateRepo {
     try {
       await this.git.run(this.factoryDir, ["update-index", "--add", "-z", "--index-info"], { input: entries, okCodes: [128] });
       for (const b of blobs) this.writeWorking(b.path, b.content);
+      for (const r of removes) fs.rmSync(path.join(this.factoryDir, ...r.split("/")), { force: true });
     } catch (e) {
       this.log.warn(`factory/state: commit ${commit.slice(0, 12)} is made, but its files in .factory weren't all updated (${(e as Error).message})`);
     }

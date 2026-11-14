@@ -111,8 +111,8 @@ export class Inbox {
     return r;
   }
 
-  private async write(r: InboxRecord, message: string, extra: Array<{ path: string; content: string }> = []): Promise<void> {
-    await this.o.state.commit([{ path: recordPath(r.id), content: YAML.stringify(r) }, ...extra], `${r.id}: ${message}`);
+  private async write(r: InboxRecord, message: string, extra: Array<{ path: string; content: string }> = [], removes: string[] = []): Promise<void> {
+    await this.o.state.commit([{ path: recordPath(r.id), content: YAML.stringify(r) }, ...extra], `${r.id}: ${message}`, removes);
     this.track(r);
   }
 
@@ -145,10 +145,11 @@ export class Inbox {
 
   /**
    * Files an item (F-011 FR-1 to FR-4): validates it, renders it, and commits
-   * its record and body; the next poll dispatches it. `id` is only passed by
-   * the one-time migration script, to keep an item's old id.
+   * its record and body; the next poll dispatches it. `id`, `migratedFrom`
+   * and `notes` are only passed by the one-time migration script, to keep an
+   * item's old id and remove its old file in the same commit (FR-16).
    */
-  async file(item: ItemInput, id?: string, migratedFrom?: string): Promise<string> {
+  async file(item: ItemInput, id?: string, migratedFrom?: string, notes: string[] = []): Promise<string> {
     checkItem(item);
     id ??= await this.nextId(item.kind);
     if (!ID_RE.test(id) || id[0] !== KIND_PREFIX[item.kind]) throw new Error(`${id} is not a ${item.kind} id`);
@@ -171,10 +172,10 @@ export class Inbox {
       engine_comments: [],
       history: [
         { at, by: "engine", action: "filed" },
-        ...(migratedFrom ? [{ at, by: "engine" as const, action: "migrated" as const, from: migratedFrom }] : []),
+        ...(migratedFrom ? [{ at, by: "engine" as const, action: "migrated" as const, from: migratedFrom, ...(notes.length ? { note: notes.join(" ") } : {}) }] : []),
       ],
     };
-    await this.write(r, item.title.replace(/\s+/g, " ").slice(0, 100), [{ path: bodyPath(id, 1), content: body }]);
+    await this.write(r, migratedFrom ? `migrated from ${migratedFrom}` : item.title.replace(/\s+/g, " ").slice(0, 100), [{ path: bodyPath(id, 1), content: body }], migratedFrom ? [migratedFrom] : []);
     return id;
   }
 
