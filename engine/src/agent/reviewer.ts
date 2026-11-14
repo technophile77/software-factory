@@ -30,6 +30,22 @@ export function orchestratorPolicy(manifest: unknown, reportPath?: string): Role
   return reportOnlyPolicy(manifest, "orchestrator", ORCHESTRATOR_TOOLS, "the readiness gate", undefined, reportPath);
 }
 
+/**
+ * F-015 FR-9: the judge reads and never changes anything, so its policy is
+ * narrowed to reading tools with no commands or network, whatever the
+ * project's role allows (the engine ran the tests; the judge reads the report).
+ */
+export function judgePolicy(manifest: unknown, repoName: string): RolePolicy {
+  let p: RolePolicy;
+  try {
+    p = effectiveRole(manifest, "validation-judge", repoName);
+  } catch (e) {
+    throw new SessionRefused(e instanceof PolicyError ? `Role policy: ${e.message}` : "the Role policy couldn't be read");
+  }
+  return { ...p, tools: p.tools.filter((t) => JUDGE_TOOLS.has(t)), commands: [], network: [], write: { allow: [], deny: [...p.write.deny] } };
+}
+const JUDGE_TOOLS = new Set(["Read", "Grep", "Glob"]);
+
 function reportOnlyPolicy(manifest: unknown, role: string, allowed: Set<string>, what: string, repoName: string | undefined, reportPath: string | undefined): RolePolicy {
   let p: RolePolicy;
   try {

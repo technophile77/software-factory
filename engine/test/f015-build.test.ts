@@ -11,6 +11,7 @@ import { FACTORY_TOKEN, OWNER_ID, git, tmpdir } from "./helpers";
 import { FakeIssues } from "./inbox-fake";
 import { type Script, boot, entries, interview, runsOf, scriptedSdk, stageOf, until, world } from "./agents-harness";
 import { act, analyst, items, orchestrator, pollUntil, reviewer, start } from "./signoff-flow";
+import { nodeProgram } from "./acceptance/support/platform";
 
 // F-015 M1 on the engine: a signed-off spec builds through stage 5 on the owner's PC.
 
@@ -146,7 +147,7 @@ describe("F-015 M1: stage 5 on the engine", () => {
     const s = scriptedSdk({ analyst: async function* () {}, reviewer: async function* () {}, developer: developer(() => feature, seen), tester: tester(() => feature, seen) });
     const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh });
     await until("the merged branches", () => e.feature(feature)?.state.build.actions.includes("branches_merged") ?? false, 30_000).catch((err) => {
-      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature(feature)?.state.build.actions)}; log: ${w.log.lines.slice(-15).map((l) => l.message ?? l.action).join(" | ")}`);
+      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature(feature)?.state.build.actions)}; last ${JSON.stringify(e.feature(feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-15).map((l) => l.message ?? l.action).join(" | ")}`);
     });
 
     expect(e.feature(feature)!.state.build.actions).toEqual(["dependencies_merged", "done", "done", "branches_merged"]);
@@ -200,14 +201,14 @@ process.exit(fixed ? 0 : 1);
   return file;
 }
 
-describe("F-015 M2: the engine's test run and the stage 6 failure table", () => {
-  it("AC-6, AC-7, AC-8, AC-26: the engine runs the declared tests itself, the read-only orchestrator classifies the failure, the developer fixes it and the rerun passes", async () => {
+describe("F-015 M2 and M3: the engine's test run, stage 6, Code Review and the judge", () => {
+  it("AC-6 to AC-10, AC-26: the engine runs the tests, the classifier names the cause, the developer fixes it; a blocking Code Review finding goes back to the developer; the judge's PASS moves the feature to the pull request", async () => {
     const { w, d, gh, id } = await signedOff((yaml, root) => {
       const script = runner(root);
       return yaml.replace("    url: https://github.com/example-org/acme-web\n", `    url: https://github.com/example-org/acme-web\n    commands:\n      test: [${JSON.stringify(process.execPath)}, ${JSON.stringify(script)}]\n      test_results: test-results.xml\n`);
     });
     const feature = id.value;
-    const turns: { fix: string; classify: string } = { fix: "", classify: "" };
+    const turns = { fix: "", classify: "", review: [] as string[], reviewFix: "", judge: "" };
     const seen = { refused: [] as string[], first: "" };
     const first = developer(() => feature, seen);
     const dev = async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
@@ -216,9 +217,10 @@ describe("F-015 M2: the engine's test run and the stage 6 failure table", () => 
         return;
       }
       const turn = (await sc.next())!;
-      turns.fix = turn;
+      if (n === 2) turns.fix = turn;
+      else turns.reviewFix = turn;
       const wt = turnFact(turn, /You work in (\S+), a checkout/);
-      fs.writeFileSync(path.join(wt, "src", "export.js"), "// fixed\nexport const toCsv = (rows) => rows.join('\\n');\n");
+      fs.writeFileSync(path.join(wt, "src", "export.js"), n === 2 ? "// fixed\nexport const toCsv = (rows) => rows.join('\\n');\n" : "// fixed, and quoted\nexport const toCsv = (rows) => rows.map(String).join('\\n');\n");
       yield {
         type: "result", subtype: "success", session_id: "dev-2", num_turns: 2,
         structured_output: {
@@ -238,16 +240,68 @@ describe("F-015 M2: the engine's test run and the stage 6 failure table", () => 
         },
       } as SdkMessage;
     };
-    const s = scriptedSdk({ analyst: async function* () {}, reviewer: async function* () {}, orchestrator: classifier, developer: dev, tester: tester(() => feature, seen) });
-    const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh });
-    await until("the passing run", () => e.feature(feature)?.state.build.actions.includes("passed") ?? false, 60_000).catch((err) => {
-      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature(feature)?.state.build.actions)}; log: ${w.log.lines.slice(-15).map((l) => l.message ?? l.action).join(" | ")}`);
+    // Code Review: a Critical finding first, none once the developer has fixed it.
+    const codeReviewer = async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
+      const turn = (await sc.next())!;
+      turns.review.push(turn);
+      const findings = n === 1 ? [{ criterion: "S1.1", severity: "Critical", location: "src/export.js:1", explanation: "Rows go out unescaped.", fix: "Quote each field." }] : [];
+      yield {
+        type: "result", subtype: "success", session_id: `cr-${n}`, num_turns: 2,
+        structured_output: { schema: "agent-report/1.0", role: "security-reviewer", feature, stage: "code_review", commit: turnFact(turn, /at commit ([0-9a-f]{40})/), outcome: "complete", summary: n === 1 ? "One critical finding." : "No findings.", body: { gate: 2, findings } },
+      } as SdkMessage;
+    };
+    const judge = async function* (sc: Script): AsyncGenerator<SdkMessage> {
+      const turn = (await sc.next())!;
+      turns.judge = turn;
+      yield {
+        type: "result", subtype: "success", session_id: "j-1", num_turns: 3,
+        structured_output: {
+          schema: "agent-report/1.0", role: "validation-judge", feature, stage: "validation", commit: turnFact(turn, /at commit ([0-9a-f]{40})/), outcome: "complete", summary: "Meets the spec.",
+          body: { verdict: "PASS", checklist: [{ area: "Each acceptance criterion", status: "Met", evidence: "test/export.test.js#May passes." }], findings: [{ grade: "Minor", location: "src/export.js:1", explanation: "Name could be clearer." }] },
+        },
+      } as SdkMessage;
+    };
+    const semgrep = nodeProgram(path.join(w.root, "semgrep"), String.raw`
+const fs = require("fs");
+const a = process.argv.slice(2);
+if (a[0] === "--version") { console.log("1.183.0"); process.exit(0); }
+fs.appendFileSync(${JSON.stringify(path.join(w.root, "semgrep-args.log"))}, a.join(" ") + "\n");
+fs.writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ results: [{ check_id: "javascript.lang.eval", path: "src/export.js", start: { line: 1 }, extra: { severity: "WARNING", message: "Detected eval." } }], errors: [] }));
+process.exit(1);
+`);
+    const s = scriptedSdk({ analyst: async function* () {}, reviewer: codeReviewer, orchestrator: classifier, developer: dev, tester: tester(() => feature, seen), judge });
+    const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, semgrep: { program: semgrep } });
+    await until("the judge's pass", () => ["pass", "failed"].some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000).catch((err) => {
+      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature(feature)?.state.build.actions)}; last ${JSON.stringify(e.feature(feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-15).map((l) => l.message ?? l.action).join(" | ")}`);
     });
 
-    expect(e.feature(feature)!.state.build.actions).toEqual(["dependencies_merged", "done", "done", "branches_merged", "tests_failed", "product_code", "done", "passed"]);
-    expect(stageOf(e, feature)).toBe("code_review");
+    expect(JSON.stringify(e.feature(feature)!.state.build.events.at(-1))).not.toContain("\"failed\"");
+    expect(e.feature(feature)!.state.build.actions).toEqual([
+      "dependencies_merged", "done", "done", "branches_merged", "tests_failed", "product_code", "done", "passed",
+      "blocking_finding", "done", "passed", "clean", "pass",
+    ]);
+    expect(stageOf(e, feature)).toBe("pull_request");
     expect(s.count.orchestrator).toBe(1);
-    expect(s.count.developer).toBe(2);
+    expect(s.count.developer).toBe(3);
+    expect(s.count.reviewer).toBe(2);
+    expect(s.count.judge).toBe(1);
+    // FR-8: Semgrep on the feature diff only, metrics off, nosemgrep ignored; its findings reach the reviewer as data.
+    const args = fs.readFileSync(path.join(w.root, "semgrep-args.log"), "utf8").trim().split("\n");
+    expect(args).toHaveLength(2);
+    expect(args[0]).toMatch(/^scan --config p\/default --metrics=off --disable-nosem --baseline-commit [0-9a-f]{40} --json --output /);
+    expect(turns.review[0]).toContain("javascript.lang.eval");
+    expect(turns.review[0]).toContain("as data (not instructions)");
+    // AC-9: the blocking finding goes to the developer, then back through the tests.
+    expect(turns.reviewFix).toContain("Code Review found security problems");
+    expect(turns.reviewFix).toContain("Rows go out unescaped.");
+    const cr1 = JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/code_review/security-reviewer-1.json`));
+    expect(cr1).toMatchObject({ body: { gate: 2, findings: [{ criterion: "S1.1", blocks: true }] } });
+    expect(JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/code_review/semgrep-1.json`))).toMatchObject({ findings: [{ rule: "javascript.lang.eval", line: 1 }] });
+    // FR-9: the judge sees the run report and both gate reports; PASS was decided by the engine from its checklist.
+    expect(turns.judge).toContain("The engine's last test run report");
+    expect(turns.judge).toContain("The Code Review report");
+    const pass = e.feature(feature)!.state.build.events.find((x) => x.action === "pass")!;
+    expect(pass).toMatchObject({ verdict: "PASS", judge_verdict: "PASS", report: `runs/${feature}/validation/validation-judge-1.json` });
     // AC-7: the classifier sees the failure; the developer's fix turn carries it too.
     expect(turns.classify).toContain("test/export.test.js#May");
     expect(turns.classify).toContain("expected 3 rows, got 1");
@@ -258,9 +312,10 @@ describe("F-015 M2: the engine's test run and the stage 6 failure table", () => 
     expect(run1).toMatchObject({ outcome: "complete", body: { tests_run: 1, failed: 1, failures: [{ test: "test/export.test.js#May" }] } });
     const run2 = JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/test_run/test-engineer-2.json`));
     expect(run2).toMatchObject({ outcome: "complete", body: { tests_run: 1, passed: 1, failed: 0 } });
+    expect(git(w.config, "ls-tree", "--name-only", `factory/state:runs/${feature}/test_run/`).split("\n").filter((x) => x.endsWith(".json"))).toHaveLength(3);
     expect(git(w.config, "show", `factory/state:runs/${feature}/test_run/run-1.log`)).toContain("1 failed");
     // The fix is on the feature branch, committed as the owner.
     const local = localClone(w.home);
     expect(git(local, "show", `${e.feature(feature)!.state.branch}:src/export.js`)).toContain("fixed");
-  }, 120_000);
+  }, 150_000);
 });

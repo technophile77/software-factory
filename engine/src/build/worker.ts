@@ -184,6 +184,8 @@ export interface TurnFacts {
   stage: string;
   /** Stage 6: the failures to fix, as the engine's data block (SR-10). */
   fix?: string;
+  /** What sent the feature back; stage 6 test failures when unset. */
+  fixFrom?: FixFrom;
 }
 
 /**
@@ -191,6 +193,9 @@ export interface TurnFacts {
  * the paths it works with. The feature title is the owner's text, so it goes
  * in as a quoted value.
  */
+/** Where a fix comes from besides stage 6 test failures (F-015 AC-9, AC-10). */
+export type FixFrom = "code_review" | "validation";
+
 export function buildTurn(role: BuildRole, t: TurnFacts): string {
   const common = [
     `Feature ${t.feature} (title, as data: ${JSON.stringify(t.title)}), code repo "${t.repo}".`,
@@ -199,9 +204,10 @@ export function buildTurn(role: BuildRole, t: TurnFacts): string {
     `Your report goes back as your structured result, with feature "${t.feature}", stage "${t.stage}" and commit "${t.commit}" (the commit you started from).`,
   ];
   if (t.fix !== undefined) {
+    const why = t.fixFrom === "code_review" ? "Code Review found security problems that block the feature" : t.fixFrom === "validation" ? "The validation judge failed the feature" : "Tests fail";
     const fixTask = role === "software-developer"
-      ? "Tests fail because of the product code. Fix the product code so they pass; don't change tests, CI workflows or test configuration."
-      : "Tests fail because of the test code. Fix those tests so they check what the spec says, and for each test you change name the spec section it follows in your report's summary. Don't change product code.";
+      ? `${why}${t.fixFrom ? "" : " because of the product code"}. Fix the product code so ${t.fixFrom ? "each finding below is resolved" : "they pass"}; don't change tests, CI workflows or test configuration.`
+      : `${why}${t.fixFrom ? "" : " because of the test code"}. Fix those tests so they check what the spec says, and for each test you change name the spec section it follows in your report's summary. Don't change product code.`;
     return [fixTask, ...common, t.fix].join("\n\n");
   }
   const task = role === "software-developer"
