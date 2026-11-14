@@ -1,9 +1,9 @@
 # Feature: Stateful parts of the engine can't reach a dead end
 
 - **Id:** F-019
-- **Status:** Draft
+- **Status:** In review
 - **Requested by / date:** owner, 2026-11-14 ("is there a use case for a state machine in this project? like jssm?"; "it should also be used to validate that stateful things don't end up in a dead end state like happened with the analyst, security agents, etc.")
-- **Spec version:** 1 (draft for the interview; nothing here is approved yet)
+- **Spec version:** 4
 
 ## 1. Objective and business purpose
 
@@ -38,6 +38,7 @@ engine will do next.
 | FR-7 | Engine code reaches jssm only through a typed wrapper per machine that exports its states and actions as `as const` unions; a test fails when those unions and the machine's `states()` and actions differ |
 | FR-8 | F-018's `activity` code for a feature is computed from the feature and run machines' current states |
 | FR-9 | The machines' definitions render as diagrams in the feature's docs (jssm's visualiser, at development time only), so the owner can review the lifecycle |
+| FR-10 | When the owner closes an unanswered inbox issue by hand a second time, after the engine's one reopen (F-011), the item is withdrawn. Whatever waited on it fails and offers the owner a rerun, so the withdrawal never leaves a dead end (owner, decision card 2026-11-14 08:03Z, OQ-1). F-011's edge case is amended to match (H-0231) |
 
 ## 4. Acceptance criteria
 
@@ -50,6 +51,7 @@ engine will do next.
 | AC-5 | Given an event log with a `stage` event the lifecycle doesn't allow, when the engine replays it, then the stage is unchanged, the feature is paused, a warning names the feature, state and event, and an owner inbox item asks which state to use; no agent starts for that feature until it is answered | FR-6 |
 | AC-6 | Given a state added to a machine but not to its typed union, when the tests run, then they fail | FR-7 |
 | AC-7 | Given each lifecycle state, when `engine.status` is called, then `activity` is the code mapped from that state | FR-8 |
+| AC-9 | Given an unanswered inbox item the engine has already reopened once, when the owner closes it again, then the item is recorded as withdrawn, the run or stage that waited on it is marked failed, and a rerun is offered | FR-10 |
 | AC-8 | Given the trial's three stalls (idle analyst, Gate 1 with no item, reply delivered before a restart) replayed as event logs, when the engine starts, then each has an actor and moves on | FR-2, FR-5 |
 
 ## 5. Constraints
@@ -63,15 +65,13 @@ engine will do next.
 - Event logs written before this feature, including ones with stage moves the new machine forbids (FR-6 decides what happens; see A-1).
 - Two runs for the same feature in the log (an old interrupted one and a new one).
 - An owner item closed or deleted on GitHub while the engine was stopped (F-011: reopened once with a note; a deleted one gets a Notice).
-- An item closed by hand a second time, after the engine's one reopen. F-011 doesn't say what happens next, so under FR-3 this is a dead end today (OQ-1).
+- An item closed by hand a second time, after the engine's one reopen: the item is withdrawn (FR-10, OQ-1).
 
 ## 7. Dependencies
 
 ADR 0031 (jssm). F-016 (increment 3, PR #60), F-018 (`activity` codes, PR #68), ADR 0022 (inbox on GitHub issues).
 
 ## 8. Assumptions
-
-Open question OQ-1: what the engine does when the owner closes an unanswered inbox issue by hand a second time.
 
 
 | Id | Assumption | Decision link | Status |
@@ -83,11 +83,23 @@ Open question OQ-1: what the engine does when the owner closes an unanswered inb
 
 | Id | Requirement | Source (analyst / Gate 1) | Status |
 |---|---|---|---|
-| SR-1 | Event text from the log is data: state and event names are checked against the typed unions before reaching jssm (S1.1) | analyst | Draft |
+| SR-1 | Event text from the log is data: state and event names are checked against the typed unions before reaching jssm (S1.1) | analyst | Proposed |
+| SR-2 | Only a close by the owner's GitHub account counts toward FR-10. Any other close is reopened with a note every time and never withdraws the item; a test closes an item twice as a different actor | Gate 1 #1 | Proposed |
+| SR-3 | jssm and its dependencies are pinned exactly and installed with `npm ci` from the lockfile; any version change is a new S4.1 review; osv-scanner and `npm audit` cover them, including the optional packages | Gate 1 #2 | Proposed |
+| SR-4 | Machine definitions are string constants in engine source with no interpolation; a test checks that each `sm` call has no template substitutions | Gate 1 #3 | Proposed |
+| SR-5 | Replay catches jssm errors per feature and handles them like FR-6: that feature pauses with an owner item, the other features carry on; a test replays a log with an unknown state | Gate 1 #4 | Proposed |
+| SR-6 | The FR-6 pause item names the commit of the refused event | Gate 1 #5 | Proposed |
 
 ## 10. Interface requirements
 
-None expected. FR-8 uses the `activity` codes already approved in H-0225.
+No interface changes. FR-8 uses the `activity` codes already approved in H-0225.
+
+Hygiene items applied with the build:
+
+| Id | Target | Change | Status |
+|---|---|---|---|
+| H-0230 | `engine/package.json`, lockfile | Add `jssm` 5.164.1, pinned exactly (ADR 0031) | Proposed |
+| H-0231 | `docs/features/F-011-one-inbox.md`, edge cases | "Owner closes or deletes an issue by hand" gains: closed again after the engine's one reopen, the item is withdrawn and whatever waited on it offers a rerun (F-019 FR-10); only a close by the owner's account counts (F-019 SR-2) | Proposed |
 
 ## 11. Readiness gate
 - [ ] Clear objective
@@ -101,3 +113,6 @@ None expected. FR-8 uses the `activity` codes already approved in H-0225.
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-14 | Draft from proposal 0033 and the owner's dead-end requirement | (pending) |
+| 2 | 2026-11-14 | A-1 answered: a forbidden move pauses the feature and asks the owner | owner, card 08:01Z |
+| 3 | 2026-11-14 | A-2 answered: inbox items mirror GitHub issue states; OQ-1 raised | owner, card 08:01Z |
+| 4 | 2026-11-14 | OQ-1 answered (FR-10, AC-9, H-0231); Security Gate 1 filed, SR-2 to SR-6 proposed; H-0230 listed | owner, card 08:03Z (OQ-1) |
