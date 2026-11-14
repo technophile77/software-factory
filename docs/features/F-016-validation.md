@@ -307,3 +307,127 @@ Round 1's m1 is fixed (Code Review re-review R2). m8 is replaced by M6. Carried 
 - **B1:** fixed in `0c758eb`. The `streviewunresolved` key counts every send-back since the report, option A included (`unresolvedRounds`), so each later failure files its own item. Test: `f016-run.test.ts` "FR-15 (validation round 2 B1) …", which fails without the fix.
 - **M3:** fixed in `0c758eb`. `belowBar` decides from severity and the current level whenever the level is known; the stored `recorded` flag is used only when it isn't. Test: `stReview.test.ts` "FR-20 (validation round 2 M3) …".
 - **M6:** being fixed forward on the same branch.
+
+## Round 3
+
+- **Feature:** F-016, spec v19 (FR-13 to FR-20, AC-15 to AC-22, SR-13, H-0185 to H-0189, H-0235, H-0236). The whole feature is judged as it now stands, with round 2's open lines and findings checked again.
+- **Judge:** validation-judge
+- **Date:** 2026-11-14
+- **Round:** 3
+- **Commit:** `b78f493` (`claude/project-thread-mszazz`). It has the same tree as `origin/main` `288cd0c` (`git diff --stat 288cd0c b78f493` is empty). The F-016 delta since round 2 is `d9de268..b78f493`:
+  - PR #84: `0c758eb` (B1 and M3), `bccf224` (the notifier's `stop()` and a quiet test notifier), `e61cd5e` (test platform fixes).
+  - PR #87: `6208d40` (test-only: Windows starvation, macOS `index.lock`, G1-21).
+  - The same range holds PR #85 (the H-0249 rename: `engine/src/gate1` is now `engine/src/st-review` and the stage is now `security_testability_review`, with old ids still read through `legacy-names.ts`), PR #82 (F-021), PR #79 and #86 (F-020). These are judged here only where F-016 depends on them.
+- **Maturity level:** Rapid prototype. Any number of Major findings is allowed if each is logged. A Not met line or a Blocking finding fails.
+- **Verdict:** **PASS** (Rapid prototype, with 2 Majors logged)
+  - **Not met: 0. Needs owner: 0.**
+  - Blocking: 0. Major: 2 (M4 and M5, carried). Minor: 15 (m2 to m7 and m9 to m15 carried, m10 narrowed; m16 and m17 new).
+  - B1 is fixed. I reproduced round 2's probe 1 on this commit, extended with a restart and a second option A, and the feature never gets stuck.
+  - M3 is fixed.
+  - Both regression tests fail when their fix is reverted, so they test the fix.
+  - M6 is closed for F-016: every F-016 test passes on Linux, Windows and macOS in main's CI. The one red job on main is an F-020 test.
+
+### My own run
+
+On `b78f493`, Linux container, Node 22. Owner rule: only the suites for the changed areas.
+
+| Step | Result |
+|---|---|
+| `cd engine && npx tsc --noEmit -p .` | Clean |
+| `npx vitest run --maxWorkers=3 test/st-review.test.ts test/st-review-run.test.ts test/st-review-advisory.test.ts test/f016-run.test.ts test/f016-acceptance.test.ts test/legacy-names.test.ts test/notify.test.ts test/interview.test.ts` | **8 files passed. 147 tests: 147 passed, 0 failed** (137 s). This includes run "FR-15 (validation round 2 B1) …" (`f016-run.test.ts:909`) and "FR-20 (validation round 2 M3) …" (`st-review.test.ts:356`). The one `fatal: path … does not exist` line in the output is a git read that a test expects to fail |
+| Probe 1 extended (scratch copy, `f016-run` harness). Steps: option A on the first `streviewunresolved` item; the analyst fails again; engine restart; option A on the second item; the analyst fails again | Before the restart: items `D-0001`, `D-0002`, stage `security_testability_review`. After the restart: still 2 items (the start-up re-check repeats the same key and is deduped), so no duplicate. After option A on `D-0002`: the effect is `restarted`, an analyst run starts, and a third item is filed. **B1 does not reproduce** |
+| Revert check (scratch copy). Steps: (1) count `unresolvedRounds` only for returns without `item`, as before `0c758eb`; (2) restore the old `belowBar` (`!!f.recorded \|\| …`); (3) run both regression tests | Both tests **fail**. With the fixes back, both pass. Each test detects its defect |
+| Python plugin tests | Not run. Nothing under `plugins/` changed for F-016 since round 2 |
+
+### CI
+
+| Run | Head | Result |
+|---|---|---|
+| `engine` 43596631776 | `288cd0c` (main; same tree as `b78f493`) | **12 of 13 jobs green**: checks, supply-chain, Linux full 1/2 and 2/2, Windows full 1/6 to 5/6, macOS full 1/3 to 3/3. **Windows full 6/6 fails 1 test**: `f020-schemas.test.ts` "FR-2 (AC-2): every committed schema file matches …". The log diff shows the cause: `docs/schemas/inbox-record-4.schema.json` checked out with CRLF line endings. That is F-020 code, not F-016, and its owning thread has been told. In the same job, `f016-acceptance.test.ts` and `f016-run.test.ts` pass (job summary: 1 failed, 236 passed, 1,485 skipped of 1,722) |
+| `engine` 43584675396 and earlier | `e306c2c` and earlier | Round 2's red runs (M6). The F-016 failures there are gone on `288cd0c` |
+
+### Evidence checklist
+
+Round 2's lines carry over. The F-016 code they cite was only renamed since then (PR #85: `gate1` ids became `st_review` ids, with old ids mapped in `legacy-names.ts`, test `legacy-names.test.ts`). Line numbers below are at `b78f493`. Every test named here passed in my run. `run` is `engine/test/f016-run.test.ts`.
+
+#### Functional requirements
+
+| Id | Status | Evidence |
+|---|---|---|
+| FR-15 (round 2 B1) | **Met** | Code paths:<br>- `interview/model.ts:260-265`: every `st_review_unresolved` return adds to `unresolvedRounds`, the owner's option A included. Only returns without `item` add to `unresolvedSent`.<br>- `engine.ts:1232-1249`: the first failure for a report sends the feature back with no item. Each later failure files a Security item keyed `streviewunresolved:<f>:<reportAt>:<unresolvedRounds>`, so the key changes after every send-back.<br>- `engine.ts:1795-1800`: option A returns the feature to the interview and starts the analyst.<br>- `model.ts:320-321`: a new report resets both counters.<br>- `legacyAlertKey` maps the key to its old `gate1unresolved` form. A pre-fix first item had key `:1`, the same as now, so it isn't filed twice.<br>Tests: run "AC-17 …" (`:881`) and "FR-15 (validation round 2 B1) …" (`:909`); probe 1 extended (above) |
+| FR-20 (round 2 M3) | **Met** | Code paths:<br>- `st-review/flow.ts:114-117` (`belowBar`): once the level is known, only severity and the current `maturity` decide. The stored `recorded` flag is used only when no level is given.<br>- The same function serves the analyst's turn (`flow.ts:133`), the question check (`stReviewQuestionProblem`, `:238`, which `interview/tools.ts` calls to refuse `interview_ask` and `interview_revise`), and resolution (`:249`).<br>Tests: `st-review.test.ts` "FR-20: the bar applies at use time …" (`:335`) and "FR-20 (validation round 2 M3) …" (`:356`). The second records a High finding at `rapid-prototype` and checks that it is needed, asked and accepted as a question at `alpha`. Revert check above |
+| FR-1 to FR-14, FR-16 to FR-19 | Met (carried) | As in rounds 1 and 2. They pass in my run, and the F-016 files pass on every CI platform |
+
+#### Acceptance criteria
+
+| Id | Status | Evidence |
+|---|---|---|
+| AC-17 | Met | Option B: run `:881`. Option A sends the feature back with an analyst run: run `:909` (effect `restarted`, a third analyst input, then a new item) |
+| AC-22 | Met | `st-review.test.ts:335`, `:356` and the question-check tests after them. The refusal through `interview_ask` is still tested only through `stReviewQuestionProblem` (m11) |
+| AC-1 to AC-16, AC-18 to AC-21 | Met (carried) | As in rounds 1 and 2; AC-11 from the owner's live run |
+
+#### Other lines
+
+| Area | Status | Evidence |
+|---|---|---|
+| Change-controlled files | Met, with finding | `0c758eb`, `bccf224`, `e61cd5e` and `6208d40` touch only `engine/`. PR #85 edits the F-016 spec and reports in place to apply the owner's rename (H-0249, `docs/development-workflow.md:6`). Its spec diff is wording only (I checked it with the old and new names normalized), but the spec's change log has no row for it (m16) |
+| Architecture, interface contracts | Met | No ADR conflict. Old transcript, inbox and alert ids keep working through `legacy-names.ts`, and no new contract field comes from F-016 |
+| Security | Met, with finding | The two fixes narrow behavior: one more owner item per failure, and the bar applied as FR-20 says. `bccf224` ends running OS notifications at stop through an abort signal and changes no permission. No security pass covers the v13 to v19 code yet (M5) |
+| Code quality | Met, with findings | The fixes are small and local: a second counter, and one expression in `belowBar` with a why comment. `engine.ts` keeps growing (m6). The item text is stale (m17) |
+| Comments | Met, with findings | The new comments say why (`flow.ts:115`, `model.ts:141`, `engine.ts:2216-2217`). m13 is carried |
+| Test tools | Met | Vitest 5.1.0 and the engine harness, as before. `bccf224` gives test engines a notifier that shows nothing. `notify.test.ts` covers the real notifier with `node` as the program |
+| Documentation | Met, with findings | The fixes are recorded under "After round 2 (developer)". m7, m9 and m12 are carried. Test engineer coverage is still missing (M4) |
+| CI | Met | Advisory at Rapid prototype (ADR 0030). Every F-016 test is green on all three platforms. The one red job is F-020's (see CI) |
+
+### Findings
+
+#### Blocking
+
+None. Round 2's B1 is fixed (`0c758eb`), and I verified it above.
+
+#### Major (allowed at Rapid prototype; logged)
+
+| # | Location | Finding |
+|---|---|---|
+| M3 | `engine/src/st-review/flow.ts:114` | **Closed.** Fixed in `0c758eb`. Verified by the regression test and the revert check |
+| M4 | `docs/features/F-016-test-report.md` | **Stands.** The test engineer hasn't written or run tests from the spec for AC-15 to AC-22. The report's final commit is still `ee52303` and its AC table stops at AC-14. Every test for the new ACs, and both regression tests, are the developer's |
+| M5 | `F-016-code-review.md`, `F-016-security-testability-review.md` | **Stands.** No Code Review pass covers the v13 to v19 engine code, `e8fa693`, or now `0c758eb` and `bccf224`. Not required at Rapid prototype. Needed before Alpha, or sooner if the owner wants it |
+| M6 | CI `engine` on main | **Closed for F-016.** Fixed forward in `bccf224`, `e61cd5e` and `6208d40`. Run 43596631776 passes every F-016 test on Windows and macOS. The remaining red (Windows 6/6, `f020-schemas` CRLF) belongs to F-020's thread |
+
+#### Minor (logged; never block)
+
+| # | Location | Finding |
+|---|---|---|
+| m2 | `engine/src/readiness/checks.ts:70` | Carried. "When" isn't required, but the evidence says "Given/When/Then" |
+| m3 | `engine/src/agent/reviewer.ts:33-45` (`reportOnlyPolicy`) | Carried. An orchestrator role without `Write` isn't refused up front |
+| m4 | `engine/src/st-review/flow.ts:175` | Carried. The framing line still calls reviewer labels and orchestrator evidence "the owner's own words and the engine's checks" |
+| m5 | `docs/interface-contracts.md:168` | Carried. "carried out when the engine next starts, once" no longer matches the code |
+| m6 | `engine/src/engine.ts` (2,287 lines; `onAnswer` from `:1663`) | Carried, and the file is still growing |
+| m7 | `docs/features/F-016-dev-report.md`, Tests | Carried. It says "19 tests" in `f016-run.test.ts`; there are 26 |
+| m9 | `docs/features/F-016-test-report.md:5`, "What didn't run" | Carried. The final commit is still `ee52303`, and the report still says `chain` and `streviewcap` have no test |
+| m10 | `engine/test/f016-run.test.ts` (AC-15 and AC-17 tests) | Carried, narrower. AC-17's option A is now covered (`:909`). Still not covered: AC-15's wall-time cap (the test uses `error_max_turns`), undelivered replies reaching the new run, and AC-17's "taken up only as assumptions" (the tests skip the question instead) |
+| m11 | `engine/src/interview/tools.ts` | Carried. AC-22's refusal is tested only through `stReviewQuestionProblem`. No test calls `interview_ask` or `interview_revise` |
+| m12 | F-016 spec: Status, section 11, FR-14, AC-16, H-0188, section 9 | Carried:<br>- Status and section 11 still name v10.<br>- FR-14, AC-16 and H-0188 still name the retired `spec-interview` skill.<br>- SR-13 sits between SR-11 and SR-10.<br>Fixing these is a spec edit and needs the owner's OK |
+| m13 | `engine/src/st-review/flow.ts:211-218` | Carried. `stReviewResolution`'s doc comment is detached: it sits directly above FR-18's comment. It still says a choice item is something the engine "can't read yet" |
+| m14 | `engine/src/engine.ts:1244`; `engine/src/state/inbox.ts` | Carried. The `streviewunresolved` item's Context can quote reviewer text in an engine-text section. Reasoned, not reproduced |
+| m15 | `plugins/software-factory/skills/onboard-repo/scripts/security-blocking.json` | Carried. A policy table with `version` but no versioned `schema` field and no JSON Schema (CLAUDE.md rule 9) |
+| m16 | `docs/features/F-016-engine-answers-and-readiness.md` § 12 | New. PR #85 rewrote 47 lines of the approved spec for the H-0249 rename, wording only, but the change log has no row for it. Adding the row is a spec edit and needs the owner's OK |
+| m17 | `engine/src/engine.ts:1244`; spec H-0182 row (`:191`) | New, from the B1 fix. From the second `streviewunresolved` item on, its Context still says "The interview went back to the analyst once already", which is no longer true. H-0182 still says "after one send-back" |
+
+Carried from Code Review and not graded again: L5, L7 and R4 (all logged).
+
+### Counts
+
+- Blocking: 0. Major: 2 (M4, M5). Minor: 15 (m2 to m7, m9 to m17).
+- Lines: 0 Not met, 0 Needs owner.
+- Round 2: B1 fixed (FR-15 Met); M3 fixed (FR-20 Met); M6 closed for F-016; M4 and M5 stand.
+
+### After round 3
+
+Nothing more is needed to pass. The logged Majors are for the next maturity step:
+
+1. **Test engineer (M4):** tests from the spec for AC-15 to AC-22, and a run on the final commit, before Alpha.
+2. **Security reviewer (M5):** a Code Review pass on the v13 to v19 engine code, plus `e8fa693`, `0c758eb` and `bccf224`, before Alpha.
+3. **Optional (m2 to m17).** m12 and m16 are spec edits and need the owner. m17 is a one-line text fix.
+
+After the verdict: m17 fixed (the item says how many times the interview went back since the report).

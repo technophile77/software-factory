@@ -1241,7 +1241,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       log.warn(`${f.id}: Security and Testability Review findings not resolved again: ${r.check.evidence}`);
       await alert(p, `streviewunresolved:${f.id}:${f.state.stReview.reportAt}:${f.state.stReview.unresolvedRounds}`, {
         title: `Security and Testability Review findings for ${f.id} still not taken up`, feature: f.id,
-        context: `The interview went back to the analyst once already, and the Security and Testability Review check still finds: ${r.check.evidence.slice(0, 1500)}`,
+        context: `The interview has gone back to the analyst ${f.state.stReview.unresolvedRounds === 1 ? "once" : `${f.state.stReview.unresolvedRounds} times`} since this report, and the Security and Testability Review check still finds: ${r.check.evidence.slice(0, 1500)}`,
         impact: `${f.id} stays at Security and Testability Review with no analyst.`,
         confirm: "Send it back to the analyst again", hold: "Keep the feature where it is", recommendation: "A",
       });
