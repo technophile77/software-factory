@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-14 ("the console is actually the
   better method of communicating with the factory"; "the console app should
   also say when a decision is pending, not just factory is idle")
-- **Spec version:** 2
+- **Spec version:** 3
 - **Depends on:** F-011 (inbox on GitHub issues, ADR 0022), F-016 (answers
   and their effects, Gate 2 M1 check), F-018 (`factory-engine interview`,
   live status), F-020 (inbox records as JSON, `inbox-record/4.0`)
@@ -189,16 +189,17 @@ after the owner approves their text:
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [ ] Assumptions explicit (A-1, A-2 pending)
-- [ ] Blocking decisions resolved (OQ-1, OQ-2, SR-1 to SR-7, H-0245 to H-0248)
+- [ ] Blocking decisions resolved (OQ-1 decided; OQ-2, SR-1 to SR-7, H-0245 to H-0248)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-14 | Draft from the owner's request (console as a second answer path, private detail in the console only) | — |
 | 2 | 2026-11-14 | FR-12 and AC-11 from the owner's message 10:23Z (status says when a decision is pending; idle only with nothing pending); Security Gate 1 ([F-021-security-gate1.md](F-021-security-gate1.md)): 5 findings (0 Critical, 0 High, 3 Medium, 2 Low), none blocking, covered by SR-1, SR-2, SR-4 to SR-6 | — |
+| 3 | 2026-11-14 | OQ-1 decided (a): both the new `inbox` command and the interview command (FR-2, FR-11 stand as written) | Owner, 2026-11-14 10:27Z (decision card) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
 |---|---|---|---|
-| OQ-1 | Where does the console pose decisions? (a) **Both**: a new `factory-engine inbox` command for every open item, and the interview command shows the feature's waiting items when the interview has nothing for the owner (FR-11). (b) Only the new `inbox` command. (c) Only inside the interview command. **Recommended: (a)**: after an interview the decision appears where his attention already is, and any item, including ones with no interview behind them, can be answered from the terminal. | Product | Open |
+| OQ-1 | Where does the console pose decisions? (a) **Both**: a new `factory-engine inbox` command for every open item, and the interview command shows the feature's waiting items when the interview has nothing for the owner (FR-11). (b) Only the new `inbox` command. (c) Only inside the interview command. **Recommended: (a)**: after an interview the decision appears where his attention already is, and any item, including ones with no interview behind them, can be answered from the terminal. | Product | Decided (owner, 2026-11-14 10:27Z, decision card): (a) both places |
 | OQ-2 | Does answering in the console need a GitHub sign-in? (a) **Follow the project's existing sign-in setting** (`settings.interview_sign_in`, F-018 FR-15; at Rapid prototype that means none) for console answers too, so one setting covers the whole console, with SR-4's risk accepted until the setting asks for sign-in. (b) Always sign in for Security decisions and spec sign-off, whatever the setting; other items follow it. (c) Always sign in for every console answer. **Recommended: (a)**: same trust as interview answers, which already shape the spec, and no extra step at Rapid prototype; the risk ends when the project moves to Alpha or the setting is raised. | Security | Open |
