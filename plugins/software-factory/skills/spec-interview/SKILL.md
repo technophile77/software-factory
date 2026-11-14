@@ -220,6 +220,13 @@ phone app hides), so a `display` left there was never shown. Then ask with
 AskUserQuestion, free text always allowed ("Other"). A picker holds at
 most four choices.
 
+The picker's question quotes the item itself, word for word: a
+question's text, an assumption's or proposal's statement, so the owner
+sees what they decide on even if your message was missed (H-0188). Never
+ask a bare "Approve?" or "How do you want to answer?". Before every
+picker, check that its question holds the item's text; if it doesn't,
+fix the question first.
+
 **Question.** The answer comes first, so the owner can take the analyst's
 recommendation in one tap.
 

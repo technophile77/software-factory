@@ -209,6 +209,11 @@ H-0180, H-0182, H-0183 approved (owner, 2026-11-13, decision card); H-0184 appro
   link, so every chat surface shows it clickable (issue #63;
   `engine/src/mcp/operations.ts`). The skill still shows `approval_display`
   unchanged.
+- **H-0188 (Hygiene), approved (owner, 2026-11-14, card and in thread):**
+  the interview skill's picker question quotes the item word for word, so
+  the owner sees what they approve even when the skill's message before the
+  picker is missing (issue #66;
+  `plugins/software-factory/skills/spec-interview/SKILL.md`). Skill only.
 
 ## 11. Readiness gate
 Checked 2026-11-13 against spec v10.
@@ -236,7 +241,7 @@ Checked 2026-11-13 against spec v10.
 | 10 | 2026-11-13 | Spec v10 signed off; status Approved | Owner, 2026-11-13 (decision card) |
 | 11 | 2026-11-14 | SR-11 reworded and H-0184 container limits unused until Beta, after the owner dropped agent containers until Beta (ADR 0026) | Owner, 2026-11-14 (in chat, after a decision card) |
 | 12 | 2026-11-14 | H-0185 approved and applied (onboarding checker limit keys). SR-12 added for Gate 2 M1, after the owner chose both fixes | Owner, 2026-11-14 (decision cards) |
-| 13 | 2026-11-14 | FR-13, FR-14, AC-15, AC-16, SR-13 and the `analyststop` row in H-0182 added after the live trial found a feature stuck after an analyst cap stop (issues #64, #65). Pins effect reworded: re-pins; the project runs at the next engine start. H-0186 and H-0187 approved | Owner, 2026-11-14 (in thread) |
+| 13 | 2026-11-14 | FR-13, FR-14, AC-15, AC-16, SR-13 and the `analyststop` row in H-0182 added after the live trial found a feature stuck after an analyst cap stop (issues #64, #65). Pins effect reworded: re-pins; the project runs at the next engine start. H-0186, H-0187 and H-0188 approved | Owner, 2026-11-14 (in thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
