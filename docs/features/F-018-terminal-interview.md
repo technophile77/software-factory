@@ -1,7 +1,7 @@
 # Feature: Answer interview questions in a terminal command
 
 - **Id:** F-018
-- **Status:** Approved (owner, 2026-11-14; readiness gate passed on v8); v10 (FR-15) awaiting the owner's approval
+- **Status:** Approved (owner, 2026-11-14; readiness gate passed on v8); v10 (FR-15) approved
 - **Requested by / date:** Alex, 2026-11-14 ("not the analyst, the agent
   that is presenting me the questions"; "Start F-018 option B")
 - **Spec version:** 10
@@ -155,7 +155,7 @@ through its input and output streams.
 | SR-5 | Only the feature id and `--project` come from the command line; the feature id must match `^[A-Za-z0-9_-]{1,64}$`. Owner text and engine text never go on a command line or through a shell (F-005 SR-9). | Analyst (S1.3) | Approved (owner, 2026-11-14, decision card) |
 | SR-6 | Errors are shown by the operation's `display` only, never the JSON-RPC `data` or the owner's reply text (F-005 SR-16). | F-005 SR-16 | Approved (owner, 2026-11-14, decision card) |
 | SR-7 | Typing a reply that the engine records can't be undone in the transcript. A numbered pick is sent on Enter, not on a single keypress, so a stray key doesn't approve anything. | Analyst (S5.1); Gate 1 #4 | Approved (owner, 2026-11-14, decision card) |
-| SR-8 | **Accepted risk until Alpha (owner, 2026-11-14: card on the risk, then "fall back to no sign-in during rapid prototype"):** at `rapid-prototype` there is no sign-in at all, so any program running as the owner that reaches the engine's socket or pipe can open an interview and answer, approve assumptions or confirm sources in the owner's name, at any time the engine runs. That includes agents with a shell on the PC (ADR 0026), since F-005 SR-14's protection relied on containers. SR-3's terminal check doesn't close it: a program can open a pseudo-terminal. Such answers are recorded as the owner's, and the transcript marks each such session as opened without sign-in. The risk ends when the project's maturity is raised to `alpha`. With FR-15 the same risk applies, for shorter windows, while a sign-in covers later sessions (`engine_start`, `hours`). `settings.interview_sign_in` is pinned, so an agent can't loosen it unseen; `maturity` is not, so lowering it in the config repo of a project without the key restores the no-sign-in default, which is why onboarding always writes the key. | Owner request, 2026-11-14 (S2.1, S6.2) | Accepted risk (FR-15 windows pending the owner's approval of v10) |
+| SR-8 | **Accepted risk until Alpha (owner, 2026-11-14: card on the risk, then "fall back to no sign-in during rapid prototype"):** at `rapid-prototype` there is no sign-in at all, so any program running as the owner that reaches the engine's socket or pipe can open an interview and answer, approve assumptions or confirm sources in the owner's name, at any time the engine runs. That includes agents with a shell on the PC (ADR 0026), since F-005 SR-14's protection relied on containers. SR-3's terminal check doesn't close it: a program can open a pseudo-terminal. Such answers are recorded as the owner's, and the transcript marks each such session as opened without sign-in. The risk ends when the project's maturity is raised to `alpha`. With FR-15 the same risk applies, for shorter windows, while a sign-in covers later sessions (`engine_start`, `hours`). `settings.interview_sign_in` is pinned, so an agent can't loosen it unseen; `maturity` is not, so lowering it in the config repo of a project without the key restores the no-sign-in default, which is why onboarding always writes the key. | Owner request, 2026-11-14 (S2.1, S6.2) | Accepted risk (FR-15 windows approved with v10) |
 
 All of F-005 SR-1, SR-5, SR-7, SR-8, SR-10 to SR-16 and F-006/F-009 security
 requirements stay in force through the shared `Interview` code; this spec
@@ -177,9 +177,9 @@ adds no new channel, file, network or permission.
 | H-0218 | `docs/adr/0029-interview-in-a-terminal-command.md` (new), ADR 0025 status, `docs/adr/README.md`, `README.md`, `engine/README.md`, a version note in F-005, F-006 and F-009 pointing their skill steps to F-018 | Record the decision and describe the command in place of the skill | Approved (owner, 2026-11-14, decision card) |
 | H-0225 | `docs/interface-contracts.md` (Engine control channel, `engine.status` row) | Each feature in `engine.status` gains `activity?`, one of `analyst_reviewing`, `analyst_researching`, `analyst_writing_spec`, `security_reviewing`, `readiness_check`, `advisor_working`, `waiting_for_owner`, `paused`, `idle` (F-018 FR-14). Clients ignore codes they don't know and treat a missing `activity` as unknown | Approved (owner, 2026-11-14, decision card) |
 | H-0219 | `docs/interface-contracts.md` (Engine control channel, "Owner approval" and the `interview.open` row), `docs/adr/0014-owner-approval-github-device-flow.md` (amendment note) | `interview.open` returns no `approval` when the project is at `rapid-prototype` and an earlier session of this engine run was approved (F-018 FR-13); clients treat a missing `approval` as an approved session, as with v1.1. ADR 0014 gains an amendment line pointing to F-018 FR-13 and SR-8 | Approved (owner, 2026-11-14, decision card); replaced by H-0228 |
-| H-0226 | `plugins/software-factory/skills/onboard-repo/SKILL.md` (step 3), `templates/factory-project.yaml` | Onboarding asks a new project's owner for the sign-in setting, offering the level's default first, and writes `settings.interview_sign_in` (FR-15) | Drafted |
-| H-0227 | `docs/interface-contracts.md` (Project manifest v1.8) | Optional `settings.interview_sign_in: { every, hours? }` as in FR-15; pinned (F-007 SR-5) | Drafted |
-| H-0228 | `docs/interface-contracts.md` ("Owner approval", `interview.open` row), ADR 0014 amendment line | Replace H-0219's once-per-run text: sign-in follows the project's `settings.interview_sign_in`; `interview.open` returns no `approval` when the setting covers the session | Drafted |
+| H-0226 | `plugins/software-factory/skills/onboard-repo/SKILL.md` (step 3), `templates/factory-project.yaml` | Onboarding asks a new project's owner for the sign-in setting, offering the level's default first, and writes `settings.interview_sign_in` (FR-15) | Approved (owner, 2026-11-14, decision card) |
+| H-0227 | `docs/interface-contracts.md` (Project manifest v1.8) | Optional `settings.interview_sign_in: { every, hours? }` as in FR-15; pinned (F-007 SR-5) | Approved (owner, 2026-11-14, decision card) |
+| H-0228 | `docs/interface-contracts.md` ("Owner approval", `interview.open` row), ADR 0014 amendment line | Replace H-0219's once-per-run text: sign-in follows the project's `settings.interview_sign_in`; `interview.open` returns no `approval` when the setting covers the session | Approved (owner, 2026-11-14, decision card) |
 
 ## 11. Readiness gate
 - [x] Clear objective
@@ -187,7 +187,7 @@ adds no new channel, file, network or permission.
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit (A-1, A-2 approved)
-- [x] Blocking decisions resolved (OQ-1, OQ-2, SR-1 to SR-8, FR-14, H-0215 to H-0219, H-0225)
+- [x] Blocking decisions resolved (OQ-1, OQ-2, SR-1 to SR-8, FR-14, FR-15, H-0215 to H-0219, H-0225 to H-0228)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -202,7 +202,7 @@ adds no new channel, file, network or permission.
 | 8 | 2026-11-14 | FR-14 (with the spinner) and H-0225 approved; H-0225 applied; readiness gate passed | Owner, 2026-11-14 (decision card) |
 | 8 | 2026-11-14 | FR-5 clarified from the increment 3 trial (no accept choice without a suggestion; exact text, no escape handling); no behaviour change beyond the approved FR-5 | — |
 | 9 | 2026-11-14 | FR-13, AC-13, SR-8: no sign-in at Rapid prototype (owner's message 08:11Z), replacing once per engine run; H-0219's doc text needs a new version (H-0228) | Owner, 2026-11-14 (in words); doc text pending |
-| 10 | 2026-11-14 | FR-15, AC-15: per-project sign-in setting chosen at setup (owner's card "Per project, asked at setup"); SR-8 widened; H-0226 to H-0228 drafted | Placement: owner, 2026-11-14 (decision card); FR-15 text, SR-8 and H-0226 to H-0228 pending |
+| 10 | 2026-11-14 | FR-15, AC-15: per-project sign-in setting chosen at setup (owner's card "Per project, asked at setup"); SR-8 widened; H-0226 to H-0228 drafted | Owner, 2026-11-14 (decision cards: placement, then "Approve as written"); H-0226 to H-0228 applied |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
