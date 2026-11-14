@@ -208,7 +208,9 @@ H-0180, H-0182, H-0183 approved (owner, 2026-11-13, decision card); H-0184 appro
   (`plugins/software-factory/skills/onboard-repo/tests/test_factory_check.py`)
   starts each generated line with a fixed word. A random word starting with
   `MZ` made gitleaks skip the file as binary, so the test failed about once in
-  50 runs (PR #60 CI, seed 266426694). Test only.
+  50 runs (PR #60 CI, seed 266426694). It also draws the fake key's 16
+  characters without repeats, since a key under gitleaks' entropy floor of 3
+  isn't a finding (seed 897027674). Test only.
 - **H-0187 (Hygiene), approved (owner, 2026-11-14, in thread):** the
   interview's GitHub approval text writes the device login link as a Markdown
   link, so every chat surface shows it clickable (issue #63;

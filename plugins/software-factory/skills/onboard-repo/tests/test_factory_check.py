@@ -896,7 +896,8 @@ class Properties(unittest.TestCase):
             subprocess.run(["git", "init", "-q", root], check=True)
             for i in range(self.CASES // 4):
                 # AWS key ids are base32 after the prefix; gitleaks' rule matches only those.
-                key = "AKIA" + "".join(r.choice(string.ascii_uppercase + "234567") for _ in range(16))
+                # Distinct characters keep the key above the rule's entropy floor of 3; a repetitive one isn't a finding (H-0186).
+                key = "AKIA" + "".join(r.sample(string.ascii_uppercase + "234567", 16))
                 # Keys sit next to separators in real files; the rule needs a word boundary.
                 word = "".join(r.choice(string.ascii_letters) for _ in range(r.randint(0, 12)))
                 sep = r.choice([" = ", "='", '"', ": ", "\t", ","])
