@@ -5,6 +5,9 @@ import { Children, baseEnv, runFixed } from "../proc";
 
 export type Notify = (title: string, text: string) => void;
 
+/** A notifier whose shown notifications can be waited for, so a stopping engine leaves no child running in its folder. */
+export type OsNotify = Notify & { settled(): Promise<void> };
+
 /**
  * Windows toast through Windows PowerShell's own app id, so nothing is
  * installed (F-011 FR-13). The title and text arrive as environment
@@ -30,8 +33,9 @@ const clean = (s: string) => s.replace(/[\x00-\x1f\x7f]+/g, " ").slice(0, MAX);
  * and never stops the engine. Linux needs notify-send; without it the
  * engine log is the notice.
  */
-export function osNotifier(o: { platform: NodeJS.Platform; children: Children; log: Logger; cwd: string }): Notify {
-  return (title, text) => {
+export function osNotifier(o: { platform: NodeJS.Platform; children: Children; log: Logger; cwd: string }): OsNotify {
+  const running = new Set<Promise<void>>();
+  const notify = (title: string, text: string): void => {
     const env = { ...baseEnv(), FACTORY_NOTE_TITLE: clean(title), FACTORY_NOTE_TEXT: clean(text) };
     let bin: string;
     let args: string[];
@@ -46,10 +50,13 @@ export function osNotifier(o: { platform: NodeJS.Platform; children: Children; l
       args = ["--", clean(title), clean(text)];
     }
     if (!bin) return;
-    runFixed(bin, args, { cwd: o.cwd, env, timeoutMs: 10_000, maxStdout: 4096 }, o.children)
+    const shown = runFixed(bin, args, { cwd: o.cwd, env, timeoutMs: 10_000, maxStdout: 4096 }, o.children)
       .then((r) => {
         if (r.code !== 0) o.log.info(`OS notification not shown (exit ${r.code}).`);
       })
-      .catch(() => o.log.info("OS notification not shown."));
+      .catch(() => o.log.info("OS notification not shown."))
+      .finally(() => running.delete(shown));
+    running.add(shown);
   };
+  return Object.assign(notify, { settled: async () => void (await Promise.all([...running])) });
 }

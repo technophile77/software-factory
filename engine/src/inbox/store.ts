@@ -262,31 +262,39 @@ export class Inbox {
     const e = rec.entry;
     const action = actionOfEntry(e);
     if (e.by !== "owner" || e.actor_id !== this.ownerId || !r.issue || e.comment_id === undefined || !action) return false;
+    // An answer to an earlier revision is stale (F-011 FR-8); one whose comment or reaction an earlier answer
+    // already used, or that the poll refused, is a replay. Everything else is checked against GitHub, not the record.
+    if (e.rev !== currentRevision(r).rev) return false;
+    const before = r.history.slice(0, r.history.indexOf(e));
+    const sameUse = (h: History) => h.by === "owner" && h.comment_id === e.comment_id && h.reaction_id === e.reaction_id;
+    if (before.some(sameUse) || this.refusedAlready(r, { comment_id: e.comment_id, ...(e.reaction_id !== undefined ? { reaction_id: e.reaction_id } : {}) })) return false;
+    const issue = await this.api.issue(this.repo, r.issue);
+    if (!issue || issue.author !== WORKFLOW_LOGIN || ITEM_MARKER_RE.exec(normalBody(issue.body))?.[1] !== r.id) return false;
     const comments = await this.api.comments(this.repo, r.issue);
     const c = comments.find((x) => x.id === e.comment_id);
     if (!c) return false;
     if (e.source === "reaction") {
-      // Only the revision the answer was recorded at counts, as when it was read (F-011 FR-8).
-      const ac = r.revisions.find((v) => v.rev === e.rev)?.action_comments.find((a) => a.id === e.comment_id);
-      if (!ac || ac.action !== action || c.author !== WORKFLOW_LOGIN || sha256(normalBody(c.body)) !== ac.sha256) return false;
+      const m = ACTION_MARKER_RE.exec(normalBody(c.body));
+      if (c.author !== WORKFLOW_LOGIN || !m || m[1] !== r.id || Number(m[2]) !== e.rev || m[3] !== action) return false;
       if (!(await this.api.reactions(this.repo, c.id)).some((x) => x.id === e.reaction_id && x.userId === this.ownerId && x.content === "+1")) return false;
     } else {
-      const cmd = c.authorId === this.ownerId && !r.engine_comments.includes(c.id) ? parseCommand(c.body) : null;
+      const cmd = c.authorId === this.ownerId && c.updatedAt === c.createdAt ? parseCommand(c.body) : null;
       if (!cmd || cmd.kind !== "action" || cmd.action !== action || (cmd.note ?? undefined) !== (e.note ?? undefined)) return false;
     }
     if (!isRisky(r, action)) return true;
-    // The confirm must answer the engine's request for this action at this revision, within its 15 minutes (FR-6).
+    // The confirm must answer the engine's request for this action, within 15 minutes of that request's comment on GitHub (FR-6).
     const k = e.confirmed_by;
-    const asked = r.history.slice(0, r.history.indexOf(e)).filter((h) => h.action === "confirm_requested" && h.pending === action && h.rev === e.rev).pop();
-    if (!k || !asked) return false;
+    const asked = before.filter((h) => h.action === "confirm_requested" && h.pending === action && h.rev === e.rev).pop();
+    if (!k || !asked?.code) return false;
+    const request = comments.find((x) => x.id === asked.comment_id && x.authorId === this.ownerId && x.body.startsWith("Confirm:") && x.body.includes(`/confirm ${asked.code}`));
     const cc = comments.find((x) => x.id === k.comment_id);
-    if (!cc) return false;
-    const inTime = (at: string) => Date.parse(at) >= Date.parse(asked.at) && Date.parse(at) - Date.parse(asked.at) <= CONFIRM_MS;
+    if (!request || !cc) return false;
+    const inTime = (at: string) => Date.parse(at) >= Date.parse(request.createdAt) && Date.parse(at) - Date.parse(request.createdAt) <= CONFIRM_MS;
     if (k.source === "reaction") {
-      if (cc.id !== asked.comment_id || !r.engine_comments.includes(cc.id)) return false;
+      if (cc.id !== request.id) return false;
       return (await this.api.reactions(this.repo, cc.id)).some((x) => x.id === k.reaction_id && x.userId === this.ownerId && x.content === "rocket" && inTime(x.createdAt));
     }
-    const cmd = cc.authorId === this.ownerId && !r.engine_comments.includes(cc.id) ? parseCommand(cc.body) : null;
+    const cmd = cc.authorId === this.ownerId && cc.updatedAt === cc.createdAt ? parseCommand(cc.body) : null;
     return cmd?.kind === "confirm" && cmd.code === asked.code && inTime(cc.createdAt);
   }
 

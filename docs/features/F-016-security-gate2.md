@@ -130,3 +130,12 @@ No new permission beyond what the spec states: the factory token's Issues read a
 - **M1:** Partly holds. P1 and P2 style forgeries are refused, and remote `inbox/` changes aren't adopted. A forged entry can still have an effect in the same run (R1) or by reusing real GitHub reactions (R2), and a fresh checkout skips the remote refusal (R4).
 - **M2, L1 to L4, L6:** Fixed before `5886356`, so outside this re-review's scope and not checked again here. The only change in this diff that touches them is L2's retry loop in `applyAnswers`, which still counts tries and still files a Notice after 3. An unreachable GitHub during `verify` now leaves the answer waiting without counting a try.
 - **L5, L7:** Still logged, not changed.
+
+### Fixes after the re-review (developer, 2026-11-14)
+
+| # | Status | Change |
+|---|---|---|
+| R1 | Fixed | An answer counts as "recorded here" only by a hash of the whole entry, so a forged entry beside a real one goes through `verify`. |
+| R2 | Fixed | `verify` now checks GitHub, not the record, for what decides an answer. The issue must be the workflow's and its marker must name this item. The action comment's own marker must name this item, the entry's revision and the action. The entry's revision must be the item's current one. A comment or reaction that an earlier owner entry in the record used, or that the poll refused, is a replay. A confirm must answer a `Confirm:` comment by the owner that names the code, and must come within 15 minutes of that comment's GitHub time, not the engine's clock (this also settles the Info note on clock skew). Since markers bind each comment to one item, a reaction can't be reused under another id. Test: `f016-run.test.ts` AC-7 (a copied answer after a restart is `unverified`) and "Gate 2 M1" (a late confirm, an answer with no 👍). The Gate 1 label still comes from the record's options. It reaches the analyst only as data, and a forged one now needs a forged entry that passes these checks. |
+| R3 | Fixed | A command or `/confirm` comment counts only unedited, as in the poll. Refused keys are refused here too. |
+| R4 | Logged | A first checkout still adopts the remote `factory/state` whole. Every pending answer there now goes through R2's GitHub checks, so a planted record has an effect only with the owner's real, unused 👍 on that item's own issue at its current revision. The effect type itself is still read from the record. For a Gate 1 choice, the transcript must name the item (L1); for a sign-off, the item and commit come from the transcript. |

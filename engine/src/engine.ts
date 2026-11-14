@@ -1883,9 +1883,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const pollers: Promise<void>[] = [];
   /** F-016 SR-7: failed effects, by item id; after 3 a Notice is filed and the item is left alone until the engine restarts. */
   const effectTries = new Map<string, number>();
-  /** Gate 2 M1: answers this run recorded itself, as `project/id@at`; any other pending answer is checked on GitHub first. */
+  /** Gate 2 M1: answers this run recorded itself, by project, item and entry; any other pending answer is checked on GitHub first. */
   const recordedHere = new Set<string>();
-  const answerKey = (p: Project, r: Recorded): string => `${p.name}/${r.id}@${r.entry.at}`;
+  // The whole entry, not its time, so a forged entry beside a real one is never taken for it (Gate 2 re-review R1).
+  const answerKey = (p: Project, r: Recorded): string => `${p.name}/${r.id}/${sha256Hex(JSON.stringify(r.entry))}`;
 
   /** Carries out every recorded answer without an effect yet: new ones, ones a crash left, and ones that failed before (FR-2, SR-7). */
   async function applyAnswers(p: Project): Promise<void> {
@@ -2045,6 +2046,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           if (p.state_repo) fs.rmSync(path.join(p.state_repo.factoryDir, ENGINE_JSON), { force: true });
         }
         await git.closeReaders();
+        // A notification still showing runs in the engine folder; Windows can't remove a folder a process works in.
+        await notify.settled();
         log.info(`engine stopped at ${iso(clock.now())}`);
         done();
       })();
