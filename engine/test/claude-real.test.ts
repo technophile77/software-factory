@@ -22,7 +22,7 @@ import { SECRET_DENIES, type RolePolicy } from "../src/policy/role-policy";
 import { tmpdir } from "./helpers";
 
 const BIN = path.join(__dirname, "..", "node_modules", "@anthropic-ai", `claude-agent-sdk-${process.platform}-${process.arch}`, process.platform === "win32" ? "claude.exe" : "claude");
-// The gate maps the container's POSIX paths; on a Windows host Claude Code only ever runs inside the Linux container.
+// The fake API and scripted paths here are POSIX; host-path gating on Windows is covered in host.test.ts.
 const runnable = process.platform !== "win32" && fs.existsSync(BIN);
 const SECRET = "TOPSECRET-4d1f";
 

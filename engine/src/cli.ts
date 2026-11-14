@@ -8,6 +8,7 @@ import type { AgentRuntime } from "./agent/runtime";
 import { loadAgentSdk } from "./agent/sdk-binding";
 import { confirmProject } from "./config/confirm";
 import { DockerCli, DockerError, pickEndpoint } from "./docker/cli";
+import { type HostRuntime, resolveClaudeBinary } from "./agent/host";
 import { PinStore } from "./config/pins";
 import { defaultEngineHome, startEngine } from "./engine";
 import { ensureOwnerDir, findOnPath } from "./fsutil";
@@ -65,7 +66,17 @@ async function agentRuntime(home: string): Promise<AgentRuntime> {
     ? ({ run: refuse, out: refuse, spawn: () => { throw new DockerError(`Docker isn't available: ${missing}`); } } as unknown as DockerCli)
     : new DockerCli({ dockerPath: dockerPath!, host: host!, configDir: path.join(home, "docker"), children: new Children() });
   // The bundle sits in dist/; the image's fixed files ship beside it in docker/.
-  return { docker, sdk: loadAgentSdk, dockerDir: path.join(__dirname, "..", "docker"), proxyScript: path.join(__dirname, "proxy.js") };
+  // ADR 0026: agent sessions run on this PC until Beta; Docker is left for runs on a model endpoint.
+  let claude: Promise<string> | null = null;
+  const onPc: HostRuntime = {
+    node: process.execPath,
+    claude: () => {
+      claude ??= resolveClaudeBinary();
+      claude.catch(() => (claude = null));
+      return claude;
+    },
+  };
+  return { docker, sdk: loadAgentSdk, dockerDir: path.join(__dirname, "..", "docker"), proxyScript: path.join(__dirname, "proxy.js"), host: onPc };
 }
 
 /** The engine's own config, outside every repo: today only the gitleaks path. */

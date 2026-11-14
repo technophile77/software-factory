@@ -16,6 +16,13 @@ export interface ProxyStart {
   dummyKey: string;
   /** The agents' internal network: the proxy listens only on its address there (SR-7). */
   internalSubnet: string;
+  /**
+   * ADR 0026: agents on the owner's PC. The proxy listens on 127.0.0.1 at a
+   * port the system picks, and `internalSubnet` is unused. Each agent's
+   * credential is still what opens it. No router in this mode: endpoint runs
+   * keep the proxy in its container (H-0204 decision b).
+   */
+  listen?: "loopback";
   blockedSubnets: string[];
   maxPageBytes: number;
   /**
@@ -87,6 +94,20 @@ function main(): void {
     }
     if (m.t === "start") {
       if (proxy) return send({ t: "error", reason: "already started" });
+      if (m.listen === "loopback") {
+        if (m.router) {
+          send({ t: "error", reason: "a router needs the container proxy" });
+          process.exit(2);
+        }
+        proxy = new EgressProxy({ credential: m.credential, dummyKey: m.dummyKey, blockedSubnets: m.blockedSubnets, maxPageBytes: m.maxPageBytes, log: send });
+        const started = proxy;
+        started.server.listen(0, "127.0.0.1", () => {
+          const a = started.server.address();
+          send({ t: "ready", address: "127.0.0.1", port: typeof a === "object" && a ? a.port : 0 });
+        });
+        started.server.on("error", () => process.exit(3));
+        return;
+      }
       const address = addressOn(m.internalSubnet);
       // Fail closed: without a private address on the internal network there is nowhere safe to listen.
       if (!address || !blockedAddress(address)) {

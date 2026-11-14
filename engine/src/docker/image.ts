@@ -59,7 +59,15 @@ export function writeBuildContext(engineDockerDir: string, contextDir: string, s
     fs.mkdirSync(path.dirname(path.join(contextDir, f)), { recursive: true });
     fs.copyFileSync(path.join(engineDockerDir, f), path.join(contextDir, f));
   }
-  const root = path.join(contextDir, "skills");
+  writeSkillsPlugins(path.join(contextDir, "skills"), sources);
+}
+
+/**
+ * Under `root/<role>/`, a local plugin holding that role's resolved skills
+ * (spec v30), from git objects only. The image bakes it; sessions on the
+ * owner's PC load it from an engine-owned folder (ADR 0026).
+ */
+export function writeSkillsPlugins(root: string, sources: Pick<AgentSources, "skills">): void {
   fs.mkdirSync(root);
   for (const [role, list] of sources.skills) {
     skillsPluginDir(role);

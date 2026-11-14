@@ -3,13 +3,14 @@ import { outputSchemaOf, schemaErrors } from "../schemas/json-file";
 import { type WebReaderAnswer, webReaderAnswer } from "../schemas/web-reader-answer";
 import type { RolePolicy } from "../policy/role-policy";
 import { PageCaps, fetchPageTool } from "./factory-tools";
-import type { SessionGroup } from "./sandbox";
+import type { AgentGroup } from "./sandbox";
 import type { AgentSdk, UserTurn } from "./sdk";
-import { SessionCaps, containerSpawn, runSession, sessionOptions } from "./session";
+import { SessionCaps, runSession, sessionOptions } from "./session";
+import { denyAsk } from "./session";
 
 export interface WebReaderConfig {
-  group: SessionGroup;
-  docker: Parameters<typeof containerSpawn>[0];
+  group: AgentGroup;
+  docker?: unknown;
   sdk: AgentSdk;
   /** The web-reader role, whose policy is fixed (Role policy v2.5). */
   policy: RolePolicy;
@@ -59,7 +60,8 @@ export async function research(c: WebReaderConfig, query: string): Promise<Resea
       caps: c.caps,
       outputSchema: outputSchemaOf(webReaderAnswer),
       ...(c.model ? { model: c.model } : {}),
-      spawn: containerSpawn(c.docker, agent.name, agent.cwd),
+      ...(agent.host ? { host: denyAsk(undefined) } : {}),
+      spawn: agent.spawn,
       log: c.log,
     }, abort);
     async function* turns(): AsyncIterable<UserTurn> {

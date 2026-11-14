@@ -2,9 +2,9 @@ import type { Logger } from "../log";
 import { PolicyError, RolePolicy, effectiveRole } from "../policy/role-policy";
 import type { DockerCli } from "../docker/cli";
 import { SessionRefused } from "./analyst";
-import type { SessionGroup } from "./sandbox";
+import type { AgentGroup } from "./sandbox";
 import type { AgentSdk, UserTurn } from "./sdk";
-import { SessionCaps, SessionOutcome, WORKSPACE, containerSpawn, runSession, sessionOptions } from "./session";
+import { HostGate, SessionCaps, SessionOutcome, denyAsk, runSession, sessionOptions } from "./session";
 import type { RunUsed } from "../state/record";
 import type { WorktreeCommitResult } from "./worktree-commit";
 import type { Breach } from "./write-check";
@@ -54,7 +54,7 @@ function once(text: string): AsyncIterable<UserTurn> {
 export interface ReviewerRunInput {
   sdk: AgentSdk;
   docker: DockerCli;
-  group: SessionGroup;
+  group: AgentGroup;
   policy: RolePolicy;
   worktree: string;
   /** The engine-owned folder a file report is written to, and where it appears in the container; none for a structured report. */
@@ -67,6 +67,8 @@ export interface ReviewerRunInput {
   model: string;
   /** F-013: the model endpoint the session's requests go to; the group must have a router for it. Default: Claude. */
   upstream?: string;
+  /** The ask rule for a session on the owner's PC; without it, held commands are denied. */
+  host?: HostGate;
   first: string;
   /** Resume from an SDK session on the run's volume (FR-10). */
   resume?: string;
@@ -126,11 +128,12 @@ export async function runReviewerSessions(i: ReviewerRunInput): Promise<Reviewer
       try {
         const abort = new AbortController();
         const opts = sessionOptions({
-          policy: i.policy, worktree: i.worktree, instructions: i.instructions,
+          policy: i.policy, cwd: agent.cwd, worktree: i.worktree, instructions: i.instructions,
           factoryServer: i.sdk.createFactoryServer([]), factoryTools: [], caps,
           ...(i.skillsPluginDir ? { skillsPluginDir: i.skillsPluginDir } : {}),
           model: i.model, ...(resume ? { resume } : {}), ...(i.outputSchema ? { outputSchema: i.outputSchema } : {}),
-          spawn: containerSpawn(i.docker, agent.name, WORKSPACE), log: i.log,
+          workspace: agent.workspace, ...(agent.host ? { host: i.host ?? denyAsk(undefined) } : {}),
+          spawn: agent.spawn, log: i.log,
         }, abort);
         outcome = await runSession(i.sdk, opts, once(turn), caps, { onSessionId: i.onSessionId });
       } finally {

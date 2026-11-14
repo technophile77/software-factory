@@ -3,9 +3,9 @@ import type { InterviewTools, ResearchConfig } from "../interview/tools";
 import type { Logger } from "../log";
 import { PolicyError, RolePolicy, effectiveRole } from "../policy/role-policy";
 import { PageCaps, analystTools } from "./factory-tools";
-import type { SessionGroup } from "./sandbox";
+import type { AgentGroup } from "./sandbox";
 import type { AgentSdk, UserTurn } from "./sdk";
-import { SessionCaps, SessionOutcome, containerSpawn, runSession, sessionOptions } from "./session";
+import { SessionCaps, SessionOutcome, denyAsk, runSession, sessionOptions } from "./session";
 import { research } from "./web-reader";
 import type { Breach } from "./write-check";
 import type { WorktreeCommitResult } from "./worktree-commit";
@@ -23,7 +23,7 @@ export interface AgentLimitsConfig {
 export interface AnalystRunInput {
   sdk: AgentSdk;
   docker: DockerCli;
-  group: SessionGroup;
+  group: AgentGroup;
   /** The manifest as read from the config repo's main commit; its `policy` gives the roles. */
   manifest: unknown;
   repoName?: string;
@@ -91,6 +91,7 @@ export async function runAnalystSession(i: AnalystRunInput): Promise<{ outcome: 
       const abort = new AbortController();
       const opts = sessionOptions({
         policy: analyst,
+        cwd: agent.cwd,
         worktree: i.worktree,
         instructions: i.instructions.analyst,
         factoryServer: i.sdk.createFactoryServer(tools),
@@ -99,7 +100,9 @@ export async function runAnalystSession(i: AnalystRunInput): Promise<{ outcome: 
         ...(i.skillsPluginDir ? { skillsPluginDir: i.skillsPluginDir } : {}),
         model: i.models.analyst,
         ...(i.resume ? { resume: i.resume } : {}),
-        spawn: containerSpawn(i.docker, agent.name),
+        workspace: agent.workspace,
+        ...(agent.host ? { host: denyAsk(i.manifest) } : {}),
+        spawn: agent.spawn,
         log: i.log,
       }, abort);
       outcome = await runSession(i.sdk, opts, i.turns, i.limits.analyst, {

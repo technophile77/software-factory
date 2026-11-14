@@ -5,6 +5,7 @@ import { ensureOwnerDir, realPath } from "../fsutil";
 import type { Git } from "../git";
 import type { FeatureInterview } from "../interview/feature";
 import type { Logger } from "../log";
+import type { HostRuntime } from "./host";
 import type { AgentSdk, UserTurn } from "./sdk";
 import { caseInsensitiveAt, checkTree, writeNew } from "./worktree-populate";
 
@@ -21,6 +22,11 @@ export interface AgentRuntime {
   proxyScript: string;
   platform?: NodeJS.Platform;
   sleep?(ms: number): Promise<void>;
+  /**
+   * ADR 0026, H-0204: run Claude Code on the owner's PC, not in containers.
+   * Docker is then used only for runs on a model endpoint (F-013).
+   */
+  host?: HostRuntime;
 }
 
 const turn = (content: string): UserTurn => ({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: "" });

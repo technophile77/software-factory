@@ -1,6 +1,6 @@
 import type { EndpointRoute } from "../agent/endpoint-service";
 import { type ReviewerRunInput, runReviewerSessions } from "../agent/reviewer";
-import type { SessionGroup } from "../agent/sandbox";
+import type { AgentGroup } from "../agent/sandbox";
 import type { AdvisorySession } from "./advisory";
 import { readReportFile } from "./report";
 
@@ -8,7 +8,7 @@ import { readReportFile } from "./report";
 export interface AdvisorySessionInput {
   route: EndpointRoute;
   /** A group built with `route.router`; it is closed when the session ends. */
-  group: SessionGroup;
+  group: AgentGroup;
   /** The engine-owned folder this session's report goes to (never the gate's own) and the report's file name. */
   reportDir: string;
   reportName: string;

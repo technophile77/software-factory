@@ -3,6 +3,7 @@ import * as path from "node:path";
 import type { DockerCli } from "../docker/cli";
 import type { Logger } from "../log";
 import { OutsideWorktree, allowedBy, worktreeRelative } from "../policy/glob";
+import { askMatch, projectAsk } from "../policy/ask";
 import type { RolePolicy } from "../policy/role-policy";
 import type { AgentSdk, CanUseTool, FactoryTool, PreToolUseHook, SdkMessage, SessionOptions, SpawnOptions, SpawnedProcess, UserTurn } from "./sdk";
 
@@ -46,13 +47,20 @@ const SHELL_SYNTAX = /[;&|`$<>()\\\n\r]/;
 /** A container path (or one relative to the workspace) as a worktree-relative path under the ADR 0015 rule, or null if it leaves the worktree. */
 export function hostRelative(worktree: string, p: unknown, workspace: string = WORKSPACE): string | null {
   if (p === undefined) return "";
-  if (typeof p !== "string" || p.includes("\0") || p.includes("\\")) return null;
-  let rel: string;
-  if (p.startsWith("/")) {
-    if (p !== workspace && !p.startsWith(`${workspace}/`)) return null;
-    rel = p.slice(workspace.length + 1);
-  } else rel = p;
-  const host = rel === "" ? worktree : path.join(worktree, ...rel.split("/"));
+  if (typeof p !== "string" || p.includes("\0")) return null;
+  let host: string;
+  if (workspace !== WORKSPACE) {
+    // A session on the owner's PC (ADR 0026) names host paths: absolute ones as they are, relative ones from its worktree.
+    host = path.isAbsolute(p) ? p : path.join(worktree, p);
+  } else {
+    if (p.includes("\\")) return null;
+    let rel: string;
+    if (p.startsWith("/")) {
+      if (p !== workspace && !p.startsWith(`${workspace}/`)) return null;
+      rel = p.slice(workspace.length + 1);
+    } else rel = p;
+    host = rel === "" ? worktree : path.join(worktree, ...rel.split("/"));
+  }
   try {
     return worktreeRelative(worktree, host);
   } catch (e) {
@@ -102,9 +110,54 @@ export function unreadableUnder(worktree: string, rel: string, read: RolePolicy[
 /** The tool Claude Code offers the model for a session's structured result. */
 export const STRUCTURED_OUTPUT_TOOL = "StructuredOutput";
 
-export function toolGate(policy: RolePolicy, worktree: string | null, factoryTools: string[], log: Logger, workspace: string = WORKSPACE, structured = false): CanUseTool {
+/** Full-shell roles until Beta (Role policy v2.7, F-015 FR-3, SR-1): `commands` doesn't limit their `Bash`. */
+export const FULL_SHELL_ROLES: readonly string[] = ["software-developer", "test-engineer"];
+
+/**
+ * What the gate needs for a session on the owner's PC (ADR 0026, Role
+ * policy v2.7): the ask rule's handler and the project's extra programs,
+ * and a folder the role may read but never write (F-015 H-0192: the
+ * approved spec and contracts, outside the worktree).
+ */
+export interface HostGate {
+  /** Holds the command until the owner answers; true runs it once. */
+  ask(command: string, matched: string): Promise<boolean>;
+  askExtra: string[];
+  readOnlyRoot?: string;
+}
+
+/**
+ * The ask rule for a role with no ask handler of its own: nothing it runs on
+ * the ask list goes ahead, and the gate's log records each held command.
+ * Roles that can reach the owner (F-015's developer and test engineer) get
+ * a handler that files an inbox item instead.
+ */
+export function denyAsk(manifestDoc: unknown): HostGate {
+  let extra: string[] = [];
+  try {
+    extra = projectAsk(manifestDoc);
+  } catch {
+    // A malformed list can only add programs; the fixed list still applies.
+  }
+  return { ask: async () => false, askExtra: extra };
+}
+
+/** A path under `root` as a `/` path relative to it, or null. Links are followed, as for the worktree. */
+function underRoot(root: string, p: unknown): string | null {
+  if (typeof p !== "string" || p.includes("\0") || !path.isAbsolute(p)) return null;
+  try {
+    return worktreeRelative(root, p);
+  } catch (e) {
+    if (e instanceof OutsideWorktree) return null;
+    throw e;
+  }
+}
+
+export function toolGate(policy: RolePolicy, worktree: string | null, factoryTools: string[], log: Logger, workspace: string = WORKSPACE, structured = false, host?: HostGate): CanUseTool {
   const builtins = new Set<string>(policy.tools.filter((t) => t !== "fetch_page"));
   const mcp = new Set(factoryTools.map((t) => `mcp__${FACTORY_SERVER}__${t}`));
+  // The gate runs twice for one call (hook, then canUseTool), so the owner's answer is kept briefly and used once more.
+  const answered = new Map<string, { ok: boolean; at: number }>();
   return async (name, input) => {
     const deny = (why: string) => {
       log.warn(`${policy.role}: tool ${name.slice(0, 60)} refused: ${why}`);
@@ -121,6 +174,12 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
       const key = (readKey ?? writeKey)!;
       // Only Grep and Glob default to the working folder; a file tool without a file is malformed.
       if (key === "file_path" && typeof input[key] !== "string") return deny("no file path");
+      if (host?.readOnlyRoot && underRoot(host.readOnlyRoot, input[key]) !== null) {
+        if (writeKey) return deny("the approved spec and contracts are read-only");
+        const inside = underRoot(host.readOnlyRoot, input[key])!;
+        if (!allowedBy({ allow: ["**"], deny: policy.read.deny }, inside || ".")) return deny(`the role's read rules don't allow ${inside}`);
+        return { behavior: "allow", updatedInput: input };
+      }
       const rel = hostRelative(worktree, input[key], workspace);
       if (rel === null) return deny("the path is outside the worktree");
       if (!allowedBy(writeKey ? policy.write : policy.read, rel)) return deny(`the role's ${writeKey ? "write" : "read"} rules don't allow ${rel || "the worktree root"}`);
@@ -138,9 +197,29 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
     }
     if (name === "Bash") {
       const cmd = typeof input.command === "string" ? input.command.trim() : "";
-      const program = cmd.split(/\s+/)[0] ?? "";
-      if (!cmd || SHELL_SYNTAX.test(cmd)) return deny("one program per call, without shell syntax");
-      if (!policy.commands.includes(program)) return deny(`${program.slice(0, 40)} is not on the role's command list`);
+      if (!cmd) return deny("no command");
+      const fullShell = host !== undefined && FULL_SHELL_ROLES.includes(policy.role);
+      if (!fullShell) {
+        const program = cmd.split(/\s+/)[0] ?? "";
+        if (SHELL_SYNTAX.test(cmd)) return deny("one program per call, without shell syntax");
+        if (!policy.commands.includes(program)) return deny(`${program.slice(0, 40)} is not on the role's command list`);
+      }
+      if (host) {
+        const matched = askMatch(cmd, host.askExtra);
+        if (matched) {
+          const prior = answered.get(cmd);
+          answered.delete(cmd);
+          let ok: boolean;
+          if (prior && Date.now() - prior.at < 60_000) ok = prior.ok;
+          else {
+            log.warn(`${policy.role}: Bash command held for the owner (ask rule, ${matched}): ${JSON.stringify(cmd).slice(0, 300)}`);
+            ok = await host.ask(cmd, matched).catch(() => false);
+            log.info(`${policy.role}: the held command was ${ok ? "approved and runs once" : "denied"}`);
+            answered.set(cmd, { ok, at: Date.now() });
+          }
+          if (!ok) return deny(`the owner didn't approve ${matched} (ask rule); treat this step as not done`);
+        }
+      }
       return { behavior: "allow", updatedInput: input };
     }
     if (name === "WebSearch" || name === "Skill") return { behavior: "allow", updatedInput: input };
@@ -178,6 +257,8 @@ export interface SessionInput {
   resume?: string;
   /** F-020 FR-9: the JSON Schema the session's report must match, returned as its structured result. */
   outputSchema?: Record<string, unknown>;
+  /** A session on the owner's PC (ADR 0026): the ask rule and the read-only spec folder. */
+  host?: HostGate;
   spawn(o: SpawnOptions): SpawnedProcess;
   log: Logger;
 }
@@ -188,7 +269,7 @@ export function sessionOptions(s: SessionInput, abort: AbortController): Session
   const builtins: string[] = s.policy.tools.filter((t) => t !== "fetch_page");
   if (builtins.includes("Skill") && !s.skillsPluginDir) throw new Error("the role uses Skill, but the image has no baked skills");
   if (!s.instructions.trim()) throw new Error("no instructions for the role");
-  const gate = toolGate(s.policy, s.worktree, s.factoryTools, s.log, s.workspace, s.outputSchema !== undefined);
+  const gate = toolGate(s.policy, s.worktree, s.factoryTools, s.log, s.workspace, s.outputSchema !== undefined, s.host);
   return {
     cwd: s.cwd ?? WORKSPACE,
     settingSources: [],
@@ -257,11 +338,59 @@ export interface SessionOutcome {
   durationMs: number;
 }
 
+/**
+ * A session's wall-time cap that can be held: the owner's time to answer an
+ * ask-rule item doesn't count against the session (Role policy v2.7).
+ */
+export class WallTimer {
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private left: number;
+  private since = 0;
+  private holds = 0;
+  private done = false;
+
+  constructor(ms: number, private readonly onExpire: () => void, private readonly now: () => number = Date.now) {
+    this.left = ms;
+  }
+
+  start(): void {
+    if (this.done || this.holds > 0 || this.timer) return;
+    this.since = this.now();
+    this.timer = setTimeout(() => {
+      this.done = true;
+      this.onExpire();
+    }, Math.max(0, this.left));
+  }
+
+  /** Stops the clock until the returned release is called. */
+  hold(): () => void {
+    if (this.holds++ === 0 && this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+      this.left -= this.now() - this.since;
+    }
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      if (--this.holds === 0) this.start();
+    };
+  }
+
+  stop(): void {
+    this.done = true;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+  }
+}
+
 export interface SessionEvents {
   /** The SDK's session id, recorded as soon as it's known, so an interrupted run can resume from it (FR-14). */
   onSessionId?(id: string): void;
   /** SR-21: every WebSearch query, from the message stream. */
   onWebSearch?(query: string): void;
+  /** Given, the session's wall-time cap runs on it, so an ask can hold it. */
+  wall?(onExpire: () => void): WallTimer;
 }
 
 /**
@@ -275,7 +404,8 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
     if (out.status === "complete") Object.assign(out, { status: "cap", reason });
     opts.abortController.abort();
   };
-  const timer = setTimeout(() => stop("wall time"), caps.wallTimeMs);
+  const wall = ev.wall ? ev.wall(() => stop("wall time")) : new WallTimer(caps.wallTimeMs, () => stop("wall time"), now);
+  wall.start();
   try {
     for await (const m of sdk.query({ prompt: turns, options: opts }) as AsyncIterable<SdkMessage>) {
       if (typeof m.session_id === "string" && m.session_id && m.session_id !== out.sessionId) {
@@ -312,7 +442,7 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
   } catch (e) {
     if (out.status === "complete") Object.assign(out, { status: "error", reason: (e as Error).message.slice(0, 300) });
   } finally {
-    clearTimeout(timer);
+    wall.stop();
     out.durationMs = now() - started;
   }
   return out;
