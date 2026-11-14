@@ -113,7 +113,7 @@ describe("engine start (FR-1 to FR-4)", () => {
     expect(beta).toMatchObject({ state: "running" });
     expect(securityItems(w)).toHaveLength(1);
     const item = securityItemsIn(w.config)[0]!.text;
-    expect(item).toContain("category: Security");
+    expect(item).toContain("\"category\": \"Security\"");
     expect(item).not.toContain("github_pat_");
   });
 
@@ -397,7 +397,7 @@ describe("limits (H-0087, Project manifest v1.4)", () => {
     expect(e.projects[0]!.reason).not.toContain("proxy.pids");
     expect(securityItems(w)).toHaveLength(1);
     const item = securityItemsIn(w.config)[0]!.text;
-    expect(item).toContain("category: Security");
+    expect(item).toContain("\"category\": \"Security\"");
     expect(item).toContain("analyst.turns");
     expect(() => e.limits("acme")).toThrow(/No running project/);
   });
@@ -556,6 +556,6 @@ describe("factory.version sources (spec v30)", () => {
     const e = await boot(w);
     expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringMatching(re) });
     expect(securityItems(w)).toHaveLength(1);
-    expect(securityItemsIn(w.config)[0]!.text).toContain("category: Security");
+    expect(securityItemsIn(w.config)[0]!.text).toContain("\"category\": \"Security\"");
   });
 });

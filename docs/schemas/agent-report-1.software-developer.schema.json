@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "agent-report/1.0"
+    },
+    "role": {
+      "type": "string",
+      "const": "software-developer"
+    },
+    "feature": {
+      "type": "string",
+      "pattern": "^F-\\d{3,6}$"
+    },
+    "stage": {
+      "type": "string",
+      "maxLength": 60
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "blocked",
+        "failed",
+        "partial"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "files_changed": {
+          "maxItems": 2000,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "spec_deviations": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "not_done": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "docs_updated": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        }
+      },
+      "required": [
+        "files_changed",
+        "spec_deviations",
+        "not_done",
+        "docs_updated"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "role",
+    "feature",
+    "stage",
+    "commit",
+    "outcome",
+    "summary",
+    "body"
+  ],
+  "additionalProperties": false
+}

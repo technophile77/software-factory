@@ -58,8 +58,8 @@ Project manifest v1.7 (H-0193) and Agent report v1.5 (H-0194) for F-015
 
 ## Inbox item — v4.0
 
-- Status: Approved (v3.1); v4.0 draft, awaiting owner approval (H-0241)
-- Owner decision: ADR 0022; v4.0 records as JSON (F-020 H-0241, ADR 0032), draft awaiting owner approval; v3.0 by the owner, 2026-11-13 (F-011 H-0165, decision card); v3.1 (F-016 H-0180, `effect_done` and `accepted_risk`) by the owner, 2026-11-13 (decision card). v3.0 replaces v1.1, and v2.0 (F-011 H-0120), v2.1 and Phone issue v1.0 (F-012 H-0125), which were approved but never applied.
+- Status: Approved (v4.0, H-0241)
+- Owner decision: ADR 0022; v4.0 records as JSON (F-020 H-0241, ADR 0032), approved by the owner 2026-11-14 09:20Z (decision card, H-0241 to H-0244 as specced); v3.0 by the owner, 2026-11-13 (F-011 H-0165, decision card); v3.1 (F-016 H-0180, `effect_done` and `accepted_risk`) by the owner, 2026-11-13 (decision card). v3.0 replaces v1.1, and v2.0 (F-011 H-0120), v2.1 and Phone issue v1.0 (F-012 H-0125), which were approved but never applied.
 - Used by: engine (files, reads, records), the config repo workflow (opens issues, posts action comments), Microsoft's GitHub Pull Requests extension and GitHub Mobile (view only)
 - Compatibility: breaking (major) from v1.1: items are issues in the project's private config repo, not files; `pull_request` is not a kind (F-011 OQ-12); owner actions are proven by GitHub (ADR 0018, ADR 0022), not signed commits. Adding a kind, action, label or optional record field is minor; changing a template's fixed text, the marker lines or the command grammar is major. v4.0 is breaking: records move from `inbox/<id>.yaml` to `inbox/<id>.json`, moved once by a script; the fields don't change.
 
@@ -188,13 +188,14 @@ The engine never reads its own comments as commands (F-011 SR-17).
 
 ---
 
-## Agent report — v1.5
+## Agent report — v1.6
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0041);
   v1.3 Gate 1 fields approved (H-0096, owner, decision card, 2026-11-12);
   v1.4 endpoint rungs approved (H-0136, owner, decision card, 2026-11-13);
   v1.5 location and build-stage bodies approved (F-015 H-0194, owner,
-  decision card, 2026-11-14)
+  decision card, 2026-11-14); v1.6 report fields and schemas approved
+  (F-020 H-0242, owner, decision card, 2026-11-14)
 - Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8);
   v1.2 adds the context-hygiene body and `proposed_items`, requested by the
   owner 2026-11-10 (PR #17)
@@ -247,8 +248,8 @@ FR-7). Tuning metrics and Calibration result group rungs by the full
 | Role | Required fields |
 |---|---|
 | requirements-analyst | `spec_path`, `spec_version`, `open_assumptions` (item ids) |
-| software-developer | `files_changed`, `spec_deviations`, `not_done` |
-| test-engineer | `tests_run`, `passed`, `failed`, `skipped`, `criteria_map` (AC id → test ids), `failures` (test, expected, actual, log ref), `not_run` (with reason) |
+| software-developer | `files_changed`, `spec_deviations`, `not_done`; from v1.6 `docs_updated` (path) |
+| test-engineer | `tests_run`, `passed`, `failed`, `skipped`, `criteria_map` (AC id → test ids), `failures` (test, expected, actual, log ref), `not_run` (with reason); from v1.6 `tool_choices` (test type, tool, reason, approval ref or null) |
 | security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks (from F-016 v18 set by the engine from severity and maturity, never by the reviewer; a reviewer's value is ignored); from v1.3 optional `needs_owner`, `options` (id, label), `recommendation`); from v1.3 optional for Gate 1: `checklist` (question, answer), `permissions_added`, `abuse_cases`, `not_applicable` (criterion, reason) |
 | validation-judge | `verdict` (PASS, FAIL, NEEDS_HUMAN_REVIEW), `checklist` (area, status, evidence), `findings` (grade, location, explanation) |
 | orchestrator | `gate`, `checks` (name, passed, evidence); from v1.5, for the stage 6 failure classifier (F-015), `failures` (test, cause, evidence), where cause is one of the failure causes in `testing-strategy.md` |
@@ -259,6 +260,14 @@ FR-7). Tuning metrics and Calibration result group rungs by the full
 test engineer's body the run fields (`tests_run`, `passed`, `failed`,
 `skipped`, `failures`, `not_run`) are filled by the engine from the JUnit XML
 results; the agent fills only `criteria_map`. Additive.
+
+**Schemas (v1.6, F-020).** `docs/schemas/agent-report-1.schema.json` is
+the stored report; `agent-report-1.<role>.schema.json` is what each role's
+agent returns. The agent's schema has no field the engine fills
+(`items_filed`, `artifacts`, `model`, `effort`, `rung`, `usage`,
+`transcript_ref`, `fallback`), so a report that sets one is refused
+(F-020 SR-7). Every object refuses unknown keys. Additive for the stored
+report; the two new body fields are required.
 
 **`proposed_items` (v1.2).** Items a role with no inbox write access wants
 filed: each is a complete Inbox item v1.0 without `id`, `created_at` or

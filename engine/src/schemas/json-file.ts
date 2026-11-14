@@ -35,7 +35,7 @@ export function parseJsonFile<T>(file: string, raw: Buffer | string, schema: z.Z
 }
 
 /** F-020 FR-3: validates before writing, so an invalid file is never committed. */
-export function jsonFileContent<T>(file: string, value: T, schema: z.ZodType<T>): string {
+export function jsonFileContent(file: string, value: unknown, schema: z.ZodType): string {
   const r = schema.safeParse(value);
   if (!r.success) throw failure(file, r.error);
   return JSON.stringify(r.data, null, 2) + "\n";

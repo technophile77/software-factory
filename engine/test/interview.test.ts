@@ -35,11 +35,11 @@ function onlyNewSecurityItem(w: World, before: string): string {
   // One item: its record and its first rendered body, and nothing else changed.
   const changed = git(w.config, "diff-tree", "-r", "--name-only", "--no-commit-id", before, "factory/state").split("\n").sort();
   expect(changed).toHaveLength(2);
-  expect(changed[0]).toMatch(/^inbox\/D-\d+\.rev1\.md$/);
-  expect(changed[1]).toMatch(/^inbox\/D-\d+\.yaml$/);
-  const item = git(w.config, "show", `factory/state:${changed[1]}`);
-  expect(item).toMatch(/^category:\s*Security\s*$/m);
-  return `${item}\n${git(w.config, "show", `factory/state:${changed[0]}`)}`;
+  expect(changed[0]).toMatch(/^inbox\/D-\d+\.json$/);
+  expect(changed[1]).toMatch(/^inbox\/D-\d+\.rev1\.md$/);
+  const item = git(w.config, "show", `factory/state:${changed[0]}`);
+  expect(JSON.parse(item).category).toBe("Security");
+  return `${item}\n${git(w.config, "show", `factory/state:${changed[1]}`)}`;
 }
 
 const err = (r: Record<string, unknown>) => (r.error as { code: number; message: string; data?: unknown }) ?? null;

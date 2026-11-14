@@ -1,0 +1,474 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "inbox-record/4.0"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[DTHSMN]-\\d{4,}$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "decision",
+        "testing",
+        "hygiene",
+        "spec",
+        "maturity",
+        "notice"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "Product",
+        "Architecture",
+        "Interfaces",
+        "Assumptions",
+        "Security"
+      ]
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "effective_priority": {
+      "type": "string",
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "blocking": {
+      "type": "boolean"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "approved",
+        "chosen",
+        "rejected",
+        "changes_requested",
+        "research_requested",
+        "deferred",
+        "dismissed",
+        "closed"
+      ]
+    },
+    "repo": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "feature": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "created_by": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "created_at": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "issue": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "options": {
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 3
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "recommendation": {
+      "type": "string",
+      "maxLength": 3
+    },
+    "steps": {
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "links": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "ref": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "effect": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "maxLength": 100
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 500
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "key": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "revisions": {
+      "minItems": 1,
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rev": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "body_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "issue_body_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "action_comments": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "action": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "id",
+                "action",
+                "sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "dispatched": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "rev",
+          "body_sha256",
+          "action_comments"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "engine_comments": {
+      "maxItems": 2000,
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      }
+    },
+    "refused": {
+      "maxItems": 2000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "comment_id": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "reaction_id": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "history": {
+      "maxItems": 5000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "by": {
+            "type": "string",
+            "enum": [
+              "engine",
+              "owner"
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "filed",
+              "revised",
+              "confirm_requested",
+              "closed",
+              "migrated",
+              "reopened",
+              "effect_done",
+              "chosen",
+              "approved",
+              "rejected",
+              "changes_requested",
+              "research_requested",
+              "deferred",
+              "restored",
+              "dismissed",
+              "step_chosen"
+            ]
+          },
+          "option": {
+            "type": "string",
+            "maxLength": 3
+          },
+          "step": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 99
+          },
+          "rev": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "reaction",
+              "command"
+            ]
+          },
+          "actor_id": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "comment_id": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "reaction_id": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "ref": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "confirmed_by": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "reaction",
+                  "command"
+                ]
+              },
+              "comment_id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "reaction_id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "source",
+              "comment_id"
+            ],
+            "additionalProperties": false
+          },
+          "pending": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "chosen": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "reaction",
+                  "command"
+                ]
+              },
+              "comment_id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "reaction_id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "url": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 4000
+              }
+            },
+            "required": [
+              "action",
+              "source",
+              "comment_id",
+              "url"
+            ],
+            "additionalProperties": false
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 8
+          },
+          "effect": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "stage": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "from": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "at",
+          "by",
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "kind",
+    "title",
+    "priority",
+    "effective_priority",
+    "blocking",
+    "status",
+    "repo",
+    "created_by",
+    "created_at",
+    "links",
+    "revisions",
+    "engine_comments",
+    "history"
+  ],
+  "additionalProperties": false
+}

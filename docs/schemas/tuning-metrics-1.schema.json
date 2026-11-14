@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "tuning-metrics/1.0"
+    },
+    "updated_at": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "cost_unit": {
+      "type": "string",
+      "enum": [
+        "usd",
+        "plan_usage"
+      ]
+    },
+    "prices": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "as_of": {
+          "type": "string",
+          "maxLength": 40
+        }
+      },
+      "required": [
+        "source",
+        "as_of"
+      ],
+      "additionalProperties": false
+    },
+    "roles": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "maxLength": 60
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "ladder_order": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "rungs": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^\\d{1,2}$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "samples": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "passes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "tokens": {
+                  "type": "object",
+                  "properties": {
+                    "median": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "p90": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "median",
+                    "p90"
+                  ],
+                  "additionalProperties": false
+                },
+                "cost_usd": {
+                  "type": "object",
+                  "properties": {
+                    "median": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "p90": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "median",
+                    "p90"
+                  ],
+                  "additionalProperties": false
+                },
+                "duration_s": {
+                  "type": "object",
+                  "properties": {
+                    "median": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "p90": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "median",
+                    "p90"
+                  ],
+                  "additionalProperties": false
+                },
+                "by_repo": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "samples": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "passes": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "samples",
+                      "passes"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "samples",
+                "passes",
+                "tokens",
+                "cost_usd",
+                "duration_s",
+                "by_repo"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ladder_order",
+          "rungs"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "updated_at",
+    "cost_unit",
+    "prices",
+    "roles"
+  ],
+  "additionalProperties": false
+}
