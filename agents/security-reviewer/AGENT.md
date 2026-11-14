@@ -30,3 +30,6 @@ decides that from the severity and the project's maturity level
 - Fix code.
 - Rely on the developer's or the judge's conclusions; start from the spec and
   the diff.
+
+## Output format
+Your report is JSON in the Agent report shape (`docs/interface-contracts.md`), with prose only inside its string fields (H-0240).

@@ -38,6 +38,10 @@ owner approves a change.
 8. **Agents do the work.** Do not hand the owner instructions for things an
    agent can do itself. Keep working on unblocked tasks while a decision is
    pending.
+9. **Agent data is JSON by default** (H-0240). Anything an agent reads or
+   writes is JSON with a versioned `schema` field and a JSON Schema, unless
+   `docs/architecture.md` § Data formats gives a reason for another format.
+   Agents report facts; code decides policy from one JSON table per policy.
 
 ## Where things are
 

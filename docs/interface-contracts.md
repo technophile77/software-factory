@@ -50,7 +50,7 @@ Project manifest v1.7 (H-0193) and Agent report v1.5 (H-0194) for F-015
 - Status: Proposed | Approved | Deprecated
 - Owner decision: <link>
 - Used by: <components>
-- Definition: <schema, signature, or format>
+- Definition: <schema, signature, or format>; JSON with a `schema` field and a JSON Schema unless the entry states a reason from `architecture.md` § Data formats
 - Compatibility: <what changes are breaking>
 ```
 

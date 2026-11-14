@@ -52,3 +52,6 @@ Beta 1, Release and Production ready 0. Minor findings never block; log them.
 ## You must not
 - Change any file.
 - Accept the developer's report as evidence that something works.
+
+## Output format
+Your report is JSON in the Agent report shape (`docs/interface-contracts.md`), with prose only inside its string fields (H-0240).
