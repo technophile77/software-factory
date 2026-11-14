@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { remaining, reviewerPolicy } from "../src/agent/reviewer";
 import { SessionRefused } from "../src/agent/analyst";
 import { Git } from "../src/git";
-import { analystGate1Turn, blocksAt, citesFinding, citesItem, correctionTurn, gate1Resolution, records, reviewerTurn } from "../src/gate1/flow";
+import { analystGate1Turn, blocksAt, gate1QuestionProblem, citesFinding, citesItem, correctionTurn, gate1Resolution, records, reviewerTurn } from "../src/gate1/flow";
 import { plain, renderReport } from "../src/gate1/render";
 import { Gate1Report, readReportFile, validateReport } from "../src/gate1/report";
 import { Standards, StandardsError, loadStandards, parseAdditions, parseStandards } from "../src/gate1/standards";
@@ -330,6 +330,39 @@ describe("FR-9 and FR-13: findings resolved", () => {
     expect(gate1Resolution(row, withAnswer("Print 'Hello, world!\n' to stdout.")).check.passed).toBe(true);
     expect(gate1Resolution(row, withAnswer(fix)).check.passed).toBe(true);
     expect(gate1Resolution(row, withAnswer("Print 'Hello, world!' to stdout.")).check.passed).toBe(false);
+  });
+
+  it("FR-20: the bar applies at use time, so a report written before it follows it too", () => {
+    const low = { criterion: "S4.4", severity: "Low", fix: "Pin dev tools.", explanation: "x", needs_owner: false, location: "SR-2", blocks: false };
+    // Written without a maturity, as reports were before FR-19: no finding carries the recorded flag.
+    const recs = records([low as never, { ...low, severity: "Critical", fix: "Sign releases." } as never], new Map());
+    expect(recs.map((r) => r.recorded)).toEqual([undefined, undefined]);
+    const s = new InterviewState();
+    s.apply(e("gate1_report", { run: "R-1", report: 1, findings: recs }));
+    const evidence = (m: string) => gate1Resolution(spec(""), s, m).check.evidence;
+    expect(evidence("rapid-prototype")).not.toContain("Gate 1 #1");
+    expect(evidence("rapid-prototype")).toContain("Gate 1 #2");
+    expect(evidence("")).toContain("Gate 1 #1");
+    const t = analystGate1Turn("F-001", "docs/features/F-001-x.md", recs, "rapid-prototype")!;
+    expect(t).not.toContain('"ref": "Gate 1 #1"');
+    expect(t).toContain('"ref": "Gate 1 #2"');
+    // Nothing left to ask: no Gate 1 turn at all.
+    expect(analystGate1Turn("F-001", "docs/features/F-001-x.md", [recs[0]!], "rapid-prototype")).toBeNull();
+    const s2 = new InterviewState();
+    s2.apply(e("gate1_report", { run: "R-1", report: 1, findings: [recs[0]] }));
+    expect(gate1Resolution(spec(""), s2, "rapid-prototype").check.passed).toBe(true);
+  });
+
+  it("FR-20: a Gate 1 question must carry its finding's requirement as suggested", () => {
+    const f = (n: number, extra = {}) => ({ n, criterion: "S4.4", severity: "Critical", fix: "Pin dev tools.\\nAnd libraries.", explanation: "x", needs_owner: false, ...extra });
+    const fs = [f(1), f(2, { needs_owner: true }), f(3, { severity: "Low" })];
+    expect(gate1QuestionProblem("Which format?", undefined, fs)).toBeNull();
+    expect(gate1QuestionProblem("Gate 1 #1: pin tools?", "Pin dev tools.\nAnd libraries.", fs, "rapid-prototype")).toBeNull();
+    expect(gate1QuestionProblem("Gate 1 #1: pin tools?", "Accept the suggested requirement word for word", fs)).toMatch(/word for word/);
+    expect(gate1QuestionProblem("Gate 1 #1 pin tools?", undefined, fs)).toMatch(/word for word/);
+    expect(gate1QuestionProblem("Gate 1 #2: pick one", "Pin dev tools.\\nAnd libraries.", fs)).toMatch(/inbox/);
+    expect(gate1QuestionProblem("Gate 1 #3: pin?", "Pin dev tools.\\nAnd libraries.", fs, "rapid-prototype")).toMatch(/known issue/);
+    expect(gate1QuestionProblem("Gate 1 #9: x", "y", fs)).toMatch(/isn't a finding/);
   });
 
   it("FR-19: a finding below the level's bar is recorded, neither asked nor needed in the spec", () => {

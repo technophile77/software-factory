@@ -98,6 +98,14 @@ export function recordedOnly(f: Pick<Gate1Finding, "severity">, maturity: string
   return !blocksAt(f.severity, maturity);
 }
 
+/**
+ * F-016 FR-20: the bar applies whenever a finding is used, not only when its report was written,
+ * so a report from before the bar existed (or before the project's level changed) follows it too.
+ */
+export function belowBar(f: Pick<Gate1Record, "severity" | "recorded">, maturity: string): boolean {
+  return !!f.recorded || (!!maturity && recordedOnly(f, maturity));
+}
+
 export function records(findings: Gate1Finding[], items: Map<number, string>, maturity = ""): Gate1Record[] {
   return findings.map((f, i) => ({
     n: i + 1, criterion: f.criterion, severity: f.severity, fix: f.fix, explanation: f.explanation, needs_owner: f.needs_owner,
@@ -111,8 +119,9 @@ export function records(findings: Gate1Finding[], items: Map<number, string>, ma
  * findings are JSON strings in a labelled data block (SR-4); the instruction
  * around them is the engine's.
  */
-export function analystGate1Turn(feature: string, specPath: string, findings: Gate1Record[]): string {
-  const toAsk = findings.filter((f) => !f.needs_owner && !f.recorded);
+export function analystGate1Turn(feature: string, specPath: string, findings: Gate1Record[], maturity = ""): string | null {
+  const toAsk = findings.filter((f) => !f.needs_owner && !belowBar(f, maturity));
+  if (!toAsk.length) return null;
   return [
     `Security Gate 1 reviewed ${feature}'s spec (${specPath}) and found gaps that new or tightened security requirements resolve. The owner decides each one in this interview.`,
     `For each finding below, ask the owner one question with interview_ask. Start its text with the finding's reference exactly (for example "${findingRef(toAsk[0]?.n ?? 1)}: "), explain the gap in your own words, and give the requirement as suggested. If the owner answers with the suggested requirement word for word, put it in the spec's section 9 table with source "Gate 1 #<n>" and status Approved. If the owner answers anything else, propose an assumption with interview_propose_assumption whose text is the reference, a colon, then exactly the requirement you would record (for example "${findingRef(toAsk[0]?.n ?? 1)}: <requirement>"); only once the owner approves it, put that requirement, word for word, in section 9 the same way. If the owner says no, or rejects the assumption, leave the finding out of the spec; the engine then asks the owner whether to accept the risk. Then bump the spec version and call interview_spec_ready.`,
@@ -193,15 +202,32 @@ export function citesFinding(source: string, n: number): boolean {
  * whitespace, since a chat surface may turn it into a real line break on the way, and a spec
  * table row can only hold the written form.
  */
-const same = (s: string) => norm(s.replace(/\\[nrt]/g, " "));
+export const same = (s: string) => norm(s.replace(/\\[nrt]/g, " "));
 
-export function gate1Resolution(spec: string, state: InterviewState): Resolution {
+/**
+ * F-016 FR-20: a "Gate 1 #n:" question counts for finding n only if its suggestion is the
+ * finding's requirement (gate1Resolution), so one that isn't is refused when asked instead
+ * of found out after the owner has answered it. Null when the question is fine.
+ */
+export function gate1QuestionProblem(text: string, suggested: string | undefined, findings: Gate1Record[], maturity = ""): string | null {
+  const m = /^\s*Gate 1 #(\d+)(?::|\s)/.exec(text);
+  if (!m) return null;
+  const f = findings.find((x) => x.n === Number(m[1]));
+  const ref = findingRef(Number(m[1]));
+  if (!f) return `${ref} isn't a finding in the latest Gate 1 report.`;
+  if (f.needs_owner) return `${ref} is the owner's choice in the inbox, not an interview question.`;
+  if (belowBar(f, maturity)) return `${ref} is below the project's level bar, so it's recorded as a known issue and not asked.`;
+  if (suggested === undefined || same(suggested) !== same(f.fix)) return `A question about ${ref} must give the finding's suggested_requirement, word for word, as suggested.`;
+  return null;
+}
+
+export function gate1Resolution(spec: string, state: InterviewState, maturity = ""): Resolution {
   const rows = specSecurityRequirements(spec);
   const problems: string[] = [];
   const rejected: number[] = [];
   const waiting: number[] = [];
   for (const f of state.gate1.findings) {
-    if (f.recorded) continue;
+    if (belowBar(f, maturity)) continue;
     const ref = findingRef(f.n);
     const accepted = state.gate1.accepted.get(f.n);
     if (accepted) {

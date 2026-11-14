@@ -915,7 +915,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       let r: Awaited<ReturnType<typeof runAnalystSession>>;
       for (;;) {
         const gate1 = f.state.gate1.pending && f.stage() === INTERVIEW_STAGE && f.state.lastSpecReady
-          ? analystGate1Turn(f.id, f.state.lastSpecReady.spec_path, f.state.gate1.findings)
+          ? analystGate1Turn(f.id, f.state.lastSpecReady.spec_path, f.state.gate1.findings, maturityOf(p.manifest!))
           : null;
         // F-016 FR-3, FR-8: what the owner's inbox answers or the readiness gate sent back.
         const returned = f.state.returns.length && f.stage() === INTERVIEW_STAGE && f.state.lastSpecReady
@@ -1119,7 +1119,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   /** FR-9 and FR-13 after the findings interview: readiness, or the owner's call, or the gap named. */
   async function resolveGate1(p: Project, f: FeatureInterview): Promise<void> {
     const { spec, path: specPath } = await branchSpec(p, f);
-    const r = gate1Resolution(spec, f.state);
+    const r = gate1Resolution(spec, f.state, maturityOf(p.manifest!));
     if (r.check.passed) {
       await f.exclusive(() => f.append([{ type: "gate1_resolved", passed: true, evidence: r.check.evidence }, { type: "stage", stage: READINESS_STAGE }], "gate 1: findings resolved"));
       log.info(`${f.id}: Gate 1 findings resolved; the feature is at ${READINESS_STAGE}.`);
@@ -1784,7 +1784,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     }
     const code: Check[] = [
       ...readinessChecks({ spec, specVersion: version ?? 0, state: f.state, chainIntact: f.chainIntact && !f.remoteRefused }),
-      gate1Resolution(spec, f.state).check,
+      gate1Resolution(spec, f.state, maturityOf(p.manifest!)).check,
       ...structuralChecks(spec),
     ];
     if (code.some((c) => !c.passed)) {
@@ -2035,6 +2035,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         worktree,
         log,
         documentText: () => documentText(p, f),
+        maturity: maturityOf(p.manifest!),
         ...(research ? { research } : {}),
         onSpecReady: (passed) => {
           if (passed && !dead && record.run(runId)?.status === "running") runs.finish(runId, "complete");
