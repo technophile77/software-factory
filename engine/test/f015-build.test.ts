@@ -494,3 +494,28 @@ require("fs").writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ resul
     expect(s.count.judge).toBe(2);
   }, 150_000);
 });
+
+describe("a developer that reports blocked", () => {
+  it("keeps the agent's own summary and body in its report and the stop item's private detail", async () => {
+    const { w, d, gh, id } = await signedOff();
+    const feature = id.value;
+    const dev = async function* (sc: Script): AsyncGenerator<SdkMessage> {
+      const turn = (await sc.next())!;
+      yield {
+        type: "result", subtype: "success", session_id: "dev-b", num_turns: 2,
+        structured_output: {
+          schema: "agent-report/1.0", role: "software-developer", feature, stage: "build_and_test_prep", commit: turnFact(turn, /commit "([0-9a-f]{40})"/), outcome: "blocked",
+          summary: "Blocked: the spec leaves the runtime to an architecture decision that isn't recorded.",
+          body: { files_changed: [], spec_deviations: [], not_done: ["everything: no runtime decision"], docs_updated: [] },
+        },
+      } as SdkMessage;
+    };
+    const s = scriptedSdk({ analyst: async function* () {}, reviewer: async function* () {}, developer: dev, tester: async function* () {} });
+    const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh });
+    await until("the stop", () => e.feature(feature)?.state.build.actions.includes("failed") ?? false, 30_000);
+    const rep = JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/build_and_test_prep/software-developer-1.json`));
+    expect(rep.summary).toMatch(/stopped: it reported blocked\. The agent's summary: Blocked: the spec leaves the runtime/);
+    expect(rep.body).toMatchObject({ not_done: ["everything: no runtime decision"] });
+    await until("the stop item", () => items(w).some((i) => String(i.record.title).includes("developer for") && String(i.record.title).includes("stopped")));
+  }, 90_000);
+});

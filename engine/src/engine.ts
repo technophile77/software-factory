@@ -2085,10 +2085,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   /** A failed build step waits on the owner: option A takes the step again (the blocked state's actor). */
-  async function buildStopped(p: Project, f: FeatureInterview, key: string, what: string, why: string, rerun: BuildAction): Promise<void> {
+  async function buildStopped(p: Project, f: FeatureInterview, key: string, what: string, why: string, rerun: BuildAction, agentSaid?: string): Promise<void> {
     await alert(p, `buildstop:${f.id}:${key}`, {
       title: `The ${what} for ${f.id} stopped`, feature: f.id,
-      context: `The build of ${f.id} stopped at the ${what}: ${why}.`,
+      context: `The build of ${f.id} stopped at the ${what}: ${why}.${agentSaid ? ` What the ${what} said is in the console's private detail and in its report on factory/state.` : ""}`,
+      ...(agentSaid ? { private: [{ name: `What the ${what} said`, text: agentSaid }] } : {}),
       impact: `${f.id} waits in the build until this is decided.`,
       confirm: `Run the ${what} again`, hold: "Keep the feature stopped", recommendation: "A",
       effectData: { action: rerun },
@@ -2295,6 +2296,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const usageNow = r ? { usage: usage(r.outcome) } : {};
       let failure = r === null ? "the secrets scan found a secret in its change" : r.failure;
       const report = r?.report as { outcome?: string; summary?: string; body?: Record<string, unknown> } | undefined;
+      // A valid report that isn't complete says why in the agent's own words; that is the owner's only clue, so it is kept.
+      const said = !failure && report?.outcome && report.outcome !== "complete" ? report : null;
       if (!failure && report?.outcome !== "complete") failure = `it reported ${report?.outcome ?? "no outcome"}`;
       if (r?.refused && r.refused.status !== "unchanged") {
         await populateWorktree(git, ctx.repo.localDir, base, wt.path, wt.gitDir);
@@ -2311,8 +2314,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const head = (await ctx.repo.head(branch)) ?? base;
       await p.state_repo!.commit([agentReport({
         feature: f.id, stage, role, n: await nextBuildReport(p, f.id, role, stage), commit: head,
-        outcome: failure ? "partial" : "complete", summary: failure ? `Run ${runId} stopped: ${failure}.` : (report?.summary ?? ""),
-        body: failure ? {} : (report?.body ?? {}), facts: { ...facts, ...usageNow, report_via: "structured_output" }, artifacts: runArtifacts.get(runId) ?? [],
+        outcome: failure ? "partial" : "complete", summary: failure ? `Run ${runId} stopped: ${failure}.${said?.summary ? ` The agent's summary: ${said.summary}` : ""}` : (report?.summary ?? ""),
+        body: failure ? (said?.body ?? {}) : (report?.body ?? {}), facts: { ...facts, ...usageNow, report_via: "structured_output" }, artifacts: runArtifacts.get(runId) ?? [],
       })], `${f.id}: ${w.what} run ${runId} ${failure ? "stopped" : "done"}`);
       await pushState(p);
       runs.finish(runId, failure ? "failed" : "complete", failure ?? undefined);
@@ -2321,7 +2324,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const spent = fix && !resolving ? { ms: r?.outcome.durationMs ?? 0, stage6: true } : {};
       if (failure) {
         await recordBuild(f, "failed", { run: runId, why: failure, ...spent });
-        await buildStopped(p, f, runId, w.what, failure, resolving ? "resolve" : fix ? (role === "software-developer" ? "to_developer" : "to_test_engineer") : w.rerun);
+        await buildStopped(p, f, runId, w.what, failure, resolving ? "resolve" : fix ? (role === "software-developer" ? "to_developer" : "to_test_engineer") : w.rerun, said?.summary ? await scrubPrivate(said.summary.slice(0, 4000)) : undefined);
         return false;
       }
       // The run report joins this map to the results (FR-6); a fix may change it.
