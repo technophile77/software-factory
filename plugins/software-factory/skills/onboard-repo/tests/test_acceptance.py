@@ -692,8 +692,8 @@ class AC08Level(Base):
                                    ".github/workflows/ci.yml": wf(BUILD_SMOKE)}))
         m = a["maturity"]
         self.assertEqual(m["recommended"], "rapid-prototype")
-        self.assertEqual(m["criteria_status"], "draft")
-        self.assertIn("draft", a["_md"])
+        self.assertEqual(m["criteria_status"], "approved")
+        self.assertIn("promotion criteria are approved", a["_md"])
         alpha = next(l for l in m["levels"] if l["level"] == "alpha")
         missing = [e["evidence"] for e in alpha["evidence"] if not e["met"]]
         self.assertTrue(any("nit test" in e for e in missing), missing)
@@ -1695,7 +1695,7 @@ class AC12Items(Base):
             self.assertRegex(cov[0], rf"(?m)^#+ .*{h}", h)
         level_items = [t for t in items.values() if "category: Product" in t]
         self.assertEqual(len(level_items), 1)
-        self.assertIn("draft", level_items[0])
+        self.assertNotIn("still draft", level_items[0])
 
     def test_ac12_coverage_present_means_no_coverage_item(self):
         root = self.repo({"pyproject.toml": "[tool.coverage.run]\nbranch = true\n", "uv.lock": "",

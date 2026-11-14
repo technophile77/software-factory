@@ -1048,7 +1048,7 @@ def recommend_level(gaps, readme):
             still_climbing = False
     return {
         "recommended": recommended,
-        "criteria_status": "draft",  # maturity-levels.md promotion table is not approved yet
+        "criteria_status": "approved",  # maturity-levels.md tables approved by the owner (H-0250)
         "note": "Rapid prototype is the floor. Higher levels also need evidence only the factory produces "
                 "(Code Review reports, CI history), so a newly onboarded repo starts low and is promoted with evidence.",
         "levels": levels,
@@ -1680,7 +1680,7 @@ def planned_items(a, assessment_ref, include_complexity=False, level=None):
         "options": [{"id": chr(65 + i), "label": l} for i, l in enumerate(LEVELS)],
         "recommendation": chr(65 + LEVELS.index(rec)),
         "context": "Onboarding needs a starting level to choose the CI jobs and gate bars. "
-                   f"The assessment recommends {rec}. The promotion criteria in maturity-levels.md are still draft.",
+                   f"The assessment recommends {rec}.",
         "options_body": "\n".join(f"- **{chr(65 + i)}. {l}:** " + "; ".join(("met: " if e["met"] else "missing: ") + e["evidence"]
                                                                           for e in a["maturity"]["levels"][i]["evidence"])
                                   for i, l in enumerate(LEVELS)),
