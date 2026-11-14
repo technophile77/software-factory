@@ -13,11 +13,12 @@ machine-readable version lives in `workflows/feature-development/`.
 | 6. Orchestrator review | Orchestrator | Tests pass and the run was complete |
 | 7. Final security review (Gate 2) | Security reviewer | No blocking findings |
 | 8. Validation | Validation judge | PASS |
-| 9. Pull request | Orchestrator | Items 1 to 11 of `definition-of-done.md` met; PR open; CI green before it is marked ready |
+| 9. Pull request | Orchestrator | Items 1 to 11 of `definition-of-done.md` met; PR open; marked ready once item 12 is met (at Rapid prototype by the local test run, ADR 0030) |
 
 The owner merges in GitHub's PR view (F-011, ADR 0022). Nobody else merges,
 except the engine for a hygiene PR identical to an approved hygiene change
-(F-011 FR-10).
+(F-011 FR-10), and, at Rapid prototype, Claude for a PR whose content the
+owner has approved, once the tests covering it pass locally (ADR 0030).
 
 ## Readiness gate (stage 4)
 

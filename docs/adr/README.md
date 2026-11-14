@@ -16,7 +16,7 @@ in order, using `template.md`.
 | [0005](0005-branching-feature-agent-branches-squash.md) | Feature branches with agent sub-branches, squash-merged | Accepted; amended by 0028 |
 | [0006](0006-pr-factory-token-protected-main.md) | PRs via a dedicated factory token, main protected | Superseded by 0017 |
 | [0007](0007-unlimited-feature-concurrency.md) | Unlimited feature concurrency | Accepted |
-| [0008](0008-ci-required-gate-by-maturity.md) | CI is a required merge gate, scaled by maturity | Accepted |
+| [0008](0008-ci-required-gate-by-maturity.md) | CI is a required merge gate, scaled by maturity | Accepted; advisory at Rapid prototype by 0030 |
 | [0009](0009-factory-state-branch.md) | Inbox items live on a dedicated factory/state branch | Accepted; amended by 0022, 0028 |
 | [0010](0010-project-config-repo.md) | One config repo per project, layered on the master factory | Accepted |
 | [0011](0011-inbox-extension-libraries.md) | Libraries for the VS Code inbox extension | Superseded by 0022 for inbox items |
@@ -25,7 +25,7 @@ in order, using `template.md`.
 | [0014](0014-owner-approval-github-device-flow.md) | Owner approval of interview sessions through GitHub on the owner's phone | Accepted |
 | [0015](0015-agent-containers-signed-owner-actions.md) | Container per agent session, path matching, signed owner actions | Accepted; decision 1 suspended until Beta by 0026 |
 | [0016](0016-python-coverage-tool.md) | coverage.py measures coverage for the factory's Python code | Accepted |
-| [0017](0017-owner-account-prs-inbox-merge.md) | PRs with the owner's own account; the inbox click is the approval | Accepted; residual risk widened until Beta by 0026 |
+| [0017](0017-owner-account-prs-inbox-merge.md) | PRs with the owner's own account; the inbox click is the approval | Accepted; residual risk widened until Beta by 0026; Claude merges at Rapid prototype by 0030 |
 | [0018](0018-phone-actions-proven-by-github.md) | Owner actions from the phone are proven by the owner's GitHub account | Accepted |
 | [0019](0019-model-endpoints-through-gateway.md) | Configured model endpoints are upstreams of the credential gateway | Accepted |
 | [0020](0020-onboarding-checks-on-standard-tools.md) | The onboarding checker uses PyYAML, zizmor and gitleaks | Accepted |
@@ -35,3 +35,4 @@ in order, using `template.md`.
 | [0025](0025-interview-tools-over-mcp.md) | The spec interview's tools come from an MCP mode of the engine | Accepted |
 | [0026](0026-agents-on-host-until-beta.md) | Agents run on the owner's PC without containers until Beta | Accepted |
 | [0028](0028-code-in-code-repos-records-in-config-repo.md) | Code goes to the code repos; requirements and records stay in the config repo | Accepted |
+| [0030](0030-rapid-prototype-advisory-ci-claude-merges.md) | At Rapid prototype, CI is advisory and Claude merges PRs once local tests pass | Accepted |

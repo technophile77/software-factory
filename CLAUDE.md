@@ -25,7 +25,17 @@ owner approves a change.
    still undecided. If work depends on one, raise it; do not pick an answer.
 5. **Only five decision categories exist:** Product, Architecture, Interfaces,
    Assumptions, Security. Do not invent others.
-6. **Agents do the work.** Do not hand the owner instructions for things an
+6. **Tests pass locally before a PR opens.** Run the tests that cover the
+   change (the affected suites at least) and list them in the PR
+   description. CI still runs on every PR and after merge.
+7. **Merging at Rapid prototype (ADR 0030).** Claude may approve and merge a
+   PR once rule 6 is met, the PR is out of draft with an up-to-date title
+   and description, every change-controlled edit, decision and spec in it
+   has the owner's recorded approval, and the owner has not asked to hold
+   it. CI is advisory at this level; if it goes red on `main` after a
+   merge, fix forward or revert at once. Everything else still needs the
+   owner.
+8. **Agents do the work.** Do not hand the owner instructions for things an
    agent can do itself. Keep working on unblocked tasks while a decision is
    pending.
 

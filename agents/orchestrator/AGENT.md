@@ -34,8 +34,9 @@ your report's `failures`.
   escalate to the Testing inbox with full evidence.
 - Send passing work to Gate 2, then to the validation judge.
 - Open the PR when items 1 to 11 of `definition-of-done.md` have evidence,
-  and mark it ready for the owner only when CI is green on its head (item 12).
-  Treat red CI as a test failure.
+  and mark it ready for the owner only when item 12 is met: at Rapid
+  prototype the covering tests passed on its head (CI is advisory, ADR 0030);
+  from Alpha, CI is green on its head. Treat red CI as a test failure.
 - Keep unrelated work moving while decisions are pending.
 - After every run, whether a PR opened or the run stopped at an inbox, write
   the run review (`docs/features/F-002-model-effort-tuning.md`): each role's
