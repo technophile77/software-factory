@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 45
+- **Spec version:** 46
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -508,3 +508,4 @@ section 9.
 | 43 | 2026-11-12 | AC-21 residual risk accepted until Alpha: text hidden only by a page's stylesheet rules can reach the web reader (inline hiding, hidden elements, zero-width and bidi characters are stripped). Must be fixed before promotion to Alpha | Owner, 2026-11-12 (decision card) |
 | 44 | 2026-11-12 | AC-13 for increment 1: the reason no session started is recorded in the feature's transcript and the engine log, and that counts as the owner being told. A channel surface for it (for example a per-feature reason in `engine.status`) comes with the VS Code extension increment, as an Interfaces change then (validation M8, option A) | Owner, 2026-11-12 (decision card) |
 | 45 | 2026-11-14 | Reopened for ADR 0026 (no containers until Beta): until-Beta wording for FR-8, AC-16, SR-6, SR-9 and SR-18 in section 9 | Owner, 2026-11-14 (decision cards) |
+| 46 | 2026-11-14 | v41's exception closed for code by F-015 and ADR 0028: code and tests now go to the feature's code repo; specs, transcripts, reports and records stay in the private config repo by design | Owner, 2026-11-14 (decision card, F-015 H-0195) |

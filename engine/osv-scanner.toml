@@ -5,3 +5,36 @@
 # id = "GHSA-xxxx-xxxx-xxxx"
 # ignoreUntil = 2027-02-01
 # reason = "Not in a used code path: ..."
+
+# Semgrep 1.183.0 dependencies (H-0196; owner accepted 2026-11-14, decision
+# card). Semgrep pins both packages exactly, up to 1.185.0, so no release
+# avoids them. Re-check at expiry.
+[[IgnoredVulns]]
+id = "GHSA-84m7-p3x7-pcfv"
+ignoreUntil = 2027-02-12
+reason = "mcp 1.29.0 Streamable HTTP server sessions: the engine runs only `semgrep scan`, never `semgrep mcp`, so no MCP server starts."
+
+[[IgnoredVulns]]
+id = "GHSA-5h93-6whr-6q8j"
+ignoreUntil = 2027-02-12
+reason = "mcp 1.29.0 HTTP client redirects: Semgrep's MCP client code runs only under `semgrep mcp`, which the engine never starts."
+
+[[IgnoredVulns]]
+id = "GHSA-w4fh-qvv9-3v23"
+ignoreUntil = 2027-02-12
+reason = "mcp 1.29.0 server bearer-token audience: no MCP server runs under `semgrep scan`."
+
+[[IgnoredVulns]]
+id = "GHSA-rwrf-2pqf-9j8j"
+ignoreUntil = 2027-02-12
+reason = "mcp 1.29.0 client tool-schema $ref fetching: no MCP client runs under `semgrep scan`."
+
+[[IgnoredVulns]]
+id = "GHSA-xcq7-p3pf-p88h"
+ignoreUntil = 2027-02-12
+reason = "opentelemetry-api 1.37.0 tracestate ReDoS: parses inbound HTTP headers; a command-line scan receives none, and the engine never passes --trace."
+
+[[IgnoredVulns]]
+id = "GHSA-mf5v-w3w3-f6cg"
+ignoreUntil = 2027-02-12
+reason = "opentelemetry-api 1.37.0 traceparent ReDoS: parses inbound HTTP headers; a command-line scan receives none, and the engine never passes --trace."
