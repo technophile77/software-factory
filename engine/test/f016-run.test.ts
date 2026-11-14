@@ -489,9 +489,21 @@ describe("F-016 H-0182: chain and Security and Testability Review run limit item
     const state = path.join(w.config, ".factory");
     const file = path.join(state, "interviews", feature, "transcript.jsonl");
     const original = fs.readFileSync(file, "utf8");
-    const commit = (m: string) => execFileSync("git", ["-C", state, "-c", "user.name=someone", "-c", "user.email=someone@example.invalid", "-c", "core.hooksPath=/dev/null", "commit", "-qam", m, "--no-verify"]);
+    // The engine's own commits briefly take the worktree's index lock, after their ref moves (which is what the
+    // checks below see), so a person's commit here can meet it and must try again, as git's message says to.
+    const commit = async (m: string) => {
+      for (let i = 0; ; i++) {
+        try {
+          execFileSync("git", ["-C", state, "-c", "user.name=someone", "-c", "user.email=someone@example.invalid", "-c", "core.hooksPath=/dev/null", "commit", "-qam", m, "--no-verify"], { stdio: ["ignore", "pipe", "pipe"] });
+          return;
+        } catch (e) {
+          if (i >= 50 || !String((e as { stderr?: Buffer }).stderr ?? "").includes("index.lock")) throw e;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+    };
     fs.writeFileSync(file, original.replace("Export", "Forged"));
-    commit("tidy");
+    await commit("tidy");
     await e.sync();
     // The stopped analyst files its own analyststop item too, so the chain items are found by type, not by number.
     const chainItem = (n: number) => items(w).filter((i) => i.record.effect?.type === "chain")[n];
@@ -504,13 +516,12 @@ describe("F-016 H-0182: chain and Security and Testability Review run limit item
     expect(effects(w, chainItem(0)!.id)[0]).toMatchObject({ effect: "chain_still_broken" });
     await until("a new chain item", () => !!chainItem(1));
     expect(e.feature(feature)!.chainIntact).toBe(false);
-    // The engine is quiet between polls once the second issue is up, so the hand-made commit below races nothing.
     await pollUntil(w, "the second issue", () => bound(1));
-    // The stopped analyst's own item writes too; wait until every item is bound, so the engine is quiet.
+    // The stopped analyst's own item is bound at a poll too; wait for every item, so no binding is still to come.
     await pollUntil(w, "every issue bound", () => items(w).every((i) => !!i.record.revisions.at(-1)?.action_comments.length));
 
     fs.writeFileSync(file, original);
-    commit("restore");
+    await commit("restore");
     await e.sync();
     await act(w, gh, chainItem(1)!.record.issue, "choose:A");
     await pollUntil(w, "the effect", () => effects(w, chainItem(1)!.id).length === 1);

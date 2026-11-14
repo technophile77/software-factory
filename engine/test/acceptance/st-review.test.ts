@@ -603,7 +603,8 @@ describe("AC-10 / FR-11: no reviewer entry at the pinned version", () => {
     await r.w.settle();
     await realWait(1000);
     expect(r.sdk.of("reviewer")).toEqual([]);
-    expect(engineLog(r.w)).toMatch(/AGENT\.md/);
+    // As in G1-20: the engine logs why after the analyst settles, which a slow host (Windows CI) takes longer to reach.
+    await waitFor(() => /security.reviewer/i.test(engineLog(r.w)) && /AGENT\.md/.test(engineLog(r.w)), 30_000, "the engine log to say why");
   });
 
   it("[G1-22] FR-11: a project's limits may lower the reviewer's turn cap", T, async () => {
