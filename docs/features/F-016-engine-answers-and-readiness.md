@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until I
   can start onboarding some of my existing projects?"; chose to build engine
   increment 3 next, decision card)
-- **Spec version:** 18
+- **Spec version:** 19
 
 This is the rest of the engine's increment 3 ("Requirements to ready", F-007
 section 13). F-008 built Security Gate 1 and said that reading inbox answers
@@ -81,6 +81,7 @@ signs the spec off, and the feature is handed to development
 | FR-17 | The spec's exact structure is defined in `docs/features/feature-template.structure.json`: the twelve level-2 headings of the template, word for word and in order, each once, and the header row of the first table in sections 3, 4, 8, 9 and 12. Any other level-2 section goes after section 12; level-3 and lower headings may appear inside any section. The engine states this structure in the analyst's first turn, and `interview_spec_ready` adds a `spec_structure` check that fails on any difference, naming each missing, repeated, misplaced or unknown heading and each wrong header row by line number and the template's exact text (never spec text). The readiness gate and Gate 1's resolution run the same check, so FR-16's second title no longer passes; the engine's table reader still accepts it. |
 | FR-18 | When Gate 1 matches the owner's answer, the finding's suggested requirement and the spec's section 9 row word for word (F-008 FR-9, FR-15), a written escape `\n`, `\t` or `\r` counts as whitespace, the same as a real line break, tab or space. Any other difference still fails. |
 | FR-19 | Gate 1 decides what blocks in code, never the reviewer. Each finding's `blocks` is set by the engine from its severity and the project's `maturity`, using `plugins/software-factory/skills/onboard-repo/scripts/security-blocking.json`, the one copy of security-standards.md's "What blocks a PR, by maturity level" table (H-0235), which the onboarding checker also reads. A reviewer's own `blocks` value is ignored, and its instructions no longer ask for one. A finding that doesn't block at the project's level, including one framed as the owner's choice, is recorded as a known issue in the Gate 1 report ("open until fixed before promotion"); it is neither asked in the interview nor filed to the inbox, and Gate 1 resolution doesn't need it in the spec. When no finding blocks, the feature goes on to the readiness gate. An unknown level or severity blocks. |
+| FR-20 | The severity bar (FR-19) applies whenever Gate 1 uses a finding: when it builds the analyst's findings turn, when it checks a "Gate 1 #n:" question, and when it resolves Gate 1. A report written before FR-19, or before the project's level changed, follows the bar for the project's current `maturity`. `interview_ask` and `interview_revise` refuse a question whose text starts with "Gate 1 #n" unless finding n is in the latest report, isn't the owner's inbox choice, is at or above the bar, and the question's `suggested` is the finding's requirement word for word (FR-18 matching). When no finding is left to ask, the analyst gets no findings turn. |
 | FR-12 | Existing open item files on `factory/state` are moved to issues by F-011's one-time migration script (F-011 FR-16); an item whose effect is defined here gets that effect when answered on its issue. |
 
 ## 4. Acceptance criteria
@@ -106,6 +107,7 @@ signs the spec off, and the feature is handed to development
 | AC-19 | Given a spec whose security table sits under "## 6. Security and privacy" / "### Security requirements", then `interview_spec_ready` fails `spec_structure`, its evidence names the missing "## 9. Security considerations" heading and the unknown heading's line, and the feature stays in the interview; given the same spec with the template's headings and header rows, the check passes; extra sections after section 12 and level-3 headings inside a section pass. | FR-17 |
 | AC-20 | Given a finding whose suggested requirement contains the written escape `\n`, and an owner answer with a real line break in its place, then the answer counts as the suggestion word for word and an Approved row with the written escape resolves the finding; an answer that drops the escape and its whitespace still fails. | FR-18 |
 | AC-21 | Given a project at `rapid-prototype` and a Gate 1 report with Low and High findings, then none is asked or filed, both are recorded as known issues in the rendered report, and the feature reaches `readiness_gate`; given the same at `alpha`, then only the High finding goes to the interview; a reviewer report without `blocks` is valid. | FR-19 |
+| AC-22 | Given a Gate 1 report written without `recorded` flags, holding a Low and a Critical finding, at `rapid-prototype`, then Gate 1 resolution and the analyst's turn need only the Critical finding; given an `interview_ask` for "Gate 1 #n:" whose `suggested` isn't finding n's requirement, or for a finding below the bar or in the inbox, then the call is refused with `invalid` and nothing is recorded. | FR-20 |
 | AC-12 | Given a feature waiting on items, then `engine.status` lists its stage and the open item ids. | FR-10 |
 
 ## 5. Constraints
@@ -278,6 +280,7 @@ Checked 2026-11-13 against spec v10.
 | 16 | 2026-11-14 | FR-17, AC-19 and H-0189 added after the live trial's analyst put the security table under its own headings: the spec's structure is defined in JSON and checked exactly (option A), so FR-16's second title no longer passes and AC-18 drops it | Owner, 2026-11-14 (decision card and in thread) |
 | 17 | 2026-11-14 | FR-18 and AC-20 added after the live trial's interview skill turned a written `\n` in a Gate 1 suggestion into a real line break, so the owner's word-for-word answer didn't match (option A) | Owner, 2026-11-14 (decision card and in thread) |
 | 18 | 2026-11-14 | FR-19, AC-21 and H-0235 added after the live trial's Gate 1 asked the owner about Low findings that the approved standards never block: code applies the approved severity bar per maturity level from one JSON file (option A) | Owner, 2026-11-14 (decision cards and in thread) |
+| 19 | 2026-11-14 | FR-20 and AC-22 added after the live trial re-asked Gate 1 findings: the analyst filed Gate 1 questions with placeholder suggestions, and Low findings in a report written before FR-19 still blocked. The bar now applies at use time and Gate 1 questions are checked when asked | Owner, 2026-11-14 (decision card and in thread) |
 
 ## 13. Open questions
 | Id | Question | Category | Status |
