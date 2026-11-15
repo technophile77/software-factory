@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { realPath } from "../fsutil";
 import type { Git } from "../git";
 import { Children, killTree } from "../proc";
-import { JunitError, MAX_RESULTS_BYTES, type TestCase, parseJunit } from "./junit";
+import { JunitError, MAX_RESULTS_BYTES, type TestCase, parseJunit, undoubled } from "./junit";
 
 /**
  * F-015 FR-6, SR-8, SR-9: the engine runs a repo's declared test command
@@ -204,7 +204,8 @@ export interface RunReport {
  */
 export function runReport(commit: string, cases: TestCase[], criteriaMap: Record<string, string[]>, problem: string | null = null, logRef = ""): RunReport {
   const byId = new Map(cases.map((c) => [c.id, c]));
-  const find = (t: string) => byId.get(t) ?? cases.find((c) => c.name === t || `${c.classname}#${c.name}` === t || t.endsWith(`#${c.name}`));
+  const named = (t: string, c: TestCase, name: string) => name === t || `${c.classname}#${name}` === t || t.endsWith(`#${name}`);
+  const find = (t: string) => byId.get(t) ?? cases.find((c) => named(t, c, c.name)) ?? cases.find((c) => named(t, c, undoubled(c.name)));
   const not_run = cases.filter((c) => c.status === "skipped").map((c) => ({ test: c.id.slice(0, 300), reason: (c.message || "skipped with no reason").slice(0, 1000) }));
   const criteria: RunReport["criteria"] = {};
   const missing: string[] = [];

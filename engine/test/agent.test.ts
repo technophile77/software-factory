@@ -6,7 +6,7 @@ import { AnalystRunInput, SessionRefused, runAnalystSession } from "../src/agent
 import { analystTools, fetchPageTool, toCallResult, UNTRUSTED_LABEL } from "../src/agent/factory-tools";
 import { DUMMY_KEY, ProxyClient, SessionGroup } from "../src/agent/sandbox";
 import type { AgentSdk } from "../src/agent/sdk";
-import { CLAUDE_BIN, CONTAINER_FLAGS, SessionCaps, containerSpawn, hostRelative, preToolUseGate, runSession, sessionOptions, toolGate, unreadableUnder } from "../src/agent/session";
+import { ASK_WAIT_MS, CLAUDE_BIN, CONTAINER_FLAGS, SessionCaps, containerSpawn, hostRelative, preToolUseGate, runSession, sessionOptions, toolGate, unreadableUnder } from "../src/agent/session";
 import { DockerCli, DockerError, dockerName, isLocalEndpoint, localEndpoints, pickEndpoint, pipeExists, stderrTail } from "../src/docker/cli";
 import { findOnPath } from "../src/fsutil";
 import { BASE_IMAGE, agentBuildArgs, buildAgentImage, engineFilesDigest, skillsPluginDir, writeBuildContext } from "../src/docker/image";
@@ -398,6 +398,8 @@ describe("SR-10 session options and the FR-9 tool gate", () => {
     // H1: the gate runs as a PreToolUse hook too, since Claude Code skips canUseTool for calls it approves itself.
     expect(Object.keys(o.hooks)).toEqual(["PreToolUse"]);
     expect(o.hooks.PreToolUse).toHaveLength(1);
+    // Claude Code runs the tool when a hook times out, so the hook outlasts the owner's answer window for a held command.
+    expect(o.hooks.PreToolUse[0].timeout * 1000).toBeGreaterThan(ASK_WAIT_MS);
     expect(o.hooks.PreToolUse[0]).not.toHaveProperty("matcher");
     expect(o.systemPrompt).toBe("You are the analyst.");
     expect(o.plugins).toEqual([{ type: "local", path: "/opt/factory/skills" }]);
@@ -442,6 +444,8 @@ describe("SR-10 session options and the FR-9 tool gate", () => {
     expect((await call("Glob", { pattern: "*", path: "/workspace/.env" })).hookSpecificOutput?.permissionDecision).toBe("deny");
     expect((await call("Read", "not an object")).hookSpecificOutput?.permissionDecision).toBe("deny");
     expect(await preToolUseGate(async () => ({ behavior: "deny", message: "m" }))({ hook_event_name: "PostToolUse" }, undefined, sig)).toEqual({});
+    const failed = await preToolUseGate(async () => Promise.reject(new Error("boom")))({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" } }, undefined, sig);
+    expect(failed.hookSpecificOutput?.permissionDecision).toBe("deny");
   });
 
   it("H1: Grep over a folder is allowed only if every file under it could be read", async () => {
