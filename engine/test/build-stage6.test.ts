@@ -3,8 +3,9 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { JunitError, parseJunit } from "../src/build/junit";
 import { type Stage6Limits, afterClassify, afterRun, checkClassification, stage6Counts } from "../src/build/stage6";
-import { TestRunError, cmdQuote, readResults, resolveProgram, runCommand, runReport, testEnv } from "../src/build/test-run";
+import { TestRunError, clearResults, cmdQuote, readResults, resolveProgram, runCommand, runReport, testEnv } from "../src/build/test-run";
 import type { BuildEvent } from "../src/interview/model";
+import type { Git } from "../src/git";
 import { Children } from "../src/proc";
 import { tmpdir } from "./helpers";
 
@@ -55,6 +56,21 @@ describe("JUnit results (SR-8, AC-25)", () => {
     expect(() => readResults(wt, "reports/junit.xml")).toThrow(/5 MiB/);
     fs.writeFileSync(path.join(wt, "reports", "junit.xml"), XML);
     expect(readResults(wt, "reports/junit.xml")).toHaveLength(4);
+  });
+
+  it("creates a missing results folder before the run, since runners such as node --test don't", async () => {
+    const wt = tmpdir();
+    const untracked = { out: async () => "" } as unknown as Git;
+    const full = await clearResults(untracked, wt, path.join(wt, ".git"), "test-results/junit.xml");
+    expect(fs.statSync(path.dirname(full)).isDirectory()).toBe(true);
+    expect(fs.existsSync(full)).toBe(false);
+  });
+
+  it("refuses a results folder that a symlink takes outside the worktree", async () => {
+    const wt = tmpdir();
+    fs.symlinkSync(tmpdir(), path.join(wt, "out"));
+    const untracked = { out: async () => "" } as unknown as Git;
+    await expect(clearResults(untracked, wt, path.join(wt, ".git"), "out/junit.xml")).rejects.toThrow(/outside the worktree/);
   });
 });
 
