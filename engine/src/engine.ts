@@ -2704,7 +2704,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (!tokenChecked.has(tokenKey)) {
       const api = o.tokenCheck ? o.tokenCheck(p.token!) : new HttpTokenCheck(p.token!, log, GITHUB_API_BASE);
       const project = [...p.manifest!.repos.map((x) => `${x.owner}/${x.repo}`), await configSlug(p)];
-      const problems = await tokenProblems(api, project, { repo, base: await ctx.repo.fetchMain(p.token!) });
+      const problems = await tokenProblems(api, project, { repo, base: await ctx.repo.fetchMain(p.token!) }, p.token!);
       if (problems.length) {
         await prRefused(p, f, `token:${tokenKey.slice(0, 16)}`, `${p.name}'s token has more access than the factory allows`, `${problems.join("; ")} (F-015 SR-2). Make a fine-grained token for the project's repos only, without the Workflows permission`);
         stop(p, "the owner token has more access than F-015 SR-2 allows");

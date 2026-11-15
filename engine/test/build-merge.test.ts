@@ -71,11 +71,18 @@ describe("autoMergeHygiene (AC-14, AC-29)", () => {
 
 describe("tokenProblems (SR-2, AC-19)", () => {
   const project = ["o/web", "o/config"];
-  it("passes a token that reaches only the project and can't write workflows", async () => {
-    expect(await tokenProblems({ reachableRepos: async () => ["O/Web", "o/config"], workflowWriteRefused: async () => true }, project, { repo: "o/web", base: SHA })).toEqual([]);
+  const PAT = "github_pat_x";
+  const repos = (...r: Array<[string, boolean]>) => async () => r.map(([name, priv]) => ({ name, private: priv }));
+  it("passes a fine-grained token that reaches no private repo outside the project and can't write workflows", async () => {
+    // Public repos elsewhere are listed for every token and don't count.
+    expect(await tokenProblems({ reachableRepos: repos(["O/Web", true], ["o/config", true], ["org/public-lib", false]), workflowWriteRefused: async () => true }, project, { repo: "o/web", base: SHA }, PAT)).toEqual([]);
   });
-  it("names repos outside the project and a workflow write that went through", async () => {
-    const r = await tokenProblems({ reachableRepos: async () => ["o/web", "o/other"], workflowWriteRefused: async () => false }, project, { repo: "o/web", base: SHA });
+  it("names private repos outside the project and a workflow write that went through", async () => {
+    const r = await tokenProblems({ reachableRepos: repos(["o/web", true], ["o/other", true], ["org/public-lib", false]), workflowWriteRefused: async () => false }, project, { repo: "o/web", base: SHA }, PAT);
     expect(r).toEqual([expect.stringContaining("outside the project (o/other)"), expect.stringContaining("can write CI workflows in o/web")]);
+  });
+  it("refuses a classic token, which can't be limited to the project's repos", async () => {
+    const r = await tokenProblems({ reachableRepos: repos(["o/web", true]), workflowWriteRefused: async () => true }, project, { repo: "o/web", base: SHA }, "ghp_classic");
+    expect(r).toEqual([expect.stringContaining("isn't a fine-grained token")]);
   });
 });

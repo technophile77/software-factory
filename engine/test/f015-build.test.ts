@@ -320,7 +320,7 @@ process.exit(1);
     const s = scriptedSdk({ analyst: async function* () {}, reviewer: codeReviewer, orchestrator: classifier, developer: dev, tester: tester(() => feature, seen), judge });
     const pulls = new FakePulls(path.join(w.root, "remote", "example-org", "acme-web.git"));
     const probes: string[] = [];
-    const tokenApi = { reachableRepos: async () => ["example-org/acme-web", "example-org/acme-config"], workflowWriteRefused: async (repo: string) => (probes.push(repo), true) };
+    const tokenApi = { reachableRepos: async () => [{ name: "example-org/acme-web", private: true }, { name: "example-org/acme-config", private: true }, { name: "someone/public-lib", private: false }], workflowWriteRefused: async (repo: string) => (probes.push(repo), true) };
     const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, semgrep: { program: semgrep }, pulls: () => pulls, prPollMs: 50, tokenCheck: () => tokenApi });
     const stopAt = ["green", "failed", "refused"];
     await until("the ready pull request", () => stopAt.some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000).catch((err) => {
@@ -469,7 +469,7 @@ require("fs").writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ resul
 `);
     const s = scriptedSdk({ analyst: async function* () {}, reviewer: codeReviewer, developer: dev, tester: tester(() => feature, seen), judge });
     const pulls = new MovingMainPulls(path.join(w.root, "remote", "example-org", "acme-web.git"), w.root);
-    const tokenApi = { reachableRepos: async () => ["example-org/acme-web", "example-org/acme-config"], workflowWriteRefused: async () => true };
+    const tokenApi = { reachableRepos: async () => [{ name: "example-org/acme-web", private: true }, { name: "example-org/acme-config", private: true }, { name: "someone/public-lib", private: false }], workflowWriteRefused: async () => true };
     const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, semgrep: { program: semgrep }, pulls: () => pulls, prPollMs: 50, tokenCheck: () => tokenApi });
     await until("the ready pull request", () => ["green", "failed", "refused", "escalate"].some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000).catch((err) => {
       throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature(feature)?.state.build.actions)}; last ${JSON.stringify(e.feature(feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-6).map((l) => l.message ?? l.action).join(" | ")}`);
