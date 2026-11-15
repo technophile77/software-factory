@@ -1,3 +1,4 @@
+import type { BuildEvent } from "../interview/model";
 import { globMatch } from "../policy/glob";
 import { blocksAt } from "../st-review/flow";
 import type { Standards } from "../st-review/standards";
@@ -105,5 +106,20 @@ export function judgeQuestions(body: unknown, max = 12_000): string {
   ];
   const text = parts.join("\n\n");
   return text.length > max ? `${text.slice(0, max)}\n\n(cut; the full report is on factory/state)` : text;
+}
+
+/**
+ * Definition of done item 8: the judge's newest PASS, or, under AC-10
+ * option C, the owner's accept of its newest NEEDS HUMAN REVIEW. Option C
+ * records only the step to the pull request, so without this the check
+ * refused the pull request the owner had just asked for.
+ */
+export function validationVerdict(events: readonly BuildEvent[]): { event: BuildEvent | undefined; acceptedBy?: string } {
+  const at = (a: string) => events.map((e) => e.action === a).lastIndexOf(true);
+  const pass = at("pass");
+  const nh = at("needs_human");
+  const item = nh >= 0 ? events[nh]!.decision_item : undefined;
+  if (nh > pass && typeof item === "string" && events.slice(nh + 1).some((e) => e.action === "to_pull_request" && e.item === item)) return { event: events[nh], acceptedBy: item };
+  return { event: pass >= 0 ? events[pass] : undefined };
 }
 
