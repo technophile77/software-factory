@@ -2,24 +2,28 @@ import * as crypto from "node:crypto";
 import { HttpIssues, checkRepo } from "../inbox/github-issues";
 
 /**
- * F-015 SR-2: the owner token reaches only the project's repos and can't
- * write CI workflows. Fine-grained tokens can't report their own
+ * F-015 SR-2: the owner token is fine-grained, reaches no private repo
+ * outside the project and can't write CI workflows. Every token can read
+ * every public repo, and GitHub's repo list includes them, so only private
+ * repos show what the token was given (owner, 2026-11-15). Fine-grained tokens can't report their own
  * permissions, so the workflow check tries a workflow write on a throwaway
  * branch: refused is the pass; if GitHub accepts it, the branch is deleted
  * at once and the project stops.
  */
 
 export interface TokenCheckApi {
-  reachableRepos(): Promise<string[]>;
+  reachableRepos(): Promise<Array<{ name: string; private: boolean }>>;
   workflowWriteRefused(repo: string, base: string): Promise<boolean>;
 }
 
 /** What is wrong with the token for these repos, in engine words; empty when nothing is. */
-export async function tokenProblems(api: TokenCheckApi, project: readonly string[], probe: { repo: string; base: string }): Promise<string[]> {
-  const mine = new Set(project.map((r) => r.toLowerCase()));
-  const outside = (await api.reachableRepos()).filter((r) => !mine.has(r.toLowerCase()));
+export async function tokenProblems(api: TokenCheckApi, project: readonly string[], probe: { repo: string; base: string }, token: string): Promise<string[]> {
   const out: string[] = [];
-  if (outside.length) out.push(`the token reaches ${outside.length} repo${outside.length > 1 ? "s" : ""} outside the project (${outside.slice(0, 5).join(", ")})`);
+  // Only a fine-grained token can be limited to chosen repos; the prefix is all that is read of it.
+  if (!token.startsWith("github_pat_")) out.push("the token isn't a fine-grained token, so it can't be limited to the project's repos");
+  const mine = new Set(project.map((r) => r.toLowerCase()));
+  const outside = (await api.reachableRepos()).filter((r) => r.private && !mine.has(r.name.toLowerCase())).map((r) => r.name);
+  if (outside.length) out.push(`the token reaches ${outside.length} private repo${outside.length > 1 ? "s" : ""} outside the project (${outside.slice(0, 5).join(", ")})`);
   if (!(await api.workflowWriteRefused(probe.repo, probe.base))) out.push(`the token can write CI workflows in ${probe.repo}`);
   return out;
 }
@@ -27,8 +31,9 @@ export async function tokenProblems(api: TokenCheckApi, project: readonly string
 const PROBE = "name: factory-token-probe\non: workflow_dispatch\njobs: {}\n";
 
 export class HttpTokenCheck extends HttpIssues implements TokenCheckApi {
-  async reachableRepos(): Promise<string[]> {
-    return (await this.list("/user/repos?per_page=100")).map((r) => String(r.full_name ?? "")).filter(Boolean);
+  async reachableRepos(): Promise<Array<{ name: string; private: boolean }>> {
+    // A repo whose visibility isn't a plain false counts as private, so a changed response can't hide one.
+    return (await this.list("/user/repos?per_page=100")).map((r) => ({ name: String(r.full_name ?? ""), private: r.private !== false })).filter((r) => r.name);
   }
 
   async workflowWriteRefused(repo: string, base: string): Promise<boolean> {
