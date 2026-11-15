@@ -24,13 +24,13 @@ async function boot(w: World) {
   return e;
 }
 
-/** acme's code repo moved to `other-org`; the config repo stays with `example-org`. */
+/** acme's code repo moved to `example-owner`; the config repo stays with `example-org`. */
 function twoOwners(): World {
   const manifest = manifestYaml({ extra: "" })
-    .replace("https://github.com/example-org/acme-web", "https://github.com/other-org/acme-web")
-    .replace(`allowed_repo_owners:\n  - { login: example-org, id: ${ORG_ID} }`, `allowed_repo_owners:\n  - { login: example-org, id: ${ORG_ID} }\n  - { login: other-org, id: ${OWNER_ID} }`);
+    .replace("https://github.com/example-org/acme-web", "https://github.com/example-owner/acme-web")
+    .replace(`allowed_repo_owners:\n  - { login: example-org, id: ${ORG_ID} }`, `allowed_repo_owners:\n  - { login: example-org, id: ${ORG_ID} }\n  - { login: example-owner, id: ${OWNER_ID} }`);
   const w = makeWorld({ manifest });
-  w.github.repos.set("other-org/acme-web", { status: 200, ownerId: OWNER_ID, private: true });
+  w.github.repos.set("example-owner/acme-web", { status: 200, ownerId: OWNER_ID, private: true });
   return w;
 }
 
@@ -67,12 +67,12 @@ describe("ProjectTokens", () => {
 describe("authorizeProject with tokens per owner", () => {
   const manifest = (owners: string[]) => ({
     name: "p",
-    allowed_repo_owners: [{ login: "x", id: 7 }],
+    allowed_repo_owners: [{ login: "example-org", id: 678 }],
     repos: owners.map((o, i) => ({ name: `r${i}`, url: "", owner: o, repo: `r${i}` })),
   }) as never;
   const github = () => {
     const calls: Array<[string, string]> = [];
-    return { calls, repo: async (o: string, n: string, token: string) => (calls.push([`${o}/${n}`, token]), { status: 200, ownerId: 7, private: true }) } as never as { calls: Array<[string, string]> };
+    return { calls, repo: async (o: string, n: string, token: string) => (calls.push([`${o}/${n}`, token]), { status: 200, ownerId: 678, private: true }) } as never as { calls: Array<[string, string]> };
   };
 
   it("AC-35: each repo is checked with its owner's token, the config repo with the default", async () => {
@@ -98,7 +98,7 @@ describe("the engine at start (F-015 FR-19)", () => {
     const w = twoOwners();
     const e = await boot(w);
     expect(e.projects[0]).toMatchObject({ state: "stopped" });
-    expect(e.projects[0]!.reason).toContain("factory-token/acme/other-org");
+    expect(e.projects[0]!.reason).toContain("factory-token/acme/example-owner");
     const items = securityItemsIn(w.config);
     expect(items).toHaveLength(1);
     expect(items[0]!.text).not.toContain("github_pat_");
@@ -106,10 +106,10 @@ describe("the engine at start (F-015 FR-19)", () => {
 
   it("AC-35: with the owner's token stored, the code repo is reached with it and the config repo with the default", async () => {
     const w = twoOwners();
-    await w.credentials.set("factory-token/acme/other-org", ORG_TOKEN);
+    await w.credentials.set("factory-token/acme/example-owner", ORG_TOKEN);
     const e = await boot(w);
     expect(e.projects[0]).toMatchObject({ state: "running" });
-    expect(w.github.repoCalls).toContainEqual({ repo: "other-org/acme-web", token: ORG_TOKEN });
+    expect(w.github.repoCalls).toContainEqual({ repo: "example-owner/acme-web", token: ORG_TOKEN });
     const cfg = w.github.repoCalls.filter((c) => c.repo === "example-org/acme-config");
     expect(cfg.length).toBeGreaterThan(0);
     expect(cfg.every((c) => c.token === FACTORY_TOKEN)).toBe(true);
