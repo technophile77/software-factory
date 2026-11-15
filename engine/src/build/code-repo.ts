@@ -144,6 +144,24 @@ export class CodeRepo {
     }
   }
 
+  /**
+   * A branch with no commits of its own moves up to `main`, so a stage 5 run
+   * after the owner changed main (an ADR, say) starts from it. A branch with
+   * its own work is left alone; main reaches it by merge (ADR 0013).
+   */
+  async fastForwardToMain(b: FeatureBranches, main: string): Promise<string[]> {
+    const moved: string[] = [];
+    for (const name of [b.feature, b.dev, b.test]) {
+      const tip = await this.head(name);
+      if (!tip || tip === main) continue;
+      const r = await this.git.run(this.localDir, ["merge-base", "--is-ancestor", tip, main], { okCodes: [1] });
+      if (r.code !== 0) continue;
+      await this.git.run(this.localDir, ["update-ref", `refs/heads/${name}`, main, tip]);
+      moved.push(name);
+    }
+    return moved;
+  }
+
   async head(branch: string): Promise<string | null> {
     return this.git.revParse(this.localDir, `refs/heads/${branch}`);
   }

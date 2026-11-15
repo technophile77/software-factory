@@ -2218,6 +2218,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (!(await ctx.repo.head(ctx.branches.feature)) || !(await ctx.repo.head(ctx.branches.dev)) || !(await ctx.repo.head(ctx.branches.test))) {
       if (!p.token) throw new SessionRefused("the project has no token to fetch the code repo");
       await ctx.repo.ensureBranches(ctx.branches, await ctx.repo.fetchMain(p.token));
+    } else if (!fix && p.token) {
+      // A rerun after the owner changed main starts from it while the branches hold no work yet.
+      const moved = await ctx.repo.fastForwardToMain(ctx.branches, await ctx.repo.fetchMain(p.token));
+      if (moved.length) log.info(`${f.id}: ${moved.join(", ")} moved up to the new main before the ${BUILD_WHAT[role].what} run.`);
     }
     // Stage 5 works on the agent branches; a stage 6 fix works on the merged feature branch.
     const branch = fix ? ctx.branches.feature : role === "software-developer" ? ctx.branches.dev : ctx.branches.test;
