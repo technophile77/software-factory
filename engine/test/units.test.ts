@@ -854,6 +854,21 @@ describe("engine.status activity codes (F-018 FR-14, H-0225)", () => {
     expect(a("build_and_test_prep", false, [], [])).toBe("idle");
     expect(a("build_and_test_prep", false, [], ["T-0001"])).toBe("waiting_for_decision");
   });
+
+  it("reports what a build is doing, never idle while it works (F-021 v7 FR-12)", async () => {
+    const { activityOf, BUILD_ACTIVITY } = await import("../src/interview/activity");
+    const { BUILD_STATES } = await import("../src/build/lifecycle");
+    // Every build state has a code.
+    for (const st of BUILD_STATES) expect(BUILD_ACTIVITY[st], st).toBeTruthy();
+    const b = (build: string, running: boolean, decisions: string[] = [], statuses: Array<"open" | "deferred"> = []) => activityOf({ stage: "build_and_test_prep", paused: false, running, statuses, decisions, build });
+    expect(b("developer", true)).toBe("developer_working");
+    expect(b("testing", true, ["D-0001"])).toBe("tests_running");
+    expect(b("ci_wait", false)).toBe("waiting_for_ci");
+    expect(b("blocked", false, ["D-0012"])).toBe("waiting_for_decision");
+    expect(b("blocked", false)).toBe("build_stopped");
+    // An interview item left deferred after sign-off isn't a question waiting for the owner.
+    expect(b("validation", false, [], ["deferred"])).toBe("validating");
+  });
 });
 
 describe("authorizeProject warnings (F-015 SR-6)", () => {

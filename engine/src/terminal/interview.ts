@@ -45,13 +45,48 @@ export const ACTIVITY: Record<string, string> = {
   waiting_for_decision: "Waiting for your decision",
   paused: "The feature is paused",
   idle: "The factory is idle",
+  // F-021 v7 FR-12: the build stages.
+  waiting_on_dependency: "Waiting for a feature it depends on",
+  developer_working: "Developer is working",
+  test_engineer_working: "Test engineer is working",
+  merging: "Merging the branches",
+  resolving_conflicts: "Resolving merge conflicts",
+  tests_running: "Tests are running",
+  classifying_failures: "Looking into failing tests",
+  code_reviewing: "Code Review is running",
+  validating: "Validation judge is checking the feature",
+  opening_pr: "Opening the pull request",
+  waiting_for_ci: "Pull request open, waiting for CI",
+  pr_ready: "Pull request ready for your review",
+  build_stopped: "The build is stopped",
+  merged: "Merged",
+  closed: "Closed",
 };
+
+/**
+ * F-021 v7 FR-2, FR-12: one line per feature the engine runs, in the
+ * command's own words; ids come from the operation's checked lists.
+ */
+export function statusLines(st: Obj): string[] {
+  const ids = Array.isArray(st.features) ? (st.features as unknown[]).filter((x): x is string => typeof x === "string") : [];
+  const activities = (st.activities ?? {}) as Record<string, string>;
+  const waiting = (st.waiting_on ?? {}) as Record<string, string[]>;
+  if (!ids.length) return ["No features are running."];
+  return ids.map((id) => {
+    const code = activities[id] ?? "";
+    const decisions = waiting[id] ?? [];
+    const label = code === "waiting_for_decision" && decisions.length ? `${ACTIVITY[code]} on ${decisions.join(", ")}` : ACTIVITY[code] ?? "Working";
+    return `${id}: ${label}`;
+  });
+}
 
 /** Stages from which the interview can still send the owner items, so the command keeps waiting. */
 // security_gate_1: an engine from before the gate rename reports the old stage name.
 const WAIT_STAGES = new Set(["requirements_interview", "security_testability_review", "security_gate_1", "readiness_gate"]);
 
 const POLL_MS = 2000;
+/** How often the inbox console's watch looks again (F-021 v7 FR-2). */
+const WATCH_MS = 5000;
 const NEXT_EVERY_MS = 15_000;
 const ASK_AFTER_MS = 30 * 60_000;
 const BUSY_DELAY_MS = 1000;
@@ -514,8 +549,9 @@ export class TerminalInterview {
         }
         const items = r.items as Array<{ id: string; kind: string; title: string; feature?: string; priority: string; blocking: boolean }>;
         if (!items.length) {
-          this.say("Nothing in this project's inbox is waiting for you.");
-          return 0;
+          const code = await this.watch();
+          if (code !== null) return code;
+          continue;
         }
         this.say("\nOpen items:");
         const c = await this.choose([
@@ -534,6 +570,39 @@ export class TerminalInterview {
         const r = await this.run("close", { feature: CONSOLE_KEY });
         if (r.ok !== true) this.say("The session couldn't be closed; the engine ends it after 30 minutes without a call.");
       }
+    }
+  }
+
+  /**
+   * F-021 v7 FR-2: with nothing open the console stays, printing the
+   * factory's status when it changes, until an item opens (null) or the
+   * owner stops. Its inbox calls keep the console session alive.
+   */
+  private async watch(): Promise<number | null> {
+    this.say("Nothing in this project's inbox is waiting for you. Watching the factory; press Ctrl+C to stop.");
+    let shown = "";
+    for (;;) {
+      if (this.io.aborted?.()) throw new Stop();
+      const st = await this.runner("status", {});
+      if (st.ok !== true) {
+        this.show(st);
+        return 1;
+      }
+      const text = statusLines(st).join("\n");
+      if (text !== shown) {
+        this.say(`\n[${new Date(this.timing.now()).toTimeString().slice(0, 8)}]\n${text}`);
+        shown = text;
+      }
+      const r = await this.runner("inbox_list", { feature: CONSOLE_KEY });
+      if (r.ok !== true) {
+        this.show(r);
+        return 1;
+      }
+      if (Array.isArray(r.items) && r.items.length) {
+        this.say("\nAn item is waiting for you.");
+        return null;
+      }
+      await this.timing.sleep(WATCH_MS);
     }
   }
 
