@@ -24,6 +24,8 @@ export const prRecord = z.strictObject({
     z.strictObject({ at: text(40), action: z.literal("changes_requested"), comment_id: ghId, actor_id: ghId }),
     z.strictObject({ at: text(40), action: z.literal("merged_on_github"), merge_commit: sha, merged_by: text(100) }),
     z.strictObject({ at: text(40), action: z.literal("closed_on_github") }),
+    /** F-015 FR-18: the engine's own merge, with the orchestrator's report. */
+    z.strictObject({ at: text(40), action: z.literal("merged_by_engine"), merge_commit: sha, report: text(300) }),
   ])).max(1000),
 });
 

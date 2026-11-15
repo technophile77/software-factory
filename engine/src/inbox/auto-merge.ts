@@ -56,6 +56,23 @@ export async function autoMergeHygiene(api: MergeApi, o: { itemId: string; repo:
   return { merged: true, sha };
 }
 
+/**
+ * F-015 FR-18: a feature PR the engine auto-merges, after code has checked
+ * every condition and the orchestrator approved. Only the engine's own
+ * feature branch, still at the head the checks saw; GitHub refuses the
+ * merge if the head moved after that.
+ */
+export async function autoMergeFeature(api: MergeApi, o: { repo: string; pr: number; branch: string; sha: string }): Promise<AutoMerge> {
+  const repo = checkRepo(o.repo);
+  const pr = await api.pull(repo, o.pr);
+  if (pr.head.ref !== o.branch || pr.head.repo !== repo) return { merged: false, why: `${repo}#${o.pr} isn't the feature's own pull request`, commented: false };
+  if (pr.state !== "open" || pr.merged || pr.draft) return { merged: false, why: `${repo}#${o.pr} isn't open and ready`, commented: false };
+  if (pr.head.sha !== o.sha) return { merged: false, why: `the head of ${repo}#${o.pr} moved to ${pr.head.sha}`, commented: false };
+  if (!(await api.merge(repo, o.pr, o.sha))) return { merged: false, why: `GitHub refused to merge ${repo}#${o.pr} at ${o.sha}`, commented: false };
+  const after = await api.pull(repo, o.pr);
+  return { merged: true, sha: after.mergeCommit ?? o.sha };
+}
+
 const SHA_RE = /^[0-9a-f]{40}$/;
 
 export class HttpMerge extends HttpPulls implements MergeApi {

@@ -519,3 +519,99 @@ describe("a developer that reports blocked", () => {
     await until("the stop item", () => items(w).some((i) => String(i.record.title).includes("developer for") && String(i.record.title).includes("stopped")));
   }, 90_000);
 });
+
+/** FakePulls with the merge API, merging only at the head it is given. */
+class MergingPulls extends FakePulls {
+  merges: string[] = [];
+  async files(): Promise<never[]> {
+    return [];
+  }
+  async merge(_repo: string, _n: number, sha: string): Promise<boolean> {
+    this.merges.push(sha);
+    if (sha !== this.pr!.head.sha) return false;
+    this.pr = { ...this.pr!, state: "closed", merged: true, mergeCommit: "d".repeat(40), mergedBy: "acme-owner" };
+    return true;
+  }
+}
+
+describe("F-015 FR-18: auto-merge up to a maturity level", () => {
+  async function toReady(approve: boolean, upTo = "alpha") {
+    const { w, d, gh, id } = await signedOff((yaml, root) => {
+      const script = path.join(root, "pass.js");
+      fs.writeFileSync(script, `require("fs").writeFileSync("test-results.xml", '<?xml version="1.0"?><testsuites><testsuite name="export"><testcase classname="test/export.test.js" name="May"/></testsuite></testsuites>');\n`);
+      return yaml
+        .replace("    url: https://github.com/example-org/acme-web\n", `    url: https://github.com/example-org/acme-web\n    maturity: alpha\n    commands:\n      test: [${JSON.stringify(process.execPath)}, ${JSON.stringify(script)}]\n      test_results: test-results.xml\n`)
+        .replace(/(\n    mode: \w+\n)/, `$1  auto_merge_up_to: ${upTo}\n`);
+    });
+    const feature = id.value;
+    const seen = { refused: [] as string[], first: "" };
+    const turns: string[] = [];
+    const report = (role: string, stage: string, body: unknown) => async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
+      const turn = (await sc.next())!;
+      if (role === "orchestrator") turns.push(turn);
+      yield { type: "result", subtype: "success", session_id: `${role}-${n}`, num_turns: 2, structured_output: { schema: "agent-report/1.0", role, feature, stage, commit: turnFact(turn, /at commit ([0-9a-f]{40})/), outcome: "complete", summary: "Fine.", body } } as SdkMessage;
+    };
+    const checks = [{ name: "Matches the spec", passed: true, evidence: "AC-1 is covered." }, { name: "Docs", passed: approve, evidence: approve ? "README updated." : "The README doesn't mention the export." }];
+    const semgrep = nodeProgram(path.join(w.root, "semgrep"), String.raw`
+const a = process.argv.slice(2);
+if (a[0] === "--version") { console.log("1.183.0"); process.exit(0); }
+require("fs").writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ results: [], errors: [] }));
+`);
+    const s = scriptedSdk({
+      analyst: async function* () {}, developer: developer(() => feature, seen), tester: tester(() => feature, seen),
+      reviewer: report("security-reviewer", "code_review", { gate: 2, findings: [] }),
+      judge: report("validation-judge", "validation", { verdict: "PASS", checklist: [{ area: "Each acceptance criterion", status: "Met", evidence: "passes" }], findings: [] }),
+      orchestrator: report("orchestrator", "auto_merge", { gate: "auto_merge", checks }),
+    });
+    const pulls = new MergingPulls(path.join(w.root, "remote", "example-org", "acme-web.git"));
+    const tokenApi = { reachableRepos: async () => [{ name: "example-org/acme-web", private: true }, { name: "example-org/acme-config", private: true }], workflowWriteRefused: async () => true };
+    const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, semgrep: { program: semgrep }, pulls: () => pulls, merge: () => pulls, prPollMs: 50, tokenCheck: () => tokenApi });
+    return { w, gh, e, s, feature, pulls, turns };
+  }
+  const settled = ["engine_merged", "auto_held", "failed", "refused"];
+
+  it("AC-32: with every check met and the orchestrator approving, the engine merges at the pushed head and records it", async () => {
+    const { w, e, s, feature, pulls, turns } = await toReady(true);
+    await until("the auto-merge", () => settled.some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000);
+    expect(e.feature(feature)!.state.build.actions.slice(-3)).toEqual(["opened", "green", "engine_merged"]);
+    const pushed = git(w.root, "--git-dir", pulls.bare, "rev-parse", `refs/heads/${e.feature(feature)!.state.branch}`);
+    expect(pulls.merges).toEqual([pushed]);
+    expect(e.feature(feature)!.state.build.events.at(-1)).toMatchObject({ action: "engine_merged", pr: 1, merge_commit: "d".repeat(40), report: `runs/${feature}/auto_merge/orchestrator-1.json` });
+    expect(JSON.parse(git(w.config, "show", "factory/state:prs/example-org/acme-web/1.json")).history.at(-1)).toMatchObject({ action: "merged_by_engine", merge_commit: "d".repeat(40) });
+    expect(JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/auto_merge/orchestrator-1.json`))).toMatchObject({ role: "orchestrator", body: { gate: "auto_merge" } });
+    expect(pulls.posted.at(-1)!.body).toMatch(/^The factory engine merged this pull request/);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toContain(`at commit ${pushed}`);
+    expect(turns[0]).toContain("The feature diff from");
+    expect(s.count.orchestrator).toBe(1);
+  }, 150_000);
+
+  it("AC-34: the orchestrator's hold merges nothing and asks the owner; B sends its reason to the developer", async () => {
+    const { w, gh, e, feature, pulls } = await toReady(false);
+    await until("the hold", () => settled.some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000);
+    expect(e.feature(feature)!.state.build.actions.at(-1)).toBe("auto_held");
+    expect(pulls.merges).toEqual([]);
+    const held = items(w).find((i) => i.record.effect?.type === "automergehold")!;
+    expect(held.record).toMatchObject({ kind: "decision", feature, effect: { note: "Docs: The README doesn't mention the export." } });
+    // One review per head: more looks at the PR start no second session.
+    const polls = pulls.commentReads;
+    await until("two more looks at the PR", () => pulls.commentReads >= polls + 2);
+    expect(items(w).filter((i) => i.record.effect?.type === "automergehold")).toHaveLength(1);
+    const mirrored = () => [...gh.issues.entries()].find(([, i]) => i.title.includes("auto-merge held"))?.[0];
+    await pollUntil(w, "the hold's issue", () => mirrored() !== undefined);
+    const issue = mirrored()!;
+    await act(w, gh, issue, "choose:B", false);
+    await pollUntil(w, "the owner's B", () => e.feature(feature)?.state.build.actions.includes("changes") ?? false);
+    expect(e.feature(feature)!.state.build.events.find((x) => x.action === "changes")).toMatchObject({ note: "Docs: The README doesn't mention the export." });
+  }, 150_000);
+
+  it("AC-32: a repo above the setting is never auto-merged and no model sees it", async () => {
+    const { e, s, feature, pulls } = await toReady(true, "rapid-prototype");
+    await until("the ready pull request", () => e.feature(feature)?.state.build.actions.includes("green") ?? false, 90_000);
+    const polls = pulls.commentReads;
+    await until("two more looks at the PR", () => pulls.commentReads >= polls + 2);
+    expect(e.feature(feature)!.state.build.actions.at(-1)).toBe("green");
+    expect(pulls.merges).toEqual([]);
+    expect(s.count.orchestrator ?? 0).toBe(0);
+  }, 150_000);
+});

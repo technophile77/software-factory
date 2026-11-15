@@ -5,7 +5,7 @@
 - **Requested by / date:** Alex, 2026-11-13 ("what is the critical path until
   I can start onboarding some of my existing projects?"; chose to spec
   increment 4 in parallel with increment 3, decision card)
-- **Spec version:** 21
+- **Spec version:** 22
 
 This is engine increment 4, "Build to PR" (F-007 section 13). The owner
 interview ran in the project thread on decision cards (section 12 and the
@@ -76,13 +76,14 @@ records stay in the private config repo (OQ-2, ADR 0028).
 | FR-8 | Stage 7 runs Semgrep CE 1.183.0 on the feature diff from a factory-owned venv on the owner's PC, installed with `pip install --require-hashes --only-binary :all:` from the change-controlled requirements file (H-0196), with `--metrics=off` and `--disable-nosem` (ADR 0024 as amended 2026-11-14; owner, decision card). If the venv can't be installed or verified, Code Review fails closed. Then the security reviewer (Code Review) runs with the findings as evidence, reusing the F-008 report checks. Blocking per `security-standards.md` at the repo's maturity level. |
 | FR-9 | Stage 8 runs the validation judge with the spec, diff, run report and both gate reports. Its verdict is applied per `development-workflow.md` § Going backwards and the allowances in its `AGENT.md`. |
 | FR-10 | Stage 9: with items 1 to 11 met, the engine pushes the feature branch and opens a draft PR with the owner's token. It reads the required checks on the PR head; green marks the PR ready with its title and description updated and posts the F-011 FR-9 comment; red is a stage 6 failure. |
-| FR-11 | The engine never merges a feature PR (F-011 FR-14). |
+| FR-11 | The engine merges a feature PR only by FR-18 auto-merge. In every other case, the owner merges it in GitHub (F-011 FR-14). |
 | FR-12 | Every run writes an Agent report (contract v1.4) and is resumable and interruptible as earlier runs are, within `MAX_RESUMES`. |
 | FR-13 | Models and limits for the new roles come from the master `engine/config/models.yaml` and `limits.yaml` at the pinned factory version (hygiene items in section 10); the engine has no defaults; a project may only lower limits. |
 | FR-14 | The PR parts of F-011 are built here, since nothing opens PRs before this increment (agreed with increment 3, F-016): the FR-9 definition-of-done comment, `/changes <note>` on managed PRs, recording `merged_on_github` / `closed_on_github`, and FR-10's hygiene auto-merge with its SR-11 diff check. Inbox issues, inbox records and PR records stay on the config repo's `factory/state` (F-011, Inbox item v3.0). The FR-10 merge call lives in `engine/src/inbox/auto-merge.ts`, the only file increment 3's FR-14 CI test (`engine/test/inbox-calls.test.ts`) allows a merge API call in; create-reaction calls stay refused everywhere. |
 | FR-15 | The build starts from the stage `build_and_test_prep`, which increment 3 (F-016) records when the owner's confirmed Approve on the feature's Spec sign-off item (kind `spec`, id `S-nnnn`) lands; the transcript then holds a `spec_signed_off` entry with the commit and spec version, and that commit is the approved spec FR-3 gives the agents. |
 | FR-16 | Each feature targets exactly one code repo of its project, named in its spec (OQ-3). A request needing several repos becomes linked features, one per repo; a feature that depends on another doesn't start stage 5 until that feature's PR has merged. |
 | FR-17 | Commits the engine makes in code repos are authored and committed as the project's owner, whoever that is: nothing about the identity is in the master repo or the engine code (owner, 2026-11-13). The engine derives it per project from the private config repo's pinned `owner.github_id`: the name is that GitHub account's profile name (its login if the name is empty), read from GitHub's API at engine start; the email is the account's noreply address `<id>+<login>@users.noreply.github.com`. An optional `owner.commit_name` in the project manifest overrides the name (H-0193). No trailer or message text names an AI tool. Commits are not signed (residual risk stated to the owner: anyone can write commits with that name and address; GitHub shows them unverified). Engine commits in the config repo keep the engine identity. |
+| FR-18 | **Auto-merge (owner, 2026-11-15).** **Setting.** The optional manifest setting `settings.auto_merge_up_to` names the highest maturity level at which the engine may merge a feature PR by itself. It is one of `none` (the default), `rapid-prototype`, `alpha`, `beta`, `release` or `production-ready`, and every lower level is included. A PR qualifies when its repo's `repos[].maturity` (else the project's `maturity`) is at or below the setting. **Code checks first.** The engine's code checks all of the following, at the PR's current head, before any model sees the PR: (a) the head is the SHA the engine pushed, and the PR is open and ready (not draft); GitHub refuses the merge of a PR with a merge conflict; (b) the engine's newest passing test run is at that head; (c) every check run and commit status on the head has finished with success, and the required checks are green; with no check runs, no commit statuses and no required checks at all, the engine's own passing test run is enough (owner, 2026-11-15 decision card); (d) definition-of-done items 1 to 11 are all met; (e) the owner hasn't commented `/changes` or `/hold` on the PR since it went ready. If any check fails, nothing is merged; the PR waits for the owner as before. **Then the model.** When every check passes, the orchestrator gets one read-only session with the spec and the diff. It returns its checks as structured data (`body.gate: auto_merge`): every check passed is `approve`; any failed check is `hold`, with its evidence as the reason. On `hold`, or a report that fails its schema, a Decision item asks the owner, with the reason: A leaves the PR to the owner, B sends the reason to the developer as an owner's `/changes` would. One review runs per head. On `approve`, the engine runs checks (a) to (e) again. It then squash-merges through the merge API, passing the head SHA, so a head that moved in between merges nothing. The engine records `merged_by_engine` in the PR record and `engine_merged` in the build, with the merge commit and the orchestrator's report, and comments on the PR that it auto-merged and why. The merge call lives only in `engine/src/inbox/auto-merge.ts` (AC-12). |
 
 ## 4. Acceptance criteria
 | Id | Given / When / Then | Covers |
@@ -118,6 +119,9 @@ records stay in the private config repo (OQ-2, ADR 0028).
 | AC-29 | Given the PR head moving after the FR-10 diff check, or a PR the hygiene item doesn't name, then nothing is merged. | SR-12 |
 | AC-30 | Given a code repo whose CI hands secrets to pull request runs, then no PR is opened there and a Security item explains why. | SR-13 |
 | AC-31 | Given a commit name with control characters or over 100 characters, then the engine refuses it and the project stops with a Security item. | SR-15 |
+| AC-32 | Given `settings.auto_merge_up_to: alpha` and a repo at `rapid-prototype` or `alpha`, with all FR-18 checks met and the orchestrator approving, then the engine squash-merges the PR at the pushed head and records `merged_by_engine`. Given a repo at `beta`, or the setting left out or `none`, then the engine never merges it and no model session starts for it. | FR-11, FR-18 |
+| AC-33 | Given any single FR-18 check failing (a failed, pending or missing check; a test run that isn't at the head; an unmet definition-of-done item; an owner `/hold` or `/changes`; a moved head), then no model session starts and nothing is merged. | FR-18 |
+| AC-34 | Given the orchestrator returning `hold`, or its report failing its schema, then nothing is merged and a Decision item carries its reason; option B sends the reason to the developer. Given the head moving between the approval and the merge, then the merge call is refused and nothing is merged. | FR-18 |
 
 ## 5. Constraints
 - TypeScript on Node (ADR 0001); Windows, macOS and Linux. No Docker for
@@ -332,6 +336,26 @@ the orchestrator's `AGENT.md` say which steps are engine code and which run
 the orchestrator agent (OQ-4); F-007 v41's exception is marked closed for
 code (ADR 0028).
 
+### H-0253 (approved, applied): Project manifest v1.10 and PR record
+Approved by the owner 2026-11-15 06:24Z (decision card, with FR-18).
+Project manifest v1.10 adds optional `settings.auto_merge_up_to`: `none`
+(the default) or a maturity level, the highest whose feature PRs the engine
+may merge (FR-18). The engine and `factory_check.py` refuse any other
+value. The PR record gains the history entry `merged_by_engine` (merge
+commit, the orchestrator's report). `docs/schemas/` is regenerated.
+
+### H-0254 (approved, applied): maturity-levels note
+Approved by the owner 2026-11-15 06:24Z (decision card, with FR-18).
+`maturity-levels.md`, under the "Who merges a PR" row: the engine merges a
+project's feature PRs only when that project's `settings.auto_merge_up_to`
+covers the repo's level (F-015 FR-18). The row itself is unchanged.
+
+### H-0255 (approved, applied): orchestrator auto-merge review
+Approved by the owner 2026-11-15 06:24Z (decision card, with FR-18).
+The orchestrator's `AGENT.md` gains the auto-merge review duty: read the
+spec and the diff, return one check per thing looked at with evidence; code
+has already checked the tests, checks and definition of done.
+
 ## 11. Readiness gate
 Run by the orchestrator, 2026-11-14, on spec v19.
 
@@ -385,3 +409,4 @@ Asked one at a time on decision cards. None is assumed.
 | 19 (sign-off) | 2026-11-14 | Signed off: status Approved; the build waits on increment 3 (F-016) | Owner, 2026-11-14 (decision card) |
 | 20 | 2026-11-14 | Build decisions: H-0197 (stage 6 numbers in `limits.yaml`) and H-0198 (Repo header line; dependencies listed in section 7 wait for their PR to merge) | Owner, 2026-11-14 17:44Z (decision cards) |
 | 21 | 2026-11-15 | SR-2 and AC-19: the token check counts only private repos outside the project and refuses classic tokens; found in the live trial, where public repos every token can read failed every token. Accepted gap recorded in SR-2 | Owner, 2026-11-15 05:04Z (decision card) |
+| 22 | 2026-11-15 | FR-11 and FR-18: configurable auto-merge up to a maturity level (`settings.auto_merge_up_to`), code checks before the orchestrator's review; AC-32 to AC-34; H-0253 to H-0255 | Owner, 2026-11-15 06:24Z (decision card: "Approve; no CI counts as green") |

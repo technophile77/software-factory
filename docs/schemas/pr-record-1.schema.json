@@ -137,6 +137,34 @@
               "action"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "at": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "action": {
+                "type": "string",
+                "const": "merged_by_engine"
+              },
+              "merge_commit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+              },
+              "report": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "required": [
+              "at",
+              "action",
+              "merge_commit",
+              "report"
+            ],
+            "additionalProperties": false
           }
         ]
       }

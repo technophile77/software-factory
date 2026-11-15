@@ -46,6 +46,8 @@ export interface PullsApi {
   checkRuns(repo: string, sha: string): Promise<CheckRun[]>;
   comments(repo: string, n: number): Promise<IssueComment[]>;
   comment(repo: string, n: number, body: string): Promise<number>;
+  /** The head's combined commit status (F-015 FR-18); left out by fakes that have none. */
+  commitStatus?(repo: string, sha: string): Promise<{ state: string; count: number }>;
 }
 
 const SHA_RE = /^[0-9a-f]{40}$/;
@@ -110,6 +112,14 @@ export class HttpPulls extends HttpIssues implements PullsApi {
       }
     }
     return out;
+  }
+
+  async commitStatus(repo: string, sha: string): Promise<{ state: string; count: number }> {
+    if (!SHA_RE.test(sha)) throw new GitHubError("malformed commit");
+    const r = await this.call("GET", `/repos/${checkRepo(repo)}/commits/${sha}/status`);
+    if (r.status !== 200) throw new GitHubError(`GitHub refused the commit status (HTTP ${r.status})`);
+    const b = r.body as { state?: unknown; total_count?: unknown };
+    return { state: str(b.state), count: typeof b.total_count === "number" ? b.total_count : 0 };
   }
 
   async checkRuns(repo: string, sha: string): Promise<CheckRun[]> {

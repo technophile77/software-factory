@@ -106,6 +106,8 @@ export const manifestFile = z.strictObject({
     providers: open.optional(),
     /** F-018 FR-15; its own validator checks the detail. */
     interview_sign_in: open.optional(),
+    /** F-015 FR-18 (manifest v1.10); the manifest reader checks the value. */
+    auto_merge_up_to: text(40).optional(),
   }).optional(),
   notes: text(20000).optional(),
   policy: open.optional(),

@@ -35,4 +35,6 @@ Every level runs every gate. Only the bar changes.
 | Tests before a PR opens (approved) | The tests covering the change pass locally (ADR 0030) | Same | Same | Same |
 | Who merges a PR (approved) | Claude, once local tests pass and the owner approved the content (ADR 0030) | The owner, unless he keeps Claude merging when approving the promotion | Same as Alpha | Same as Alpha |
 
+The engine merges a project's feature PRs only when that project's `settings.auto_merge_up_to` covers the repo's level, after its code has checked the tests, checks and definition of done and the orchestrator has approved (F-015 FR-18, H-0254). Otherwise the row above applies.
+
 Every row is approved. The security row by open decision 7 (see `security-standards.md`), the validation judge row by open decision 8, the CI row by ADR 0008 (Rapid prototype column ADR 0030), and the last two rows by ADR 0030. The requirements interview and test engineer rows were approved on 2026-11-14 (H-0250); the interview is full at every level, Rapid prototype included.
