@@ -2196,6 +2196,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         await watchPullRequest(p, f);
         if (machineState(f) === "pr_ready") return;
       } else {
+        // A refusal recorded with no item for the owner (an engine before the fix above) gets its item now.
+        const last = f.state.build.events.at(-1);
+        if (state === "blocked" && last?.action === "refused" && !(p.inbox?.waitingOn(f.id) ?? []).length) {
+          await refusalItem(p, f, typeof last.key === "string" ? last.key : "refused", typeof last.title === "string" ? last.title : `${f.id} can't open its pull request`, String(last.why ?? "a check before the pull request failed"));
+        }
         // Blocked and final states wait on the owner.
         return;
       }
@@ -2635,8 +2640,18 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   /** Stops stage 9 with a Security item; the owner's A sends the feature back to `opening_pr` once it's fixed. */
   async function prRefused(p: Project, f: FeatureInterview, key: string, title: string, why: string): Promise<void> {
-    await recordBuild(f, "refused", { why });
-    await alert(p, `buildstop:${f.id}:pr:${key}`, {
+    await recordBuild(f, "refused", { why, title, key });
+    await refusalItem(p, f, key, title, why);
+  }
+
+  /**
+   * Each refusal is its own item: alerts are filed once per key, so a key
+   * without the refusal's number filed nothing the second time the same
+   * check failed, and the feature waited with nothing to answer.
+   */
+  async function refusalItem(p: Project, f: FeatureInterview, key: string, title: string, why: string): Promise<void> {
+    const n = f.state.build.events.filter((e) => e.action === "refused").length;
+    await alert(p, `buildstop:${f.id}:pr:${key}:${n}`, {
       title, feature: f.id,
       context: `The engine pushed nothing for ${f.id} and opened or changed no pull request: ${why}.`,
       impact: `${f.id} waits before its pull request until this is fixed.`,
