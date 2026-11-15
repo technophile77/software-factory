@@ -89,3 +89,21 @@ function inTests(location: string, globs: readonly string[]): boolean {
   const file = location.trim().replace(/\\/g, "/").replace(/:\d+(:\d+)?$/, "").replace(/^\.\//, "");
   return !!file && globs.some((g) => globMatch(g, file, false));
 }
+
+/**
+ * What the owner reads to decide a NEEDS HUMAN REVIEW item: the judge's
+ * Needs owner lines with their evidence, then its findings, as the judge
+ * wrote them. Without it the item named only a file on factory/state.
+ */
+export function judgeQuestions(body: unknown, max = 12_000): string {
+  const b = body as { checklist?: Array<Record<string, unknown>>; findings?: Array<Record<string, unknown>> };
+  const owner = (Array.isArray(b?.checklist) ? b.checklist : []).filter((c) => STATUSES[String(c.status).trim().toLowerCase() as keyof typeof STATUSES] === "needs_owner");
+  const findings = Array.isArray(b?.findings) ? b.findings : [];
+  const parts = [
+    ...owner.map((c) => `Needs your call: ${String(c.area)}\n${String(c.evidence ?? "")}`),
+    ...findings.map((f) => `${String(f.grade)} finding at ${String(f.location)}\n${String(f.explanation ?? "")}`),
+  ];
+  const text = parts.join("\n\n");
+  return text.length > max ? `${text.slice(0, max)}\n\n(cut; the full report is on factory/state)` : text;
+}
+

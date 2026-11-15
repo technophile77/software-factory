@@ -28,7 +28,7 @@ import { HttpMerge, type MergeApi, autoMergeHygiene } from "./inbox/auto-merge";
 import { RESOLVE_CYCLES, conflictOwners, hasConflictMarkers, nextResolveStep } from "./build/conflicts";
 import { checksVerdict, doneComment, prText, prWorkflowProblems, publishRefusal, verbatimMatch } from "./build/stage9";
 import { PR_RECORD_SCHEMA, type PrRecord } from "./schemas/pr-record";
-import { type CodeReviewFinding, type JudgeOutcome, checkCodeReview, judgeOutcome } from "./build/review";
+import { type CodeReviewFinding, type JudgeOutcome, checkCodeReview, judgeOutcome, judgeQuestions } from "./build/review";
 import { type Run as SemgrepRun, type SemgrepFinding, SemgrepError, runSemgrep, semgrepVenv } from "./build/semgrep";
 import { DockerError } from "./docker/cli";
 import { baseImageId, ensureAgentImage, skillsPluginDir, writeSkillsPlugins } from "./docker/image";
@@ -3064,13 +3064,20 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
     // AC-10: NEEDS HUMAN REVIEW files a Decision item and the feature waits on it.
+    const questions = judgeQuestions(body);
+    const summary = String((r.structured as { summary?: unknown }).summary ?? "").slice(0, 4000);
     const id = await p.inbox!.file({
       kind: "decision", title: `${f.id}: the validation judge needs your call`, category: "Product", priority: "high", blocking: true, created_by: "engine", feature: f.id,
       options: [{ id: "A", label: "Send it to the developer to change the product code" }, { id: "B", label: "Send it to the test engineer to change the tests" }, { id: "C", label: "Accept it as it is and open the pull request" }],
       recommendation: "A",
       effect: { type: "builddecision", feature: f.id },
+      links: [{ kind: "file", ref: report }],
       sections: {
-        Context: [{ engine: `The validation judge marked ${got.reasons.length} checklist line${got.reasons.length === 1 ? "" : "s"} as needing your call on ${f.id} at ${co.head}. The full report is ${report} on factory/state.` }],
+        Context: [
+          { engine: `The validation judge marked ${got.reasons.length} checklist line${got.reasons.length === 1 ? "" : "s"} as needing your call on ${f.id} at ${co.head}. Its questions and findings follow; the full report is ${report} on factory/state.` },
+          ...(summary ? [{ outside: summary, author: "validation-judge" }] : []),
+          ...(questions ? [{ outside: questions, author: "validation-judge" }] : []),
+        ],
         Options: [{ engine: "A sends the feature back to the developer, B to the test engineer; either way it is tested and reviewed again. C opens the pull request now." }],
         "Project impact": [{ engine: `${f.id} waits until you decide.` }],
         Recommendation: [{ engine: "A, unless the judge's question is one you have already settled." }],
