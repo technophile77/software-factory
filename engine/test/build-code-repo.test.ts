@@ -139,6 +139,28 @@ describe("engine clones (SR-7, AC-1, AC-24, FR-5)", () => {
     expect(await repo.mergeAgentBranches(b, path.join(root, "merge-wt"), ID, "F-001", () => true)).toEqual({ status: "merged", commit });
   });
 
+  it("a branch with no work of its own moves up to a newer main; one with work stays", async () => {
+    const { root, repo, origin } = setup();
+    await repo.init();
+    const main = await repo.fetchMain("t");
+    const b = featureBranches("F-001", "feature/F-001-app");
+    await repo.ensureBranches(b, main);
+    const wt = path.join(root, "wt-dev");
+    git(repo.localDir, "worktree", "add", "-q", wt, b.dev);
+    fs.writeFileSync(path.join(wt, "dev.txt"), "work\n");
+    git(wt, "add", "-A");
+    git(wt, "commit", "-qm", "work");
+    git(repo.localDir, "worktree", "remove", "--force", wt);
+    const devTip = await repo.head(b.dev);
+    git(origin, "commit", "-q", "--allow-empty", "-m", "ADR");
+    const moved = await repo.fetchMain("t");
+    expect((await repo.fastForwardToMain(b, moved)).sort()).toEqual([b.feature, b.test].sort());
+    expect(await repo.head(b.feature)).toBe(moved);
+    expect(await repo.head(b.test)).toBe(moved);
+    expect(await repo.head(b.dev)).toBe(devTip);
+    expect(await repo.fastForwardToMain(b, moved)).toEqual([]);
+  });
+
   it("ADR 0013: a moved main is merged in, never rebased, and remoteMain reads GitHub's main without fetching", async () => {
     const { root, repo, origin } = setup();
     await repo.init();
