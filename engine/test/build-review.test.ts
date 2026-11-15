@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkCodeReview, judgeOutcome } from "../src/build/review";
+import { checkCodeReview, judgeOutcome, judgeQuestions } from "../src/build/review";
 import { SEMGREP_VERSION, SemgrepError, parseSemgrep, runSemgrep, semgrepVenv, type Run } from "../src/build/semgrep";
 import type { CommandResult } from "../src/build/test-run";
 import { tmpdir } from "./helpers";
@@ -131,3 +131,17 @@ describe("Semgrep (FR-8, H-0196)", () => {
     await expect(runSemgrep({ program: "semgrep", worktree: tmpdir(), base: "abc", outFile: out, run: async () => result() })).rejects.toThrow(/wrote no results/);
   });
 });
+
+describe("judgeQuestions", () => {
+  it("gives the owner the Needs owner lines with their evidence, then the findings", () => {
+    const text = judgeQuestions({
+      checklist: [{ area: "AC-1", status: "Met", evidence: "ok" }, { area: "SR-5 CI", status: "Needs owner", evidence: "No CI repeats the CVE check." }],
+      findings: [{ grade: "Minor", location: "test/a.js:28", explanation: "redundant template literal" }],
+    });
+    expect(text).toContain("Needs your call: SR-5 CI\nNo CI repeats the CVE check.");
+    expect(text).toContain("Minor finding at test/a.js:28\nredundant template literal");
+    expect(text).not.toContain("AC-1");
+    expect(judgeQuestions({ checklist: [{ area: "x", status: "Needs owner", evidence: "y".repeat(50) }], findings: [] }, 20)).toMatch(/cut; the full report/);
+  });
+});
+
