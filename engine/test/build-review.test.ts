@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkCodeReview, judgeOutcome, judgeQuestions } from "../src/build/review";
+import { checkCodeReview, judgeOutcome, judgeQuestions, validationVerdict } from "../src/build/review";
 import { SEMGREP_VERSION, SemgrepError, parseSemgrep, runSemgrep, semgrepVenv, type Run } from "../src/build/semgrep";
 import type { CommandResult } from "../src/build/test-run";
 import { tmpdir } from "./helpers";
@@ -142,6 +142,23 @@ describe("judgeQuestions", () => {
     expect(text).toContain("Minor finding at test/a.js:28\nredundant template literal");
     expect(text).not.toContain("AC-1");
     expect(judgeQuestions({ checklist: [{ area: "x", status: "Needs owner", evidence: "y".repeat(50) }], findings: [] }, 20)).toMatch(/cut; the full report/);
+  });
+});
+
+describe("validationVerdict (definition of done item 8)", () => {
+  const ev = (action: string, extra: Record<string, unknown> = {}) => ({ type: "build", action, ...extra }) as never;
+  it("takes the judge's PASS", () => {
+    expect(validationVerdict([ev("pass", { report: "r1" })])).toEqual({ event: ev("pass", { report: "r1" }) });
+  });
+  it("counts the owner's option C on the newest NEEDS HUMAN REVIEW as accepted", () => {
+    const nh = ev("needs_human", { report: "r2", decision_item: "D-0010" });
+    expect(validationVerdict([ev("pass", { report: "r1" }), ev("to_developer"), nh, ev("to_pull_request", { item: "D-0010" })])).toEqual({ event: nh, acceptedBy: "D-0010" });
+  });
+  it("doesn't count a NEEDS HUMAN REVIEW sent back, or a step to the pull request from another item", () => {
+    const nh = ev("needs_human", { report: "r2", decision_item: "D-0010" });
+    expect(validationVerdict([nh, ev("to_developer", { item: "D-0010" })]).event).toBeUndefined();
+    expect(validationVerdict([nh, ev("to_pull_request", { item: "D-0011" })]).event).toBeUndefined();
+    expect(validationVerdict([nh, ev("to_pull_request", { item: "D-0010" }), ev("pass", { report: "r3" })]).event).toEqual(ev("pass", { report: "r3" }));
   });
 });
 

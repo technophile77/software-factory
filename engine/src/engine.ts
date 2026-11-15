@@ -28,7 +28,7 @@ import { HttpMerge, type MergeApi, autoMergeHygiene } from "./inbox/auto-merge";
 import { RESOLVE_CYCLES, conflictOwners, hasConflictMarkers, nextResolveStep } from "./build/conflicts";
 import { checksVerdict, doneComment, prText, prWorkflowProblems, publishRefusal, verbatimMatch } from "./build/stage9";
 import { PR_RECORD_SCHEMA, type PrRecord } from "./schemas/pr-record";
-import { type CodeReviewFinding, type JudgeOutcome, checkCodeReview, judgeOutcome, judgeQuestions } from "./build/review";
+import { type CodeReviewFinding, type JudgeOutcome, checkCodeReview, judgeOutcome, judgeQuestions, validationVerdict } from "./build/review";
 import { type Run as SemgrepRun, type SemgrepFinding, SemgrepError, runSemgrep, semgrepVenv } from "./build/semgrep";
 import { DockerError } from "./docker/cli";
 import { baseImageId, ensureAgentImage, skillsPluginDir, writeSkillsPlugins } from "./docker/image";
@@ -2650,7 +2650,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const last = (a: string) => [...ev].reverse().find((e) => e.action === a);
     const passed = last("passed");
     const clean = last("clean");
-    const pass = last("pass");
+    const { event: pass, acceptedBy } = validationVerdict(ev);
+    const passLabel = acceptedBy ? `Validation: the owner accepted the judge's NEEDS HUMAN REVIEW (${acceptedBy})` : "Validation judge issued PASS";
     const open = p.inbox?.waitingOn(f.id) ?? [];
     return [
       { n: 1, label: "Requirements approved", met: !!f.state.readiness.signedOff },
@@ -2660,7 +2661,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       { n: 5, label: "Independent tests passed", met: passed?.commit === head, ref: passed ? `runs/${f.id}/test_run/test-engineer-${passed.run}.json` : undefined },
       { n: 6, label: "Orchestrator review complete", met: !!passed },
       { n: 7, label: "Final security review passed", met: !!clean, ref: typeof clean?.report === "string" ? clean.report : undefined },
-      { n: 8, label: "Validation judge issued PASS", met: !!pass, ref: typeof pass?.report === "string" ? pass.report : undefined },
+      { n: 8, label: passLabel, met: !!pass, ref: typeof pass?.report === "string" ? pass.report : undefined },
       { n: 9, label: "Required documentation updated", met: !!pass, ref: typeof pass?.report === "string" ? pass.report : undefined },
       { n: 10, label: "Interface contracts compliant", met: !!pass },
       { n: 11, label: "No unresolved blocking issues", met: open.length === 0 },
