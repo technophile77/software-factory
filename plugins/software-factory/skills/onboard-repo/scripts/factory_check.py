@@ -1320,6 +1320,11 @@ def validate_manifest(data, master=None, config_root=None):
                 errors.append(f"repos[{i}].visibility must be private or public")
     errors += _check_owner_keys(data)
     errors += _check_limits(data)
+    # Project manifest v1.10 (F-015 FR-18, H-0253): the highest level the engine may auto-merge at.
+    settings = data.get("settings")
+    up_to = settings.get("auto_merge_up_to") if isinstance(settings, dict) else None
+    if up_to is not None and up_to != "none" and up_to not in LEVELS:
+        errors.append(f"settings.auto_merge_up_to must be none or one of {', '.join(LEVELS)}")
     maturity = data.get("maturity")
     if maturity not in LEVELS:
         errors.append(f"maturity must be one of {', '.join(LEVELS)}")

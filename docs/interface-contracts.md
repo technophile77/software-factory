@@ -175,7 +175,9 @@ longer blocks, and the spec must record it in section 9 with status
 **PR records** (config repo `factory/state`, `prs/<owner>/<repo>/<n>.json` from v4.0, schema `pr-record/1.0`; not yet written by the engine):
 `evidence_comment_id`, `feature`, `head` at evidence time, and history
 entries `evidence_posted`, `changes_requested` (with the comment id and
-actor id), `merged_on_github` (merge commit, merged by), `closed_on_github`.
+actor id), `merged_on_github` (merge commit, merged by), `closed_on_github`,
+and (F-015 FR-18, H-0253) `merged_by_engine` (merge commit, the
+orchestrator's auto-merge report).
 - F-012's approved H-0128 (manifest `phone` block) is withdrawn: the inbox
   is always on issues, so there is nothing to turn on. v19's H-0124
   (manifest `github` block) and H-0123 (`main` ruleset) stand unchanged.
@@ -851,14 +853,15 @@ section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.9
+## Project manifest — v1.10
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014);
   v1.3 approved (H-0080); v1.4 approved (H-0087); v1.5 approved (H-0135);
   v1.6 approved (F-013 OQ-11, owner, decision card, 2026-11-13); v1.7
   approved (F-015 H-0193, owner, decision card, 2026-11-14); v1.8 approved
   (F-018 H-0227, owner, decision card, 2026-11-14); v1.9 approved (F-015
-  SR-6 H-0249, owner, decision card and thread, 2026-11-14)
+  SR-6 H-0249, owner, decision card and thread, 2026-11-14); v1.10 approved
+  (F-015 FR-18 H-0253, owner, decision card, 2026-11-15)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
   adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
   `complexity` and `settings.agents` (F-002 A-6, A-8); v1.3 adds `enabled`,
@@ -881,7 +884,7 @@ the preset used only for initial calibration) and
 ladder; the engine refuses a rung that doesn't exist in the pinned factory
 version or is below the role's floor). Both change only through hygiene
 items (F-002). The manifest is the only record of repo and project maturity
-levels. `schema` stays `factory-project/1.0`: v1.1 to v1.9 only add optional keys.
+levels. `schema` stays `factory-project/1.0`: v1.1 to v1.10 only add optional keys.
 
 From v1.5, optional `settings.endpoints`: a list of model endpoint names
 (Model endpoints file v1.0) this project's code may be sent to; default
@@ -947,6 +950,15 @@ value gets nothing pushed and a Security item. The key is pinned with
 `owner.*`, `allowed_repo_owners`, `enabled` and
 `settings.interview_sign_in` (F-007 SR-5), so changing it needs the owner's
 confirmation.
+
+From v1.10 (F-015 FR-18, H-0253), optional `settings.auto_merge_up_to`: the
+highest maturity level whose feature PRs the engine may merge by itself,
+every lower level included. One of `none` (the default), `rapid-prototype`,
+`alpha`, `beta`, `release` or `production-ready`; any other value is
+refused. A repo's level is its `repos[].maturity`, else the project's
+`maturity`. The engine merges only after its code has checked the tests,
+checks and definition of done and the orchestrator has approved (F-015
+FR-18).
 
 From v1.4, optional `limits`: the same keys as the master factory's
 `engine/config/limits.yaml` (H-0087). For each key the engine uses the lower

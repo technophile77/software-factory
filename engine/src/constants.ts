@@ -117,6 +117,8 @@ export const BUILD_STAGE = "build_and_test_prep";
 
 /** The lowest maturity level, as the manifest spells it (docs/maturity-levels.md). */
 export const RAPID_PROTOTYPE = "rapid-prototype";
+/** The maturity levels, lowest first (spec section 16, docs/maturity-levels.md). */
+export const MATURITY_LEVELS = [RAPID_PROTOTYPE, "alpha", "beta", "release", "production-ready"] as const;
 
 /**
  * Claude Code 2.1.311, the build Agent SDK 0.3.311 pins, by platform, from

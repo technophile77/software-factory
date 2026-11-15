@@ -254,6 +254,10 @@
             "type": "string"
           },
           "additionalProperties": {}
+        },
+        "auto_merge_up_to": {
+          "type": "string",
+          "maxLength": 40
         }
       },
       "additionalProperties": false

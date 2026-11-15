@@ -344,6 +344,14 @@ notes: |
             errors = fc.validate_manifest(data)
             self.assertEqual(errors == [], ok, errors)
 
+    def test_auto_merge_up_to(self):
+        # F-015 FR-18, H-0253: none or a maturity level.
+        for value, ok in (("none", True), ("alpha", True), ("production-ready", True), ("everything", False)):
+            data = fc.parse_yaml(self.VALID)
+            data.setdefault("settings", {})["auto_merge_up_to"] = value
+            errors = fc.validate_manifest(data)
+            self.assertEqual(errors == [], ok, errors)
+
     def test_ac11_template_parses(self):
         text = read(os.path.join(SKILL, "templates", "factory-project.yaml"))
         self.assertIsInstance(fc.parse_yaml(text), dict)

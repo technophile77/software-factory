@@ -52,6 +52,8 @@ export const BUILD_ACTIONS = [
   "changes",
   "owner_merged",
   "owner_closed",
+  "engine_merged",
+  "auto_held",
   "retest",
   "to_developer",
   "to_test_engineer",
@@ -129,6 +131,8 @@ ci_wait 'main_moved' -> merging_main;
 
 pr_ready 'changes' -> fixing_product;
 pr_ready 'owner_merged' -> merged;
+pr_ready 'engine_merged' -> merged;
+pr_ready 'auto_held' -> pr_ready;
 pr_ready 'owner_closed' -> closed;
 pr_ready 'main_moved' -> merging_main;
 

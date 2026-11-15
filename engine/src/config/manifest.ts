@@ -1,5 +1,5 @@
 import YAML from "yaml";
-import { MANIFEST_FILE, RAPID_PROTOTYPE } from "../constants";
+import { MANIFEST_FILE, MATURITY_LEVELS, RAPID_PROTOTYPE } from "../constants";
 import { Git } from "../git";
 import { RoleAssignmentError, parseRoleAssignments } from "./endpoint-roles";
 import { ENDPOINT_NAME_RE } from "./models";
@@ -51,6 +51,8 @@ export interface Manifest {
   maturity: string;
   /** `settings.interview_sign_in` as written; null when absent (F-018 FR-15). */
   interviewSignIn: InterviewSignIn | null;
+  /** `settings.auto_merge_up_to` (v1.10, F-015 FR-18): the highest level whose feature PRs the engine may merge; null for none. */
+  autoMergeUpTo: string | null;
   /** The parsed document, from which a session's Role policy is resolved when it starts. */
   raw?: unknown;
 }
@@ -146,6 +148,8 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
     }
   }
   const signIn = isObj(doc.settings) ? parseSignIn(doc.settings.interview_sign_in, doc.maturity as string, bad) : null;
+  const upTo = isObj(doc.settings) ? doc.settings.auto_merge_up_to : undefined;
+  if (upTo !== undefined && (typeof upTo !== "string" || (upTo !== "none" && !(MATURITY_LEVELS as readonly string[]).includes(upTo)))) bad(`settings.auto_merge_up_to must be none or one of ${MATURITY_LEVELS.join(", ")}`);
   try {
     parseRoleAssignments(isObj(doc.settings) ? doc.settings.agents : undefined);
   } catch (e) {
@@ -165,6 +169,7 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
     factoryVersion: (doc.factory as { version: string }).version,
     maturity: doc.maturity as string,
     interviewSignIn: signIn,
+    autoMergeUpTo: typeof upTo === "string" && upTo !== "none" ? upTo : null,
     raw: doc,
   };
 }

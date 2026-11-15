@@ -37,6 +37,14 @@ your report's `failures`.
   and mark it ready for the owner only when item 12 is met: at Rapid
   prototype the covering tests passed on its head (CI is advisory, ADR 0030);
   from Alpha, CI is green on its head. Treat red CI as a test failure.
+- Auto-merge review (F-015 FR-18): when the project's
+  `settings.auto_merge_up_to` covers the repo, the engine's code has already
+  checked that the tests passed at the head, every check is green, the
+  definition of done is met and the owner hasn't held it. Read the spec and
+  the diff and return `body.gate: auto_merge` with one check per thing you
+  looked at (the spec's requirements met, nothing outside the spec changed,
+  docs updated), each passed or not with its evidence. A failed check holds
+  the PR for the owner; you never merge.
 - Keep unrelated work moving while decisions are pending.
 - After every run, whether a PR opened or the run stopped at an inbox, write
   the run review (`docs/features/F-002-model-effort-tuning.md`): each role's

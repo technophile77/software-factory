@@ -22,9 +22,10 @@ import type { TestCase } from "./build/junit";
 import { CAUSES, type Cause, afterClassify, afterRun, checkClassification, stage6Counts } from "./build/stage6";
 import { type RunReport, TestRunError, clearResults, readResults, resolveProgram, runCommand, runReport, testEnv } from "./build/test-run";
 import { type BuildRole, type FixFrom, buildPolicy, buildTestResults, buildTurn, runWorkerSessions } from "./build/worker";
-import { HttpPulls, type PullsApi } from "./build/pulls";
+import { HttpPulls, type Pull, type PullsApi } from "./build/pulls";
 import { HttpTokenCheck, type TokenCheckApi, tokenProblems } from "./build/token-check";
-import { HttpMerge, type MergeApi, autoMergeHygiene } from "./inbox/auto-merge";
+import { HttpMerge, type MergeApi, autoMergeFeature, autoMergeHygiene } from "./inbox/auto-merge";
+import { autoMergeBlockers, autoMergeCovers, orchestratorApproves } from "./build/automerge";
 import { RESOLVE_CYCLES, conflictOwners, hasConflictMarkers, nextResolveStep } from "./build/conflicts";
 import { checksVerdict, doneComment, prText, prWorkflowProblems, publishRefusal, verbatimMatch } from "./build/stage9";
 import { PR_RECORD_SCHEMA, type PrRecord } from "./schemas/pr-record";
@@ -1864,6 +1865,17 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
 
+    // F-015 FR-18: B sends an auto-merge hold's reason to the developer, as the owner's `/changes` would; A only records.
+    if (type === "automergehold" && f) {
+      await jobs.get(f.id)?.done;
+      const { machine, refused } = buildMachine(f.state.build.actions);
+      const note = String(r.effect?.note ?? "").slice(0, 4000);
+      if (chosen !== "B" || !note || refused || jobs.has(f.id) || !machine.act("changes")) return done("record_only");
+      await done("build_sent_on", [{ type: "build", action: "changes", item: r.id, note }], STAGE_OF[machine.state()]);
+      startBuild(p, f);
+      return;
+    }
+
     // F-011 FR-10, F-015 SR-12: an approved hygiene change the engine opened as a PR merges only as approved.
     if (type === "hygiene_pr") {
       if (e.action !== "approved") return done("record_only");
@@ -2851,7 +2863,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const seen = new Set(ev.filter((e) => e.action === "changes").map((e) => e.comment_id));
     const after = typeof green?.comment === "number" ? green.comment : 0;
     const owner = p.manifest!.owner.github_id;
-    const ask = (await api.comments(repo, n)).find((c) => c.id > after && !seen.has(c.id) && c.authorId === owner && /^\/changes\s+\S/.test(c.body) && Buffer.byteLength(c.body) <= 4096);
+    const comments = await api.comments(repo, n);
+    const ask = comments.find((c) => c.id > after && !seen.has(c.id) && c.authorId === owner && /^\/changes\s+\S/.test(c.body) && Buffer.byteLength(c.body) <= 4096);
     if (ask) {
       const note = ask.body.split(/\r?\n/).join("\n").replace(/^\/changes\s+/, "");
       await writePrRecord(p, repo, n, f.id, (r) => ({ ...r, history: [...r.history, { at: new Date(clock.now()).toISOString(), action: "changes_requested", comment_id: ask.id, actor_id: ask.authorId }] }));
@@ -2859,7 +2872,96 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
     if (await mainMoved(p, f)) return;
+    const held = comments.some((c) => c.id > after && c.authorId === owner && /^\/(hold|changes)\b/.test(c.body));
+    if (await tryAutoMerge(p, f, { repo, n, pr, held })) return;
     buildLater(p, f, o.prPollMs ?? 5 * 60_000);
+  }
+
+  /**
+   * F-015 FR-18: the engine merges the PR itself only when the project's
+   * setting covers the repo's level, code finds every condition met, and
+   * then the orchestrator approves. True when it merged; otherwise the PR
+   * keeps waiting for the owner and is looked at again.
+   */
+  async function tryAutoMerge(p: Project, f: FeatureInterview, a: { repo: string; n: number; pr: Pull; held: boolean }): Promise<boolean> {
+    const m = p.manifest!;
+    const ctx = await buildContext(p, f);
+    if (!autoMergeCovers(m.autoMergeUpTo, repoMaturity(p, ctx.target.name))) return false;
+    const ev = f.state.build.events;
+    const head = a.pr.head.sha;
+    // One review per head: after a hold the PR waits for the owner, or for a new head.
+    if (ev.some((e) => e.action === "auto_held" && e.head === head)) return false;
+    const api = pullsFor(p);
+    const facts = async (): Promise<string[]> => {
+      const pr = await api.pull(a.repo, a.n);
+      const sha = pr.head.sha;
+      return autoMergeBlockers({
+        pr, pushed: String([...ev].reverse().find((e) => e.action === "opened")?.head ?? ""),
+        testsPassedAt: ((x) => (typeof x?.commit === "string" ? x.commit : null))([...ev].reverse().find((e) => e.action === "passed")),
+        required: await api.requiredChecks(a.repo, "main"), runs: await api.checkRuns(a.repo, sha),
+        status: api.commitStatus ? await api.commitStatus(a.repo, sha) : { state: "success", count: 0 },
+        unmet: doneItems(p, f, sha).filter((i) => !i.met).map((i) => i.n), ownerHeld: a.held,
+      });
+    };
+    const blockers = await facts();
+    if (blockers.length) {
+      log.info(`${f.id}: no auto-merge of ${a.repo}#${a.n}: ${blockers.join("; ")}.`);
+      return false;
+    }
+    const caps = buildLimitsOrStop(p);
+    const model = p.models!.orchestrator;
+    if (!model) throw new BuildStop("models.yaml has no orchestrator entry (FR-13)");
+    const co = await reviewCheckout(p, f, ctx, "auto-merge");
+    const folder = await specFolder(p, f, ctx);
+    const first = [
+      `Do the auto-merge review of ${f.id}'s pull request ${a.repo}#${a.n} at commit ${co.head}, in this read-only checkout, against the approved spec ${folder.spec}. The engine's code has already checked that the tests passed at this commit, every check is green, the definition of done is met and the owner hasn't held it.`,
+      `Return your report as your structured result with stage "auto_merge", commit "${co.head}" and body.gate "auto_merge": one check per thing you looked at, each passed or not with its evidence. Every check passed approves the merge; any failed check holds it for the owner.`,
+      await diffData(ctx, co.base, co.head, caps.testRun.outputBytes),
+    ].join("\n\n");
+    const r = await readOnlyRun(p, f, {
+      role: "orchestrator", stage: "auto_merge", model, caps: caps.classifier, policy: orchestratorPolicy(m.raw), checkout: co, readOnlyRoot: folder.root, first,
+      check: (s) => ((s as { body?: { gate?: unknown } }).body?.gate === "auto_merge" ? null : 'body.gate must be "auto_merge"'),
+    });
+    const n = await nextBuildReport(p, f.id, "orchestrator", "auto_merge");
+    const body = (r.structured as { body?: Record<string, unknown> } | null)?.body;
+    await p.state_repo!.commit([agentReport({
+      feature: f.id, stage: "auto_merge", role: "orchestrator", n, commit: co.head, outcome: r.invalid ? "partial" : "complete",
+      summary: r.invalid ? `Auto-merge review ${n} was refused: ${r.invalid}.` : String((r.structured as { summary?: unknown }).summary ?? ""),
+      body: r.invalid || !body ? {} : body, facts: {}, artifacts: [],
+    })], `${f.id}: auto-merge review ${n}`);
+    await pushState(p);
+    const report = `runs/${f.id}/auto_merge/orchestrator-${n}.json`;
+    const verdict = r.invalid ? { approve: false, reason: `the orchestrator's report was invalid (${r.invalid})` } : orchestratorApproves(body);
+    const again = verdict.approve ? await facts() : [];
+    const res = verdict.approve && !again.length
+      ? await autoMergeFeature(o.merge ? o.merge(p.token!) : new HttpMerge(p.token!, log, GITHUB_API_BASE), { repo: a.repo, pr: a.n, branch: ctx.branches.feature, sha: head })
+      : null;
+    if (res?.merged) {
+      await api.comment(a.repo, a.n, `The factory engine merged this pull request: the project's \`settings.auto_merge_up_to\` covers this repo's maturity level, the tests passed at ${head}, every check was green, the definition of done was met, and the orchestrator approved (${verdict.reason.slice(0, 1000)}).`).catch((e) => log.warn(`${f.id}: the auto-merge comment wasn't posted (${(e as Error).message}).`));
+      await writePrRecord(p, a.repo, a.n, f.id, (x) => ({ ...x, history: [...x.history, { at: new Date(clock.now()).toISOString(), action: "merged_by_engine", merge_commit: res.sha, report }] }));
+      await recordBuild(f, "engine_merged", { pr: a.n, merge_commit: res.sha, report });
+      return true;
+    }
+    const why = !verdict.approve ? verdict.reason : again.length ? again.join("; ") : res && !res.merged ? res.why : "";
+    // AC-34: a hold, an invalid report or a merge that didn't happen goes to the owner, with the reason.
+    const item = await p.inbox!.file({
+      kind: "decision", key: `automerge:${f.id}:${head}`, title: `${f.id}: auto-merge held ${a.repo}#${a.n}`, category: "Product", priority: "medium", blocking: false, created_by: "engine", feature: f.id,
+      options: [{ id: "A", label: "I'll review and merge or close it on GitHub" }, { id: "B", label: "Send the reason to the developer to change the code" }],
+      recommendation: "A",
+      effect: { type: "automergehold", feature: f.id, head, note: why.slice(0, 4000) },
+      links: [{ kind: "file", ref: report }, { kind: "url", ref: a.pr.url }],
+      sections: {
+        Context: [
+          { engine: `The engine didn't auto-merge ${a.repo}#${a.n} at ${head}. Code found every condition met; then ${!verdict.approve ? "the orchestrator held it" : "the merge didn't go through"}. The reason follows; the orchestrator's report is ${report} on factory/state.` },
+          verdict.approve ? { engine: why.slice(0, 4000) } : { outside: why.slice(0, 4000), author: "the orchestrator" },
+        ],
+        Options: [{ engine: "A leaves the pull request to you, as without auto-merge. B sends the reason to the developer; the feature is then tested and reviewed again." }],
+        Recommendation: [{ engine: "A: look at the reason and the pull request yourself." }],
+        "Cost of delay": [{ engine: "The pull request waits for you." }],
+      },
+    });
+    await recordBuild(f, "auto_held", { pr: a.n, head, reason: why.slice(0, 4000), report, item });
+    return false;
   }
 
   /** ADR 0013: after any merge to main, main goes into the feature branch and the feature is tested again. */
