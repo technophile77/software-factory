@@ -100,6 +100,8 @@ export interface EngineHandle {
 export const CREDENTIAL_NAMES = {
   model: "model-credential",
   factoryToken: (project: string) => `factory-token/${project}`,
+  /** F-015 FR-19: a project's token for one GitHub owner, login in lower case. */
+  ownerToken: (project: string, owner: string) => `factory-token/${project}/${owner.toLowerCase()}`,
 };
 
 const ENTRY = fileURLToPath(new URL("../../src/index.ts", import.meta.url));

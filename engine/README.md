@@ -85,6 +85,9 @@ factory-engine mcp                      # started by Claude Code, not by hand
   Then the previously pinned owner approves a GitHub device sign-in.
 - `secret set` stores `model-credential` or `factory-token/<project>` in the
   OS credential store, under the service `software-factory-engine` (SR-20).
+  A project whose repos have more than one GitHub owner also stores
+  `factory-token/<project>/<owner login>` for each owner the default token
+  can't reach; the engine uses it for that owner's repos (F-015 FR-19).
 - `interview [<feature id>] [--project <path>]` is where the owner answers
   the analyst (F-018, ADR 0029): it prints each item word for word and reads
   the answer from the keyboard, talking to the running engine over the

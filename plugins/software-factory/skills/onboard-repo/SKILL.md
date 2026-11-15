@@ -290,6 +290,14 @@ token to one branch; branch protection is what keeps the default branch safe.
 If the owner wants the token on their own account instead, file that as a
 Security decision before going on.
 
+A fine-grained token reaches the repos of one owner only (F-015 FR-19). If
+the project's repos, config repo included, have more than one owner, the
+owner makes one token per owner, each limited to that owner's project repos,
+and stores the extra ones as `factory-token/<project>/<owner login>`; the
+engine uses each for its owner's repos and the default
+`factory-token/<project>` for the rest. Tell the owner an organization must
+allow fine-grained tokens before one can name it as the resource owner.
+
 ### 9. Start the test baseline feature
 
 The assessment's `baseline_request` is a feature request: map the adopted
