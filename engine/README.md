@@ -92,8 +92,10 @@ factory-engine mcp                      # started by Claude Code, not by hand
 - `inbox [<item id>] [--project <path>]` lists the project's open inbox items
   and answers them in this terminal (F-021, ADR 0033): every item is still a
   GitHub issue, and the first answer from either path counts. Items with
-  private detail show it only here. Like `interview`, it runs only in a
-  terminal and needs a running engine.
+  private detail show it only here. With nothing waiting it stays open,
+  showing what each feature is doing, until an item opens or you press
+  Ctrl+C. Like `interview`, it runs only in a terminal and needs a running
+  engine.
 
 The gitleaks binary's absolute path comes from `--gitleaks` or from
 `gitleaks:` in `<engine home>/engine.yaml`. The engine refuses to run any

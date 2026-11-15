@@ -1679,7 +1679,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         const waiting = p.inbox?.waitingOn(f.id) ?? [];
         // H-0183 (channel v1.5): the items the feature waits on, only when there are any.
         const stage = f.stage() || INTERVIEW_STAGE;
-        const activity = activityOf({ stage, paused: f.paused, running: jobs.has(f.id), statuses: f.state.list().map((it) => it.status), decisions: waiting });
+        const build = isBuildStage(stage) ? buildMachine(f.state.build.actions).machine.state() : undefined;
+        const activity = activityOf({ stage, paused: f.paused, running: jobs.has(f.id), statuses: f.state.list().map((it) => it.status), decisions: waiting, build });
         return { id: f.id, stage, active_agents: jobs.has(f.id) ? 1 : 0, activity, ...(waiting.length ? { waiting_on: waiting } : {}) };
       })),
     }),

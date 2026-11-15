@@ -190,6 +190,29 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(engine.connections).toBe(0);
   });
 
+  test("AC-15 (v7 FR-2, FR-12): with nothing open the console stays, shows each feature's status, and offers an item when one opens", async () => {
+    items = [];
+    let calls = 0;
+    engine.hooks["engine.status"] = (conn, msg) => {
+      calls++;
+      // The third look finds the build moved on and an item filed.
+      if (calls === 3) items = [DECISION()];
+      const activity = calls < 3 ? "tests_running" : "waiting_for_decision";
+      conn.respond(msg, ["result", { version: "1.4", capabilities: ["document", "inbox"], uptime_s: 1,
+        features: [{ id: "F-002", stage: "orchestrator_review", active_agents: calls < 3 ? 1 : 0, activity, ...(calls < 3 ? {} : { waiting_on: ["D-0007"] }) }] }]);
+      return true;
+    };
+    const { code, s } = await inbox(["1", "1"]);
+    expect(code).toBe(0);
+    expect(s.out).toContain("Watching the factory; press Ctrl+C to stop.");
+    expect(s.out).toContain("F-002: Tests are running");
+    // The same status isn't printed again on every look.
+    expect(s.out.split("F-002: Tests are running").length).toBe(2);
+    expect(s.out).toContain("An item is waiting for you.");
+    expect(answers()).toEqual([expect.objectContaining({ item: "D-0007", action: "choose:A" })]);
+    expect(engine.methods()).toContain("interview.close");
+  });
+
   test("an engine without the inbox capability is refused before anything is sent", async () => {
     writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document"] });
     const { code, s } = await inbox([]);

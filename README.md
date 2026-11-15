@@ -61,7 +61,9 @@ Lists the project's open inbox items and answers them in this terminal
 first counts, and the other path then shows it as answered. Items with
 private detail (a Security item's subject, the engine log lines behind a
 failure) show it only here; their issue says the detail is on the PC. Risky
-answers ask you to type a code, as `/confirm` does on GitHub. When an
+answers ask you to type a code, as `/confirm` does on GitHub. When nothing
+is waiting, it stays open and shows what each feature is doing, and lists a
+new item as soon as one opens; Ctrl+C ends it. When an
 interview has nothing to ask and the feature waits on your decision,
 `factory-engine interview` offers the items too, and its status line says
 "Waiting for your decision on …" rather than idle.
