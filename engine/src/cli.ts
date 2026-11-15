@@ -20,7 +20,7 @@ import { Interview } from "./mcp/operations";
 import { ID_RE } from "./mcp/limits";
 import { TerminalInterview, type TerminalIo } from "./terminal/interview";
 import { Children } from "./proc";
-import { OsCredentialStore, SecretError, isSecretName } from "./secrets";
+import { OsCredentialStore, SecretError, canonicalSecretName, isSecretName } from "./secrets";
 
 const USAGE = `factory-engine <command>
 
@@ -30,7 +30,9 @@ const USAGE = `factory-engine <command>
           Accepts a changed or new project after a GitHub device approval (SR-5).
   secret set <name>
           Stores a secret in the OS credential store, read from stdin.
-          Names: model-credential, factory-token/<project name>.
+          Names: model-credential, factory-token/<project name>, and
+          factory-token/<project name>/<GitHub owner> for repos of an owner
+          the project's main token can't reach (F-015 FR-19).
   interview [<feature id>] [--project <path>]
           Answers the requirements analyst's questions in this terminal (F-018).
           --project defaults to the current folder, inside the project's repo.
@@ -212,11 +214,12 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "interview") return interview(rest);
   if (cmd === "inbox") return interview(rest, "inbox");
   if (cmd === "secret") {
-    const [sub, name] = rest;
-    if (sub !== "set" || !name || !isSecretName(name)) {
+    const [sub, given] = rest;
+    if (sub !== "set" || !given || !isSecretName(given)) {
       process.stderr.write(USAGE);
       return 2;
     }
+    const name = canonicalSecretName(given);
     const store = new OsCredentialStore(() => realOsApi().credentials());
     try {
       await store.set(name, await readSecret());

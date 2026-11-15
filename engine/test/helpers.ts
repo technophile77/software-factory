@@ -225,7 +225,10 @@ export class FakeGitHub implements GitHubClient {
     if (!m) throw new Error("bad token");
     return Number(m[1]);
   }
-  async repo(owner: string, name: string): Promise<RepoInfo> {
+  /** Each repo lookup with the token it was made with (F-015 FR-19). */
+  repoCalls: Array<{ repo: string; token: string }> = [];
+  async repo(owner: string, name: string, token = ""): Promise<RepoInfo> {
+    this.repoCalls.push({ repo: `${owner}/${name}`, token });
     return this.repos.get(`${owner}/${name}`) ?? { status: 404 };
   }
   /** F-015 FR-17: the owner's account; tests change it to try the commit identity rules. */

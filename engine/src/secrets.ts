@@ -8,6 +8,8 @@ import type { CredentialApi } from "./os/ffi";
  */
 export const MODEL_CREDENTIAL = "model-credential";
 const FACTORY_TOKEN_RE = /^factory-token\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
+// F-015 FR-19: a project's token for one GitHub owner; the login part is a GitHub login.
+const OWNER_TOKEN_RE = /^factory-token\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
 // F-013 FR-3: the same shape as an endpoint name, so an `api_key_ref` can't reach any other item.
 const ENDPOINT_KEY_RE = /^endpoint-key\/[a-z0-9-]{1,32}$/;
 const MAX_SECRET_BYTES = 2048;
@@ -16,6 +18,24 @@ export function factoryTokenName(project: string): string {
   const name = `factory-token/${project}`;
   if (!FACTORY_TOKEN_RE.test(name)) throw new SecretError("That project name can't name a factory token.");
   return name;
+}
+
+/**
+ * The store name of a project's token for one GitHub owner (F-015 FR-19).
+ * Logins are case-insensitive on GitHub, and some OS stores aren't, so the
+ * login is always stored and looked up in lower case.
+ */
+export function factoryOwnerTokenName(project: string, owner: string): string {
+  const name = `factory-token/${project}/${owner.toLowerCase()}`;
+  if (!OWNER_TOKEN_RE.test(name)) throw new SecretError("That project and owner can't name a factory token.");
+  return name;
+}
+
+/** The name `secret set` stores under: an owner token's login part in lower case, anything else as given. */
+export function canonicalSecretName(name: string): string {
+  if (!OWNER_TOKEN_RE.test(name)) return name;
+  const cut = name.lastIndexOf("/");
+  return name.slice(0, cut + 1) + name.slice(cut + 1).toLowerCase();
 }
 
 /**
@@ -33,7 +53,7 @@ export function endpointKeyName(ref: string): string {
 }
 
 export function isSecretName(name: string): boolean {
-  return name === MODEL_CREDENTIAL || FACTORY_TOKEN_RE.test(name) || ENDPOINT_KEY_RE.test(name);
+  return name === MODEL_CREDENTIAL || FACTORY_TOKEN_RE.test(name) || OWNER_TOKEN_RE.test(name) || ENDPOINT_KEY_RE.test(name);
 }
 
 export class SecretError extends Error {

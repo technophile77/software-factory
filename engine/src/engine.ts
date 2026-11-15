@@ -23,7 +23,7 @@ import { CAUSES, type Cause, afterClassify, afterRun, checkClassification, stage
 import { type RunReport, TestRunError, clearResults, readResults, resolveProgram, runCommand, runReport, testEnv } from "./build/test-run";
 import { type BuildRole, type FixFrom, buildPolicy, buildTestResults, buildTurn, runWorkerSessions } from "./build/worker";
 import { HttpPulls, type Pull, type PullsApi } from "./build/pulls";
-import { HttpTokenCheck, type TokenCheckApi, tokenProblems } from "./build/token-check";
+import { HttpTokenCheck, type TokenCheckApi, tokenProblems, tokensToCheck } from "./build/token-check";
 import { HttpMerge, type MergeApi, autoMergeFeature, autoMergeHygiene } from "./inbox/auto-merge";
 import { autoMergeBlockers, autoMergeCovers, orchestratorApproves } from "./build/automerge";
 import { RESOLVE_CYCLES, conflictOwners, hasConflictMarkers, nextResolveStep } from "./build/conflicts";
@@ -44,6 +44,7 @@ import { Listener, listenUnix } from "./channel/unix";
 import { listenPipe } from "./channel/windows";
 import { Clock, iso, systemClock } from "./clock";
 import { AuthorizationError, authorizeProject, billingMismatch, modelCredentialFor } from "./config/authorize";
+import { ProjectTokens } from "./config/tokens";
 import { AgentSources, Instructions, MASTER_SOURCE_PATHS, resolveAgentSources } from "./config/agent-sources";
 import { TreeSnapshot, readFileAt, resolveFactoryVersion } from "./config/factory-source";
 import { type EndpointLookup } from "./config/endpoint-address";
@@ -71,7 +72,7 @@ import { InterviewTools, ResearchConfig, createInterviewTools } from "./intervie
 import { FileLogger, Logger } from "./log";
 import { OsApi, realOsApi } from "./os/ffi";
 import { Children, osParent, osStartOrder } from "./proc";
-import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryTokenName } from "./secrets";
+import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryOwnerTokenName } from "./secrets";
 import { SecurityAlert, fileDecisionItem, fileSecurityItem } from "./state/inbox";
 import { READINESS_STAGE, analystStReviewTurn, analystReturnTurn, correctionTurn, stReviewResolution, recordedOnly, records, reviewerTurn } from "./st-review/flow";
 import { findingRef, plain, renderReport } from "./st-review/render";
@@ -183,7 +184,10 @@ interface Project extends ProjectStatus {
   sessions: SessionManager | null;
   listener: Listener | null;
   conns: Set<Conn>;
+  /** The config repo owner's token: inbox issues and factory/state (F-015 FR-19). */
   token: string | null;
+  /** Every token of the project, by repo owner; null until authorization. */
+  tokens: ProjectTokens | null;
   inbox: Inbox | null;
   /** Stopped only because pinned keys changed: the inbox still runs, so the owner can approve the change there (F-016 OQ-3). */
   pinsWaiting: boolean;
@@ -336,7 +340,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   const projects: Project[] = listed.map((p) => ({
     path: p, name: null, state: "stopped", warnings: [], real: null, manifest: null, limits: null, sources: null, models: null, state_repo: null,
-    features: new Map(), sessions: null, listener: null, conns: new Set(), token: null, inbox: null, pinsWaiting: false,
+    features: new Map(), sessions: null, listener: null, conns: new Set(), token: null, tokens: null, inbox: null, pinsWaiting: false,
   }));
 
   const notify = o.notify ?? osNotifier({ platform: osApi.platform, children, log, cwd: home });
@@ -436,12 +440,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
    */
   /** F-011: the inbox reads GitHub with the project's factory token, as the pinned owner (SR-2). */
   async function connectInbox(p: Project): Promise<void> {
-    if (!p.inbox || !p.token || !p.state_repo || !(o.issues || o.push)) return;
+    if (!p.inbox || !p.state_repo || !(o.issues || o.push)) return;
     const pin = pins.get(p.real!);
     if (!pin) return;
     try {
       const url = await p.state_repo.remoteUrl(gitBase, await p.state_repo.refuseRedirectingConfig());
       const repo = url.slice(gitBase.length + 1).replace(/\.git$/, "");
+      // F-015 FR-19: a project held for a pins confirm has loaded only its default token so far.
+      if (p.pinsWaiting) p.token = (await credentials.get(factoryOwnerTokenName(pin.name, repo.split("/")[0]!)).catch(() => null)) ?? p.token;
+      if (!p.token) return;
       const api = o.issues ? o.issues(p.token) : new HttpIssues(p.token, log, GITHUB_API_BASE);
       // SR-9: a token without Issues read and write on the config repo is reported, not polled with every minute.
       try {
@@ -569,10 +576,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   for (const p of projects) {
     if (p.state !== "running" || !p.manifest || !p.state_repo) continue;
     try {
-      p.token = await credentials.get(factoryTokenName(p.manifest.name));
       const slug = p.state_repo ? (await configSlug(p).catch(() => "")).split("/") : [];
       const config = slug.length === 2 ? { owner: slug[0]!, repo: slug[1]! } : undefined;
-      p.warnings.push(...(await authorizeProject(p.manifest, github, p.token, log, config)));
+      p.tokens = await ProjectTokens.load(credentials, p.manifest.name, [...p.manifest.repos.map((r) => r.owner), ...(config ? [config.owner] : [])]);
+      p.token = config ? p.tokens.for(config.owner) : p.tokens.fallback;
+      p.warnings.push(...(await authorizeProject(p.manifest, github, p.tokens, log, config)));
       for (const w of p.warnings) log.warn(`${p.manifest.name}: ${w}`);
     } catch (e) {
       const msg = e instanceof AuthorizationError || e instanceof SecretError ? e.message : "authorization failed";
@@ -594,7 +602,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (!p.pinsWaiting || !p.real) continue;
     const pin = pins.get(p.real);
     if (!pin) continue;
-    p.token = await credentials.get(factoryTokenName(pin.name)).catch(() => null);
+    // The config repo owner's own token, if any, is picked in connectInbox, which reads the remote URL anyway.
+    p.tokens = await ProjectTokens.load(credentials, pin.name, []).catch(() => null);
+    p.token = p.tokens?.fallback ?? null;
     await connectInbox(p);
   }
 
@@ -1883,8 +1893,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const repo = String(fx.repo ?? "");
       const pr = Number(fx.pr);
       const approvedDiff = String(fx.diff ?? "");
-      if (!p.token || !Number.isSafeInteger(pr) || pr < 1 || !/^[0-9a-f]{64}$/.test(approvedDiff) || !p.manifest!.repos.some((x) => `${x.owner}/${x.repo}` === repo)) return done("hygiene_target_invalid");
-      const api = o.merge ? o.merge(p.token) : new HttpMerge(p.token, log, GITHUB_API_BASE);
+      const token = tokenFor(p, repo);
+      if (!token || !Number.isSafeInteger(pr) || pr < 1 || !/^[0-9a-f]{64}$/.test(approvedDiff) || !p.manifest!.repos.some((x) => `${x.owner}/${x.repo}` === repo)) return done("hygiene_target_invalid");
+      const api = o.merge ? o.merge(token) : new HttpMerge(token, log, GITHUB_API_BASE);
       const res = await autoMergeHygiene(api, { itemId: r.id, repo, pr, approvedDiff });
       log.info(`${r.id}: ${res.merged ? `merged ${repo}#${pr} at ${res.sha}` : `merged nothing: ${res.why}`}.`);
       return done(res.merged ? "hygiene_merged" : "hygiene_not_merged");
@@ -2237,12 +2248,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const ctx = await buildContext(p, f);
     const identity = await ownerIdentity(p);
     await ctx.repo.init();
+    const codeToken = tokenFor(p, ctx.target.owner);
     if (!(await ctx.repo.head(ctx.branches.feature)) || !(await ctx.repo.head(ctx.branches.dev)) || !(await ctx.repo.head(ctx.branches.test))) {
-      if (!p.token) throw new SessionRefused("the project has no token to fetch the code repo");
-      await ctx.repo.ensureBranches(ctx.branches, await ctx.repo.fetchMain(p.token));
-    } else if (!fix && p.token) {
+      if (!codeToken) throw new SessionRefused("the project has no token to fetch the code repo");
+      await ctx.repo.ensureBranches(ctx.branches, await ctx.repo.fetchMain(codeToken));
+    } else if (!fix && codeToken) {
       // A rerun after the owner changed main starts from it while the branches hold no work yet.
-      const moved = await ctx.repo.fastForwardToMain(ctx.branches, await ctx.repo.fetchMain(p.token));
+      const moved = await ctx.repo.fastForwardToMain(ctx.branches, await ctx.repo.fetchMain(codeToken));
       if (moved.length) log.info(`${f.id}: ${moved.join(", ")} moved up to the new main before the ${BUILD_WHAT[role].what} run.`);
     }
     // Stage 5 works on the agent branches; a stage 6 fix works on the merged feature branch.
@@ -2640,9 +2652,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     prTimers.add(t);
   }
 
-  function pullsFor(p: Project): PullsApi {
-    if (!p.token) throw new SessionRefused("the project has no owner token");
-    return o.pulls ? o.pulls(p.token) : new HttpPulls(p.token, log, GITHUB_API_BASE);
+  function pullsFor(p: Project, repo: string): PullsApi {
+    const token = tokenFor(p, repo);
+    if (!token) throw new SessionRefused("the project has no owner token");
+    return o.pulls ? o.pulls(token) : new HttpPulls(token, log, GITHUB_API_BASE);
+  }
+
+  /** F-015 FR-19: the token for a repo's owner; `repo` is `owner/name` or a bare owner login. */
+  function tokenFor(p: Project, repo: string): string | null {
+    return p.tokens ? p.tokens.for(repo.split("/")[0]!) : p.token;
   }
 
   async function configSlug(p: Project): Promise<string> {
@@ -2726,28 +2744,39 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       await prRefused(p, f, `dod:${head}`, `${f.id} isn't done yet`, `definition of done item${missing.length > 1 ? "s" : ""} ${missing.map((i) => i.n).join(", ")} ${missing.length > 1 ? "aren't" : "isn't"} met at ${head}`);
       return;
     }
-    // SR-2: checked before the first push with this token; nothing reaches a code repo before stage 9.
-    const tokenKey = sha256Hex(`${p.real}\0${p.token}`);
-    if (!tokenChecked.has(tokenKey)) {
-      const api = o.tokenCheck ? o.tokenCheck(p.token!) : new HttpTokenCheck(p.token!, log, GITHUB_API_BASE);
-      const project = [...p.manifest!.repos.map((x) => `${x.owner}/${x.repo}`), await configSlug(p)];
-      const problems = await tokenProblems(api, project, { repo, base: await ctx.repo.fetchMain(p.token!) }, p.token!);
+    // SR-2: each token is checked before the first push with it; nothing reaches a code repo before stage 9.
+    // FR-19: the code repo's token and the config repo's token may differ, and each is checked on a repo it serves.
+    const codeToken = tokenFor(p, repo);
+    const configRepo = await configSlug(p);
+    const projectRepos = [...p.manifest!.repos.map((x) => `${x.owner}/${x.repo}`), configRepo];
+    const keyOf = (token: string) => sha256Hex(`${p.real}\0${token}`);
+    const toCheck = tokensToCheck(
+      { token: codeToken!, name: p.tokens?.nameFor(ctx.target.owner) ?? "the project token", repo },
+      { token: p.token, name: p.tokens?.nameFor(configRepo.split("/")[0]!) ?? "the config repo token", repo: configRepo },
+      (token) => tokenChecked.has(keyOf(token)),
+    );
+    for (const c of toCheck) {
+      const tokenKey = keyOf(c.token);
+      const api = o.tokenCheck ? o.tokenCheck(c.token) : new HttpTokenCheck(c.token, log, GITHUB_API_BASE);
+      // The config repo is probed on its remote factory/state; without one the workflow write can't be tried, so the token isn't trusted yet.
+      const base = c.repo === repo ? await ctx.repo.fetchMain(c.token) : await p.state_repo!.fetch(c.token, gitBase);
+      const problems = base ? await tokenProblems(api, projectRepos, { repo: c.repo, base }, c.token) : [`the workflow write check couldn't run on ${c.repo}, which has no factory/state branch on GitHub yet`];
       if (problems.length) {
-        await prRefused(p, f, `token:${tokenKey.slice(0, 16)}`, `${p.name}'s token has more access than the factory allows`, `${problems.join("; ")} (F-015 SR-2). Make a fine-grained token for the project's repos only, without the Workflows permission`);
+        await prRefused(p, f, `token:${tokenKey.slice(0, 16)}`, `${p.name}'s token ${c.name} has more access than the factory allows`, `${c.name}: ${problems.join("; ")} (F-015 SR-2). Make a fine-grained token for the project's repos of one owner only, without the Workflows permission`);
         stop(p, "the owner token has more access than F-015 SR-2 allows");
         return;
       }
       tokenChecked.add(tokenKey);
     }
     // SR-6, H-0249: a public repo gets code only when onboarding recorded the owner's confirmation, and the visibility still matches the record.
-    const info = await github.repo(ctx.target.owner, ctx.target.repo, p.token!);
+    const info = await github.repo(ctx.target.owner, ctx.target.repo, codeToken!);
     const refusal = publishRefusal(info, ctx.target.visibility);
     if (refusal) {
       await prRefused(p, f, `visibility:${repo}`, `${repo} isn't a repo the engine may push to`, `${repo} ${refusal} (F-015 SR-6)`);
       return;
     }
     // SR-13: workflows a pull request triggers, as they are on main.
-    const main = await ctx.repo.fetchMain(p.token!);
+    const main = await ctx.repo.fetchMain(codeToken!);
     const flows = (await git.lsTree(ctx.repo.localDir, main, ".github/workflows").catch(() => [])).filter((x) => /\.ya?ml$/i.test(x.path) && x.type === "blob");
     const texts = await Promise.all(flows.slice(0, 100).map(async (x) => ({ path: x.path, text: ((await git.readBlob(ctx.repo.localDir, main, x.path)) ?? Buffer.alloc(0)).toString("utf8") })));
     const problems = prWorkflowProblems(texts);
@@ -2761,7 +2790,6 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
     const base = await git.out(ctx.repo.localDir, ["merge-base", main, head]);
-    const configRepo = await configSlug(p);
     const text = prText({ id: f.id, title: f.state.title, specVersion: ctx.so.version ?? null, specCommit: ctx.so.commit, configRepo, specPath: ctx.specPath }, false);
     // SR-4: the diff, the commit messages and the PR text against the spec, transcript and findings, and the owner's home folder.
     const outgoing = [await git.out(ctx.repo.localDir, ["diff", "--no-color", "--no-ext-diff", base, head]), await git.out(ctx.repo.localDir, ["log", "--format=%B", `${base}..${head}`]), text.title, text.body].join("\n");
@@ -2775,9 +2803,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       await prRefused(p, f, `secret:${head}`, `A secret is in ${f.id}'s commits`, `gitleaks flagged the commits or pull request text (rules: ${[...new Set(rules)].slice(0, 10).join(", ")}) (F-015 SR-5)`);
       return;
     }
-    await ctx.repo.pushFeature(ctx.branches.feature, head, p.token!);
+    await ctx.repo.pushFeature(ctx.branches.feature, head, codeToken!);
     log.action({ agent: "engine", action: "git.push", target: `${repo} ${ctx.branches.feature} ${head}`, outcome: "ok" });
-    const api = pullsFor(p);
+    const api = pullsFor(p, repo);
     let pr = await api.findPull(repo, ctx.branches.feature);
     if (!pr || pr.state !== "open") pr = await api.createPull(repo, { ...text, head: ctx.branches.feature, base: "main" });
     await writePrRecord(p, repo, pr.number, f.id, (r) => ({ ...r, head }));
@@ -2799,7 +2827,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const repo = String(opened.repo);
     const n = Number(opened.pr);
     const head = String(opened.head);
-    const api = pullsFor(p);
+    const api = pullsFor(p, repo);
     const pr = await api.pull(repo, n);
     if (pr.state !== "open" || pr.head.sha !== head) {
       await prRefused(p, f, `head:${n}:${pr.head.sha}`, `${repo}#${n} changed under the engine`, pr.state !== "open" ? `the pull request was ${pr.merged ? "merged" : "closed"} before its checks passed` : `the pull request's head is ${pr.head.sha}, not the ${head} the engine pushed (F-015 SR-11)`);
@@ -2848,7 +2876,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const green = [...ev].reverse().find((e) => e.action === "green");
     const repo = String(opened.repo);
     const n = Number(opened.pr);
-    const api = pullsFor(p);
+    const api = pullsFor(p, repo);
     const pr = await api.pull(repo, n);
     if (pr.merged && pr.mergeCommit) {
       await writePrRecord(p, repo, n, f.id, (r) => ({ ...r, history: [...r.history, { at: new Date(clock.now()).toISOString(), action: "merged_on_github", merge_commit: pr.mergeCommit!, merged_by: pr.mergedBy.slice(0, 100) }] }));
@@ -2891,7 +2919,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const head = a.pr.head.sha;
     // One review per head: after a hold the PR waits for the owner, or for a new head.
     if (ev.some((e) => e.action === "auto_held" && e.head === head)) return false;
-    const api = pullsFor(p);
+    const api = pullsFor(p, a.repo);
     const facts = async (): Promise<string[]> => {
       const pr = await api.pull(a.repo, a.n);
       const sha = pr.head.sha;
@@ -2934,7 +2962,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const verdict = r.invalid ? { approve: false, reason: `the orchestrator's report was invalid (${r.invalid})` } : orchestratorApproves(body);
     const again = verdict.approve ? await facts() : [];
     const res = verdict.approve && !again.length
-      ? await autoMergeFeature(o.merge ? o.merge(p.token!) : new HttpMerge(p.token!, log, GITHUB_API_BASE), { repo: a.repo, pr: a.n, branch: ctx.branches.feature, sha: head })
+      ? await autoMergeFeature(o.merge ? o.merge(tokenFor(p, a.repo)!) : new HttpMerge(tokenFor(p, a.repo)!, log, GITHUB_API_BASE), { repo: a.repo, pr: a.n, branch: ctx.branches.feature, sha: head })
       : null;
     if (res?.merged) {
       await api.comment(a.repo, a.n, `The factory engine merged this pull request: the project's \`settings.auto_merge_up_to\` covers this repo's maturity level, the tests passed at ${head}, every check was green, the definition of done was met, and the orchestrator approved (${verdict.reason.slice(0, 1000)}).`).catch((e) => log.warn(`${f.id}: the auto-merge comment wasn't posted (${(e as Error).message}).`));
@@ -2968,9 +2996,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   async function mainMoved(p: Project, f: FeatureInterview): Promise<boolean> {
     const ctx = await buildContext(p, f);
     await ctx.repo.init();
-    const remote = await ctx.repo.remoteMain(p.token!);
+    const remote = await ctx.repo.remoteMain(tokenFor(p, ctx.target.owner)!);
     if ((await ctx.repo.head("main")) === remote && (await ctx.repo.hasMain(ctx.branches))) return false;
-    await ctx.repo.fetchMain(p.token!);
+    await ctx.repo.fetchMain(tokenFor(p, ctx.target.owner)!);
     if (await ctx.repo.hasMain(ctx.branches)) return false;
     await recordBuild(f, "main_moved", { main: remote });
     log.info(`${f.id}: main moved to ${remote}; merging it into the feature branch (ADR 0013).`);

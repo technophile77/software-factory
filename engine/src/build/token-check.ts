@@ -28,6 +28,17 @@ export async function tokenProblems(api: TokenCheckApi, project: readonly string
   return out;
 }
 
+/**
+ * F-015 FR-19: the tokens to check before a code push, each with the repo it is
+ * probed on: the code repo's token there, and the config repo's token on the
+ * config repo when it is a different token. Checked tokens are skipped.
+ */
+export function tokensToCheck(code: { token: string; name: string; repo: string }, config: { token: string | null; name: string; repo: string }, checked: (token: string) => boolean): Array<{ token: string; name: string; repo: string }> {
+  const out = [code];
+  if (config.token && config.token !== code.token) out.push({ token: config.token, name: config.name, repo: config.repo });
+  return out.filter((c) => !checked(c.token));
+}
+
 const PROBE = "name: factory-token-probe\non: workflow_dispatch\njobs: {}\n";
 
 export class HttpTokenCheck extends HttpIssues implements TokenCheckApi {
