@@ -86,6 +86,13 @@ describe("run report (FR-6, AC-6)", () => {
     const r = runReport("c".repeat(40), parseJunit(`<testsuite><testcase name="a"/><testcase name="b"><skipped/></testcase></testsuite>`), {});
     expect(r.incomplete).toMatch(/skipped with no reason/);
   });
+  it("matches a name Node's JUnit reporter escaped twice", () => {
+    const xml = `<testsuites><testsuite name="t"><testcase classname="t" name="AC-1 stdout is exactly &amp;quot;Hello, world!\\n&amp;quot; (14 bytes)"/></testsuite></testsuites>`;
+    const name = 'AC-1 stdout is exactly "Hello, world!\\n" (14 bytes)';
+    const r = runReport("c".repeat(40), parseJunit(xml), { "AC-1": [name] });
+    expect(r.complete).toBe(true);
+    expect(r.criteria["AC-1"]).toEqual([{ test: name, status: "passed" }]);
+  });
 });
 
 describe("test command (SR-9, AC-26)", () => {

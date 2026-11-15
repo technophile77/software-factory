@@ -13,7 +13,7 @@ import type { RouterConfig } from "./agent/sandbox";
 import type { ModelCredential } from "./proxy/server";
 import { type AgentGroup, SessionGroup, runVolume } from "./agent/sandbox";
 import { HostError, HostGroup, runHome, sweepHomes } from "./agent/host";
-import { type HostGate, WORKSPACE, type SessionCaps, type SessionOutcome, denyAsk } from "./agent/session";
+import { ASK_WAIT_MS, type HostGate, WORKSPACE, type SessionCaps, type SessionOutcome, denyAsk } from "./agent/session";
 import { commitWorktree } from "./agent/worktree-commit";
 import { CodeRepo, CodeRepoError, type Identity, codeRepoUrl, commitIdentity, featureBranches } from "./build/code-repo";
 import { type BuildAction, type BuildState, STAGE_OF, buildMachine, isBuildAction, isBuildStage } from "./build/lifecycle";
@@ -1976,8 +1976,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   /** FR-17: each project's owner identity, read from GitHub once per engine start. */
   const identities = new Map<string, Promise<Identity>>();
   /** Role policy v2.7: held commands waiting on the owner, by Security item id. */
-  const asks = new Map<string, (ok: boolean) => void>();
-  const ASK_WAIT_MS = 30 * 60_000;
+  const asks = new Map<string, (ok: boolean, withdrawn?: string) => void>();
   const buildRoot = (p: Project) => path.join(home, "build", sha256Hex(p.real!).slice(0, 16));
   const BUILD_WHAT: Record<BuildRole, { state: BuildState; what: string; rerun: BuildAction }> = {
     "software-developer": { state: "developer", what: "developer", rerun: "rerun_developer" },
@@ -2060,8 +2059,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   /** Role policy v2.7: the held command waits on a Security item, at most 30 minutes; only option A runs it, once. */
   function askOwner(p: Project, f: FeatureInterview, runId: string, role: BuildRole, worktree: string): HostGate["ask"] {
-    return async (command, matched) => {
-      if (!p.inbox || dead) return false;
+    return async (command, matched, signal) => {
+      if (!p.inbox || dead || signal?.aborted) return false;
       const id = await fileSecurityItem(p.inbox, "ask", {
         title: `${f.id}: the ${BUILD_WHAT[role].what} asks to run ${matched}`, feature: f.id,
         context: `Run ${runId} (${role}) wants to run a command that uses ${matched}, which acts with your credentials (Role policy v2.7). The full command and its folder are in the console's private detail.`,
@@ -2070,16 +2069,21 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         effectData: { run: runId },
         private: [{ name: "Command", text: await scrubPrivate(command) }, { name: "Working folder", text: worktree }],
       });
+      const inbox = p.inbox;
       return new Promise<boolean>((resolve) => {
-        const timer = setTimeout(() => {
-          asks.delete(id);
-          resolve(false);
-        }, ASK_WAIT_MS);
-        asks.set(id, (ok) => {
+        // An owner's answer settles it as given; anything else denies the command and closes the item, so none is left asking.
+        const settle = (ok: boolean, withdrawn?: string) => {
+          if (!asks.has(id)) return;
           clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
           asks.delete(id);
           resolve(ok);
-        });
+          if (withdrawn) void inbox.withdraw(id, withdrawn).catch((e) => log.warn(`${id}: couldn't withdraw: ${(e as Error).message}`));
+        };
+        const timer = setTimeout(() => settle(false, "no answer came within 30 minutes, so the command was denied."), ASK_WAIT_MS);
+        const onAbort = () => settle(false, "the run that asked has ended, so the command was denied.");
+        asks.set(id, (ok, withdrawn) => settle(ok, withdrawn));
+        signal?.addEventListener("abort", onAbort, { once: true });
       });
     };
   }
@@ -3521,6 +3525,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         // Sessions end with their turn streams; their work is committed and the runs stay open to resume (FR-14).
         shuttingDown = true;
         for (const t of prTimers) clearTimeout(t);
+        for (const settle of [...asks.values()]) settle(false, "the engine stopped, so the command was denied.");
         polling.abort();
         await Promise.all(pollers);
         for (const j of jobs.values()) j.turns?.close();

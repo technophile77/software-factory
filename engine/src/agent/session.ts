@@ -120,8 +120,8 @@ export const FULL_SHELL_ROLES: readonly string[] = ["software-developer", "test-
  * approved spec and contracts, outside the worktree).
  */
 export interface HostGate {
-  /** Holds the command until the owner answers; true runs it once. */
-  ask(command: string, matched: string): Promise<boolean>;
+  /** Holds the command until the owner answers; true runs it once. An aborted signal is a denial. */
+  ask(command: string, matched: string, signal?: AbortSignal): Promise<boolean>;
   askExtra: string[];
   readOnlyRoot?: string;
 }
@@ -158,7 +158,7 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
   const mcp = new Set(factoryTools.map((t) => `mcp__${FACTORY_SERVER}__${t}`));
   // The gate runs twice for one call (hook, then canUseTool), so the owner's answer is kept briefly and used once more.
   const answered = new Map<string, { ok: boolean; at: number }>();
-  return async (name, input) => {
+  return async (name, input, o) => {
     const deny = (why: string) => {
       log.warn(`${policy.role}: tool ${name.slice(0, 60)} refused: ${why}`);
       return { behavior: "deny" as const, message: `Refused by the factory engine: ${why}.` };
@@ -213,7 +213,7 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
           if (prior && Date.now() - prior.at < 60_000) ok = prior.ok;
           else {
             log.warn(`${policy.role}: Bash command held for the owner (ask rule, ${matched}): ${JSON.stringify(cmd).slice(0, 300)}`);
-            ok = await host.ask(cmd, matched).catch(() => false);
+            ok = await host.ask(cmd, matched, o?.signal).catch(() => false);
             log.info(`${policy.role}: the held command was ${ok ? "approved and runs once" : "denied"}`);
             answered.set(cmd, { ok, at: Date.now() });
           }
@@ -232,11 +232,20 @@ export function preToolUseGate(gate: CanUseTool): PreToolUseHook {
   return async (input, _id, o) => {
     if (input.hook_event_name !== "PreToolUse") return {};
     const toolInput = input.tool_input && typeof input.tool_input === "object" ? (input.tool_input as Record<string, unknown>) : {};
-    const r = await gate(String(input.tool_name), toolInput, { signal: o.signal });
+    const r = await gate(String(input.tool_name), toolInput, { signal: o.signal }).catch(() => ({ behavior: "deny" as const, message: "the engine's tool check failed" }));
     if (r.behavior === "allow") return {};
     return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: r.message } };
   };
 }
+
+/** Role policy v2.7: how long a held command waits for the owner before it is denied. */
+export const ASK_WAIT_MS = 30 * 60_000;
+/**
+ * Claude Code runs the tool when a hook times out, so the gate's hook must
+ * outlast the owner's whole answer window; its default (10 minutes) let a
+ * held command run unanswered in the F-002 trial.
+ */
+export const GATE_HOOK_TIMEOUT_S = ASK_WAIT_MS / 1000 + 5 * 60;
 
 export interface SessionInput {
   policy: RolePolicy;
@@ -280,7 +289,7 @@ export function sessionOptions(s: SessionInput, abort: AbortController): Session
     disallowedTools: ["WebFetch"].filter((t) => !builtins.includes(t)),
     permissionMode: "default",
     canUseTool: gate,
-    hooks: { PreToolUse: [{ hooks: [preToolUseGate(gate)] }] },
+    hooks: { PreToolUse: [{ hooks: [preToolUseGate(gate)], timeout: GATE_HOOK_TIMEOUT_S }] },
     systemPrompt: s.instructions,
     plugins: builtins.includes("Skill") ? [{ type: "local", path: s.skillsPluginDir! }] : [],
     maxTurns: s.caps.maxTurns,

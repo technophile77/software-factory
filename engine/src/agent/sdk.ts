@@ -69,7 +69,7 @@ export interface SessionOptions {
   permissionMode: "default";
   canUseTool: CanUseTool;
   /** Only the engine's own gate; settingSources: [] keeps every other hook out. */
-  hooks: { PreToolUse: [{ hooks: [PreToolUseHook] }] };
+  hooks: { PreToolUse: [{ hooks: [PreToolUseHook]; timeout: number }] };
   systemPrompt: string;
   plugins: Array<{ type: "local"; path: string }>;
   maxTurns: number;

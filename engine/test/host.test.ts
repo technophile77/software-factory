@@ -143,6 +143,16 @@ describe("the tool gate for sessions on the owner's PC", () => {
     const extra = gateOf("software-developer", wt, { askExtra: ["stripe"] });
     expect((await extra.gate("Bash", { command: "stripe login" }, sig)).behavior).toBe("deny");
   });
+
+  it("passes the tool call's signal to the ask, so an ended call denies the held command", async () => {
+    const wt = tmpdir();
+    const ac = new AbortController();
+    let seen: AbortSignal | undefined;
+    const { gate } = gateOf("software-developer", wt, { ask: async (_c, _m, signal) => ((seen = signal), !signal?.aborted) });
+    ac.abort();
+    expect((await gate("Bash", { command: "git push" }, { signal: ac.signal })).behavior).toBe("deny");
+    expect(seen).toBe(ac.signal);
+  });
 });
 
 describe("the session wall-time cap can be held while the owner answers", () => {

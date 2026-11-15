@@ -44,6 +44,15 @@ function cap(s: string): string {
 
 const REF = "(#x[0-9A-Fa-f]{1,6}|#[0-9]{1,7}|[A-Za-z][A-Za-z0-9]{0,30});";
 
+/**
+ * A name as written in the test file when the reporter escaped it twice, as
+ * Node's JUnit reporter does for quotes; matching uses both forms, while the
+ * report keeps the name as read.
+ */
+export function undoubled(s: string): string {
+  return s.replace(/&(lt|gt|amp|quot|apos);/g, (_m, ref: string) => NAMED[ref]!);
+}
+
 function decode(s: string): string {
   if (new RegExp(`&(?!${REF})`).test(s)) throw new JunitError("the results file has a bare &");
   return s.replace(new RegExp(`&${REF}`, "g"), (_m, ref: string) => {
