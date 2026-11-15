@@ -143,7 +143,8 @@ export function runCommand(o: { program: string; args: string[]; cwd: string; en
 
 /**
  * SR-8 before the run: the results path must be inside the worktree and
- * not tracked in git, and whatever is there from an earlier run is removed.
+ * not tracked in git, whatever is there from an earlier run is removed, and
+ * its folder exists.
  */
 export async function clearResults(git: Git, worktree: string, gitDir: string, rel: string): Promise<string> {
   if (path.isAbsolute(rel) || rel.split(/[\\/]/).includes("..")) throw new TestRunError("test_results must be a path inside the worktree");
@@ -151,6 +152,11 @@ export async function clearResults(git: Git, worktree: string, gitDir: string, r
   if (tracked) throw new TestRunError("test_results names a file tracked in git");
   const full = path.join(worktree, ...rel.split(/[\\/]/));
   fs.rmSync(full, { force: true, recursive: true });
+  // Runners such as node --test-reporter-destination don't create the folder,
+  // and a git-ignored one never exists in a fresh worktree.
+  const dir = path.dirname(full);
+  fs.mkdirSync(dir, { recursive: true });
+  if (!inside(realOr(worktree), realOr(dir))) throw new TestRunError("the results folder is outside the worktree");
   return full;
 }
 
