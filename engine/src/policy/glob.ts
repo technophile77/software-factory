@@ -76,6 +76,23 @@ export function allowedBy(rules: Rules, rel: string): boolean {
   return rules.allow.some((g) => globMatch(g, n, false)) && !rules.deny.some((g) => globMatch(g, n, true));
 }
 
+/**
+ * Role policy v2.10 (H-0264, owner, 2026-11-19): example files for `.env` hold
+ * placeholders by convention, so reading them is allowed even though they
+ * match the `**\/.env.*` secret deny. Only that deny, only these exact names
+ * (any case), and only for reading.
+ */
+export const ENV_TEMPLATE_DENY = "**/.env.*";
+export const ENV_TEMPLATE_NAMES: ReadonlySet<string> = new Set([".env.example", ".env.sample", ".env.template"]);
+
+/** allowedBy for read rules, with the v2.10 exception for `.env` templates. */
+export function readableBy(rules: Rules, rel: string): boolean {
+  const n = rel.normalize("NFC");
+  const template = ENV_TEMPLATE_NAMES.has((n.split("/").at(-1) ?? "").toLowerCase());
+  return rules.allow.some((g) => globMatch(g, n, false))
+    && !rules.deny.some((g) => !(template && g === ENV_TEMPLATE_DENY) && globMatch(g, n, true));
+}
+
 export class OutsideWorktree extends Error {
   override name = "OutsideWorktree";
 }

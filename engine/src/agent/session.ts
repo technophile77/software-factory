@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { DockerCli } from "../docker/cli";
 import type { Logger } from "../log";
-import { OutsideWorktree, allowedBy, worktreeRelative } from "../policy/glob";
+import { OutsideWorktree, allowedBy, readableBy, worktreeRelative } from "../policy/glob";
 import { askMatch, projectAsk } from "../policy/ask";
 import type { RolePolicy } from "../policy/role-policy";
 import type { AgentSdk, CanUseTool, FactoryTool, PreToolUseHook, SdkMessage, SessionOptions, SpawnOptions, SpawnedProcess, UserTurn } from "./sdk";
@@ -93,7 +93,7 @@ export function unreadableUnder(worktree: string, rel: string, read: RolePolicy[
       if (++seen > cap) return `${rel || "."} (more than ${cap} entries)`;
       const r = dir === "" ? e.name : `${dir}/${e.name}`;
       if (e.isDirectory()) stack.push(r);
-      else if (!allowedBy(read, r)) return r;
+      else if (!readableBy(read, r)) return r;
     }
   }
   return null;
@@ -177,12 +177,12 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
       if (host?.readOnlyRoot && underRoot(host.readOnlyRoot, input[key]) !== null) {
         if (writeKey) return deny("the approved spec and contracts are read-only");
         const inside = underRoot(host.readOnlyRoot, input[key])!;
-        if (!allowedBy({ allow: ["**"], deny: policy.read.deny }, inside || ".")) return deny(`the role's read rules don't allow ${inside}`);
+        if (!readableBy({ allow: ["**"], deny: policy.read.deny }, inside || ".")) return deny(`the role's read rules don't allow ${inside}`);
         return { behavior: "allow", updatedInput: input };
       }
       const rel = hostRelative(worktree, input[key], workspace);
       if (rel === null) return deny("the path is outside the worktree");
-      if (!allowedBy(writeKey ? policy.write : policy.read, rel)) return deny(`the role's ${writeKey ? "write" : "read"} rules don't allow ${rel || "the worktree root"}`);
+      if (!(writeKey ? allowedBy(policy.write, rel) : readableBy(policy.read, rel))) return deny(`the role's ${writeKey ? "write" : "read"} rules don't allow ${rel || "the worktree root"}`);
       if (name === "Grep") {
         let isDir = false;
         try {
