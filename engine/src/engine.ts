@@ -1903,7 +1903,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
     // Role policy v2.7: a held command's answer; one that came after the 30 minutes only records.
     if (type === "ask") {
-      const answer = asks.get(r.id);
+      const answer = asks.get(askKey(p, r.id));
       if (!answer) return done("ask_expired");
       answer(chosen === "A");
       return done(chosen === "A" ? "ask_approved" : "ask_denied");
@@ -2001,6 +2001,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const identities = new Map<string, Promise<Identity>>();
   /** Role policy v2.7: held commands waiting on the owner, by Security item id. */
   const asks = new Map<string, (ok: boolean, withdrawn?: string) => void>();
+  // Item ids are numbered per project, so two projects can each have an S-0001 waiting.
+  const askKey = (p: Project, id: string) => `${p.real}\0${id}`;
   const buildRoot = (p: Project) => path.join(home, "build", sha256Hex(p.real!).slice(0, 16));
   const BUILD_WHAT: Record<BuildRole, { state: BuildState; what: string; rerun: BuildAction }> = {
     "software-developer": { state: "developer", what: "developer", rerun: "rerun_developer" },
@@ -2094,19 +2096,20 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         private: [{ name: "Command", text: await scrubPrivate(command) }, { name: "Working folder", text: worktree }],
       });
       const inbox = p.inbox;
+      const key = askKey(p, id);
       return new Promise<boolean>((resolve) => {
         // An owner's answer settles it as given; anything else denies the command and closes the item, so none is left asking.
         const settle = (ok: boolean, withdrawn?: string) => {
-          if (!asks.has(id)) return;
+          if (!asks.has(key)) return;
           clearTimeout(timer);
           signal?.removeEventListener("abort", onAbort);
-          asks.delete(id);
+          asks.delete(key);
           resolve(ok);
           if (withdrawn) void inbox.withdraw(id, withdrawn).catch((e) => log.warn(`${id}: couldn't withdraw: ${(e as Error).message}`));
         };
         const timer = setTimeout(() => settle(false, "no answer came within 30 minutes, so the command was denied."), ASK_WAIT_MS);
         const onAbort = () => settle(false, "the run that asked has ended, so the command was denied.");
-        asks.set(id, (ok, withdrawn) => settle(ok, withdrawn));
+        asks.set(key, (ok, withdrawn) => settle(ok, withdrawn));
         signal?.addEventListener("abort", onAbort, { once: true });
       });
     };
