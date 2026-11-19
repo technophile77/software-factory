@@ -3,7 +3,8 @@
 The master repo is cloned by every owner, so it must never carry one owner's
 own values. Run from the repo root; it reads tracked files only.
 
-1. The project paths file is never tracked.
+1. The project paths file, and the project files in projects/ that
+   replace it (F-023, H-0262), are never tracked.
 2. In templates and test fixtures, owner keys hold a `<...>` placeholder, a
    value built by code, or one of the example values listed here.
 3. Nowhere is there an OAuth client id or an email address that could be real.
@@ -17,6 +18,7 @@ import sys
 PATHS_FILE = "factory-projects.local.yaml"
 ENDPOINTS_FILE = "factory-endpoints.local.yaml"
 UNTRACKED_FILES = {PATHS_FILE, ENDPOINTS_FILE}
+PROJECTS_DIR = "projects/"
 # This check's own tests hold made-up bad values on purpose.
 SKIP = {"scripts/tests/test_check_placeholders.py", "scripts/tests/test_check_endpoint_addresses.py"}
 
@@ -154,6 +156,9 @@ def main():
         name = path.split("/")[-1]
         if name == PATHS_FILE:
             errors.append(f"{path}: the project paths file must never be tracked (SR-13)")
+            continue
+        if path.startswith(PROJECTS_DIR):
+            errors.append(f"{path}: project files in projects/ must never be tracked (F-023 SR-1)")
             continue
         if name == ENDPOINTS_FILE:
             errors.append(f"{path}: the model endpoints file must never be tracked (F-013 AC-1)")

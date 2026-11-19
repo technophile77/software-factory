@@ -62,6 +62,11 @@ class WholeRepo(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("never be tracked", r.stdout)
 
+    def test_tracked_project_file_fails(self):
+        r = self.run_in({"projects/acme.yaml": "schema: project-file/1.0\n"})
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("projects/acme.yaml: project files in projects/ must never be tracked", r.stdout)
+
     def test_clean_tree_passes(self):
         r = self.run_in({"README.md": "hello\n"})
         self.assertEqual(r.returncode, 0, r.stdout)

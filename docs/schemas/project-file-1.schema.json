@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "project-file/1.0"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$"
+    },
+    "config_repo": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "maxLength": 400,
+          "pattern": "^(https:\\/\\/[A-Za-z0-9.-]+|http:\\/\\/(127\\.0\\.0\\.1|localhost|\\[::1\\]))(:\\d{1,5})?\\/[A-Za-z0-9-]{1,39}\\/[A-Za-z0-9._-]{1,100}$"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "url",
+        "path"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "name",
+    "config_repo"
+  ],
+  "additionalProperties": false
+}

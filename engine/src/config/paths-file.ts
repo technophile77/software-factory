@@ -14,20 +14,19 @@ export class ConfigError extends Error {
 const MAX_FILE = 64 * 1024;
 
 /**
- * Reads the git-ignored list of config repo clones (H-0081). It decides
- * which owner ids the engine trusts, so it is refused unless only the owner
- * can have written it (SR-13). It holds paths and nothing else.
+ * SR-13 (F-023 SR-1): a file that decides which owner ids the engine trusts
+ * is read only when it is a small regular file, not a link, that only the
+ * owner can have written.
  */
-export function readPathsFile(masterRepo: string, os: OsApi): string[] {
-  const file = path.join(masterRepo, PATHS_FILE);
+export function checkOwnerFile(file: string, label: string, os: OsApi): void {
   let st: fs.Stats;
   try {
     st = fs.lstatSync(file);
   } catch {
-    throw new ConfigError(`${PATHS_FILE} is missing from the master repo clone.`);
+    throw new ConfigError(`${label} is missing from the master repo clone.`);
   }
-  if (st.isSymbolicLink()) throw new ConfigError(`${PATHS_FILE} is a symbolic link.`);
-  if (!st.isFile() || st.size > MAX_FILE) throw new ConfigError(`${PATHS_FILE} is not a small regular file.`);
+  if (st.isSymbolicLink()) throw new ConfigError(`${label} is a symbolic link.`);
+  if (!st.isFile() || st.size > MAX_FILE) throw new ConfigError(`${label} is not a small regular file.`);
   if (os.platform === "win32") {
     let ok = false;
     try {
@@ -36,11 +35,21 @@ export function readPathsFile(masterRepo: string, os: OsApi): string[] {
     } catch {
       ok = false;
     }
-    if (!ok) throw new ConfigError(`${PATHS_FILE} must be owned by you and writable by nobody else.`);
+    if (!ok) throw new ConfigError(`${label} must be owned by you and writable by nobody else.`);
   } else {
-    if (st.uid !== euid()) throw new ConfigError(`${PATHS_FILE} is not owned by you.`);
-    if (st.mode & 0o022) throw new ConfigError(`${PATHS_FILE} is group- or world-writable; run chmod go-w on it.`);
+    if (st.uid !== euid()) throw new ConfigError(`${label} is not owned by you.`);
+    if (st.mode & 0o022) throw new ConfigError(`${label} is group- or world-writable; run chmod go-w on it.`);
   }
+}
+
+/**
+ * Reads the git-ignored list of config repo clones (H-0081). It decides
+ * which owner ids the engine trusts, so it is refused unless only the owner
+ * can have written it (SR-13). It holds paths and nothing else.
+ */
+export function readPathsFile(masterRepo: string, os: OsApi): string[] {
+  const file = path.join(masterRepo, PATHS_FILE);
+  checkOwnerFile(file, PATHS_FILE, os);
   let doc: unknown;
   try {
     doc = YAML.parse(fs.readFileSync(file, "utf8"), { uniqueKeys: true, maxAliasCount: 0 });
@@ -75,6 +84,11 @@ const normUrl = (u: string) => u.trim().toLowerCase().replace(/\.git$/, "").repl
  * Resolves to the path's real path.
  */
 export async function checkProjectPath(p: string, masterRepo: string, git: Git): Promise<string> {
+  return (await checkProjectClone(p, masterRepo, git)).real;
+}
+
+/** `checkProjectPath`, also giving the clone's `origin` it read on the way (null: none), so callers needn't read it again. */
+export async function checkProjectClone(p: string, masterRepo: string, git: Git): Promise<{ real: string; origin: string | null }> {
   if (!path.isAbsolute(p)) throw new ConfigError("The path is not absolute.");
   let st: fs.Stats;
   try {
@@ -130,5 +144,5 @@ export async function checkProjectPath(p: string, masterRepo: string, git: Git):
   if ([...pr].some((r) => mr.has(r))) throw new ConfigError("The path is a clone of the master repo (same root commit).");
   const po = await origin(real);
   if (mo && po && mo === po) throw new ConfigError("The path is a clone of the master repo (same remote).");
-  return real;
+  return { real, origin: po };
 }

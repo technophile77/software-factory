@@ -7,7 +7,7 @@ import { MemoryLogger } from "../src/log";
 import { Children } from "../src/proc";
 import { StateRepo } from "../src/state/state-repo";
 import { GitHttp } from "./git-http";
-import { FACTORY_TOKEN, GIT_PATH, RpcClient, World, engineJson, git, makeWorld, start, tmpdir } from "./helpers";
+import { FACTORY_TOKEN, GIT_PATH, addProjectFile, RpcClient, World, engineJson, git, makeWorld, start, tmpdir } from "./helpers";
 import { securityItemsIn } from "./inbox-items";
 
 let engines: EngineHandle[] = [];
@@ -32,6 +32,8 @@ async function remoteWorld(): Promise<{ w: World; srv: GitHttp; bare: string }> 
   servers.push(srv);
   git(w.config, "remote", "set-url", "origin", `${srv.base}/example-org/acme-config`);
   w.github.webBase = srv.base;
+  // F-023 FR-2: the project file names the config repo on the GitHub the engine is given.
+  addProjectFile(w.master, "acme", w.config, `${srv.base}/example-org/acme-config`);
   return { w, srv, bare };
 }
 
@@ -72,15 +74,12 @@ describe("remote factory/state (GS-4: SR-1, SR-11)", () => {
     void e;
   });
 
-  it("doesn't push when origin isn't under the base", async () => {
+  it("doesn't push when origin isn't under the base: the project is refused at start (F-023 FR-2)", async () => {
     const { w, srv } = await remoteWorld();
     git(w.config, "remote", "set-url", "origin", "https://github.com/example-org/acme-config");
-    await boot(w);
-    const c = await RpcClient.connect(engineJson(w).path);
-    await c.ok("feature.start", { request: "Export" });
-    c.close();
+    const e = await boot(w);
+    expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringMatching(/but the clone's origin is https:\/\/github\.com\/example-org\/acme-config/) });
     expect(srv.pushes).toEqual([]);
-    expect(w.log.text()).toMatch(/origin is not a repo under http:\/\/127\.0\.0\.1/);
   });
 
   it("builds the push URL from origin's owner and repo only", async () => {

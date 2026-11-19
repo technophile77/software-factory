@@ -6,8 +6,51 @@ import { GitHubClient, startDeviceApproval } from "../github";
 import { Logger } from "../log";
 import { readManifest, type InterviewSignIn } from "./manifest";
 import { ConfigError, checkProjectPath, readPathsFile } from "./paths-file";
+import { readProjectFiles } from "./project-files";
+import * as path from "node:path";
 import { PinStore, comparePin, pinnedKeys } from "./pins";
 import type { OsApi } from "../os/ffi";
+
+/**
+ * F-023 FR-5: `--project` takes a project name (its file in projects/) or a
+ * config repo path named by one. Before the one-time import, the old paths
+ * file is read instead. Resolves to the path as listed.
+ */
+export function findProject(master: string, given: string, os: OsApi): string {
+  const entries = readProjectFiles(master, os);
+  if (!entries.length && fs.existsSync(path.join(master, "factory-projects.local.yaml"))) {
+    const want = realPath(path.resolve(given));
+    const hit = readPathsFile(master, os).find((p) => {
+      try {
+        return realPath(p) === want;
+      } catch {
+        return false;
+      }
+    });
+    if (!hit) throw new ConfigError("That path isn't in factory-projects.local.yaml.");
+    return hit;
+  }
+  const byName = entries.find((e) => e.file === `${given}.yaml`);
+  if (byName) {
+    if (!byName.project) throw new ConfigError(byName.error ?? "That project file was refused.");
+    return byName.project.path;
+  }
+  let want: string | null = null;
+  try {
+    want = realPath(path.resolve(given));
+  } catch {
+    // Neither a project name nor an existing path.
+  }
+  const byPath = want && entries.find((e) => {
+    try {
+      return !!e.project && realPath(e.project.path) === want;
+    } catch {
+      return false;
+    }
+  });
+  if (!byPath || !byPath.project) throw new ConfigError(`No project file in projects/ is named ${given} or names that config repo.`);
+  return byPath.project.path;
+}
 
 export interface ConfirmIo {
   say(line: string): void;
@@ -32,16 +75,7 @@ export async function confirmProject(o: {
   log: Logger;
   io: ConfirmIo;
 }): Promise<boolean> {
-  const listed = readPathsFile(o.masterRepo, o.os);
-  const want = realPath(o.projectPath);
-  const match = listed.find((p) => {
-    try {
-      return realPath(p) === want;
-    } catch {
-      return false;
-    }
-  });
-  if (!match) throw new ConfigError("That path isn't in factory-projects.local.yaml.");
+  const match = findProject(o.masterRepo, o.projectPath, o.os);
   const real = await checkProjectPath(match, o.masterRepo, o.git);
   const m = await readManifest(o.git, real);
   const pin = o.pins.get(real);
@@ -75,6 +109,6 @@ export async function confirmProject(o: {
   }
   o.pins.set(real, { ...now, pinned_at: iso(o.clock.now()), commit: m.commit });
   o.log.action({ agent: "owner", action: "pins.confirm", target: m.name, approval_id: `confirm:${m.name}`, outcome: "pinned" });
-  o.io.say("Confirmed and pinned. Restart the engine to run the project.");
+  o.io.say("Confirmed and pinned. A running engine starts the project within a few seconds; otherwise start the engine.");
   return true;
 }

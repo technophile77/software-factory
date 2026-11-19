@@ -5,7 +5,7 @@ import { EngineHandle } from "../src/engine";
 import { REFUSED_MESSAGE } from "../src/constants";
 import { EngineRecord } from "../src/state/record";
 import { parseTranscript } from "../src/state/transcript";
-import { OTHER_ID, OWNER_ID, RpcClient, World, advanceSoon, approvedSession, engineJson, git, makeWorld, start } from "./helpers";
+import { OTHER_ID, OWNER_ID, RpcClient, World, addProjectFile, advanceSoon, approvedSession, engineJson, git, makeWorld, start } from "./helpers";
 import { securityItemsIn } from "./inbox-items";
 
 let engines: EngineHandle[] = [];
@@ -386,7 +386,7 @@ describe("F-023 FR-9, SR-13: feature ids are per project", () => {
     fs.writeFileSync(path.join(other, ".factory", "interviews", feature, "transcript.jsonl"), "");
     git(path.join(other, ".factory"), "add", "-A");
     git(path.join(other, ".factory"), "commit", "-qm", "dup");
-    fs.writeFileSync(path.join(w.master, "factory-projects.local.yaml"), `projects:\n  - path: ${w.config}\n  - path: ${other}\n`);
+    addProjectFile(w.master, "beta", other);
     w.pin(other, beta);
     await w.credentials.set("factory-token/beta", "github_pat_placeholder_beta");
     void rec;

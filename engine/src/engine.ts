@@ -54,10 +54,12 @@ import { type Endpoint, EndpointsError, readEndpointsFile } from "./config/endpo
 import { Models, MODELS_FILE, readDefaultModels } from "./config/models";
 import { LIMITS_FILE, Limits, LimitsError, agentLimits, stReviewLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, readinessLimits, roleContainerLimits, worktreeLimits, buildLimits } from "./config/limits";
 import { Manifest, interviewSignIn, readManifest } from "./config/manifest";
-import { ConfigError, checkProjectPath, readPathsFile } from "./config/paths-file";
+import { ConfigError, checkProjectClone } from "./config/paths-file";
+import { type ImportResult, PROJECTS_DIR, type ProjectEntry, importPathsFile, listProjectFiles, readProjectFile, readProjectFiles, refuseDuplicates, sameRepoUrl } from "./config/project-files";
+import { type ProjectMachine, projectMachine } from "./project-life";
 import { PinStore, comparePin, pinnedKeys } from "./config/pins";
 import { ConfirmIo, confirmProject as runConfirm } from "./config/confirm";
-import { CAPABILITIES, CLAUDE_CODE_VERSION, ENGINE_JSON, FEATURE_ID_RE, GITHUB_API_BASE, BUILD_STAGE, GITHUB_WEB_BASE, INTERVIEW_STAGE, MAX_RESUMES, SERVED_CHANNEL_VERSION } from "./constants";
+import { CAPABILITIES, CLAUDE_CODE_VERSION, ENGINE_JSON, FEATURE_ID_RE, GITHUB_API_BASE, BUILD_STAGE, GITHUB_WEB_BASE, INTERVIEW_STAGE, MAX_RESUMES, PATHS_FILE, SERVED_CHANNEL_VERSION } from "./constants";
 import { ensureOwnerDir, findOnPath, sha256Hex, writeFileAtomic } from "./fsutil";
 import { Git } from "./git";
 import { GitHubClient, GitHubError, GitHubUnreachable, HttpGitHub, checkBase } from "./github";
@@ -73,7 +75,7 @@ import { InterviewTools, ResearchConfig, createInterviewTools } from "./intervie
 import { FileLogger, Logger } from "./log";
 import { OsApi, realOsApi } from "./os/ffi";
 import { Children, osParent, osStartOrder } from "./proc";
-import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryOwnerTokenName } from "./secrets";
+import { CredentialStore, MODEL_CREDENTIAL, OsCredentialStore, SecretError, factoryOwnerTokenName, factoryTokenName } from "./secrets";
 import { SecurityAlert, fileDecisionItem, fileSecurityItem } from "./state/inbox";
 import { READINESS_STAGE, analystStReviewTurn, analystReturnTurn, correctionTurn, stReviewResolution, recordedOnly, records, reviewerTurn } from "./st-review/flow";
 import { findingRef, plain, renderReport } from "./st-review/render";
@@ -98,8 +100,12 @@ export class StartError extends Error {
 }
 
 export interface EngineOptions {
-  /** The owner's clone of the master factory repo, holding factory-projects.local.yaml. */
+  /** The owner's clone of the master factory repo, holding projects/ (F-023 FR-2). */
   masterRepo: string;
+  /** F-023 FR-4: how often projects/ is checked for added, changed and removed files; 0 turns the check off (tests that add no project). */
+  projectPollMs?: number;
+  /** Told each time a project's state changes after start, so the command line can show it (F-023 FR-5). */
+  onProject?: (p: ProjectStatus) => void;
   /**
    * F-023 FR-1: where the one-factory-per-PC lock lives. The command line
    * passes the default engine folder's run/ whatever --home says; left out,
@@ -168,18 +174,43 @@ export interface EngineOptions {
   endpoints?: { lookup?: EndpointLookup; probe?: EndpointProbe; litellm?: { verify?: (imageRef: string) => Promise<void>; pin?: LitellmPin | null; cosignPath?: string }; slotWaitMs?: number };
 }
 
-export type ProjectState = "running" | "stopped" | "disabled";
+export type ProjectState = "running" | "stopped" | "disabled" | "needs_setup";
+
+/** F-023 FR-5: the setup steps, in the order they are met. */
+export type SetupStep = "clone" | "token" | "confirm";
 
 export interface ProjectStatus {
   path: string;
   name: string | null;
   state: ProjectState;
   reason?: string;
+  /** F-023 FR-5: the first unmet setup step and the exact command that meets it. */
+  setup?: { step: SetupStep; command: string };
   channel?: string;
   warnings: string[];
 }
 
 interface Project extends ProjectStatus {
+  /** F-023 FR-2: the project file it came from, or null for an old paths-file entry the import couldn't name (shown once). */
+  file: string | null;
+  /** The file's content key when read; a different one restarts the project (FR-4). */
+  fileKey: string | null;
+  /** The file's size and modified time when read, so an untouched file isn't opened again. */
+  fileStat: string | null;
+  /** The project file's config repo URL (FR-2). */
+  url: string | null;
+  life: ProjectMachine;
+  /**
+   * What a stopped project waits on, read again on each check of projects/: its setup step's condition, or a
+   * changed pin. A different value starts the project again (FR-5). Null when only a changed file does.
+   */
+  waitKey: (() => Promise<string>) | null;
+  waitWas: string | null;
+  /** Ends this project's inbox poll on its own when it is taken down (FR-4). */
+  abort: AbortController;
+  poller: Promise<void> | null;
+  /** Taken down: nothing more is pushed or filed for it. */
+  gone: boolean;
   real: string | null;
   manifest: Manifest | null;
   /** Known for every running project (phase 1); see EngineHandle.limits and agentSources. */
@@ -243,6 +274,9 @@ export interface EngineHandle {
 
 /** F-011 "one poll": often enough to feel prompt, few enough calls for GitHub's 5,000 an hour. */
 export const INBOX_POLL_MS = 60_000;
+
+/** F-023 FR-4: how often projects/ is checked; AC-2 asks for a new project within 10 seconds. */
+export const PROJECT_POLL_MS = 5_000;
 
 export function defaultEngineHome(): string {
   if (process.platform === "win32") {
@@ -318,12 +352,21 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     throw new StartError(e instanceof SecretError ? e.message : "The credential store couldn't be read.");
   }
 
-  let listed: string[];
+  // F-023 FR-2, FR-3: the project files, after a one-time import of the old paths file.
+  let entries: ProjectEntry[];
+  let notImported: ImportResult["failed"] = [];
   try {
-    listed = readPathsFile(o.masterRepo, osApi);
+    const imported = await importPathsFile(o.masterRepo, osApi, git);
+    if (imported) {
+      notImported = imported.failed;
+      log.info(`Imported ${PATHS_FILE} into ${PROJECTS_DIR}/ (${imported.imported.join(", ") || "no project"}); it is no longer read (F-023 FR-3).`);
+      for (const f of imported.failed) log.warn(`${f.path}: not imported from ${PATHS_FILE}: ${f.reason}`);
+    }
+    entries = readProjectFiles(o.masterRepo, osApi);
   } catch (e) {
-    throw new StartError(e instanceof ConfigError ? e.message : "The project paths file couldn't be read.");
+    throw new StartError(e instanceof ConfigError ? e.message : "The project files couldn't be read.");
   }
+  const fileStats = listProjectFiles(o.masterRepo);
 
   let endpointConfig: { endpoints: Endpoint[] } | { problem: string };
   try {
@@ -354,10 +397,33 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     } : {}),
   });
 
-  const projects: Project[] = listed.map((p) => ({
-    path: p, name: null, state: "stopped", warnings: [], real: null, manifest: null, limits: null, sources: null, models: null, state_repo: null,
-    features: new Map(), sessions: null, listener: null, conns: new Set(), token: null, tokens: null, inbox: null, pinsWaiting: false,
-  }));
+  /** A refusal is part of the key, so a file that stops being a duplicate is checked again. */
+  const entryKey = (e: ProjectEntry) => `${e.key}|${e.error ?? ""}`;
+  /** A project from its file's entry, or an old paths-file entry the import refused; checks start at `found`. */
+  const newProject = (e: { entry: ProjectEntry; stat: string | null } | { path: string; reason: string }): Project => {
+    const entry = "entry" in e ? e.entry : null;
+    const p: Project = {
+      path: entry ? (entry.project?.path ?? path.join(o.masterRepo, PROJECTS_DIR, entry.file)) : (e as { path: string }).path,
+      name: entry?.project?.name ?? null, state: "stopped", warnings: [],
+      file: entry?.file ?? null, fileKey: entry ? entryKey(entry) : null, fileStat: "stat" in e ? e.stat : null, url: entry?.project?.url ?? null,
+      life: projectMachine(), waitKey: null, waitWas: null, abort: new AbortController(), poller: null, gone: false,
+      real: null, manifest: null, limits: null, sources: null, models: null, state_repo: null,
+      features: new Map(), sessions: null, listener: null, conns: new Set(), token: null, tokens: null, inbox: null, pinsWaiting: false,
+    };
+    const refused = entry ? entry.error : (e as { reason: string }).reason;
+    if (refused !== undefined) {
+      p.reason = entry ? refused : `not imported from ${PATHS_FILE}: ${refused}`;
+      p.life.act("refused");
+      log.warn(`${p.name ?? p.path}: stopped: ${p.reason}`);
+    }
+    return p;
+  };
+  const projects: Project[] = [
+    ...entries.map((entry) => newProject({ entry, stat: fileStats.get(entry.file) ?? null })),
+    ...notImported.map((f) => newProject(f)),
+  ];
+  const statusOf = ({ path: pth, name, state, reason, setup, channel, warnings }: Project): ProjectStatus =>
+    ({ path: pth, name, state, reason, ...(setup ? { setup } : {}), channel, warnings });
 
   const notify = o.notify ?? osNotifier({ platform: osApi.platform, children, log, cwd: home });
   /**
@@ -404,7 +470,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   };
 
   const alert = async (p: Project, key: string, a: SecurityAlert) => {
-    if (!p.inbox || dead) return;
+    if (!p.inbox || dead || p.gone) return;
     const k = sha256Hex(`${p.real}\0${key}`);
     if (record.alert(k)) return;
     const old = legacyAlertKey(key);
@@ -421,6 +487,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const stop = (p: Project, reason: string, state: ProjectState = "stopped") => {
     p.state = state;
     p.reason = reason;
+    if (!p.life.act("refused")) p.life.act("failed");
     log.warn(`${p.name ?? p.path}: ${state === "disabled" ? "not running" : "stopped"}: ${reason}`);
   };
 
@@ -519,14 +586,49 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     return false;
   }
 
-  // Phase 1: paths, manifests from main, pinned keys (FR-2, SR-5, SR-13).
-  for (const p of projects) {
+  /** F-023 FR-5: the project waits on the owner for `step`; nothing is pushed or filed for it meanwhile (AC-3). */
+  const needsSetup = (p: Project, step: SetupStep, what: string, command: string, waitKey: () => Promise<string>) => {
+    p.state = "needs_setup";
+    p.reason = `${what}: run \`${command}\``;
+    p.setup = { step, command };
+    p.waitKey = waitKey;
+    p.life.act("needs_setup");
+    log.warn(`${p.name ?? p.path}: needs setup: ${p.reason}`);
+  };
+  const quote = (s: string) => (/^[A-Za-z0-9_./:\\-]+$/.test(s) ? s : JSON.stringify(s));
+
+  /**
+   * Phase 1 for one project: its file's setup steps (F-023 FR-5), path,
+   * manifest from main, pinned keys (FR-2, SR-5, SR-13). Leaves it running,
+   * waiting on a setup step, or stopped with the reason.
+   */
+  async function checkProject(p: Project): Promise<void> {
+    if (p.life.state() !== "found") return;
+    if (p.file && p.url && p.name) {
+      const [name, url, dir] = [p.name, p.url, p.path];
+      if (!fs.existsSync(dir)) {
+        needsSetup(p, "clone", `the config repo isn't cloned at ${dir}`, `git clone ${url} ${quote(dir)}`, async () => String(fs.existsSync(dir)));
+        return;
+      }
+      const owner = url.split("/").at(-2) ?? "";
+      const token = async () =>
+        String(!!((await credentials.get(factoryOwnerTokenName(name, owner)).catch(() => null)) ?? (await credentials.get(factoryTokenName(name)).catch(() => null))));
+      if ((await token()) === "false") {
+        needsSetup(p, "token", `No factory token stored for ${name}`, `factory-engine secret set ${factoryTokenName(name)}`, token);
+        return;
+      }
+    }
+    let origin: string | null = null;
     try {
-      p.real = await checkProjectPath(p.path, o.masterRepo, git);
+      ({ real: p.real, origin } = await checkProjectClone(p.path, o.masterRepo, git));
     } catch (e) {
       // Not a repo the engine can trust, so nothing is written into it.
       stop(p, e instanceof ConfigError ? e.message : "the path couldn't be checked");
-      continue;
+      return;
+    }
+    if (p.url && !(p.url.toLowerCase().startsWith(`${gitBase.toLowerCase()}/`) && origin && sameRepoUrl(origin, p.url))) {
+      stop(p, `the project file's config_repo.url is ${p.url}, but the clone's origin is ${origin ?? "missing"}`);
+      return;
     }
     p.state_repo = new StateRepo(git, scanner, p.real, log, tmpDir);
     try {
@@ -534,7 +636,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     } catch (e) {
       p.state_repo = null;
       stop(p, `factory/state couldn't be checked out at .factory (${(e as Error).message})`);
-      continue;
+      return;
     }
     // F-021: private detail and console answer proofs stay in the engine folder, keyed by the project's path (H-0246).
     p.inbox = new Inbox({ state: p.state_repo, clock, log, notify, local: new InboxLocal(home, sha256Hex(p.real!).slice(0, 16)), scrub: scrubPrivate });
@@ -544,12 +646,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const why = `the inbox has ${legacy.length} record(s) in the old YAML form (${legacy.slice(0, 3).join(", ")}${legacy.length > 3 ? ", ..." : ""}); run \`npm run migrate-inbox-json -- --project ${p.real} --gitleaks <path>\` in engine/ and restart the engine`;
       stop(p, why);
       notify("Factory project stopped", why);
-      continue;
+      return;
     }
     await p.inbox.records().catch(() => []);
     try {
       p.manifest = await readManifest(git, p.real);
-      p.name = p.manifest.name;
     } catch (e) {
       stop(p, (e as Error).message);
       await alert(p, `manifest:${(e as Error).message}`, {
@@ -557,41 +658,52 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         impact: "No agent runs and no interview opens in this project until main holds a valid manifest.",
         confirm: "Fix the manifest on main and restart the engine", hold: "Keep the project stopped", recommendation: "A",
       });
-      continue;
+      return;
     }
-    if (!(await checkSources(p))) continue;
-    const pin = pins.get(p.real);
+    // Edge case: the file's name and the manifest's differ; the project keeps its file's name until one is fixed.
+    if (p.file && p.name !== p.manifest.name) {
+      stop(p, `the project file names the project ${p.name}, but the manifest on main names it ${p.manifest.name}`);
+      return;
+    }
+    p.name = p.manifest.name;
+    if (!(await checkSources(p))) return;
+    const real = p.real;
+    const pinKey = async () => JSON.stringify(pins.get(real));
+    const pin = pins.get(real);
     const cmp = comparePin(pin, p.manifest);
+    if (cmp.status === "new_path") {
+      // SR-2: a project file adds no trust by itself; the owner confirms it on this factory first.
+      needsSetup(p, "confirm", "this factory hasn't confirmed the project's owner keys", `factory-engine confirm --project ${p.file ? p.manifest.name : quote(real)}`, pinKey);
+      return;
+    }
     if (cmp.status !== "match") {
-      const what = cmp.status === "new_path" ? "a project path the engine hasn't confirmed before" : `a change to ${cmp.keys.join(", ")}`;
-      stop(p, `${what}; run \`factory-engine confirm --project ${p.real}\` or approve the inbox item`);
-      p.pinsWaiting = cmp.status === "changed";
+      const what = `a change to ${cmp.keys.join(", ")}`;
+      stop(p, `${what}; run \`factory-engine confirm --project ${p.file ? p.manifest.name : p.real}\` or approve the inbox item`);
+      p.pinsWaiting = true;
+      p.waitKey = pinKey;
       await alert(p, `pins:${p.manifest.commit}:${cmp.status}`, {
-        title: cmp.status === "new_path" ? "New project path needs confirmation" : "Pinned owner keys changed",
+        title: "Pinned owner keys changed",
         context: `The engine found ${what} (manifest on main at ${p.manifest.commit.slice(0, 12)}). Owner ids, the OAuth client id, the allow list, enabled and the interview sign-in setting are pinned until you confirm a change (F-007 SR-5, F-018 FR-15).`,
-        impact: `The project is stopped. It runs again after you confirm this change here, or with \`factory-engine confirm\` and a GitHub device sign-in as the previously pinned owner, and restart the engine. A confirm here pins the manifest at ${p.manifest.commit.slice(0, 12)} only.`,
+        impact: `The project is stopped. It runs again after you confirm this change here, or with \`factory-engine confirm\` and a GitHub device sign-in as the previously pinned owner. A confirm here pins the manifest at ${p.manifest.commit.slice(0, 12)} only.`,
         confirm: "Confirm the change if you made it", hold: "Keep the project stopped and find out who changed it", recommendation: "B",
-        ...(cmp.status === "changed" ? { effectData: { commit: p.manifest.commit } } : {}),
+        effectData: { commit: p.manifest.commit },
       });
-      continue;
+      return;
     }
     if (!p.manifest.enabled) {
       stop(p, "enabled is false in the manifest", "disabled");
-      continue;
+      return;
     }
     p.state = "running";
   }
 
-  // FR-3: credentials must match every runnable project's billing mode, or the engine doesn't start.
-  for (const p of projects) {
-    if (p.state !== "running" || !p.manifest) continue;
-    const why = billingMismatch(p.manifest.billingMode, p.manifest.name, env, modelCredential);
-    if (why) throw new StartError(why);
-  }
+  /** FR-3: credentials must match a runnable project's billing mode. */
+  const billingProblem = (p: Project): string | null =>
+    p.state === "running" && p.manifest ? billingMismatch(p.manifest.billingMode, p.manifest.name, env, modelCredential) : null;
 
-  // Phase 2: authorization (FR-2), transcripts (SR-17), feature id uniqueness (SR-16).
-  for (const p of projects) {
-    if (p.state !== "running" || !p.manifest || !p.state_repo) continue;
+  /** Phase 2 for one project: authorization (FR-2), its inbox, transcripts (SR-17), the remote's factory/state. */
+  async function authorize(p: Project): Promise<void> {
+    if (p.state !== "running" || !p.manifest || !p.state_repo) return;
     let configRepo = "";
     try {
       configRepo = await configSlug(p).catch(() => "");
@@ -609,23 +721,32 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         impact: "The project is stopped; other projects are not affected.",
         confirm: "Fix the token, repo or allow list, then restart the engine", hold: "Keep the project stopped", recommendation: "A",
       });
-      continue;
+      return;
     }
     await connectInbox(p, configRepo || undefined);
     await loadFeatures(p);
     await checkRemote(p);
   }
 
-  // OQ-3: the token is looked up under the pinned name, never the changed manifest's.
-  for (const p of projects) {
-    if (!p.pinsWaiting || !p.real) continue;
+  /** OQ-3: a project held for a pins confirm keeps its inbox; the token is looked up under the pinned name, never the changed manifest's. */
+  async function holdForPins(p: Project): Promise<void> {
+    if (!p.pinsWaiting || !p.real) return;
     const pin = pins.get(p.real);
-    if (!pin) continue;
+    if (!pin) return;
     // The config repo owner's own token, if any, is picked in connectInbox, which reads the remote URL anyway.
     p.tokens = await ProjectTokens.load(credentials, pin.name, []).catch(() => null);
     p.token = p.tokens?.fallback ?? null;
     await connectInbox(p);
   }
+
+  // Phase 1 and the billing check for every project before any is authorized: a mismatch stops the engine (FR-3).
+  for (const p of projects) await checkProject(p);
+  for (const p of projects) {
+    const why = billingProblem(p);
+    if (why) throw new StartError(why);
+  }
+  for (const p of projects) await authorize(p);
+  for (const p of projects) await holdForPins(p);
 
   async function loadFeatures(p: Project): Promise<void> {
     const entries = await p.state_repo!.list("interviews").catch(() => []);
@@ -764,7 +885,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   async function pushState(p: Project): Promise<void> {
-    if (!o.push || !p.token || !p.state_repo || dead) return;
+    if (!o.push || !p.token || !p.state_repo || dead || p.gone) return;
     try {
       await p.state_repo.push(p.token, gitBase);
       log.action({ agent: "engine", action: "git.push", target: `${p.name}:factory/state` });
@@ -1035,7 +1156,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   function launchAnalyst(p: Project, f: FeatureInterview, plan?: ResumePlan): void {
     const rt = o.agents;
-    if (!rt || dead || shuttingDown || jobs.has(f) || !f.chainIntact) return;
+    if (!rt || dead || shuttingDown || jobs.has(f) || !f.chainIntact || p.state !== "running") return;
     const job: Job = { turns: null, done: Promise.resolve() };
     jobs.set(f, job);
     job.done = runAnalyst(rt, p, f, job, plan)
@@ -1734,34 +1855,40 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     },
   });
 
-  // Phase 3: channels and engine.json (FR-4).
+  /** Phase 3 for one project: its sessions, channel and engine.json (FR-4). Throws when the channel can't be served. */
+  async function serveProject(p: Project): Promise<void> {
+    if (p.state !== "running" || !p.manifest || !p.state_repo) return;
+    const pin = pins.get(p.real!)!;
+    const signInSetting = interviewSignIn(p.manifest);
+    p.sessions = new SessionManager(p.manifest.name, { githubId: pin.owner.github_id, oauthClientId: pin.owner.oauth_client_id }, github, clock, log, async (fid, no, signIn) => {
+      const f = p.features.get(fid);
+      if (f?.chainIntact) {
+        // Without sign-in nothing proves who is answering, so the record doesn't claim the owner approved.
+        const entry = signIn
+          ? { type: "session_approved", session: no, owner_id: pin.owner.github_id }
+          : { type: "session_opened_without_sign_in", session: no, sign_in: signInSetting };
+        await f.exclusive(() => f.append([entry], "session approved"));
+      }
+    }, signInSetting);
+    const handler = methods(channelFor(p), controlFor(p), clock);
+    const onConnection = (c: Conn) => {
+      p.conns.add(c);
+      c.onClose(() => p.conns.delete(c));
+      serve(c, handler, (e) => log.warn(`Channel error: ${(e as Error).message}`));
+    };
+    p.listener = osApi.platform === "win32"
+      ? await listenPipe({ os: osApi.windows(), children, log, onConnection })
+      : await listenUnix({ dir: runtimeDir, name: `${sha256Hex(p.real!).slice(0, 16)}.sock`, os: osApi.unix(), children, log, onConnection });
+    p.channel = p.listener.path;
+    writeFileAtomic(path.join(p.state_repo.factoryDir, ENGINE_JSON), JSON.stringify({ version: SERVED_CHANNEL_VERSION, capabilities: CAPABILITIES, path: p.listener.path, pid: process.pid }) + "\n");
+    log.info(`${p.manifest.name}: serving channel v${SERVED_CHANNEL_VERSION}`);
+  }
+
+  // Phase 3 for every project: a channel that can't be served stops the engine.
   try {
     for (const p of projects) {
-      if (p.state !== "running" || !p.manifest || !p.state_repo) continue;
-      const pin = pins.get(p.real!)!;
-      const signInSetting = interviewSignIn(p.manifest);
-      p.sessions = new SessionManager(p.manifest.name, { githubId: pin.owner.github_id, oauthClientId: pin.owner.oauth_client_id }, github, clock, log, async (fid, no, signIn) => {
-        const f = p.features.get(fid);
-        if (f?.chainIntact) {
-          // Without sign-in nothing proves who is answering, so the record doesn't claim the owner approved.
-          const entry = signIn
-            ? { type: "session_approved", session: no, owner_id: pin.owner.github_id }
-            : { type: "session_opened_without_sign_in", session: no, sign_in: signInSetting };
-          await f.exclusive(() => f.append([entry], "session approved"));
-        }
-      }, signInSetting);
-      const handler = methods(channelFor(p), controlFor(p), clock);
-      const onConnection = (c: Conn) => {
-        p.conns.add(c);
-        c.onClose(() => p.conns.delete(c));
-        serve(c, handler, (e) => log.warn(`Channel error: ${(e as Error).message}`));
-      };
-      p.listener = osApi.platform === "win32"
-        ? await listenPipe({ os: osApi.windows(), children, log, onConnection })
-        : await listenUnix({ dir: runtimeDir, name: `${sha256Hex(p.real!).slice(0, 16)}.sock`, os: osApi.unix(), children, log, onConnection });
-      p.channel = p.listener.path;
-      writeFileAtomic(path.join(p.state_repo.factoryDir, ENGINE_JSON), JSON.stringify({ version: SERVED_CHANNEL_VERSION, capabilities: CAPABILITIES, path: p.listener.path, pid: process.pid }) + "\n");
-      log.info(`${p.manifest.name}: serving channel v${SERVED_CHANNEL_VERSION}`);
+      await serveProject(p);
+      if (p.state === "running") p.life.act("ready");
     }
   } catch (e) {
     for (const p of projects) await p.listener?.close();
@@ -1956,7 +2083,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       }
       pins.set(p.real!, { ...pinnedKeys(m), pinned_at: iso(clock.now()), commit: m.commit });
       log.action({ agent: "owner", action: "pins.confirm", target: m.name, approval_id: `inbox:${r.id}`, outcome: "pinned" });
-      notify(`Factory: ${m.name} confirmed`, "Restart the engine to run the project.");
+      notify(`Factory: ${m.name} confirmed`, "The engine starts the project within a few seconds (F-023 FR-5).");
       return done("pinned");
     }
     if (type === "chain" && f) {
@@ -3526,6 +3653,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   // F-011 FR-5: each project's inbox is read every poll while the engine runs.
   const polling = new AbortController();
   const pollers: Promise<void>[] = [];
+  let watcher: Promise<void> | null = null;
   /** F-016 SR-7: failed effects, by item id; after 3 a Notice is filed and the item is left alone until the engine restarts. */
   const effectTries = new Map<string, number>();
   /** Code Review M1: answers this run recorded itself, by project, item and entry; any other pending answer is checked on GitHub first. */
@@ -3599,20 +3727,133 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   async function pollInbox(p: Project): Promise<void> {
-    while (!polling.signal.aborted && !dead && (p.state === "running" || p.pinsWaiting)) {
+    const signal = AbortSignal.any([polling.signal, p.abort.signal]);
+    while (!signal.aborted && !dead && !p.gone && (p.state === "running" || p.pinsWaiting)) {
       try {
         for (const r of await p.inbox!.poll()) recordedHere.add(answerKey(p, r));
         await applyAnswers(p);
       } catch (e) {
         log.warn(`${p.name}: the inbox couldn't be read this poll (${engineWords(e)}); it is read again at the next.`);
       }
-      await clock.sleep(o.inboxPollMs ?? INBOX_POLL_MS, polling.signal);
+      await clock.sleep(o.inboxPollMs ?? INBOX_POLL_MS, signal);
+    }
+  }
+
+  // -- Project files picked up while running (F-023 FR-4, FR-5) ---------------
+
+  const tell = (p: Project) => {
+    try {
+      o.onProject?.(statusOf(p));
+    } catch {
+      // A caller's display must not stop the engine.
+    }
+  };
+
+  /** Phases 1 to 3 for a project found while running; a problem stops only this project (FR-4). */
+  async function bringUp(p: Project): Promise<void> {
+    await checkProject(p);
+    const why = billingProblem(p);
+    if (why) stop(p, why);
+    await authorize(p);
+    await holdForPins(p);
+    try {
+      await serveProject(p);
+      if (p.state === "running") p.life.act("ready");
+    } catch (e) {
+      await p.listener?.close().catch(() => undefined);
+      p.listener = null;
+      stop(p, `the control channel couldn't be served (${(e as Error).message})`);
+    }
+    if (p.waitKey) p.waitWas = await p.waitKey().catch(() => null);
+    if (dead) {
+      await p.listener?.close().catch(() => undefined);
+      return;
+    }
+    // Listed only now, so status never shows it running before its channel is served.
+    projects.push(p);
+    if (p.state === "running") log.info(`${p.name}: running`);
+    if (shuttingDown) return;
+    await resumeProject(p);
+    startPolling(p);
+    tell(p);
+  }
+
+  /**
+   * FR-4: stops one project as a failing one is stopped: commands it asked
+   * for are denied, its sessions end after their current commit, its channel
+   * closes and engine.json goes. Other projects are not touched.
+   */
+  async function takeDown(p: Project, why: string): Promise<void> {
+    const wasRunning = p.life.act("stop");
+    if (!wasRunning) p.life.act("remove");
+    p.gone = true;
+    p.abort.abort();
+    for (const [k, settle] of [...asks]) if (k.startsWith(`${p.real}\0`)) settle(false, "the project was stopped, so the command was denied.");
+    const mine = [...p.features.values()].map((f) => jobs.get(f)).filter((j): j is Job => !!j);
+    for (const j of mine) j.turns?.close();
+    await Promise.all(mine.map((j) => j.done.catch(() => undefined)));
+    await p.poller?.catch(() => undefined);
+    p.sessions?.closeAll();
+    if (p.listener) {
+      await p.listener.close().catch(() => undefined);
+      if (p.state_repo) fs.rmSync(path.join(p.state_repo.factoryDir, ENGINE_JSON), { force: true });
+    }
+    p.state = "stopped";
+    p.reason = why;
+    projects.splice(projects.indexOf(p), 1);
+    if (wasRunning) p.life.act("stopped");
+    log.info(`${p.name ?? p.path}: stopped: ${why}`);
+    tell(p);
+  }
+
+  /**
+   * One check of projects/ (FR-4): names, sizes and modified times first, then
+   * the content of a file whose stat changed. A removed file stops its
+   * project; a new one starts through the setup steps; a changed one, or a
+   * stopped project whose setup step or pin changed (FR-5), starts again.
+   */
+  async function syncProjects(): Promise<void> {
+    let listing: Map<string, string>;
+    try {
+      listing = listProjectFiles(o.masterRepo);
+    } catch (e) {
+      log.warn(`${PROJECTS_DIR}/ couldn't be read (${e instanceof ConfigError ? e.message : "an internal error"}); projects are left as they are.`);
+      return;
+    }
+    for (const p of projects.filter((x) => x.file !== null && !listing.has(x.file))) await takeDown(p, "its project file was removed");
+    const changed = [...listing].some(([file, stat]) => projects.find((x) => x.file === file)?.fileStat !== stat);
+    const waited = new Set<Project>();
+    for (const p of projects) {
+      if (!p.waitKey || dead || shuttingDown) continue;
+      if ((await p.waitKey().catch(() => null)) !== p.waitWas) waited.add(p);
+    }
+    if (!changed && !waited.size) return;
+    // Read every file again: a new or removed file can make another one a duplicate, or stop it being one.
+    const entries = [...listing.keys()].map((f) => readProjectFile(o.masterRepo, f, osApi));
+    refuseDuplicates(entries);
+    for (const e of entries) {
+      if (dead || shuttingDown) return;
+      const p = projects.find((x) => x.file === e.file);
+      if (p && p.fileKey === entryKey(e) && !waited.has(p)) {
+        p.fileStat = listing.get(e.file) ?? null;
+        continue;
+      }
+      if (p) await takeDown(p, waited.has(p) ? "what it waited on changed; checking it again" : "its project file changed");
+      await bringUp(newProject({ entry: e, stat: listing.get(e.file) ?? null }));
+    }
+  }
+
+  async function watchProjects(): Promise<void> {
+    while (!polling.signal.aborted && !dead) {
+      await clock.sleep(o.projectPollMs ?? PROJECT_POLL_MS, polling.signal);
+      if (polling.signal.aborted || dead || shuttingDown) return;
+      await syncProjects().catch((e) => log.warn(`${PROJECTS_DIR}/ check failed (${engineWords(e)}); it runs again in a few seconds.`));
     }
   }
 
   const handle: EngineHandle = {
     get projects() {
-      return projects.map(({ path: pth, name, state, reason, channel, warnings }) => ({ path: pth, name, state, reason, channel, warnings }));
+      return projects.map(statusOf);
     },
     runs,
     stopped,
@@ -3707,6 +3948,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         for (const t of prTimers) clearTimeout(t);
         for (const settle of [...asks.values()]) settle(false, "the engine stopped, so the command was denied.");
         polling.abort();
+        await watcher;
         await Promise.all(pollers);
         for (const j of jobs.values()) j.turns?.close();
         await Promise.all([...jobs.values()].map((j) => j.done));
@@ -3736,42 +3978,45 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (containers) await sweepLeftovers(o.agents.docker, keep, log).catch((e) => log.warn(`Leftover containers couldn't be swept: ${engineWords(e)}`));
   }
 
-  // FR-14: an interrupted analyst run gets a report saying so, then resumes
-  // from its session or its last commit, with no retry counted.
-  for (const r of runs.interrupted()) {
-    const p = projects.find((x) => x.real === r.project && x.state === "running");
-    const f = p?.features.get(r.feature);
-    if (!p || !f) continue;
-    if (r.role === REVIEWER_ROLE) {
-      // F-008 FR-10: a Security and Testability Review run resumes as an analyst run does.
-      const plan = runs.resume(r.id);
+  /**
+   * FR-14: an interrupted analyst run gets a report saying so, then resumes
+   * from its session or its last commit, with no retry counted; parked
+   * features start their stage again (F-008 FR-1, F-016 FR-7).
+   */
+  async function resumeProject(p: Project): Promise<void> {
+    if (p.state !== "running") return;
+    for (const r of runs.interrupted()) {
+      if (r.project !== p.real) continue;
+      const f = p.features.get(r.feature);
+      if (!f) continue;
+      if (r.role === REVIEWER_ROLE) {
+        // F-008 FR-10: a Security and Testability Review run resumes as an analyst run does.
+        const plan = runs.resume(r.id);
+        if (plan.mode === "failed") {
+          log.warn(`Run ${r.id} (${f.id}, Security and Testability Review) failed: ${plan.run.reason}.`);
+          // FR-10: the failure is also recorded in the agent report and the transcript.
+          if (f.stage() === ST_REVIEW_STAGE) {
+            await endStReview(p, f, r.id, await nextStReviewReport(p, f.id), "failed", plan.run.reason ?? "it was interrupted too often", { model: p.models?.["security-reviewer"] ?? "" }, r.last_commit ?? "")
+              .catch((e) => log.warn(`${f.id}: Security and Testability Review run ${r.id}'s failure wasn't recorded (${engineWords(e)}).`));
+          }
+        } else if (f.stage() === ST_REVIEW_STAGE) afterInterview(p, f, plan);
+        else runs.finish(r.id, "failed", "the feature left Security and Testability Review");
+        continue;
+      }
+      if (r.role !== "requirements-analyst") continue;
+      await reportInterrupted(p, f, r);
+      const plan = runs.resume(r.id, f.state);
       if (plan.mode === "failed") {
-        log.warn(`Run ${r.id} (${f.id}, Security and Testability Review) failed: ${plan.run.reason}.`);
-        // FR-10: the failure is also recorded in the agent report and the transcript.
-        if (f.stage() === ST_REVIEW_STAGE) {
-          await endStReview(p, f, r.id, await nextStReviewReport(p, f.id), "failed", plan.run.reason ?? "it was interrupted too often", { model: p.models?.["security-reviewer"] ?? "" }, r.last_commit ?? "")
-            .catch((e) => log.warn(`${f.id}: Security and Testability Review run ${r.id}'s failure wasn't recorded (${engineWords(e)}).`));
-        }
-      } else if (f.stage() === ST_REVIEW_STAGE) afterInterview(p, f, plan);
-      else runs.finish(r.id, "failed", "the feature left Security and Testability Review");
-      continue;
+        log.warn(`Run ${r.id} (${f.id}) failed: ${plan.run.reason}.`);
+        continue;
+      }
+      analystRuns.set(f, r.id);
+      if (o.agents) launchAnalyst(p, f, plan);
+      else if (o.resumeAnalyst && r.worktree) {
+        o.resumeAnalyst({ feature: f.id, worktree: r.worktree, tools: handle.interviewTools(p.manifest!.name, f.id, r.worktree), plan });
+      }
     }
-    if (r.role !== "requirements-analyst") continue;
-    await reportInterrupted(p, f, r);
-    const plan = runs.resume(r.id, f.state);
-    if (plan.mode === "failed") {
-      log.warn(`Run ${r.id} (${f.id}) failed: ${plan.run.reason}.`);
-      continue;
-    }
-    analystRuns.set(f, r.id);
-    if (o.agents) launchAnalyst(p, f, plan);
-    else if (o.resumeAnalyst && r.worktree) {
-      o.resumeAnalyst({ feature: f.id, worktree: r.worktree, tools: handle.interviewTools(p.manifest!.name, f.id, r.worktree), plan });
-    }
-  }
-  // F-008 FR-1: features parked at Security and Testability Review start it; one sent back with findings gets its analyst, once.
-  for (const p of projects) {
-    if (p.state !== "running") continue;
+    // F-008 FR-1: features parked at Security and Testability Review start it; one sent back with findings gets its analyst, once.
     for (const f of p.features.values()) {
       if (jobs.has(f)) continue;
       if (f.stage() === ST_REVIEW_STAGE) afterInterview(p, f);
@@ -3790,6 +4035,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       }
     }
   }
-  for (const p of projects) if ((p.state === "running" || p.pinsWaiting) && p.inbox?.connected) pollers.push(pollInbox(p));
+
+  const startPolling = (p: Project) => {
+    if ((p.state === "running" || p.pinsWaiting) && p.inbox?.connected) pollers.push((p.poller = pollInbox(p)));
+  };
+
+  for (const p of projects) await resumeProject(p);
+  for (const p of projects) startPolling(p);
+  for (const p of projects) if (p.waitKey) p.waitWas = await p.waitKey().catch(() => null);
+  if (o.projectPollMs !== 0) watcher = watchProjects();
   return handle;
 }

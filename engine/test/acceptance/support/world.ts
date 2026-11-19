@@ -369,6 +369,16 @@ export class World {
     ownerOnly(this.projectsFile);
   }
 
+  /** F-023 FR-2: gives the factory a project as onboarding does, with its file in projects/. */
+  writeProjectFile(p: Project, mode = 0o600) {
+    mkdirSync(join(this.master, "projects"), { recursive: true });
+    const file = join(this.master, "projects", `${p.name}.yaml`);
+    const url = this.gh.gitUrl(p.repoOwner, p.repo).replace(/\.git$/, "");
+    writeFileSync(file, `schema: project-file/1.0\nname: ${p.name}\nconfig_repo:\n  url: ${url}\n  path: ${JSON.stringify(p.configRepo)}\n`);
+    chmodSync(file, mode);
+    ownerOnly(file);
+  }
+
   addProject(s: ProjectSpec, i = this.projects.length): Project {
     const name = s.name ?? `proj${i}`;
     const repoOwner = s.repoOwner ?? `org${i}`;

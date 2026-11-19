@@ -18,6 +18,7 @@ import { policyDoc } from "./policy-fixture";
 import YAML from "yaml";
 import {
   GIT_ENV, GIT_PATH, MASTER_FILES, OWNER_ID, ORG_ID, OTHER_ID, driveClock, RpcClient, World, engineJson, git, initRepo, makeWorld, manifestYaml, start,
+  addProjectFile,
 } from "./helpers";
 import { securityItemsIn } from "./inbox-items";
 
@@ -102,7 +103,7 @@ describe("engine start (FR-1 to FR-4)", () => {
     const other = path.join(w.root, "beta-config");
     const betaManifest = manifestYaml({ name: "beta" }).replace("acme-web", "beta-web").replace("acme-web", "beta-web");
     initRepo(other, { "factory-project.yaml": betaManifest }, "https://github.com/example-org/beta-config");
-    fs.writeFileSync(path.join(w.master, "factory-projects.local.yaml"), `projects:\n  - path: ${w.config}\n  - path: ${other}\n`);
+    addProjectFile(w.master, "beta", other);
     w.pin(other, betaManifest);
     await w.credentials.set("factory-token/beta", "github_pat_placeholder_beta");
     w.github.repos.set("example-org/acme-web", { status: 200, ownerId: OTHER_ID, private: true });
@@ -208,15 +209,14 @@ describe("git process budgets (F-014 FR-7, AC-2)", () => {
 });
 
 describe("pinned keys (SR-5, AC-20)", () => {
-  it("a new project path stops the project until confirmed, with one Security item across restarts", async () => {
+  it("F-023 FR-5, SR-2: a project this factory hasn't confirmed waits on the confirm step, and nothing is filed", async () => {
     const w = makeWorld({ pinned: false });
     const e = await boot(w);
-    expect(e.projects[0]!.state).toBe("stopped");
-    expect(e.projects[0]!.reason).toMatch(/factory-engine confirm/);
+    expect(e.projects[0]).toMatchObject({ state: "needs_setup", setup: { step: "confirm", command: "factory-engine confirm --project acme" } });
     await e.stop();
     engines = [];
     await boot(w);
-    expect(securityItems(w)).toHaveLength(1);
+    expect(securityItems(w)).toHaveLength(0);
   });
 
   it("AC-20: a changed owner id on main stops the project", async () => {
@@ -266,24 +266,24 @@ describe("pinned keys (SR-5, AC-20)", () => {
   });
 });
 
-describe("SR-13 project paths", () => {
-  it("refuses a group-writable paths file", async () => {
+describe("F-023 SR-1: project files and the paths they name", () => {
+  it("AC-11: a group-writable project file is refused with the reason; the engine still starts", async () => {
     const w = makeWorld();
-    const file = path.join(w.master, "factory-projects.local.yaml");
-    if (process.platform === "win32") {
-      grantWrite(file, ["S-1-5-32-545"]);
-      await expect(start(w)).rejects.toThrow(/writable by nobody else/);
-    } else {
-      fs.chmodSync(file, 0o620);
-      await expect(start(w)).rejects.toThrow(/group- or world-writable/);
-    }
+    const file = path.join(w.master, "projects", "acme.yaml");
+    if (process.platform === "win32") grantWrite(file, ["S-1-5-32-545"]);
+    else fs.chmodSync(file, 0o620);
+    const e = await boot(w);
+    expect(e.projects[0]).toMatchObject({ state: "stopped", reason: expect.stringMatching(process.platform === "win32" ? /writable by nobody else/ : /group- or world-writable/) });
   });
 
   it("refuses the master repo, or a clone of it, as a config repo, without writing into it", async () => {
     const w = makeWorld();
     const clone = path.join(w.root, "clone");
     git(w.root, "clone", "-q", w.master, clone);
-    fs.writeFileSync(path.join(w.master, "factory-projects.local.yaml"), `projects:\n  - path: ${w.master}\n  - path: ${clone}\n`);
+    fs.rmSync(path.join(w.master, "projects", "acme.yaml"));
+    addProjectFile(w.master, "m", w.master);
+    addProjectFile(w.master, "n", clone);
+    for (const n of ["m", "n"]) await w.credentials.set(`factory-token/${n}`, "github_pat_placeholder");
     const e = await boot(w);
     expect(e.projects.map((p) => p.reason)).toEqual([
       expect.stringMatching(/master repo itself/),
@@ -366,7 +366,7 @@ describe("confirm on the handle (SR-5)", () => {
   it("confirmProject uses the engine's GitHub and clock; the project runs after a restart", async () => {
     const w = makeWorld({ pinned: false });
     const e = await boot(w);
-    expect(e.projects[0]!.state).toBe("stopped");
+    expect(e.projects[0]!.state).toBe("needs_setup");
     w.github.approver = OWNER_ID;
     const ok = await driveClock(w, e.confirmProject(w.config, { say: () => undefined, ask: async () => "acme" }), 5000);
     expect(ok).toBe(true);

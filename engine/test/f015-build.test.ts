@@ -7,7 +7,7 @@ import type { AgentSdk, SdkMessage } from "../src/agent/sdk";
 import type { DockerCli } from "../src/docker/cli";
 import { FakeDocker } from "./fakes";
 import { GitHttp } from "./git-http";
-import { FACTORY_TOKEN, OWNER_ID, git, tmpdir } from "./helpers";
+import { FACTORY_TOKEN, OWNER_ID, addProjectFile, git, tmpdir } from "./helpers";
 import { FakeIssues } from "./inbox-fake";
 import { type Script, boot, entries, interview, runsOf, scriptedSdk, stageOf, until, world } from "./agents-harness";
 import { act, analyst, items, orchestrator, pollUntil, reviewer, start } from "./signoff-flow";
@@ -51,6 +51,8 @@ async function serve(w: ReturnType<typeof world>): Promise<{ srv: GitHttp; web: 
   servers.push(srv);
   git(w.config, "remote", "set-url", "origin", `${srv.base}/example-org/acme-config`);
   w.github.webBase = srv.base;
+  // F-023 FR-2: the project file names the config repo on the GitHub the engine is given.
+  addProjectFile(w.master, "acme", w.config, `${srv.base}/example-org/acme-config`);
   return { srv, web: src };
 }
 
