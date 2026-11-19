@@ -1335,7 +1335,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           ? analystReturnTurn(f.id, f.state.lastSpecReady.spec_path, f.state.returns)
           : null;
         const first = resumeId
-          ? "The engine restarted. Continue where you left off; owner replies, if any, follow as further turns."
+          ? `The engine restarted. Continue where you left off; owner replies, if any, follow as further turns.${code.note}`
           : stReview || returned
             ? [intro, ...(sourceDoc ? [sourceDoc] : []), transcriptSummary(f.state), ...(stReview ? [stReview] : []), ...(returned ? [returned] : [])].join("\n\n")
             : [intro, frameRequest(f.id, f.state.request), ...(sourceDoc ? [sourceDoc] : []), ...(summary ? [summary] : [])].join("\n\n");
