@@ -81,11 +81,12 @@ What the engine does today (main at f7df5f7):
   last commit).
 - **Feature ids per project.** Each project numbers its own features from
   F-001. Two projects can both have an F-001.
-- **Repos shared by projects.** A project marks each code repo as one it
-  changes (`write`) or only reads (`read`). Read repos are never claimed.
-  A repo that more than one project changes is checked out to one
-  feature at a time before any change; other projects wait until that
-  feature's pull request merges or closes.
+- **Repos shared by projects, with no configuration.** Each feature's
+  spec says which repos it changes; the factory knows which projects use
+  each repo. A feature that only reads a repo never claims it. A feature
+  that changes a repo another project also uses checks it out first;
+  other projects' changes to it wait until that feature's pull request
+  merges or closes.
 - **The console** (`factory-engine inbox`) run from any folder lists every
   project's items as `<project> <item id>  <title>`, and its watch lines
   read `<project> F-001: <status>`. `--project <name>` narrows it to one.
@@ -107,7 +108,7 @@ What the engine does today (main at f7df5f7):
 | FR-8 | **Portable state.** Everything needed to carry on lives in the config repo (`factory/state`) or GitHub. Engine-folder state is keyed by project name, not path: pins, run records, chain heads, console files, worktrees. Filed-alert keys move to `factory/state` so a moved project doesn't file the same alert twice. On a factory that has never seen the project, the chain head is taken from the commit the owner confirmed (FR-5 step 3), and interrupted runs restart from their last commit. |
 | FR-9 | **Feature ids per project.** A new feature takes one more than the highest id in its own project (its feature records, `feature/` branches in its config and code repos, `docs/features/` on main). The engine-wide id record, the "Feature id exists in more than one project" alert and the refusal of a duplicate id go. Inside the engine every feature is keyed by project name and id together. |
 | FR-10 | **Every cross-project map is keyed by project.** Running jobs, analyst runs, held-command answers, status, pause and resume key by project and id, never by a bare feature id or inbox item id. |
-| FR-11 | **Shared repos: read access, or check out before writing.** A project's manifest says, per code repo, whether the project changes it: `repos[].access: write` (today's behavior, the default) or `read` (a resource the project's agents read but never change). (a) **Read:** the factory clones and fetches the repo and never takes a checkout, pushes, opens branches, pull requests, issues or labels there; a read repo never blocks any other project. (b) **Write, used by one project:** unchanged from today. (c) **Write, used by more than one project** (`repos[].shared: true` in each of their manifests): before a feature makes its first change there, the factory checks the repo out for that feature; while the checkout is held no other project changes the repo, and its features wait with the status "waiting for <owner/repo>, checked out by <project> <feature>". The checkout is released when the feature's pull request in that repo merges or closes, or the feature is stopped. Features of the same project share the project's checkout. (d) A write repo not marked `shared` that another project on this factory also lists for write, or that holds another project's checkout, is refused for the second project with a Security item asking the owner to mark it shared or read. |
+| FR-11 | **Shared repos: claimed only by features that change them.** No configuration marks a repo shared or read-only. (a) The feature's signed-off spec lists the repos it changes (`Repo:` lines, F-015 FR-16); every other repo the project lists is only read for that feature: the factory clones and fetches it, and makes no checkout, push, branch, pull request, issue or label there. A repo only read never blocks anyone. (b) A repo that only one project uses: unchanged from today. (c) A repo that another project also uses (on this factory, from the project files' manifests; on another factory, from a checkout record already in the repo, FR-11b): before the feature's first change there, the factory checks the repo out for that feature. While it is held, no other project changes the repo; its features wait with the status "waiting for <owner/repo>, checked out by <project> <feature>". It is released when the feature's pull request there merges or closes, or the feature is stopped. Features of the same project share the project's checkout. How overlapping features of different projects settle the change itself is OQ-1. |
 | FR-11b | **The checkout record.** A checkout is `checkout.json` (`repo-checkout/1.0`: project name, feature id, factory id, taken, renewed) on a `factory/checkout` branch in the shared repo itself, so factories on different PCs see the same record. It is taken and released only by a fast-forward push, so two factories racing for it can't both win. It is renewed every 10 minutes while held. One not renewed for 30 minutes can be released by the owner through `factory-engine confirm`, which shows it and asks the owner to type the repo name; code never releases another project's checkout on its own. In a shared repo, feature branches carry the project name (`feature/<project>/F-nnn-<slug>`), since feature ids are per project. |
 | FR-12 | **Engine index.** The engine writes `<engine home>/run/engine.json` (owner-only, `engine-index/1.0`: pid, and each running project's name, config repo path and channel), rewritten on each change, removed at stop. |
 | FR-13 | **Console across projects.** `factory-engine inbox` outside a project folder reads the engine index and opens a session on each running project's existing channel, each following that project's `settings.interview_sign_in`. `inbox <item id>` needs `--project` when more than one project has that id. |
@@ -126,10 +127,9 @@ What the engine does today (main at f7df5f7):
 | AC-5b | Given two factories with the same project file started at the same moment against one remote, then exactly one holds the lease and runs the project; the other shows "served by another factory" and has made no GitHub write for it. | FR-7 |
 | AC-5c | Given factory X running B, when the owner takes B over on factory Y, then X's next push or renewal finds Y's lease, X stops B, and X makes no further push, issue, comment, branch or pull request write for B. | FR-7 |
 | AC-6 | Given projects A and B, when each starts its first feature, then both are F-001, both run, and status, pause, resume, inbox answers and held-command answers for one never reach the other. | FR-9, FR-10, FR-14 |
-| AC-7 | Given A and B both listing repo R with `access: read`, when both run features, then neither takes a checkout, and no branch, push, pull request, issue or label is made in R. | FR-11 |
-| AC-7b | Given A and B both listing R with `access: write, shared: true`, when A's feature starts changing R, then A holds the checkout, B's feature waits with the "checked out by" status and makes no write to R, and when A's pull request merges B's feature takes the checkout and continues, on a `feature/B/F-nnn-…` branch. | FR-11, FR-11b |
+| AC-7 | Given A and B both listing repo R, and features in both whose specs don't change R, when both run, then neither takes a checkout and no branch, push, pull request, issue or label is made in R. | FR-11 |
+| AC-7b | Given A and B both listing R, and a feature in each whose spec changes R, when A's feature starts changing R, then A holds the checkout, B's feature waits with the "checked out by" status and makes no write to R, and when A's pull request merges B's feature takes the checkout and continues, on a `feature/B/F-nnn-…` branch. No manifest or project file was edited. | FR-11, FR-11b |
 | AC-7c | Given two factories racing to check out R for different projects against one remote, then exactly one push wins and the other project waits. | FR-11b |
-| AC-7d | Given A listing R for write without `shared`, and B on the same factory also listing R for write, then B is refused with a Security item naming R and A, and A keeps running. | FR-11 |
 | AC-8 | Given only `factory-projects.local.yaml` with two paths, when the engine starts, then `projects/` holds a file for each, and a second start doesn't import again. | FR-3 |
 | AC-9 | Given A and B each with an open item `S-0001`, when `factory-engine inbox` runs outside any repo, then both are listed with their project names; `inbox S-0001` alone is refused with the two choices; `inbox S-0001 --project B` opens B's. Each session follows its own project's sign-in setting. | FR-12, FR-13 |
 | AC-10 | Given a fake GitHub that records the token on each request, when A and B each run a feature to a pull request, then no request for A's repos carries B's token or the reverse, and nothing lands on the other project's `factory/state`. | FR-8, FR-10 |
@@ -157,8 +157,8 @@ What the engine does today (main at f7df5f7):
 - A feature needs two shared repos checked out, and another project holds
   one of them: the feature waits without holding the other, so two
   projects can't each hold one and wait on the other forever.
-- A project changes a repo from `read` to `write`: that is a manifest
-  change, so the owner confirms it (SR-5) before the factory writes there.
+- A feature's spec is changed to add a repo it changes: the checkout is
+  taken before the first change to that repo, as for any other.
 - A project is copied to a second PC rather than moved, and both factories
   run: the lease (FR-7) lets only one serve it; the other shows "served by
   another factory".
@@ -211,7 +211,7 @@ after the owner approves their text:
 | H-0259 | `docs/adr/0034-one-factory-portable-projects.md` (new), `docs/adr/README.md` | One factory per PC; a project is a file plus its config repo and moves with them; feature ids per project. | Pending |
 | H-0260 | `docs/features/F-007-engine-interviews.md` (SR-16, OQ-10), `docs/features/F-016-*` and README text that says ids are unique across projects | SR-16 becomes: feature ids are unique within a project; the engine keys every feature by project and id. OQ-10 notes the owner's change of 2026-11-19. | Pending |
 | H-0261 | `README.md`, `engine/README.md`, `plugins/software-factory/skills/onboard-repo/SKILL.md` | Describe project files, setup steps, moving a project, the all-projects console and `master:`; the onboarding skill's last step writes the project file. | Pending |
-| H-0263 | `docs/interface-contracts.md` (Project manifest v1.11; new: Repo checkout v1.0), onboarding skill | `repos[].access` (`write` default, `read`) and `repos[].shared`; the `factory/checkout` record and the `feature/<project>/F-nnn-<slug>` branch name in shared repos; onboarding asks per repo whether the project changes it. Both pinned keys, so changing them needs the SR-5 confirm. | Pending |
+| H-0263 | `docs/interface-contracts.md` (new: Repo checkout v1.0) | The `factory/checkout` record and the `feature/<project>/F-nnn-<slug>` branch name in a repo more than one project uses. No manifest change. | Pending |
 | H-0262 | `.gitignore`, Role policy denied paths, `scripts/check_placeholders.py` | Ignore `/projects/`; deny agents `projects/`, `engine.yaml` and the engine index; the "never tracked" CI check covers `projects/`. | Pending |
 
 ## 11. Readiness gate
@@ -226,4 +226,9 @@ after the owner approves their text:
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-15 | Draft from the owner's request, after reading what the engine already does | — |
-| 2 | 2026-11-19 | From the owner's messages 02:00Z and 02:04Z (a safety mechanism so two factories never write to the same project): one factory per PC (FR-1); a portable project file per project, moved between factories, with setup steps and a lease (FR-2 to FR-8); the onboarding skill or the owner gives the factory a project, so the `project add/remove` commands and the JSON registry go (old OQ-1 and OQ-2 closed); feature ids per project (FR-9, reverses F-007 SR-16 / OQ-10); every cross-project map keyed by project (FR-10); shared repos are read-only or checked out per feature before any change (FR-11, FR-11b, owner's message 02:08Z) | Owner's direction, 2026-11-19 02:00Z (message); text pending sign-off |
+| 2 | 2026-11-19 | From the owner's messages 02:00Z and 02:04Z (a safety mechanism so two factories never write to the same project): one factory per PC (FR-1); a portable project file per project, moved between factories, with setup steps and a lease (FR-2 to FR-8); the onboarding skill or the owner gives the factory a project, so the `project add/remove` commands and the JSON registry go (old OQ-1 and OQ-2 closed); feature ids per project (FR-9, reverses F-007 SR-16 / OQ-10); every cross-project map keyed by project (FR-10); a repo is checked out only by a feature that changes it, with no configuration (FR-11, FR-11b, owner's messages 02:08Z and 02:19Z) | Owner's direction, 2026-11-19 02:00Z (message); text pending sign-off |
+
+## 13. Open questions
+| Id | Question | Category | Status |
+|---|---|---|---|
+| OQ-1 | How do features of different projects that change the same repo settle the change? (a) **Plan together, build in turns:** when a spec names a repo another project's open feature also changes, the analysts write one interface proposal meeting both, the owner signs it off once for both, and only then do the builds start, in checkout order. (b) Take turns: the first merges, the second re-plans on the merged code. (c) One combined change built once for both projects. In every option each project adds tests to the shared repo for what it relies on, every change must pass all of them, and more than two rounds of rework between projects goes to the owner. **Recommended: (a).** | Product | Open (owner's message 02:19Z; decision card) |
