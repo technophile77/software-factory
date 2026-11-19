@@ -710,7 +710,7 @@ class ManifestPolicy(Base):
         for a, b in (("<project-name>", "p"), ("<one line on what the project is>", "d"), ("<tag or commit of the master factory>", "v1"),
                      ("<repo-name>", "a"), ("<owner>/<repo>", "o/a"), ("<level>", "alpha"), ("<project-specific context every agent reads>", "n"),
                      ('"<SOURCE_GLOBS>"', '"src/**"'), ('"<TEST_GLOBS>"', '"test/**"'), ("<BUILD_COMMANDS>", '"npm"'),
-                     ("<TEST_COMMANDS>", '"npm"'), ("<REGISTRIES>", '"registry.npmjs.org"')):
+                     ("<TEST_COMMANDS>", '"npm"'), ("<REGISTRIES>", '"registry.npmjs.org"'), ("<subscription | tokens>", "subscription")):
             text = text.replace(a, b)
         self.assertEqual(self.errors(text), [])
 
@@ -966,7 +966,7 @@ class AdvisorFactoryDeny(unittest.TestCase):
             ("<tag or commit of the master factory>", "v1"), ("<repo-name>", "a"), ("<owner>/<repo>", "o/a"),
             ("<level>", "alpha"), ("<project-specific context every agent reads>", "n"),
             ('"<SOURCE_GLOBS>"', '"src/**"'), ('"<TEST_GLOBS>"', '"test/**"'), ("<BUILD_COMMANDS>", '"npm"'),
-            ("<TEST_COMMANDS>", '"npm"'), ("<REGISTRIES>", '"registry.npmjs.org"'))
+            ("<TEST_COMMANDS>", '"npm"'), ("<REGISTRIES>", '"registry.npmjs.org"'), ("<subscription | tokens>", "subscription"))
 
     def manifest(self):
         text = read(os.path.join(SKILL, "templates", "factory-project.yaml"))
@@ -1226,8 +1226,15 @@ class OwnerKeysV13(unittest.TestCase):
 
     def test_valid_owner_keys(self):
         extra = ("enabled: false\nowner:\n  github_id: 12345\n  oauth_client_id: Iv1.example\n"
-                 "allowed_repo_owners:\n  - { login: acme, id: 678 }\n")
+                 "allowed_repo_owners:\n  - { login: acme, id: 678 }\nsettings:\n  budget:\n    mode: subscription\n")
         self.assertEqual(self.errors(extra), [])
+
+    def test_engine_manifest_needs_a_budget_mode(self):
+        # ADR 0012: the engine refuses a project without one, so onboarding must not pass it (mesbot onboarding, 2026-11-19).
+        for extra in ("enabled: false\n", "enabled: true\nsettings:\n  budget:\n    mode: dollars\n", "settings:\n  budget: {}\n"):
+            with self.subTest(extra=extra):
+                self.assertTrue(any("settings.budget.mode" in e for e in self.errors(extra)), self.errors(extra))
+        self.assertEqual(self.errors("enabled: false\nsettings:\n  budget:\n    mode: tokens\n"), [])
 
     def test_placeholders_left_in_are_caught(self):
         extra = ("owner:\n  github_id: <numeric id>\n  oauth_client_id: <client id>\n"

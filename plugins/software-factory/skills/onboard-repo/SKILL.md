@@ -126,6 +126,11 @@ On an onboarded repo, skip this step (see "Re-running").
   (F-018 SR-8). Write the answer to `settings.interview_sign_in` in step 7;
   never leave the key out. Changing it later stops the project until the
   owner runs `factory-engine confirm`.
+- **Budget mode** (new projects only, ADR 0012): ask whether the project
+  runs on the owner's Claude plan (`subscription`) or on API billing with
+  caps (`tokens`). Write the answer to `settings.budget.mode` in step 7;
+  the engine refuses a project without it, and `validate-manifest` fails
+  a manifest with `enabled` that lacks it.
 
 ### 4. Prepare the onboarding pull request (code repo)
 

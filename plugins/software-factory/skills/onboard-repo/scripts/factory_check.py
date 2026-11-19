@@ -1325,6 +1325,12 @@ def validate_manifest(data, master=None, config_root=None):
     up_to = settings.get("auto_merge_up_to") if isinstance(settings, dict) else None
     if up_to is not None and up_to != "none" and up_to not in LEVELS:
         errors.append(f"settings.auto_merge_up_to must be none or one of {', '.join(LEVELS)}")
+    # ADR 0012: the engine refuses to run a project without a budget mode. A manifest
+    # with `enabled` is one written for the engine (onboarding writes it), so it must
+    # have one; elsewhere it is only typed when present, like the owner keys.
+    budget = settings.get("budget") if isinstance(settings, dict) else None
+    if ("enabled" in data or budget is not None) and (not isinstance(budget, dict) or budget.get("mode") not in ("subscription", "tokens")):
+        errors.append("settings.budget.mode must be subscription or tokens (ADR 0012)")
     maturity = data.get("maturity")
     if maturity not in LEVELS:
         errors.append(f"maturity must be one of {', '.join(LEVELS)}")
