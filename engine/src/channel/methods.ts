@@ -24,7 +24,7 @@ export interface ProjectChannel {
   sessions: SessionManager;
   /** This project's features with an interview. */
   features(): FeatureInterview[];
-  /** One of this project's features, or null (also null for an id two projects share, SR-16). */
+  /** One of this project's features, or null. Ids are per project (F-023 FR-9). */
   feature(id: string): FeatureInterview | null;
   /** Channel v1.4: `document` has passed validateDocument; the engine scans and stores it (F-009). */
   startFeature(request: string, document?: SourceDocument): Promise<string>;
@@ -35,7 +35,7 @@ export interface ProjectChannel {
 }
 
 export interface EngineControl {
-  status(): { version: string; capabilities: string[]; uptime_s: number; features: Array<{ id: string; stage: string; active_agents: number; activity?: string }> };
+  status(): { version: string; capabilities: string[]; uptime_s: number; features: Array<{ id: string; project: string; stage: string; active_agents: number; activity?: string }> };
   pause(feature?: string): string[];
   resume(feature?: string): string[];
   shutdown(): void;

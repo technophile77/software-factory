@@ -147,7 +147,7 @@ describe("fetch (TR-11: SR-17 on fetch)", () => {
     const c = await RpcClient.connect(engineJson(w).path);
     const feature = (await c.ok("feature.start", { request: "Export" })).feature as string;
     c.close();
-    const tools = e.interviewTools(feature, w.worktree);
+    const tools = e.interviewTools("acme", feature, w.worktree);
     const a = await tools.interview_propose_assumption({ text: "Small exports.", why: "w" });
     expect(a.ok).toBe(true);
     await e.stop();
@@ -161,11 +161,11 @@ describe("fetch (TR-11: SR-17 on fetch)", () => {
     expect(securityItems(w.config).length).toBe(before + 1);
     expect(git(w.config, "rev-parse", "refs/remotes/origin/factory/state")).toBe(forged);
     expect(git(w.config, "ls-tree", "-r", "--name-only", "factory/state", "--", `interviews/${feature}`)).not.toContain("forged");
-    const f = e.feature(feature)!;
+    const f = e.feature("acme", feature)!;
     expect(f.chainIntact).toBe(true);
     expect(f.remoteRefused).toBe(true);
     expect(f.state.items.get("A-001")!.status).toBe("open");
-    const t2 = e.interviewTools(feature, w.worktree);
+    const t2 = e.interviewTools("acme", feature, w.worktree);
     expect((await t2.interview_ask({ text: "Q?", why: "w" })).ok).toBe(true);
     fs.mkdirSync(path.join(w.worktree, "docs", "features"), { recursive: true });
     fs.writeFileSync(path.join(w.worktree, "docs", "features", `${feature}-x.md`), "- **Spec version:** 1\n");
@@ -188,7 +188,7 @@ describe("fetch (TR-11: SR-17 on fetch)", () => {
     await e.sync();
     expect(git(w.config, "show", "factory/state:notes/D-0001.md")).toBe("answered");
     expect(fs.readFileSync(path.join(w.config, ".factory", "notes", "D-0001.md"), "utf8")).toBe("answered\n");
-    expect(e.feature(feature)!.chainIntact).toBe(true);
+    expect(e.feature("acme", feature)!.chainIntact).toBe(true);
 
     const before = securityItems(w.config).length;
     const fdir = path.join(w.config, ".factory");
@@ -196,7 +196,7 @@ describe("fetch (TR-11: SR-17 on fetch)", () => {
     fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("Export", "Forged"));
     git(fdir, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-am", "tidy", "--no-verify");
     await e.sync();
-    expect(e.feature(feature)!.chainIntact).toBe(false);
+    expect(e.feature("acme", feature)!.chainIntact).toBe(false);
     expect(securityItems(w.config).length).toBe(before + 1);
   });
 

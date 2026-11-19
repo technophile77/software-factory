@@ -25,7 +25,7 @@ it("AC-12: the command completes the AC-2 scenario against the real engine over 
   const started = await ops.run("start", { request: "Export reports" });
   expect(started.ok, JSON.stringify(started)).toBe(true);
   const feature = started.feature as string;
-  const asked = await e.interviewTools(feature, w.worktree).interview_ask({
+  const asked = await e.interviewTools("acme", feature, w.worktree).interview_ask({
     text: "Which format?", why: "It decides the exporter.", suggested: "CSV", options: ["CSV", "JSON lines", "Parquet files with a schema"],
   });
   expect(asked.ok).toBe(true);
@@ -47,7 +47,7 @@ it("AC-12: the command completes the AC-2 scenario against the real engine over 
 
   expect(code, out).toBe(0);
   expect(out).toMatch(/1\. CSV \(recommended\)\n {2}2\. JSON lines\n {2}3\. Parquet files with a schema/);
-  const item = e.feature(feature)!.state.list().find((it) => it.text === "Which format?");
+  const item = e.feature("acme", feature)!.state.list().find((it) => it.text === "Which format?");
   expect(item?.status).toBe("answered");
   expect(JSON.stringify(item)).toContain("Parquet files with a schema");
 }, 60_000);

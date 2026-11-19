@@ -32,7 +32,7 @@ describe("research_web with the web reader (H-0082 caps)", () => {
     const { w, e, feature } = await setup();
     const queries: string[] = [];
     const research: ResearchConfig = { perQuestion: 1, perSession: 5, run: async (q) => (queries.push(q), ANSWER) };
-    const t = e.interviewTools(feature, w.worktree, {}, research);
+    const t = e.interviewTools("acme", feature, w.worktree, {}, research);
     await t.interview_ask({ text: "Which CSV dialect?", why: "w" });
     expect(await t.research_web({ query: "csv dialects" })).toEqual({ ok: true, result: ANSWER });
     expect(queries).toEqual(["csv dialects"]);
@@ -51,7 +51,7 @@ describe("research_web with the web reader (H-0082 caps)", () => {
       if (fail) throw new Error("container failed its check");
       return EMPTY;
     } };
-    const t = e.interviewTools(feature, w.worktree, {}, research);
+    const t = e.interviewTools("acme", feature, w.worktree, {}, research);
     expect((await t.research_web({ query: "a" })).ok).toBe(true);
     fail = true;
     expect(await t.research_web({ query: "b" })).toMatchObject({ ok: false, error: { code: "unavailable" } });
@@ -62,7 +62,7 @@ describe("research_web with the web reader (H-0082 caps)", () => {
     const { w, e, feature } = await setup();
     let release!: () => void;
     const research: ResearchConfig = { perQuestion: 9, perSession: 9, run: () => new Promise((r) => (release = () => r(EMPTY))) };
-    const t = e.interviewTools(feature, w.worktree, {}, research);
+    const t = e.interviewTools("acme", feature, w.worktree, {}, research);
     const pending = t.research_web({ query: "slow" });
     await new Promise((r) => setTimeout(r, 50));
     expect((await t.interview_propose_assumption({ text: "A.", why: "w" })).ok).toBe(true);

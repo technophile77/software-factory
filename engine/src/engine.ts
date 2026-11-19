@@ -209,12 +209,13 @@ export interface EngineHandle {
   sync(): Promise<void>;
   /** The SR-5 confirm command, with this engine's GitHub, clock and logger. A confirmed project runs after a restart. */
   confirmProject(projectPath: string, io: ConfirmIo): Promise<boolean>;
-  feature(id: string): FeatureInterview | null;
+  /** A feature of a running project, by the project's manifest name and the feature id (F-023 SR-13). */
+  feature(project: string, id: string): FeatureInterview | null;
   /**
    * The analyst's tools for one feature, reading the spec from `worktree` (the
    * analyst's checkout). `research` is the web reader for research_web.
    */
-  interviewTools(feature: string, worktree: string, facts?: RunFacts, research?: ResearchConfig): InterviewTools;
+  interviewTools(project: string, feature: string, worktree: string, facts?: RunFacts, research?: ResearchConfig): InterviewTools;
   /**
    * H-0087: a running project's effective limits, the defaults at its
    * `factory.version` commit lowered by its manifest's `limits:`. A project
@@ -757,42 +758,24 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     }
   }
 
-  // A feature id names its project alone (SR-16, OQ-10): an id found in two projects is refused in both.
-  const owners = new Map<string, Project[]>();
-  for (const p of projects) for (const fid of p.features.keys()) owners.set(fid, [...(owners.get(fid) ?? []), p]);
-  const assigned = record.features();
-  const ambiguous = new Set(
-    [...owners].filter(([fid, ps]) => ps.length > 1 || (assigned[fid] !== undefined && assigned[fid] !== ps[0]!.real)).map(([fid]) => fid),
-  );
-  for (const fid of ambiguous) {
-    for (const p of owners.get(fid)!) {
-      await alert(p, `dup:${fid}`, {
-        title: `Feature id ${fid} exists in more than one project`, feature: fid,
-        context: `Feature ids must be unique across the engine's projects (F-007 SR-16), so the engine refuses ${fid} everywhere rather than guess which project it means.`,
-        impact: `No interview of ${fid} opens until the duplicate is resolved.`,
-        confirm: "Rename or remove the duplicate, then restart the engine", hold: "Keep the feature closed", recommendation: "A",
-      });
-    }
-  }
-
-  async function knownFeatureIds(): Promise<number> {
+  // F-023 FR-9: each project numbers its own features; ids are unique within a project only.
+  async function knownFeatureIds(p: Project): Promise<number> {
     let max = 0;
     const note = (fid: string) => {
       const m = FEATURE_ID_RE.exec(fid);
       if (m) max = Math.max(max, Number(m[1]));
     };
-    Object.keys(record.features()).forEach(note);
-    for (const p of projects) {
-      if (!p.real) continue;
+    if (p.real) {
+      const real = p.real;
       p.features.forEach((_, fid) => note(fid));
-      const refs = await git.out(p.real, ["for-each-ref", "--format=%(refname)", "refs/heads/feature/", "refs/remotes/origin/feature/"]).catch(() => "");
+      const refs = await git.out(real, ["for-each-ref", "--format=%(refname)", "refs/heads/feature/", "refs/remotes/origin/feature/"]).catch(() => "");
       for (const r of refs.split("\n")) {
         const m = /\/feature\/(F-\d{3,6})(?:-|\/|$)/.exec(r);
         if (m) note(m[1]!);
       }
-      const main = await git.revParse(p.real, "refs/heads/main").catch(() => null);
+      const main = await git.revParse(real, "refs/heads/main").catch(() => null);
       if (main) {
-        for (const e of await git.lsTree(p.real, main, "docs/features").catch(() => [])) {
+        for (const e of await git.lsTree(real, main, "docs/features").catch(() => [])) {
           const m = /^docs\/features\/(F-\d{3,6})-/.exec(e.path);
           if (m) note(m[1]!);
         }
@@ -839,8 +822,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     return {
       name: p.name!,
       sessions: p.sessions!,
-      features: () => [...p.features.values()].filter((f) => !ambiguous.has(f.id)),
-      feature: (fid) => (ambiguous.has(fid) ? null : p.features.get(fid) ?? null),
+      features: () => [...p.features.values()],
+      feature: (fid) => p.features.get(fid) ?? null,
       inbox: () => {
         const ib = p.inbox;
         if (!ib) return null;
@@ -866,13 +849,12 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         const run = startLock.then(async () => {
           // The document is scanned before anything else happens: a refusal leaves no id, branch, commit or transcript (F-009 AC-3).
           if (doc) await scanDocument(doc);
-          const n = (await knownFeatureIds()) + 1;
+          const n = (await knownFeatureIds(p)) + 1;
           const fid = `F-${String(n).padStart(3, "0")}`;
           const branch = `feature/${fid}-${slug(request)}`;
           const main = await git.revParse(p.real!, "refs/heads/main");
           if (!main) throw new Error("the config repo has no main branch");
           const stored = doc ? await storeDocument(p, fid, main, doc) : null;
-          record.assignFeature(fid, p.real!);
           await git.run(p.real!, ["update-ref", `refs/heads/${branch}`, stored?.commit ?? main, "0".repeat(40)]);
           const f = newFeature(p, fid);
           const document = stored && doc ? documentMeta(fid, doc, stored.blob) : null;
@@ -887,7 +869,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     };
   }
 
-  const analystRuns = new Map<string, string>();
+  // Keyed by the feature itself: two projects can both have an F-001 (F-023 SR-13).
+  const analystRuns = new Map<FeatureInterview, string>();
 
   /** The stored source document, by the blob id in the transcript, only if it still matches its SHA-256 (F-009 FR-4). */
   async function documentText(p: Project, f: FeatureInterview): Promise<string | null> {
@@ -899,11 +882,12 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   /** The feature's analyst run in this engine, started on the first call for its tools. */
-  function analystRun(p: Project, fid: string, worktree: string): string {
-    const have = analystRuns.get(fid);
+  function analystRun(p: Project, f: FeatureInterview, worktree: string): string {
+    const fid = f.id;
+    const have = analystRuns.get(f);
     if (have && record.run(have)?.status === "running") return have;
     const run = runs.start({ project: p.real!, feature: fid, role: "requirements-analyst", stage: INTERVIEW_STAGE, worktree });
-    analystRuns.set(fid, run.id);
+    analystRuns.set(f, run.id);
     return run.id;
   }
 
@@ -933,7 +917,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     turns: TurnQueue | null;
     done: Promise<void>;
   }
-  const jobs = new Map<string, Job>();
+  const jobs = new Map<FeatureInterview, Job>();
   /** Each run's image and skills, for its reports (proposal 0013). */
   const runArtifacts = new Map<string, Array<{ kind: string; ref: string }>>();
   const images = new Map<string, Promise<{ id: string; tag: string }>>();
@@ -1036,13 +1020,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   function launchAnalyst(p: Project, f: FeatureInterview, plan?: ResumePlan): void {
     const rt = o.agents;
-    if (!rt || dead || shuttingDown || jobs.has(f.id) || !f.chainIntact) return;
+    if (!rt || dead || shuttingDown || jobs.has(f) || !f.chainIntact) return;
     const job: Job = { turns: null, done: Promise.resolve() };
-    jobs.set(f.id, job);
+    jobs.set(f, job);
     job.done = runAnalyst(rt, p, f, job, plan)
       .catch((e) => log.warn(`${f.id}: the analyst run stopped: ${engineWords(e)}`))
       .finally(() => {
-        jobs.delete(f.id);
+        jobs.delete(f);
         // F-008 FR-1: a spec that passed the interview checks goes on to Security and Testability Review once the analyst's work is committed.
         if (f.stage() === ST_REVIEW_STAGE) afterInterview(p, f);
       });
@@ -1073,9 +1057,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const limits = p.limits!;
     const models = p.models!;
     const branch = f.state.branch;
-    const known = plan?.run ?? (analystRuns.get(f.id) ? record.run(analystRuns.get(f.id)!) : undefined);
+    const known = plan?.run ?? (analystRuns.get(f) ? record.run(analystRuns.get(f)!) : undefined);
     const wt = await prepareWorktree(git, p.real!, known?.worktree ?? worktreeDir(p, f.id), branch, known?.git_dir);
-    const runId = analystRun(p, f.id, wt.path);
+    const runId = analystRun(p, f, wt.path);
     runs.update(runId, { git_dir: wt.gitDir });
     let resumeId = plan?.mode === "session" ? plan.sessionId : undefined;
     try {
@@ -1146,7 +1130,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
             limits: agentLimits(limits, m.billingMode), skillsPluginDir: agents.skillsDir("requirements-analyst"),
             models: { analyst: models["requirements-analyst"], reader: models["web-reader"] }, ...(resumeId ? { resume: resumeId } : {}), sessionVolume: "run",
             billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
-            tools: (research) => handle.interviewTools(f.id, wt.path, facts, research),
+            tools: (research) => handle.interviewTools(p.manifest!.name, f.id, wt.path, facts, research),
             turns,
             commit: async (policy) => (dead ? { status: "unchanged" } : commitWorktree({
               git, gitDir: wt.gitDir, worktree: wt.path, branch, base, policy, scanner, tmpDir,
@@ -1277,17 +1261,17 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
    */
   function afterInterview(p: Project, f: FeatureInterview, resume?: ResumePlan): void {
     const rt = o.agents;
-    if (!rt || dead || shuttingDown || jobs.has(f.id) || !f.chainIntact || p.state !== "running" || ambiguous.has(f.id)) return;
+    if (!rt || dead || shuttingDown || jobs.has(f) || !f.chainIntact || p.state !== "running") return;
     if (f.stage() !== ST_REVIEW_STAGE) return;
     const g = f.state.stReview;
     // F-016 FR-16: a blocked feature is checked again, in case the spec already answers what its items ask.
     if (g.blocked && !resume && !g.pending) return;
     const job: Job = { turns: null, done: Promise.resolve() };
-    jobs.set(f.id, job);
+    jobs.set(f, job);
     job.done = (g.pending && !resume ? resolveStReview(p, f) : runStReview(rt, p, f, resume))
       .catch((e) => log.warn(`${f.id}: Security and Testability Review stopped: ${stReviewWords(e)}`))
       .finally(() => {
-        jobs.delete(f.id);
+        jobs.delete(f);
         // A report that sent findings back starts the analyst once this job's slot is free.
         if (!dead && !shuttingDown && f.stage() === INTERVIEW_STAGE && f.state.stReview.pending) launchAnalyst(p, f);
         // F-016 FR-7: a Security and Testability Review pass goes straight on to the readiness gate.
@@ -1689,13 +1673,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       version: SERVED_CHANNEL_VERSION,
       capabilities: [...CAPABILITIES],
       uptime_s: Math.floor((clock.now() - startedAt) / 1000),
-      features: projects.filter((p) => p.state === "running").flatMap((p) => [...p.features.values()].filter((f) => !ambiguous.has(f.id)).map((f) => {
+      features: projects.filter((p) => p.state === "running").flatMap((p) => [...p.features.values()].map((f) => {
         const waiting = p.inbox?.waitingOn(f.id) ?? [];
         // H-0183 (channel v1.5): the items the feature waits on, only when there are any.
         const stage = f.stage() || INTERVIEW_STAGE;
         const build = isBuildStage(stage) ? buildMachine(f.state.build.actions).machine.state() : undefined;
-        const activity = activityOf({ stage, paused: f.paused, running: jobs.has(f.id), statuses: f.state.list().map((it) => it.status), decisions: waiting, build });
-        return { id: f.id, stage, active_agents: jobs.has(f.id) ? 1 : 0, activity, ...(waiting.length ? { waiting_on: waiting } : {}) };
+        const activity = activityOf({ stage, paused: f.paused, running: jobs.has(f), statuses: f.state.list().map((it) => it.status), decisions: waiting, build });
+        return { id: f.id, project: p.manifest!.name, stage, active_agents: jobs.has(f) ? 1 : 0, activity, ...(waiting.length ? { waiting_on: waiting } : {}) };
       })),
     }),
     pause: (fid) => {
@@ -1713,6 +1697,27 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     },
     shutdown: () => void handle.stop().catch((e) => log.warn(`The engine didn't stop cleanly: ${engineWords(e)}`)),
   };
+  /**
+   * A project's channel: pausing or resuming one feature reaches only that
+   * project's feature of that id (F-023 SR-13); with no feature, every project's.
+   */
+  const controlFor = (p: Project): EngineControl => ({
+    ...control,
+    pause: (fid) => {
+      if (!fid) return control.pause();
+      const f = p.features.get(fid);
+      if (f) f.paused = true;
+      return f ? [f.id] : [];
+    },
+    resume: (fid) => {
+      if (!fid) return control.resume();
+      const f = p.features.get(fid);
+      if (!f) return [];
+      f.paused = false;
+      f.changed.emit("resumed");
+      return [f.id];
+    },
+  });
 
   // Phase 3: channels and engine.json (FR-4).
   try {
@@ -1730,7 +1735,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           await f.exclusive(() => f.append([entry], "session approved"));
         }
       }, signInSetting);
-      const handler = methods(channelFor(p), control, clock);
+      const handler = methods(channelFor(p), controlFor(p), clock);
       const onConnection = (c: Conn) => {
         p.conns.add(c);
         c.onClose(() => p.conns.delete(c));
@@ -1856,11 +1861,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
     // F-015 FR-7: the owner's answer to a stage 6 escalation sends the build on; the step is fixed in code.
     if ((type === "buildtesting" || type === "builddecision") && f) {
-      await jobs.get(f.id)?.done;
+      await jobs.get(f)?.done;
       const steps: Record<number, BuildAction> = { 1: "retest", 2: "to_developer", 3: "to_test_engineer", 4: "owner_closed" };
       const action = type === "buildtesting" ? (e.action === "step_chosen" && typeof e.step === "number" ? steps[e.step] : undefined) : chosen === "A" ? "to_developer" : chosen === "B" ? "to_test_engineer" : chosen === "C" ? "to_pull_request" : undefined;
       const { machine, refused } = buildMachine(f.state.build.actions);
-      if (!action || refused || jobs.has(f.id) || !machine.act(action)) return done("record_only");
+      if (!action || refused || jobs.has(f) || !machine.act(action)) return done("record_only");
       await done("build_sent_on", [{ type: "build", action, item: r.id }], STAGE_OF[machine.state()]);
       startBuild(p, f);
       return;
@@ -1868,11 +1873,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
     // ADR 0013: after three failed resolution cycles the owner sends the agents back or stops the feature.
     if (type === "buildconflict" && f) {
-      await jobs.get(f.id)?.done;
+      await jobs.get(f)?.done;
       const steps: Record<number, BuildAction> = { 1: "resolve", 2: "owner_closed" };
       const action = e.action === "step_chosen" && typeof e.step === "number" ? steps[e.step] : undefined;
       const { machine, refused } = buildMachine(f.state.build.actions);
-      if (!action || refused || jobs.has(f.id) || !machine.act(action)) return done("record_only");
+      if (!action || refused || jobs.has(f) || !machine.act(action)) return done("record_only");
       await done("build_sent_on", [{ type: "build", action, item: r.id }], STAGE_OF[machine.state()]);
       startBuild(p, f);
       return;
@@ -1880,10 +1885,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
     // F-015 FR-18: B sends an auto-merge hold's reason to the developer, as the owner's `/changes` would; A only records.
     if (type === "automergehold" && f) {
-      await jobs.get(f.id)?.done;
+      await jobs.get(f)?.done;
       const { machine, refused } = buildMachine(f.state.build.actions);
       const note = String(r.effect?.note ?? "").slice(0, 4000);
-      if (chosen !== "B" || !note || refused || jobs.has(f.id) || !machine.act("changes")) return done("record_only");
+      if (chosen !== "B" || !note || refused || jobs.has(f) || !machine.act("changes")) return done("record_only");
       await done("build_sent_on", [{ type: "build", action: "changes", item: r.id, note }], STAGE_OF[machine.state()]);
       startBuild(p, f);
       return;
@@ -1915,11 +1920,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     // Engine Security items (H-0182). Option B, and anything but A, only records.
     if (chosen !== "A") return done("record_only");
     if (type === "buildstop" && f) {
-      await jobs.get(f.id)?.done;
+      await jobs.get(f)?.done;
       const action = String(r.effect?.action ?? "");
       const { machine, refused } = buildMachine(f.state.build.actions);
       // SR-13 as for the analyst: one step per approval, and only the step the item offered from where the build is now.
-      if (refused || jobs.has(f.id) || !isBuildAction(action) || !machine.act(action)) return done("record_only");
+      if (refused || jobs.has(f) || !isBuildAction(action) || !machine.act(action)) return done("record_only");
       await done("restarted", [{ type: "build", action, item: r.id }], STAGE_OF[machine.state()]);
       startBuild(p, f);
       return;
@@ -1969,17 +1974,17 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
     if (type === "streviewunresolved" && f) {
-      await jobs.get(f.id)?.done;
-      if (f.stage() !== ST_REVIEW_STAGE || jobs.has(f.id)) return done("record_only");
+      await jobs.get(f)?.done;
+      if (f.stage() !== ST_REVIEW_STAGE || jobs.has(f)) return done("record_only");
       await done("restarted", [{ type: "returned", return: { why: "st_review_unresolved", item: r.id } }], INTERVIEW_STAGE);
       launchAnalyst(p, f);
       return;
     }
     if (type === "analyststop" && f) {
       // The item is filed as the stopped run ends, so a quick answer can arrive before its job slot is free.
-      await jobs.get(f.id)?.done;
+      await jobs.get(f)?.done;
       // SR-13: one run per approval; a feature that moved on, or already has a job, needs none.
-      if (f.stage() !== INTERVIEW_STAGE || jobs.has(f.id)) return done("record_only");
+      if (f.stage() !== INTERVIEW_STAGE || jobs.has(f)) return done("record_only");
       await done("restarted");
       launchAnalyst(p, f);
       return;
@@ -2132,10 +2137,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   function startBuild(p: Project, f: FeatureInterview): void {
     // ADR 0026: the developer and test engineer have a shell on the owner's PC; there is no container build.
-    if (!o.agents?.host || dead || shuttingDown || jobs.has(f.id) || !f.chainIntact || p.state !== "running" || ambiguous.has(f.id)) return;
+    if (!o.agents?.host || dead || shuttingDown || jobs.has(f) || !f.chainIntact || p.state !== "running") return;
     if (!isBuildStage(f.stage()) || !f.state.readiness.signedOff) return;
     const job: Job = { turns: null, done: Promise.resolve() };
-    jobs.set(f.id, job);
+    jobs.set(f, job);
     job.done = runBuild(p, f)
       .catch(async (e) => {
         if (e instanceof BuildStop) {
@@ -2150,7 +2155,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         }
         log.warn(`${f.id}: the build stopped: ${engineWords(e)}`);
       })
-      .finally(() => jobs.delete(f.id));
+      .finally(() => jobs.delete(f));
   }
 
   /** Drives a feature's build machine until it waits on someone or something not built yet (M2 to M4). */
@@ -2204,7 +2209,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           if (!(await buildRole(p, f, role, { data: await scrubOutput(data), from }))) return;
           continue;
         }
-        const last = lastRuns.get(f.id);
+        const last = lastRuns.get(f);
         if (!last) {
           await recordBuild(f, "done", { why: "restart: no failures in memory, so the tests run again" });
           continue;
@@ -2484,7 +2489,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   /** What the last test run found, kept for the classifier and the fix that follows (rebuilt by a rerun after a restart). */
-  const lastRuns = new Map<string, { report: RunReport; cases: TestCase[]; worktree: string; gitDir: string; snapshot: string }>();
+  const lastRuns = new Map<FeatureInterview, { report: RunReport; cases: TestCase[]; worktree: string; gitDir: string; snapshot: string }>();
   /** What the test-run worktree looks like; the classifier is read-only, so it must look the same after (SR-10). */
   async function worktreeSnapshot(worktree: string, gitDir: string): Promise<string> {
     const g = (args: string[]) => git.out(worktree, ["--git-dir", gitDir, "--work-tree", worktree, ...args]);
@@ -2551,7 +2556,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const log = await scrubOutput(out.join("\n"));
     const { criteria, tools } = latestCriteria(f);
     const report = runReport(head, cases, criteria, problem, logPath);
-    lastRuns.set(f.id, { report, cases, worktree: wt.path, gitDir: wt.gitDir, snapshot: await worktreeSnapshot(wt.path, wt.gitDir) });
+    lastRuns.set(f, { report, cases, worktree: wt.path, gitDir: wt.gitDir, snapshot: await worktreeSnapshot(wt.path, wt.gitDir) });
     await p.state_repo!.commit([
       { path: logPath, content: log },
       agentReport({
@@ -2578,7 +2583,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if ("missing" in caps) throw new BuildStop(`limits.yaml has no ${caps.missing.join(", ")} section (FR-13)`);
     const model = p.models!.orchestrator;
     if (!model) throw new BuildStop("models.yaml has no orchestrator entry (FR-13)");
-    let last = lastRuns.get(f.id);
+    let last = lastRuns.get(f);
     if (!last) {
       // After a restart the failures aren't in memory: the run is taken again, which counts no retry (AC-17).
       await recordBuild(f, "rerun", { why: "restart" });
@@ -2633,7 +2638,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const unclear = Object.entries(got.causes).filter(([, c]) => c === "unclear").map(([t]) => t);
       if (!unclear.length || investigation >= p.limits!.stage6!.unclear_investigations) break;
       note = `The cause of ${unclear.join(", ")} was unclear. Investigate those failures once more: read the code and tests they touch, then classify again.`;
-      last = lastRuns.get(f.id)!;
+      last = lastRuns.get(f)!;
     }
     const done: { causes: Record<string, Cause>; evidence: Record<string, string> } = result!;
     const next = afterClassify(done.causes, stage6Counts(f.state.build.events), p.limits!.stage6!);
@@ -2856,7 +2861,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const ctx = await buildContext(p, f);
       const co = await reviewCheckout(p, f, ctx, "ci");
       const report = runReport(head, cases, {}, null, `${repo}#${n}`);
-      lastRuns.set(f.id, { report, cases, worktree: co.path, gitDir: co.gitDir, snapshot: co.snapshot });
+      lastRuns.set(f, { report, cases, worktree: co.path, gitDir: co.gitDir, snapshot: co.snapshot });
       await recordBuild(f, "red", { pr: n, failures: cases.map((c) => c.id) });
       return;
     }
@@ -3320,14 +3325,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   /** F-016 FR-7: a feature at the readiness gate with no sign-off pending gets the gate, once at a time. */
   function startReadiness(p: Project, f: FeatureInterview): void {
-    if (dead || shuttingDown || jobs.has(f.id) || !f.chainIntact || p.state !== "running" || ambiguous.has(f.id)) return;
+    if (dead || shuttingDown || jobs.has(f) || !f.chainIntact || p.state !== "running") return;
     if (f.stage() !== READINESS_STAGE || f.state.readiness.signoff) return;
     const job: Job = { turns: null, done: Promise.resolve() };
-    jobs.set(f.id, job);
+    jobs.set(f, job);
     job.done = runReadiness(p, f)
       .catch((e) => log.warn(`${f.id}: the readiness gate stopped: ${engineWords(e)}`))
       .finally(() => {
-        jobs.delete(f.id);
+        jobs.delete(f);
         if (!dead && !shuttingDown && f.stage() === INTERVIEW_STAGE) launchAnalyst(p, f);
       });
   }
@@ -3596,16 +3601,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     },
     runs,
     stopped,
-    feature: (fid) => {
-      if (ambiguous.has(fid)) return null;
-      for (const p of projects) if (p.state === "running" && p.features.has(fid)) return p.features.get(fid)!;
-      return null;
+    feature: (project, fid) => {
+      const p = projects.find((x) => x.state === "running" && x.manifest?.name === project);
+      return p?.features.get(fid) ?? null;
     },
-    interviewTools(fid, worktree, facts = {}, research) {
-      const f = handle.feature(fid);
-      const p = projects.find((x) => x.features.get(fid) === f);
-      if (!f || !p) throw new Error(`unknown feature ${fid}`);
-      const runId = analystRun(p, fid, worktree);
+    interviewTools(project, fid, worktree, facts = {}, research) {
+      const p = projects.find((x) => x.state === "running" && x.manifest?.name === project);
+      const f = p?.features.get(fid);
+      if (!f || !p) throw new Error(`unknown feature ${project} ${fid}`);
+      const runId = analystRun(p, f, worktree);
       return createInterviewTools({
         feature: f,
         worktree,
@@ -3616,7 +3620,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         onSpecReady: (passed) => {
           if (passed && !dead && record.run(runId)?.status === "running") runs.finish(runId, "complete");
           // The analyst's session ends with its turn; its changes are then committed and checked.
-          if (passed) jobs.get(fid)?.turns?.close();
+          if (passed) jobs.get(f)?.turns?.close();
         },
         reportFor: async (r): Promise<Change[]> => {
           const n = await nextReport(p, fid);
@@ -3720,7 +3724,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   for (const r of runs.interrupted()) {
     const p = projects.find((x) => x.real === r.project && x.state === "running");
     const f = p?.features.get(r.feature);
-    if (!p || !f || ambiguous.has(f.id)) continue;
+    if (!p || !f) continue;
     if (r.role === REVIEWER_ROLE) {
       // F-008 FR-10: a Security and Testability Review run resumes as an analyst run does.
       const plan = runs.resume(r.id);
@@ -3742,17 +3746,17 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       log.warn(`Run ${r.id} (${f.id}) failed: ${plan.run.reason}.`);
       continue;
     }
-    analystRuns.set(f.id, r.id);
+    analystRuns.set(f, r.id);
     if (o.agents) launchAnalyst(p, f, plan);
     else if (o.resumeAnalyst && r.worktree) {
-      o.resumeAnalyst({ feature: f.id, worktree: r.worktree, tools: handle.interviewTools(f.id, r.worktree), plan });
+      o.resumeAnalyst({ feature: f.id, worktree: r.worktree, tools: handle.interviewTools(p.manifest!.name, f.id, r.worktree), plan });
     }
   }
   // F-008 FR-1: features parked at Security and Testability Review start it; one sent back with findings gets its analyst, once.
   for (const p of projects) {
     if (p.state !== "running") continue;
     for (const f of p.features.values()) {
-      if (ambiguous.has(f.id) || jobs.has(f.id)) continue;
+      if (jobs.has(f)) continue;
       if (f.stage() === ST_REVIEW_STAGE) afterInterview(p, f);
       // F-016 FR-7: a gate that failed closed, or was cut off by a stop, runs again at start.
       else if (f.stage() === READINESS_STAGE) startReadiness(p, f);
@@ -3762,7 +3766,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         const tried = record.runs().some((r) => r.feature === f.id && r.project === p.real && r.role === "requirements-analyst" && r.started_at >= since);
         if (!tried) launchAnalyst(p, f);
       }
-      if (f.stage() === INTERVIEW_STAGE && !jobs.has(f.id)) {
+      if (f.stage() === INTERVIEW_STAGE && !jobs.has(f)) {
         // FR-13: a feature whose analyst stopped before this engine (or before this rule) would wait forever.
         const last = record.runs().filter((r) => r.feature === f.id && r.project === p.real && r.role === "requirements-analyst").sort((a, b) => a.started_at.localeCompare(b.started_at)).at(-1);
         if (last?.status === "failed") void offerRerun(p, f, last.id, last.reason ?? "the run failed");

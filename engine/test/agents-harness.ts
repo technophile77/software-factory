@@ -191,7 +191,7 @@ export async function boot(w: World, rt: AgentRuntime, extra: Partial<EngineOpti
 
 export const runsOf = (w: World, feature: string, role: string) => new EngineRecord(w.home).runs().filter((r) => r.feature === feature && r.role === role);
 export const entries = (w: World, feature: string) => parseTranscript(git(w.config, "show", `factory/state:interviews/${feature}/transcript.jsonl`) + "\n");
-export const stageOf = (e: EngineHandle, feature: string) => e.feature(feature)?.stage();
+export const stageOf = (e: EngineHandle, feature: string) => e.feature("acme", feature)?.stage();
 
 /** A spec that passes the readiness gate's structural checks (F-016 FR-7); `frs` adds requirements no criterion covers. */
 export function spec(feature: string, version: number, srs: string[] = ["| SR-1 | Inputs are validated. | Analyst | Approved |"], frs: string[] = []): string {
@@ -262,7 +262,7 @@ export function analyst(w: World, feature: () => string, onStReview?: (s: Script
 
 export async function interview(w: World, e: EngineHandle, c: RpcClient, feature: () => string, set: (f: string) => void): Promise<string> {
   set((await c.ok("feature.start", { request: "Export orders as CSV" })).feature as string);
-  await until("the question", () => (e.feature(feature())?.state.items.size ?? 0) > 0);
+  await until("the question", () => (e.feature("acme", feature())?.state.items.size ?? 0) > 0);
   const session = await approvedSession(w, c, feature());
   await c.ok("interview.reply", { session, item: "Q-001", revision: 0, reply_id: "r1", kind: "answer", text: "Order id and total." });
   return session;

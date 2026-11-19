@@ -168,7 +168,7 @@ async function blockedOnChoice(later: (w: World, feature: () => string) => (s: S
   let feature = "";
   const r = await start(w, d, { analyst: analyst(w, () => feature, later(w, () => feature)), reviewer: reviewer(d, () => feature, findings) });
   await interview(w, r.e, r.c, () => feature, (f) => (feature = f));
-  await until("blocked on the owner", () => !!r.e.feature(feature)?.state.stReview.blocked);
+  await until("blocked on the owner", () => !!r.e.feature("acme", feature)?.state.stReview.blocked);
   await pollUntil(w, "the issues", () => r.gh.issues.size === findings.length);
   return { w, d, feature, ...r };
 }
@@ -302,8 +302,8 @@ describe("F-016 acceptance: Security and Testability Review items on issues", ()
       reviewer: reviewer(d, () => feature, [REQUIREMENT]),
     });
     session = await interview(w, e, c, () => feature, (f) => (feature = f));
-    await until("the Security and Testability Review question", () => [...(e.feature(feature)?.state.items.values() ?? [])].some((i) => i.text.startsWith("Security and Testability Review #1")));
-    const q = [...e.feature(feature)!.state.items.values()].find((i) => i.text.startsWith("Security and Testability Review #1"))!;
+    await until("the Security and Testability Review question", () => [...(e.feature("acme", feature)?.state.items.values() ?? [])].some((i) => i.text.startsWith("Security and Testability Review #1")));
+    const q = [...e.feature("acme", feature)!.state.items.values()].find((i) => i.text.startsWith("Security and Testability Review #1"))!;
     await c.ok("interview.reply", { session, item: q.id, revision: 0, reply_id: "r2", kind: "answer", text: "No, card numbers are fine here." });
     await until("the risk item", () => items(w).some((i) => i.record.effect?.type === "st_review_risk"));
     await pollUntil(w, "the issue", () => gh.issues.size === 1);
@@ -317,8 +317,8 @@ describe("F-016 acceptance: Security and Testability Review items on issues", ()
     expect(gh.issues.get(1)!.labels).toContain(`priority:${lower}`);
     expect(gh.issues.get(1)!.labels).toContain("blocking");
     expect(stageOf(e, feature)).toBe("security_testability_review");
-    expect(e.feature(feature)!.state.stReview.blocked).toBeTruthy();
-    expect(e.feature(feature)!.state.stReview.accepted.size).toBe(0);
+    expect(e.feature("acme", feature)!.state.stReview.blocked).toBeTruthy();
+    expect(e.feature("acme", feature)!.state.stReview.accepted.size).toBe(0);
     await polls(w, 2);
     expect(s.count.analyst).toBe(analystSessions);
   }, 60_000);
@@ -382,7 +382,7 @@ describe("F-016 acceptance: Security item effects", () => {
     const { e, c } = await boot(w, runtime(d, s.sdk), { issues: () => gh });
     feature = (await c.ok("feature.start", { request: "Export" })).feature as string;
     await until("the breach item", () => items(w).length === 1);
-    const branch = e.feature(feature)!.state.branch;
+    const branch = e.feature("acme", feature)!.state.branch;
     const head = git(w.config, "rev-parse", `refs/heads/${branch}`);
     await pollUntil(w, "the issue", () => gh.issues.size === 1);
     await act(w, gh, 1, "choose:A");
@@ -402,7 +402,7 @@ describe("F-016 acceptance: Security item effects", () => {
     const scripts = { analyst: analyst(w, () => feature), reviewer: reviewer(d, () => feature, [CHOICE]) };
     const first = await start(w, d, scripts);
     await interview(w, first.e, first.c, () => feature, (f) => (feature = f));
-    await until("blocked on the owner", () => !!first.e.feature(feature)?.state.stReview.blocked);
+    await until("blocked on the owner", () => !!first.e.feature("acme", feature)?.state.stReview.blocked);
     await pollUntil(w, "the issue bound", () => record(w, "D-0001")?.issue === 1);
     await first.e.stop();
     // The owner's 👍 is really on GitHub; the confirm the record names is not (comment 99999 doesn't exist).
@@ -499,14 +499,14 @@ describe("F-016 acceptance: readiness gate and spec sign-off", () => {
     let feature = "";
     const r = await start(w, d, { analyst: analyst(w, () => feature), reviewer: reviewer(d, () => feature), orchestrator: orchestrator(d, () => feature) });
     await interview(w, r.e, r.c, () => feature, (f) => (feature = f));
-    await until("the sign-off item", () => !!r.e.feature(feature)?.state.readiness.signoff);
+    await until("the sign-off item", () => !!r.e.feature("acme", feature)?.state.readiness.signoff);
     await pollUntil(w, "the sign-off issue", () => r.gh.issues.size === 1);
     return { w, d, feature, ...r };
   }
 
   it("AC-8, FR-8 (Inbox item v3.1): the sign-off item names the feature, spec path, version and commit, with the spec kind's sections", async () => {
     const { w, e, gh, feature } = await signoffFiled();
-    const head = git(w.config, "rev-parse", `refs/heads/${e.feature(feature)!.state.branch}`);
+    const head = git(w.config, "rev-parse", `refs/heads/${e.feature("acme", feature)!.state.branch}`);
     const rec = record(w, "S-0001")!;
     expect(rec).toMatchObject({ kind: "spec", feature, blocking: true, status: "open" });
     const body = gh.issues.get(1)!.body;
@@ -522,30 +522,30 @@ describe("F-016 acceptance: readiness gate and spec sign-off", () => {
 
   it("AC-9, SR-3: a confirmed Approve after the branch moved changes no stage, records no sign-off, and the readiness gate runs again", async () => {
     const { w, e, s, gh, feature } = await signoffFiled();
-    const moved = moveBranch(w.config, e.feature(feature)!.state.branch);
+    const moved = moveBranch(w.config, e.feature("acme", feature)!.state.branch);
     await act(w, gh, 1, "approve");
     await pollUntil(w, "the effect", () => effects(w, "S-0001").length === 1);
     expect(effects(w, "S-0001")[0]).not.toMatchObject({ stage: "build_and_test_prep" });
     expect(stageOf(e, feature)).not.toBe("build_and_test_prep");
     expect(entries(w, feature).some((x) => x.type === "spec_signed_off")).toBe(false);
     await until("the second readiness session", () => s.count.orchestrator === 2);
-    await until("the gate passed again", () => e.feature(feature)?.state.readiness.signoff?.commit === moved);
+    await until("the gate passed again", () => e.feature("acme", feature)?.state.readiness.signoff?.commit === moved);
     expect(stageOf(e, feature)).toBe("readiness_gate");
     expect(entries(w, feature).some((x) => x.type === "spec_signed_off")).toBe(false);
   }, 90_000);
 
   it("FR-9: when the branch moved, the same sign-off item is revised to the new commit (F-011 FR-8), not replaced by a second item", async () => {
     const { w, e, gh, feature } = await signoffFiled();
-    const moved = moveBranch(w.config, e.feature(feature)!.state.branch);
+    const moved = moveBranch(w.config, e.feature("acme", feature)!.state.branch);
     await act(w, gh, 1, "approve");
     await pollUntil(w, "the effect", () => effects(w, "S-0001").length === 1);
-    await until("the gate passed again", () => e.feature(feature)?.state.readiness.signoff?.commit === moved, 30_000);
+    await until("the gate passed again", () => e.feature("acme", feature)?.state.readiness.signoff?.commit === moved, 30_000);
     await polls(w, 2);
     const specs = items(w).filter((i) => i.record.kind === "spec");
     expect(specs.map((i) => i.id)).toEqual(["S-0001"]);
     expect(specs[0]!.record.revisions.length).toBeGreaterThanOrEqual(2);
     expect(specs[0]!.record.effect).toMatchObject({ commit: moved });
-    expect(e.feature(feature)!.state.readiness.signoff!.item).toBe("S-0001");
+    expect(e.feature("acme", feature)!.state.readiness.signoff!.item).toBe("S-0001");
   }, 90_000);
 
   it("AC-9, FR-9: Defer on the sign-off item keeps it waiting; /changes then sends it back; neither reaches build_and_test_prep", async () => {
@@ -554,7 +554,7 @@ describe("F-016 acceptance: readiness gate and spec sign-off", () => {
     await pollUntil(w, "the defer effect", () => effects(w, "S-0001").length === 1);
     expect(stageOf(e, feature)).toBe("readiness_gate");
     expect(gh.issues.get(1)!.state).toBe("open");
-    expect(e.feature(feature)!.state.readiness.signoff?.item).toBe("S-0001");
+    expect(e.feature("acme", feature)!.state.readiness.signoff?.item).toBe("S-0001");
     gh.say(1, "/changes Add a size limit.");
     await pollUntil(w, "back in the interview", () => stageOf(e, feature) === "requirements_interview");
     await until("the analyst's second session", () => s.count.analyst === 2);
@@ -575,7 +575,7 @@ describe("F-016 acceptance: readiness gate and spec sign-off", () => {
       }),
     });
     await interview(w, e, c, () => feature, (f) => (feature = f));
-    const branch = () => e.feature(feature)!.state.branch;
+    const branch = () => e.feature("acme", feature)!.state.branch;
     await until("the failed run", () => runsOf(w, feature, "orchestrator")[0]?.status === "failed");
     await until("the transcript", () => entries(w, feature).some((x) => x.type === "readiness_session"));
     const sec = securityItemsIn(w.config).filter((i) => i.record.feature === feature);
@@ -584,7 +584,7 @@ describe("F-016 acceptance: readiness gate and spec sign-off", () => {
     expect(sec[0]!.text).toContain(`${feature}-export.md`);
     expect(git(w.config, "show", `${branch()}:docs/features/${feature}-export.md`)).not.toContain("Approved by the orchestrator.");
     expect(items(w).filter((i) => i.record.kind === "spec")).toHaveLength(0);
-    expect(e.feature(feature)!.state.readiness.signoff).toBeFalsy();
+    expect(e.feature("acme", feature)!.state.readiness.signoff).toBeFalsy();
     expect(stageOf(e, feature)).toBe("readiness_gate");
     expect((entries(w, feature).find((x) => x.type === "readiness_session") as any).reason).toBeTruthy();
     expect(w.log.lines.some((l) => /orchestrator|readiness/i.test(String(l.message)) && /outside|breach|rejected/i.test(String(l.message)))).toBe(true);
@@ -601,7 +601,7 @@ describe("F-016 acceptance: readiness gate and spec sign-off", () => {
     });
     await interview(w, e, c, () => feature, (f) => (feature = f));
     await until("readiness started", () => runsOf(w, feature, "orchestrator").length === 1);
-    const branch = e.feature(feature)!.state.branch;
+    const branch = e.feature("acme", feature)!.state.branch;
     const head = git(w.config, "rev-parse", `refs/heads/${branch}`);
     await until("the failed run", () => runsOf(w, feature, "orchestrator")[0]?.status === "failed");
     await until("the transcript", () => entries(w, feature).some((x) => x.type === "readiness_session"));

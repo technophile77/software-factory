@@ -1,9 +1,9 @@
-// feature.start and interview.list (AC-5, FR-5), feature ids unique across
-// projects and per-project session state (SR-16, OQ-10).
+// feature.start and interview.list (AC-5, FR-5), feature ids per project
+// (F-023 FR-9) and per-project session state (SR-16 as changed by F-023 FR-9).
 import { afterEach, describe, expect, it } from "vitest";
 import { drive } from "./support/clock";
 import { expectRpcError } from "./support/flows";
-import { ERR } from "./support/rpc";
+import { ERR, rpcOnce } from "./support/rpc";
 import { git, tryGit, World } from "./support/world";
 
 let w: World | undefined;
@@ -71,18 +71,29 @@ describe("AC-5 / FR-5: feature.start", () => {
 });
 
 describe("SR-16 / OQ-10: one engine, several projects", () => {
-  it("[FS-5] SR-16: a new feature id is unique across all projects, including ids already used in another project", async () => {
+  it("[FS-5] F-023 FR-9: each project numbers its own features; another project's ids don't count", async () => {
     w = await World.create([
       { name: "a", existingFeatures: ["F-003"] },
       { name: "b", existingFeatures: ["F-012"] },
     ]);
     await w.boot();
-    const ids = [await w.startFeature("One"), await w.startFeature("Two")];
-    for (const id of ids) {
-      expect(["F-003", "F-012"]).not.toContain(id);
-      expect(parseInt(id.slice(2), 10)).toBeGreaterThan(12);
-    }
-    expect(new Set(ids).size).toBe(2);
+    expect(await w.startFeatureIn(w.project(0), "One")).toBe("F-004");
+    expect(await w.startFeatureIn(w.project(1), "Two")).toBe("F-013");
+    expect(await w.startFeatureIn(w.project(0), "Three")).toBe("F-005");
+  });
+
+  it("[FS-5b] F-023 SR-13: two projects' F-001 are told apart in status, and pausing one leaves the other", async () => {
+    w = await World.create([{ name: "a" }, { name: "b" }]);
+    await w.boot();
+    const fa = await w.startFeatureIn(w.project(0), "One");
+    const fb = await w.startFeatureIn(w.project(1), "Two");
+    expect(fa).toBe(fb);
+    const st = (await rpcOnce(w.socket(w.project(0)), "engine.status", {})).result as { features: Array<{ id: string; project: string }> };
+    expect(st.features.filter((x) => x.id === fa).map((x) => x.project).sort()).toEqual(["a", "b"]);
+    expect(((await rpcOnce(w.socket(w.project(0)), "engine.pause", { feature: fa })).result as { paused: string[] }).paused).toEqual([fa]);
+    const now = (await rpcOnce(w.socket(w.project(1)), "engine.status", {})).result as { features: Array<{ id: string; project: string; activity: string }> };
+    expect(now.features.find((x) => x.project === "a" && x.id === fa)!.activity).toBe("paused");
+    expect(now.features.find((x) => x.project === "b" && x.id === fb)!.activity).not.toBe("paused");
   });
 
   it("[FS-6] SR-16: the device sign-in uses the feature's own project's client id and owner; the other project's owner can't approve it", async () => {
