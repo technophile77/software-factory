@@ -17,7 +17,7 @@ export interface CodeSource {
 
 export interface PlacedCopies {
   files: CodeFiles;
-  placed: Array<{ name: string; commit: string }>;
+  placed: Array<{ name: string; commit: string; withheld: number }>;
   missing: Array<{ name: string; error: unknown }>;
 }
 
@@ -25,13 +25,14 @@ const REGULAR = new Set(["100644", "100755"]);
 
 /**
  * F-007 FR-15, SR-24: a plain-file copy of each code repo's `main` under
- * CODE_DIR, made fresh each time. Only regular files are written; links and
+ * CODE_DIR, made fresh each time. Files the role's read rules refuse are left
+ * out (`readable`, given worktree-relative paths). Only regular files are written; links and
  * submodules are left out, so nothing in the copy can point outside it, and
  * there is no `.git`, so it carries no remote or credential. A repo that
  * can't be fetched or written is left out whole and reported, so the
  * interview still runs.
  */
-export async function placeCodeCopies(git: Git, worktree: string, sources: CodeSource[], platform: NodeJS.Platform = process.platform): Promise<PlacedCopies> {
+export async function placeCodeCopies(git: Git, worktree: string, sources: CodeSource[], readable: (rel: string) => boolean, platform: NodeJS.Platform = process.platform): Promise<PlacedCopies> {
   const root = path.join(worktree, CODE_DIR);
   fs.rmSync(root, { recursive: true, force: true });
   const out: PlacedCopies = { files: new Map(), placed: [], missing: [] };
@@ -44,7 +45,9 @@ export async function placeCodeCopies(git: Git, worktree: string, sources: CodeS
       const why = badSegment(s.name, platform);
       if (why) throw new Error(`its name can't be a folder here (${why})`);
       const { dir, commit } = await s.load();
-      const entries = (await git.lsTree(dir, commit)).filter((e) => REGULAR.has(e.mode));
+      const all = (await git.lsTree(dir, commit)).filter((e) => REGULAR.has(e.mode));
+      // Owner, 2026-11-19: a file the role may not read is never copied, so no gap in the read check can reach it.
+      const entries = all.filter((e) => readable(prefix + e.path));
       checkTree(entries, caseInsensitiveAt(root), platform);
       fs.mkdirSync(target, { mode: 0o755 });
       // Blobs in batches, as populateWorktree reads them.
@@ -56,7 +59,7 @@ export async function placeCodeCopies(git: Git, worktree: string, sources: CodeS
           out.files.set(prefix + e.path, e.sha);
         }
       }
-      out.placed.push({ name: s.name, commit });
+      out.placed.push({ name: s.name, commit, withheld: all.length - entries.length });
     } catch (e) {
       fs.rmSync(target, { recursive: true, force: true });
       for (const k of [...out.files.keys()]) if (k.startsWith(prefix)) out.files.delete(k);

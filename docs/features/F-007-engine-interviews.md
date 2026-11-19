@@ -3,7 +3,7 @@
 - **Id:** F-007
 - **Status:** Approved (readiness gate passed 2026-11-11)
 - **Requested by / date:** Alex, 2026-11-11
-- **Spec version:** 47
+- **Spec version:** 48
 
 This is the first increment of the factory engine (ADR 0001). The engine as a
 whole is too large for one feature, so it is built in increments, each a
@@ -72,7 +72,7 @@ applies again at Beta.
 | FR-12 | When the analyst reports the spec ready, the engine runs readiness checks 5 and 6 for interviews: no question `open` or `deferred`, no pending assumption, and every assumption the spec marks approved matches an `approve_assumption` transcript entry. |
 | FR-13 | Each agent run writes an Agent report v1.1 under `.factory/runs/` on `factory/state`, with the engine-filled fields (model, effort, usage, transcript reference). |
 | FR-14 | An interrupted run is marked `interrupted`, uses no retry, and resumes from its session or from the last commit with a transcript summary (ADR 0012). |
-| FR-15 | **The analyst reads the project's code (owner, 2026-11-19).** Before each analyst session starts, the engine refreshes a read-only copy of each code repo in the project manifest at its `main`, fetched with the token for that repo's owner (F-015 FR-19), and places it at `code-repos/<repo name>/` in the analyst's worktree. The analyst may read it like the rest of the worktree; it is never committed, and the end-of-session check skips that folder only after confirming nothing in it changed. A repo that can't be fetched is left out, and the analyst's first turn names it and says why in engine words, so the interview still runs. A config repo that tracks a `code-repos/` path stops the session with an engine-words reason. |
+| FR-15 | **The analyst reads the project's code (owner, 2026-11-19).** Before each analyst session starts, the engine refreshes a read-only copy of each code repo in the project manifest at its `main`, fetched with the token for that repo's owner (F-015 FR-19), and places it at `code-repos/<repo name>/` in the analyst's worktree. A file the analyst's read rules refuse is never copied (owner, 2026-11-19), and the first turn says how many were left out. The analyst may read it like the rest of the worktree; it is never committed, and the end-of-session check skips that folder only after confirming nothing in it changed. A repo that can't be fetched is left out, and the analyst's first turn names it and says why in engine words, so the interview still runs. A config repo that tracks a `code-repos/` path stops the session with an engine-words reason. |
 
 ## 4. Acceptance criteria
 Drafted from the requirements above; each is refined in the interview.
@@ -513,3 +513,4 @@ section 9.
 | 45 | 2026-11-14 | Reopened for ADR 0026 (no containers until Beta): until-Beta wording for FR-8, AC-16, SR-6, SR-9 and SR-18 in section 9 | Owner, 2026-11-14 (decision cards) |
 | 46 | 2026-11-14 | v41's exception closed for code by F-015 and ADR 0028: code and tests now go to the feature's code repo; specs, transcripts, reports and records stay in the private config repo by design | Owner, 2026-11-14 (decision card, F-015 H-0195) |
 | 47 | 2026-11-19 | FR-15, SR-24, AC-22: the analyst gets a read-only copy of each code repo at `main` under `code-repos/<repo>/`, since its AGENT.md already tells it to read the project's code and the engine gave it only the config repo. Found in the first two-repo project's interview | Owner, 2026-11-19 (decision card, then "approve" in thread after discussion) |
+| 48 | 2026-11-19 | FR-15: files the analyst's read rules refuse are left out of the code copy, so no gap in the read check can reach them and searches over the copy aren't refused; the deny rules stay as a backstop | Owner, 2026-11-19 (decision card) |

@@ -5,13 +5,14 @@ import { CODE_DIR, placeCodeCopies, removeCodeCopies } from "../src/agent/code-c
 import { commitWorktree } from "../src/agent/worktree-commit";
 import { Git } from "../src/git";
 import type { SecretsScanner } from "../src/gitleaks";
-import { allowedBy } from "../src/policy/glob";
+import { allowedBy, readableBy } from "../src/policy/glob";
 import { effectiveRole } from "../src/policy/role-policy";
 import { Children } from "../src/proc";
 import { GIT_PATH, git, initRepo, tmpdir } from "./helpers";
 import { policyDoc } from "./policy-fixture";
 
 const posix = process.platform !== "win32";
+const readAll = () => true;
 const cleanScanner: SecretsScanner = { scan: async () => ({ clean: true }) };
 
 function testGit(): Git {
@@ -47,8 +48,8 @@ describe("F-007 FR-15: the analyst's copies of the code repos", () => {
   it("AC-22: each repo's main as plain files, with no .git, link or credential", async () => {
     const code = codeRepo();
     const { wt } = configWorktree();
-    const c = await placeCodeCopies(testGit(), wt, [{ name: "bot", load: async () => code }]);
-    expect(c.placed).toEqual([{ name: "bot", commit: code.commit }]);
+    const c = await placeCodeCopies(testGit(), wt, [{ name: "bot", load: async () => code }], readAll);
+    expect(c.placed).toEqual([{ name: "bot", commit: code.commit, withheld: 0 }]);
     expect(c.missing).toEqual([]);
     const root = path.join(wt, CODE_DIR, "bot");
     expect(fs.readFileSync(path.join(root, "bot/main.py"), "utf8")).toBe("print('hi')\n");
@@ -68,7 +69,7 @@ describe("F-007 FR-15: the analyst's copies of the code repos", () => {
     const c = await placeCodeCopies(testGit(), wt, [
       { name: "gone", load: async () => { throw new Error("no token is stored for example-org"); } },
       { name: "bot", load: async () => code },
-    ]);
+    ], readAll);
     expect(c.placed.map((x) => x.name)).toEqual(["bot"]);
     expect(c.missing.map((x) => [x.name, (x.error as Error).message])).toEqual([["gone", "no token is stored for example-org"]]);
     expect(fs.existsSync(path.join(wt, CODE_DIR, "gone"))).toBe(false);
@@ -77,7 +78,7 @@ describe("F-007 FR-15: the analyst's copies of the code repos", () => {
   it("an unchanged copy is never committed; the spec edit is", async () => {
     const code = codeRepo();
     const { wt, gitDir, base, policy } = configWorktree();
-    const c = await placeCodeCopies(testGit(), wt, [{ name: "bot", load: async () => code }]);
+    const c = await placeCodeCopies(testGit(), wt, [{ name: "bot", load: async () => code }], readAll);
     fs.writeFileSync(path.join(wt, "docs/features/F-001-x.md"), "spec v2\n");
     const r = await commitWorktree({
       git: testGit(), gitDir, worktree: wt, branch: "feature/F-001-x", base, policy, scanner: cleanScanner,
@@ -95,7 +96,7 @@ describe("F-007 FR-15: the analyst's copies of the code repos", () => {
   ])("AC-22: %s in the copy rejects the session", async (_what, change, breach) => {
     const code = codeRepo();
     const { wt, gitDir, base, policy } = configWorktree();
-    const c = await placeCodeCopies(testGit(), wt, [{ name: "bot", load: async () => code }]);
+    const c = await placeCodeCopies(testGit(), wt, [{ name: "bot", load: async () => code }], readAll);
     change(path.join(wt, CODE_DIR, "bot"));
     fs.writeFileSync(path.join(wt, "docs/features/F-001-x.md"), "spec v2\n");
     const r = await commitWorktree({
@@ -113,10 +114,25 @@ describe("F-007 FR-15: the analyst's copies of the code repos", () => {
     expect(allowedBy(policy.read, `${CODE_DIR}/bot/.env`)).toBe(false);
   });
 
+  it("a file the analyst's read rules refuse is never copied (owner, 2026-11-19)", async () => {
+    const dir = tmpdir();
+    initRepo(dir, { "bot/main.py": "x\n", ".env": "TOKEN=real\n", "deploy/server.pem": "k\n", ".env.example": "TOKEN=changeme\n" });
+    const code = { dir, commit: git(dir, "rev-parse", "HEAD") };
+    const { wt } = configWorktree();
+    const read = effectiveRole(policyDoc(), "requirements-analyst").read;
+    const c = await placeCodeCopies(testGit(), wt, [{ name: "bot", load: async () => code }], (rel) => readableBy(read, rel));
+    expect(c.placed).toEqual([{ name: "bot", commit: code.commit, withheld: 2 }]);
+    const root = path.join(wt, CODE_DIR, "bot");
+    expect(fs.existsSync(path.join(root, ".env"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "deploy/server.pem"))).toBe(false);
+    expect(fs.existsSync(path.join(root, ".env.example"))).toBe(true);
+    expect([...c.files.keys()].sort()).toEqual([`${CODE_DIR}/bot/.env.example`, `${CODE_DIR}/bot/bot/main.py`]);
+  });
+
   it("is removed when the session is over", async () => {
     const code = codeRepo();
     const { wt } = configWorktree();
-    await placeCodeCopies(testGit(), wt, [{ name: "bot", load: async () => code }]);
+    await placeCodeCopies(testGit(), wt, [{ name: "bot", load: async () => code }], readAll);
     removeCodeCopies(wt);
     expect(fs.existsSync(path.join(wt, CODE_DIR))).toBe(false);
   });

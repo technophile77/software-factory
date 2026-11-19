@@ -94,6 +94,7 @@ import { structuralChecks } from "./readiness/checks";
 import { structureText } from "./interview/structure";
 import { READINESS_ROLE, type ReadinessReport, orchestratorTurn, readinessCorrection, validateReadinessReport } from "./readiness/report";
 import { PolicyError, type RolePolicy, effectiveRole } from "./policy/role-policy";
+import { readableBy } from "./policy/glob";
 import { EngineRecord, RunRecord } from "./state/record";
 import { ResumePlan, RunBook, RunFacts, RunUsage, agentReport, transcriptSummary } from "./state/runs";
 import { Change, SecretFound, StateRepo } from "./state/state-repo";
@@ -1442,10 +1443,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         return { dir: repo.localDir, commit: await repo.fetchMain(token) };
       },
     }));
-    const c = await placeCodeCopies(git, worktree, sources);
+    let read: RolePolicy["read"];
+    try {
+      read = effectiveRole(p.manifest!.raw, "requirements-analyst").read;
+    } catch (e) {
+      throw new SessionRefused(e instanceof PolicyError ? `Role policy: ${e.message}` : "the Role policy couldn't be read");
+    }
+    const c = await placeCodeCopies(git, worktree, sources, (rel) => readableBy(read, rel));
     for (const m of c.missing) log.warn(`${p.name}: the analyst's copy of ${m.name} was left out: ${engineWords(m.error)}`);
     const lines = [
-      ...c.placed.map((x) => `- ${x.name}: /workspace/${CODE_DIR}/${x.name}/ (main at ${x.commit.slice(0, 12)})`),
+      ...c.placed.map((x) => `- ${x.name}: /workspace/${CODE_DIR}/${x.name}/ (main at ${x.commit.slice(0, 12)}${x.withheld ? `; ${x.withheld} file(s) your read rules refuse were left out` : ""})`),
       ...c.missing.map((x) => `- ${x.name}: not available this session (${engineWords(x.error)})`),
     ];
     const note = lines.length
