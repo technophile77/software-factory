@@ -44,6 +44,17 @@ export const modelsFile = z.strictObject({
 /** `factory-projects.local.yaml` next to the master clone. */
 export const projectsFile = z.strictObject({ projects: z.array(z.strictObject({ path: text(4096) })).max(200) });
 
+/** F-023 FR-2: `projects/<name>.yaml` in the master clone, one per project the factory serves. */
+export const projectFile = z.strictObject({
+  schema: z.literal("project-file/1.0"),
+  name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/),
+  config_repo: z.strictObject({
+    // The engine also checks the host is the GitHub it was given; plain http only for one on this machine (SR-1).
+    url: z.string().max(400).regex(/^(https:\/\/[A-Za-z0-9.-]+|http:\/\/(127\.0\.0\.1|localhost|\[::1\]))(:\d{1,5})?\/[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/),
+    path: text(4096),
+  }),
+});
+
 /** `~/.software-factory/engine.yaml` (the engine home). */
 /** `master` (F-023 FR-16): the master clone, so `start` works from any folder. */
 export const engineFile = z.strictObject({ gitleaks: text(4096).optional(), master: text(4096).optional() });

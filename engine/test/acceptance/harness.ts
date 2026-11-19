@@ -141,12 +141,17 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     clock: o.clock,
     env: o.env,
     push: true,
+    // Acceptance worlds add projects before the engine starts; the 5-second folder check would only park a wait on the fake clock.
+    projectPollMs: 0,
     ...(o.agents ? { agents: o.agents } : {}),
     resumeAnalyst: o.resumeAnalyst
       ? (r: { feature: string; worktree: string; tools: Record<string, any>; plan: ResumedRun["plan"] }) =>
           o.resumeAnalyst!({ ...r, tools: toolsByName(r.tools) })
       : undefined,
   });
+  // F-023 SR-13: the engine takes the project with the id; acceptance worlds name only the feature, so the running project that has it.
+  const projectOf = (feature: string): string | undefined =>
+    (real.projects as ProjectState[]).find((p) => p.state === "running" && p.name && real.feature(p.name, feature))?.name ?? undefined;
   return {
     stop: () => real.stop(),
     crash: () => real.crash(),
@@ -156,9 +161,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return new EngineRecord(o.paths.stateDir).runs() as RunInfo[];
     },
     confirmProject: (projectPath) => confirmCommand(o, projectPath),
-    interviewTools: (feature, worktree) => toolsByName(real.interviewTools(feature, worktree)),
+    interviewTools: (feature, worktree) => {
+      const project = projectOf(feature);
+      if (!project) throw new Error(`unknown feature ${feature} ${worktree}`);
+      return toolsByName(real.interviewTools(project, feature, worktree));
+    },
     takeTurn: async (feature) => {
-      const f = real.feature(feature);
+      const project = projectOf(feature);
+      const f = project ? real.feature(project, feature) : null;
       if (!f) return null;
       const turn = await f.takeTurn();
       return turn ? turn.message : null;

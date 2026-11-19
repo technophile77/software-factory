@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { endpointsFile, engineFile, limitsFile, manifestFile, modelsFile, projectsFile } from "./config";
+import { endpointsFile, engineFile, limitsFile, manifestFile, modelsFile, projectFile, projectsFile } from "./config";
 import { ROLE_BODIES, modelReport, storedReport } from "./agent-report";
 import { advisorAnswer } from "./advisor-answer";
 import { inboxRecord } from "./inbox-record";
@@ -30,6 +30,7 @@ export const SCHEMAS: Record<string, z.ZodType> = {
   "factory-project-1": manifestFile,
   "factory-endpoints-1": endpointsFile,
   "factory-projects-1": projectsFile,
+  "project-file-1": projectFile,
   "engine-models": modelsFile,
   "engine-limits": limitsFile,
   "engine-home": engineFile,

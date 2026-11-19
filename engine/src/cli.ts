@@ -9,7 +9,7 @@ import { masterClone, readEngineConfig } from "./config/engine-config";
 import { DockerCli, DockerError, pickEndpoint } from "./docker/cli";
 import { type HostRuntime, resolveClaudeBinary } from "./agent/host";
 import { PinStore } from "./config/pins";
-import { defaultEngineHome, startEngine } from "./engine";
+import { type ProjectStatus, defaultEngineHome, startEngine } from "./engine";
 import { ensureOwnerDir, findOnPath } from "./fsutil";
 import { Git } from "./git";
 import { HttpGitHub } from "./github";
@@ -25,8 +25,10 @@ const USAGE = `factory-engine <command>
 
   start   [--master <master repo clone>] [--home <engine folder>] [--gitleaks <path>]
           Runs the engine, one per PC. --master defaults to engine.yaml's
-          master:, then the current folder.
-  confirm --project <config repo path> [--master <path>] [--home <path>]
+          master:, then the current folder. Serves every project file in
+          <master>/projects/, picking up added, changed and removed files
+          while it runs.
+  confirm --project <project name or config repo path> [--master <path>] [--home <path>]
           Accepts a changed or new project after a GitHub device approval (SR-5).
   secret set <name>
           Stores a secret in the OS credential store, read from stdin.
@@ -200,6 +202,13 @@ async function interview(rest: string[], command: "interview" | "inbox" = "inter
   }
 }
 
+/** F-023 FR-5: "B: needs setup" with the command that meets the step. */
+function projectLine(p: ProjectStatus): string {
+  const name = p.name ?? p.path;
+  if (p.state === "needs_setup") return `${name}: needs setup (${p.reason ?? p.setup?.command ?? ""})\n`;
+  return `${name}: ${p.state}${p.reason ? ` (${p.reason})` : ""}\n`;
+}
+
 async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   if (cmd === "interview") return interview(rest);
@@ -230,7 +239,7 @@ async function main(argv: string[]): Promise<number> {
   ensureOwnerDir(home);
   let master: string;
   try {
-    master = masterClone(f.master, cmd === "start" ? readEngineConfig(home).master : undefined, process.cwd());
+    master = masterClone(f.master, readEngineConfig(home).master, process.cwd());
   } catch (e) {
     process.stderr.write(`${(e as Error).message}\n`);
     return 2;
@@ -247,7 +256,7 @@ async function main(argv: string[]): Promise<number> {
     const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
     try {
       const ok = await confirmProject({
-        masterRepo: master, projectPath: path.resolve(f.project), git, github: new HttpGitHub({ log }),
+        masterRepo: master, projectPath: f.project, git, github: new HttpGitHub({ log }),
         pins: new PinStore(home), os: realOsApi(), clock: systemClock, log,
         io: { say: (l) => process.stderr.write(l + "\n"), ask: (q) => new Promise((r) => rl.question(q, r)) },
       });
@@ -265,10 +274,9 @@ async function main(argv: string[]): Promise<number> {
   const engine = await startEngine({
     masterRepo: master, engineHome: home, gitleaks: { path: gitleaks }, push: true, agents: await agentRuntime(home),
     factoryLock: { dir: path.join(defaultEngineHome(), "run") },
+    onProject: (p) => process.stderr.write(projectLine(p)),
   });
-  for (const p of engine.projects) {
-    process.stderr.write(`${p.name ?? p.path}: ${p.state}${p.reason ? ` (${p.reason})` : ""}\n`);
-  }
+  for (const p of engine.projects) process.stderr.write(projectLine(p));
   const stop = () => void engine.stop();
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);

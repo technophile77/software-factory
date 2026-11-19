@@ -94,17 +94,18 @@ describe("AC-20 / SR-5: a change to a pinned key stops the project", () => {
     expect(await w.isRunning(p)).toBe(false);
   });
 
-  it("[PIN-4] SR-5: a new path in the projects file stops that project and files a Security item; the pinned project keeps running", async () => {
+  it("[PIN-4] SR-5, F-023 SR-2: a new project waits on the confirm step and files nothing; the pinned project keeps running", async () => {
     w = await World.create([{ name: "old" }]);
     await w.boot();
     await w.stop();
     const before = w.securityItems().length;
     const added = w.addProject({ name: "new" });
-    w.writeProjectsFile(w.projects.map((x) => x.configRepo));
+    w.writeProjectFile(added);
     await w.boot({ confirm: false });
     expect(await w.isRunning(w.project())).toBe(true);
     expect(await w.isRunning(added)).toBe(false);
-    expect(w.securityItems().length).toBeGreaterThan(before);
+    expect((await w.engine!.projects()).find((x) => x.name === "new")?.state).toBe("needs_setup");
+    expect(w.securityItems().length).toBe(before);
   });
 
   it("[PIN-5] SR-5: an unchanged manifest after restart needs no confirmation (control for PIN-1)", async () => {

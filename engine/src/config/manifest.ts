@@ -92,6 +92,27 @@ export async function readManifest(git: Git, repo: string): Promise<Manifest> {
 }
 
 /**
+ * F-023 FR-3: the project's name from the manifest on main, even when the rest
+ * of the manifest fails its checks, so the one-time import names the project
+ * and the engine then reports the manifest's problem as it always has.
+ */
+export async function manifestName(git: Git, repo: string): Promise<string> {
+  const commit = await git.revParse(repo, "refs/heads/main");
+  if (!commit) throw new ConfigError("The config repo has no main branch.");
+  const raw = await git.readBlob(repo, commit, MANIFEST_FILE).catch(() => null);
+  if (!raw || raw.length > MAX_MANIFEST) throw new ConfigError(`main has no readable ${MANIFEST_FILE}.`);
+  let doc: unknown;
+  try {
+    doc = YAML.parse(raw.toString("utf8"), { uniqueKeys: true, maxAliasCount: 100 });
+  } catch {
+    throw new ConfigError(`${MANIFEST_FILE} is not valid YAML.`);
+  }
+  const name = doc && typeof doc === "object" ? (doc as { name?: unknown }).name : undefined;
+  if (typeof name !== "string" || !NAME_RE.test(name)) throw new ConfigError(`${MANIFEST_FILE} on main has no valid name.`);
+  return name;
+}
+
+/**
  * Project manifest v1.3 as far as this increment uses it: the required keys,
  * and the H-0080 owner and authorization keys checked exactly. The engine
  * refuses to run a project without `enabled` or `owner` (FR-2).
