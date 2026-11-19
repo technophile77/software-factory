@@ -8,7 +8,8 @@ import type { InterviewSignIn, Manifest, RepoOwner, RepoVisibility } from "./man
  * The pinned security keys of each project (SR-5): `owner.*`,
  * `allowed_repo_owners`, `enabled`, `settings.interview_sign_in` (F-018
  * FR-15) and each repo's `visibility` (F-015 SR-6, H-0249), keyed by the
- * config repo's real path.
+ * project's name (F-023 FR-8; pins made before were keyed by the config
+ * repo's real path and move to the name the first time the engine sees it).
  * Kept in an engine-only file outside every repo; only the confirm command
  * writes it, after the owner's confirmation and a device approval by the
  * previously pinned owner. Increment 3 replaces this with signed owner actions.
@@ -25,6 +26,13 @@ export interface Pin {
   pinned_at: string;
   /** The manifest commit the owner confirmed. */
   commit: string;
+  /** F-023 FR-8: the config repo the owner confirmed; a project file naming another one needs a new confirm. */
+  url?: string;
+  /**
+   * F-023 FR-8: factory/state as it stood when the owner first confirmed the project on this factory. Transcripts
+   * this factory has no chain record of are trusted as they were at this commit, never as anything later.
+   */
+  state_commit?: string | null;
 }
 
 export type PinCheck =
@@ -80,6 +88,16 @@ export class PinStore {
   set(projectPath: string, pin: Pin): void {
     const d = this.load();
     d.projects[projectPath] = pin;
+    writeFileAtomic(this.file, JSON.stringify(d, null, 2));
+  }
+
+  /** F-023 FR-8: moves a pin made under the config repo's path to the project's name, unless the name already has one. */
+  moveToName(paths: readonly string[], name: string, url: string | null): void {
+    const d = this.load();
+    const from = paths.find((p) => d.projects[p]);
+    if (!from) return;
+    if (!d.projects[name]) d.projects[name] = { ...d.projects[from]!, ...(url ? { url } : {}) };
+    for (const p of paths) delete d.projects[p];
     writeFileAtomic(this.file, JSON.stringify(d, null, 2));
   }
 }

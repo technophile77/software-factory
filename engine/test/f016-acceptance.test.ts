@@ -5,7 +5,6 @@ import YAML from "yaml";
 import { describe, expect, it } from "vitest";
 import type { SdkMessage } from "../src/agent/sdk";
 import { PinStore } from "../src/config/pins";
-import { realPath } from "../src/fsutil";
 import { stReviewResolution } from "../src/st-review/flow";
 import { InterviewState } from "../src/interview/model";
 import { structuralChecks } from "../src/readiness/checks";
@@ -435,7 +434,7 @@ describe("F-016 acceptance SR-7: an effect that fails", () => {
     git(w.config, "commit", "-qam", `owner ${id}`);
   }
   const pinsFile = (w: World) => path.join(w.home, "pins.json");
-  const pinnedOwner = (w: World) => new PinStore(w.home).get(realPath(w.config))!.owner.github_id;
+  const pinnedOwner = (w: World) => new PinStore(w.home).get("acme")!.owner.github_id;
 
   async function pinsItem() {
     const w = world();

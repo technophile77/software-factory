@@ -12,7 +12,6 @@ import { readManifest } from "../src/config/manifest";
 import { Git } from "../src/git";
 import { Children } from "../src/proc";
 import { realOsApi } from "../src/os/ffi";
-import { realPath } from "../src/fsutil";
 import { grantWrite } from "./acceptance/support/platform";
 import { policyDoc } from "./policy-fixture";
 import YAML from "yaml";
@@ -254,7 +253,7 @@ describe("pinned keys (SR-5, AC-20)", () => {
     await engines.pop()!.stop();
     w.github.approver = OWNER_ID;
     expect(await confirm()).toBe(true);
-    expect(new PinStore(w.home).get(realPath(w.config))!.owner.github_id).toBe(OTHER_ID);
+    expect(new PinStore(w.home).get("acme")!.owner.github_id).toBe(OTHER_ID);
     expect((await boot(w)).projects[0]!.state).toBe("running");
   });
 

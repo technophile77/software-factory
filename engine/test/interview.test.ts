@@ -30,10 +30,12 @@ function transcript(w: World, feature: string) {
   return parseTranscript(git(w.config, "show", `factory/state:interviews/${feature}/transcript.jsonl`) + "\n");
 }
 
-/** The refusal's only commit adds one Security item; nothing else on factory/state changed. Returns the item. */
+/** The refusal adds one Security item and its filed-alert key (F-023 FR-8); nothing else on factory/state changed. Returns the item. */
 function onlyNewSecurityItem(w: World, before: string): string {
   // One item: its record and its first rendered body, and nothing else changed.
-  const changed = git(w.config, "diff-tree", "-r", "--name-only", "--no-commit-id", before, "factory/state").split("\n").sort();
+  const all = git(w.config, "diff-tree", "-r", "--name-only", "--no-commit-id", before, "factory/state").split("\n").sort();
+  expect(all[0]).toBe("alerts/filed.json");
+  const changed = all.slice(1);
   expect(changed).toHaveLength(2);
   expect(changed[0]).toMatch(/^inbox\/D-\d+\.json$/);
   expect(changed[1]).toMatch(/^inbox\/D-\d+\.rev1\.md$/);
@@ -76,7 +78,7 @@ describe("feature.start (FR-5)", () => {
     const { w, feature } = await setup();
     const entries = transcript(w, feature);
     expect(entries[0]).toMatchObject({ seq: 1, type: "feature_started", prev: null, request: "Let owners export their data\nas CSV" });
-    const head = new EngineRecord(w.home).chain(`${w.config}#${feature}`);
+    const head = new EngineRecord(w.home).chain(`acme#${feature}`);
     expect(head).toEqual({ seq: 1, head: entries[0]!.hash });
   });
 
