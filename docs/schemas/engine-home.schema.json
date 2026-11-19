@@ -5,6 +5,10 @@
     "gitleaks": {
       "type": "string",
       "maxLength": 4096
+    },
+    "master": {
+      "type": "string",
+      "maxLength": 4096
     }
   },
   "additionalProperties": false

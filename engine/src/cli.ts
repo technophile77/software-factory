@@ -1,12 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
-import YAML from "yaml";
-import { checkConfig, engineFile } from "./schemas/config";
 import { systemClock } from "./clock";
 import type { AgentRuntime } from "./agent/runtime";
 import { loadAgentSdk } from "./agent/sdk-binding";
 import { confirmProject } from "./config/confirm";
+import { masterClone, readEngineConfig } from "./config/engine-config";
 import { DockerCli, DockerError, pickEndpoint } from "./docker/cli";
 import { type HostRuntime, resolveClaudeBinary } from "./agent/host";
 import { PinStore } from "./config/pins";
@@ -25,7 +24,8 @@ import { OsCredentialStore, SecretError, canonicalSecretName, isSecretName } fro
 const USAGE = `factory-engine <command>
 
   start   [--master <master repo clone>] [--home <engine folder>] [--gitleaks <path>]
-          Runs the engine. --master defaults to the current folder.
+          Runs the engine, one per PC. --master defaults to engine.yaml's
+          master:, then the current folder.
   confirm --project <config repo path> [--master <path>] [--home <path>]
           Accepts a changed or new project after a GitHub device approval (SR-5).
   secret set <name>
@@ -82,15 +82,6 @@ async function agentRuntime(home: string): Promise<AgentRuntime> {
 }
 
 /** The engine's own config, outside every repo: today only the gitleaks path. */
-function engineConfig(home: string): { gitleaks?: string } {
-  const file = path.join(home, "engine.yaml");
-  if (!fs.existsSync(file)) return {};
-  const doc = YAML.parse(fs.readFileSync(file, "utf8"), { uniqueKeys: true, maxAliasCount: 0 }) as unknown;
-  if (doc === null) return {};
-  checkConfig("engine.yaml", doc, engineFile);
-  const g = (doc as { gitleaks?: string }).gitleaks;
-  return g ? { gitleaks: g } : {};
-}
 
 /** Reads a secret without echoing it, so it never lands on a command line or in shell history (SR-1). */
 async function readSecret(): Promise<string> {
@@ -237,7 +228,13 @@ async function main(argv: string[]): Promise<number> {
   const f = flags(rest);
   const home = f.home ? path.resolve(f.home) : defaultEngineHome();
   ensureOwnerDir(home);
-  const master = path.resolve(f.master ?? process.cwd());
+  let master: string;
+  try {
+    master = masterClone(f.master, cmd === "start" ? readEngineConfig(home).master : undefined, process.cwd());
+  } catch (e) {
+    process.stderr.write(`${(e as Error).message}\n`);
+    return 2;
+  }
   if (cmd === "confirm") {
     if (!f.project) {
       process.stderr.write(USAGE);
@@ -259,12 +256,16 @@ async function main(argv: string[]): Promise<number> {
       rl.close();
     }
   }
-  const gitleaks = f.gitleaks ?? engineConfig(home).gitleaks;
+  const gitleaks = f.gitleaks ?? readEngineConfig(home).gitleaks;
   if (!gitleaks || !path.isAbsolute(gitleaks)) {
     process.stderr.write("Give the gitleaks binary's absolute path with --gitleaks or `gitleaks:` in engine.yaml.\n");
     return 2;
   }
-  const engine = await startEngine({ masterRepo: master, engineHome: home, gitleaks: { path: gitleaks }, push: true, agents: await agentRuntime(home) });
+  // F-023 FR-1: the lock is in the default engine folder whatever --home says, so a second engine always finds it.
+  const engine = await startEngine({
+    masterRepo: master, engineHome: home, gitleaks: { path: gitleaks }, push: true, agents: await agentRuntime(home),
+    factoryLock: { dir: path.join(defaultEngineHome(), "run") },
+  });
   for (const p of engine.projects) {
     process.stderr.write(`${p.name ?? p.path}: ${p.state}${p.reason ? ` (${p.reason})` : ""}\n`);
   }
