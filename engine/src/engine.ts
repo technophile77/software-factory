@@ -14,6 +14,7 @@ import type { ModelCredential } from "./proxy/server";
 import { type AgentGroup, SessionGroup, runVolume } from "./agent/sandbox";
 import { HostError, HostGroup, runHome, sweepHomes } from "./agent/host";
 import { ASK_WAIT_MS, type HostGate, WORKSPACE, type SessionCaps, type SessionOutcome, denyAsk } from "./agent/session";
+import { CODE_DIR, type CodeFiles, placeCodeCopies, removeCodeCopies } from "./agent/code-copies";
 import { commitWorktree } from "./agent/worktree-commit";
 import { CodeRepo, CodeRepoError, type Identity, codeRepoUrl, commitIdentity, featureBranches } from "./build/code-repo";
 import { type BuildAction, type BuildState, STAGE_OF, buildMachine, isBuildAction, isBuildStage } from "./build/lifecycle";
@@ -1252,6 +1253,39 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
    * start; one that stops at a cap or on a breach fails the run and reports
    * why. On shutdown the run stays open, so the next start resumes it.
    */
+  /**
+   * F-007 FR-15, SR-24: a read-only copy of each code repo's `main` in the
+   * analyst's worktree, fetched with the token for the repo's owner into the
+   * engine's credential-free clone. A repo that can't be fetched is left out
+   * and named in the analyst's first turn.
+   */
+  async function analystCodeCopies(p: Project, branch: string, worktree: string): Promise<{ files: CodeFiles; note: string }> {
+    const head = await git.revParse(p.real!, `refs/heads/${branch}`);
+    if (head && (await git.lsTreeEntry(p.real!, head, CODE_DIR))) {
+      throw new SessionRefused(`the config repo tracks ${CODE_DIR}/, where the engine puts the code repos for the analyst (F-007 FR-15)`);
+    }
+    const sources = p.manifest!.repos.map((r) => ({
+      name: r.name,
+      load: async () => {
+        const token = tokenFor(p, `${r.owner}/${r.repo}`);
+        if (!token) throw new SessionRefused(`no token is stored for ${r.owner}`);
+        const repo = new CodeRepo(git, path.join(home, "build", folderKey(p), "repos", sha256Hex(r.name).slice(0, 16)), { url: codeRepoUrl(r, gitBase), base: gitBase });
+        await repo.init();
+        return { dir: repo.localDir, commit: await repo.fetchMain(token) };
+      },
+    }));
+    const c = await placeCodeCopies(git, worktree, sources);
+    for (const m of c.missing) log.warn(`${p.name}: the analyst's copy of ${m.name} was left out: ${engineWords(m.error)}`);
+    const lines = [
+      ...c.placed.map((x) => `- ${x.name}: /workspace/${CODE_DIR}/${x.name}/ (main at ${x.commit.slice(0, 12)})`),
+      ...c.missing.map((x) => `- ${x.name}: not available this session (${engineWords(x.error)})`),
+    ];
+    const note = lines.length
+      ? `\n\nThe project's code repos, read-only copies of main (never edit them; they are not part of the spec):\n${lines.join("\n")}`
+      : "";
+    return { files: c.files, note };
+  }
+
   async function runAnalyst(rt: AgentRuntime, p: Project, f: FeatureInterview, job: Job, plan?: ResumePlan): Promise<void> {
     const m = p.manifest!;
     const sources = p.sources!;
@@ -1280,8 +1314,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       ]);
       // The SDK session lives in the run's home or volume; without it the run starts again from its commit.
       if (resumeId && !(await hasSession(rt, runId))) resumeId = undefined;
+      const code = await analystCodeCopies(p, branch, wt.path);
       const slugName = branch.replace(/^feature\//, "");
-      const intro = `You are working on ${f.id} on branch ${branch}, in /workspace. Write its spec at docs/features/${slugName}.md. Reach the owner only through your factory tools.\n\n${structureText()}`;
+      const intro = `You are working on ${f.id} on branch ${branch}, in /workspace. Write its spec at docs/features/${slugName}.md. Reach the owner only through your factory tools.${code.note}\n\n${structureText()}`;
       let summary = plan?.mode === "from_commit" ? plan.summary : "";
       if (plan?.mode === "session" && !resumeId) summary = transcriptSummary(f.state);
       // A new run after one that ended (an analyststop or breach restart) would otherwise start from the request alone (F-016 FR-13).
@@ -1335,7 +1370,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
             turns,
             commit: async (policy) => (dead ? { status: "unchanged" } : commitWorktree({
               git, gitDir: wt.gitDir, worktree: wt.path, branch, base, policy, scanner, tmpDir,
-              message: `${f.id}: analyst session (run ${runId})`, limits: worktreeLimits(limits),
+              message: `${f.id}: analyst session (run ${runId})`, limits: worktreeLimits(limits), frozen: code.files,
             })),
             onSessionId: (id) => void (dead || runs.update(runId, { session_id: id })),
             onBreach: async (breaches) => {
@@ -1380,6 +1415,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         break;
       }
       const { outcome, commit } = r;
+      removeCodeCopies(wt.path);
       let failure: string | null = null;
       if (commit.status === "rejected") failure = "it wrote outside the role's rules (Security item filed)";
       else if (commit.status === "over_limit") failure = `its change went over the worktree ${commit.cap} cap`;
