@@ -39,6 +39,7 @@ import { DocumentRefused, SourceDocument, documentMeta, lineOfByte, sha256 as sh
 import { frameDocument, frameRequest } from "./interview/frame";
 import { Conn, notification, serve } from "./channel/framing";
 import { EngineControl, ProjectChannel, methods } from "./channel/methods";
+import { FactoryRunning, takeFactoryLock } from "./os/factory-lock";
 import { SessionManager } from "./channel/sessions";
 import { Listener, listenUnix } from "./channel/unix";
 import { listenPipe } from "./channel/windows";
@@ -99,6 +100,12 @@ export class StartError extends Error {
 export interface EngineOptions {
   /** The owner's clone of the master factory repo, holding factory-projects.local.yaml. */
   masterRepo: string;
+  /**
+   * F-023 FR-1: where the one-factory-per-PC lock lives. The command line
+   * passes the default engine folder's run/ whatever --home says; left out,
+   * no lock is taken (tests run many engines side by side).
+   */
+  factoryLock?: { dir: string; pipe?: string };
   /** Engine-owned folder outside every repo. Default: ~/.software-factory/engine (or %LOCALAPPDATA%). */
   engineHome?: string;
   /** Where channel sockets go. Default: <engineHome>/run. Keep it short: socket paths are limited to ~100 bytes. */
@@ -263,6 +270,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const osApi = o.os ?? realOsApi();
   const env = o.env ?? process.env;
   const children = o.parentOf ? new Children(o.parentOf) : new Children(osParent(osApi), osStartOrder(osApi));
+  let factoryLock: Listener | null = null;
+  if (o.factoryLock) {
+    try {
+      factoryLock = await takeFactoryLock({ os: osApi, children, log, ...o.factoryLock });
+    } catch (e) {
+      throw new StartError(e instanceof FactoryRunning ? e.message : `The one-factory lock couldn't be taken: ${(e as Error).message}`);
+    }
+  }
   const gitPath = o.gitPath ?? findOnPath("git");
   if (!gitPath) throw new StartError("git isn't on PATH.");
   const git = new Git({ gitPath, homeDir: path.join(home, "git"), children, env });
@@ -3656,6 +3671,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         await p.listener?.close().catch(() => undefined);
       }
       await git.closeReaders();
+      await factoryLock?.close().catch(() => undefined);
       done();
     },
     async sync() {
@@ -3703,6 +3719,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         // A notification still showing runs in the engine folder, and Windows can't remove a folder a process works
         // in; it is ended rather than waited for, since a hung one would hold the stop for its whole time limit.
         await notify.stop();
+        await factoryLock?.close().catch(() => undefined);
         log.info(`engine stopped at ${iso(clock.now())}`);
         done();
       })();

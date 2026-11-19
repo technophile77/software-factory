@@ -45,7 +45,8 @@ export const modelsFile = z.strictObject({
 export const projectsFile = z.strictObject({ projects: z.array(z.strictObject({ path: text(4096) })).max(200) });
 
 /** `~/.software-factory/engine.yaml` (the engine home). */
-export const engineFile = z.strictObject({ gitleaks: text(4096).optional() });
+/** `master` (F-023 FR-16): the master clone, so `start` works from any folder. */
+export const engineFile = z.strictObject({ gitleaks: text(4096).optional(), master: text(4096).optional() });
 
 const endpoint = z.strictObject({
   base_url: text(2000),
