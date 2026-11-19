@@ -46,11 +46,11 @@ describe("Security and Testability Review on the engine, with fake Docker and SD
     await until("the run's end", () => runsOf(w, feature, "security-reviewer")[0]!.status === "complete");
     const rep = JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/security_testability_review/security-reviewer-1.json`));
     expect(rep).toMatchObject({ role: "security-reviewer", outcome: "complete", model: "claude-sonnet-5-5", report_via: "structured_output", body: { gate: 1, findings: [] } });
-    const branch = e.feature(feature)!.state.branch;
+    const branch = e.feature("acme", feature)!.state.branch;
     expect(git(w.config, "show", `${branch}:docs/features/${feature}-security-testability-review.md`)).toContain(`# ${feature} Security and Testability Review`);
     expect(entries(w, feature).map((x) => x.type)).toEqual(expect.arrayContaining(["st_review_run", "st_review_report"]));
     // The readiness gate may already be running; FR-14 counts it.
-    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "readiness_gate", active_agents: expect.any(Number), activity: expect.any(String) }]);
+    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, project: "acme", stage: "readiness_gate", active_agents: expect.any(Number), activity: expect.any(String) }]);
     expect(g1.stage).toBe("security_testability_review");
   });
 
@@ -80,9 +80,9 @@ describe("Security and Testability Review on the engine, with fake Docker and SD
     });
     const { e, c } = await boot(w, runtime(d, s.sdk));
     session = await interview(w, e, c, () => feature, (f) => (feature = f));
-    await until("back in the interview with a Security and Testability Review question", () => [...(e.feature(feature)?.state.items.values() ?? [])].some((i) => i.text.startsWith("Security and Testability Review #1")));
+    await until("back in the interview with a Security and Testability Review question", () => [...(e.feature("acme", feature)?.state.items.values() ?? [])].some((i) => i.text.startsWith("Security and Testability Review #1")));
     expect(stageOf(e, feature)).toBe("requirements_interview");
-    const q = [...e.feature(feature)!.state.items.values()].find((i) => i.text.startsWith("Security and Testability Review #1"))!;
+    const q = [...e.feature("acme", feature)!.state.items.values()].find((i) => i.text.startsWith("Security and Testability Review #1"))!;
     await c.ok("interview.reply", { session, item: q.id, revision: 0, reply_id: "r2", kind: "answer", text: fix });
     await until("readiness_gate", () => stageOf(e, feature) === "readiness_gate");
     expect(s.count.reviewer).toBe(1); // A-1: no second review.
@@ -107,7 +107,7 @@ describe("Security and Testability Review on the engine, with fake Docker and SD
     });
     const { e, c } = await boot(w, runtime(d, s.sdk));
     await interview(w, e, c, () => feature, (f) => (feature = f));
-    await until("blocked", () => !!e.feature(feature)?.state.stReview.blocked);
+    await until("blocked", () => !!e.feature("acme", feature)?.state.stReview.blocked);
     expect(stageOf(e, feature)).toBe("security_testability_review");
     const items = securityItemsIn(w.config);
     expect(items).toHaveLength(1);
@@ -144,7 +144,7 @@ describe("Security and Testability Review on the engine, with fake Docker and SD
     // SR-11 (Code Review L3): the caps cover the run, so the correction gets what the first session left.
     expect(s.seen.filter((x) => x.systemPrompt === REVIEWER_MD).map((x) => x.maxTurns)).toEqual([100, 99]);
     expect(runsOf(w, feature, "security-reviewer")[0]!.reason).toBe("its report was still invalid after one correction");
-    const branch = e.feature(feature)!.state.branch;
+    const branch = e.feature("acme", feature)!.state.branch;
     expect(() => git(w.config, "show", `${branch}:docs/features/${feature}-security-testability-review.md`)).toThrow();
     await until("the failure report", () => {
       try {
@@ -220,7 +220,7 @@ describe("Security and Testability Review on the engine, with fake Docker and SD
     await interview(w, e, c, () => feature, (f) => (feature = f));
     await until("the failed run", () => runsOf(w, feature, "security-reviewer")[0]?.status === "failed");
     expect(securityItemsIn(w.config)[0]!.text).toContain("Security reviewer changed files outside its report");
-    expect(git(w.config, "show", `${e.feature(feature)!.state.branch}:docs/features/${feature}-export.md`)).toContain("- **Spec version:** 3");
+    expect(git(w.config, "show", `${e.feature("acme", feature)!.state.branch}:docs/features/${feature}-export.md`)).toContain("- **Spec version:** 3");
   });
 
   it("AC-10: a factory version without a reviewer model starts no session and says why", async () => {

@@ -260,7 +260,7 @@ async function startWithDoc(provenance: "owner" | "reference" = "owner", text = 
   const s = await setup();
   const feature = (await s.c.ok("feature.start", { request: "Export orders", document: doc(text, { provenance }) })).feature as string;
   git(s.w.root, "init", "-q", s.w.worktree);
-  return { ...s, feature, tools: s.e.interviewTools(feature, s.w.worktree) };
+  return { ...s, feature, tools: s.e.interviewTools("acme", feature, s.w.worktree) };
 }
 
 const transcript = (w: World, feature: string) => parseTranscript(git(w.config, "show", `factory/state:interviews/${feature}/transcript.jsonl`) + "\n");
@@ -353,7 +353,7 @@ describe("questions and sources on a document-started feature (Interview tools v
       expect(await tools.interview_ask({ text: "Q?", why: "w", ...bad })).toMatchObject({ ok: false, error: { code: "invalid" } });
     }
     const plain = (await c.ok("feature.start", { request: "No document" })).feature as string;
-    const t2 = engines[0]!.interviewTools(plain, w.worktree);
+    const t2 = engines[0]!.interviewTools("acme", plain, w.worktree);
     expect(await t2.interview_ask({ text: "Q?", why: "w", type: "gap" })).toMatchObject({ ok: false, error: { code: "invalid" } });
     expect(await t2.interview_ask({ text: "Q?", why: "w", findings: [{ text: "t", source: "docs/x.md" }] })).toMatchObject({ ok: false, error: { code: "invalid" } });
     expect(await t2.interview_confirm_sources({ spec_path: `docs/features/${plain}-x.md`, spec_version: 1 })).toMatchObject({ ok: false, error: { code: "invalid" } });

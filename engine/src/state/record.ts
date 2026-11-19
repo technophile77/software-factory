@@ -54,6 +54,7 @@ export interface RunRecord {
 interface Data {
   version: 1;
   chains: Record<string, ChainHead>;
+  /** No longer read (F-023 FR-9: ids are per project); kept so files written before still load. */
   features: Record<string, string>;
   runs: Record<string, RunRecord>;
   /** Security alerts already filed, so a restart doesn't file the same one again. */
@@ -99,16 +100,6 @@ export class EngineRecord {
     this.save();
   }
 
-  /** Feature id → the project (config repo path) it was assigned to. */
-  features(): Readonly<Record<string, string>> {
-    return this.data.features;
-  }
-
-  assignFeature(id: string, project: string): void {
-    if (this.data.features[id] && this.data.features[id] !== project) throw new Error(`${id} already belongs to another project`);
-    this.data.features[id] = project;
-    this.save();
-  }
 
   runs(): RunRecord[] {
     return Object.values(this.data.runs);

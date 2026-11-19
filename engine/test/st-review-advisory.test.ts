@@ -157,7 +157,7 @@ function analyst(w: World, feature: () => string) {
 async function interview(w: World, e: EngineHandle, c: RpcClient, set: (f: string) => void): Promise<void> {
   const feature = (await c.ok("feature.start", { request: "Export orders as CSV" })).feature as string;
   set(feature);
-  await until("the question", () => (e.feature(feature)?.state.items.size ?? 0) > 0);
+  await until("the question", () => (e.feature("acme", feature)?.state.items.size ?? 0) > 0);
   const session = await approvedSession(w, c, feature);
   await c.ok("interview.reply", { session, item: "Q-001", revision: 0, reply_id: "r1", kind: "answer", text: "Order id and total." });
 }
@@ -198,7 +198,7 @@ describe("the advisory first pass of the security reviewer on the engine (F-013 
     });
     const { e, c } = await boot(w, runtime(d, s.sdk));
     await interview(w, e, c, (f) => (feature = f));
-    await until("blocked on the owner's choice", () => !!e.feature(feature)?.state.stReview.blocked);
+    await until("blocked on the owner's choice", () => !!e.feature("acme", feature)?.state.stReview.blocked);
 
     // The advisory session ran first, on the endpoint, with the same inputs; the gateway was told its endpoint.
     expect(turns.map((t) => t.advisory)).toEqual([true, false]);
@@ -264,7 +264,7 @@ describe("the advisory first pass of the security reviewer on the engine (F-013 
     });
     const { e, c } = await boot(w, runtime(d, s.sdk));
     await interview(w, e, c, (f) => (feature = f));
-    await until("readiness_gate", () => e.feature(feature)?.stage() === "readiness_gate");
+    await until("readiness_gate", () => e.feature("acme", feature)?.stage() === "readiness_gate");
     expect(firsts).toHaveLength(1);
     expect(firsts[0]).not.toContain("ADVISORY HINTS");
     const rep = agentReportOf(w, feature);
@@ -294,7 +294,7 @@ describe("the advisory first pass of the security reviewer on the engine (F-013 
     });
     const { e, c } = await boot(w, runtime(d, s.sdk), probe);
     await interview(w, e, c, (f) => (feature = f));
-    await until("readiness_gate", () => e.feature(feature)?.stage() === "readiness_gate");
+    await until("readiness_gate", () => e.feature("acme", feature)?.stage() === "readiness_gate");
     expect(agentReportOf(w, feature).advisory).toMatchObject({ endpoint: "lan", status: "skipped", reason: expect.stringMatching(reason) });
     expect(d.calls.some((x) => x.args.includes("factory.role=router"))).toBe(false);
     expect(s.count.reviewer).toBe(1);

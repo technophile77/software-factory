@@ -37,7 +37,7 @@ async function setup() {
   clients.push(c);
   const feature = (await c.ok("feature.start", { request: "Export" })).feature as string;
   git(w.root, "init", "-q", w.worktree);
-  return { w, e, c, feature, tools: e.interviewTools(feature, w.worktree, { model: "claude-test", effort: "high" }) };
+  return { w, e, c, feature, tools: e.interviewTools("acme", feature, w.worktree, { model: "claude-test", effort: "high" }) };
 }
 
 function writeSpec(w: World, feature: string, text: string, name = "export"): string {
@@ -73,10 +73,10 @@ describe("interview_spec_ready (FR-12, AC-10)", () => {
       schema: "agent-report/1.0", role: "requirements-analyst", feature, stage: "requirements_interview", outcome: "complete",
       model: "claude-test", effort: "high", body: { spec_path: rel, spec_version: 3, open_assumptions: [] },
     });
-    const branch = e.feature(feature)!.state.branch;
+    const branch = e.feature("acme", feature)!.state.branch;
     expect(report.commit).toBe(git(w.config, "rev-parse", `refs/heads/${branch}`));
     expect(report.commit).not.toBe(git(decoy, "rev-parse", "HEAD"));
-    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, stage: "security_testability_review", active_agents: 0, activity: expect.any(String) }]);
+    expect((await c.ok("engine.status")).features).toEqual([{ id: feature, project: "acme", stage: "security_testability_review", active_agents: 0, activity: expect.any(String) }]);
     void e;
   });
 

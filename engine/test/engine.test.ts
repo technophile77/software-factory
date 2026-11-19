@@ -310,7 +310,7 @@ describe("FR-14 interrupted runs", () => {
     const e1 = await boot(w);
     const c = await connect(w);
     const feature = (await c.ok("feature.start", { request: "Export" })).feature as string;
-    const tools = e1.interviewTools(feature, w.worktree);
+    const tools = e1.interviewTools("acme", feature, w.worktree);
     expect((await tools.interview_ask({ text: "Q?", why: "w" })).ok).toBe(true);
     const [run] = new EngineRecord(w.home).runs();
     expect(run).toMatchObject({ feature, role: "requirements-analyst", status: "running", worktree: w.worktree });
@@ -333,10 +333,10 @@ describe("FR-14 interrupted runs", () => {
     expect(report.summary).toContain("interrupted");
     expect(new EngineRecord(w.home).run(run!.id)).toMatchObject({ status: "running", resumes: 1 });
     // The resumed run is the one the analyst's tools continue; the channel serves again.
-    expect((await e2.interviewTools(feature, w.worktree).interview_propose_assumption({ text: "A.", why: "w" })).ok).toBe(true);
+    expect((await e2.interviewTools("acme", feature, w.worktree).interview_propose_assumption({ text: "A.", why: "w" })).ok).toBe(true);
     expect(new EngineRecord(w.home).runs()).toHaveLength(1);
     const c2 = await connect(w);
-    expect((await c2.ok("engine.status")).features).toEqual([{ id: feature, stage: "requirements_interview", active_agents: 0, activity: expect.any(String) }]);
+    expect((await c2.ok("engine.status")).features).toEqual([{ id: feature, project: "acme", stage: "requirements_interview", active_agents: 0, activity: expect.any(String) }]);
   });
 
   it("an append the engine committed but didn't record before a kill is still its own", async () => {
@@ -344,12 +344,12 @@ describe("FR-14 interrupted runs", () => {
     const e1 = await boot(w);
     const c = await connect(w);
     const feature = (await c.ok("feature.start", { request: "Export" })).feature as string;
-    const f = e1.feature(feature)!;
+    const f = e1.feature("acme", feature)!;
     const key = f.chainKey;
     const rec = new EngineRecord(w.home);
     const head = rec.chain(key)!;
     expect(head.pending).toBeUndefined();
-    await e1.interviewTools(feature, w.worktree).interview_ask({ text: "Q?", why: "w" });
+    await e1.interviewTools("acme", feature, w.worktree).interview_ask({ text: "Q?", why: "w" });
     await e1.crash();
     engines = engines.filter((x) => x !== e1);
     // Roll the record back to where a kill between commit and record would leave it.
@@ -357,7 +357,7 @@ describe("FR-14 interrupted runs", () => {
     const back = new EngineRecord(w.home);
     back.setChain(key, { seq: head.seq, head: head.head, pending: { seq: now.seq, head: now.head } });
     const e2 = await boot(w);
-    expect(e2.feature(feature)!.chainIntact).toBe(true);
+    expect(e2.feature("acme", feature)!.chainIntact).toBe(true);
     expect(new EngineRecord(w.home).chain(key)).toEqual({ seq: now.seq, head: now.head });
   });
 });

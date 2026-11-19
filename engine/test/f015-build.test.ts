@@ -148,11 +148,11 @@ describe("F-015 M1: stage 5 on the engine", () => {
     const seen = { refused: [] as string[], first: "" };
     const s = scriptedSdk({ analyst: async function* () {}, reviewer: async function* () {}, developer: developer(() => feature, seen), tester: tester(() => feature, seen) });
     const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh });
-    await until("the merged branches", () => e.feature(feature)?.state.build.actions.includes("branches_merged") ?? false, 30_000).catch((err) => {
-      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature(feature)?.state.build.actions)}; last ${JSON.stringify(e.feature(feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-15).map((l) => l.message ?? l.action).join(" | ")}`);
+    await until("the merged branches", () => e.feature("acme", feature)?.state.build.actions.includes("branches_merged") ?? false, 30_000).catch((err) => {
+      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature("acme", feature)?.state.build.actions)}; last ${JSON.stringify(e.feature("acme", feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-15).map((l) => l.message ?? l.action).join(" | ")}`);
     });
 
-    expect(e.feature(feature)!.state.build.actions).toEqual(["dependencies_merged", "done", "done", "branches_merged"]);
+    expect(e.feature("acme", feature)!.state.build.actions).toEqual(["dependencies_merged", "done", "done", "branches_merged"]);
     expect(stageOf(e, feature)).toBe("orchestrator_review");
     expect(s.count.developer).toBe(1);
     expect(s.count.tester).toBe(1);
@@ -166,7 +166,7 @@ describe("F-015 M1: stage 5 on the engine", () => {
     const local = localClone(w.home);
     expect(git(local, "remote")).toBe("");
     expect(git(local, "config", "--get", "credential.helper")).toBe("");
-    const branch = e.feature(feature)!.state.branch;
+    const branch = e.feature("acme", feature)!.state.branch;
     expect(git(local, "for-each-ref", "--format=%(refname:short)", "refs/heads/").split("\n").sort()).toEqual(["feature/" + feature + "/dev", "feature/" + feature + "/test", branch, "main"].sort());
     const head = git(local, "rev-parse", branch);
     expect(git(local, "ls-tree", "-r", "--name-only", head).split("\n").sort()).toEqual(["README.md", "src/export.js", "test/export.test.js"]);
@@ -323,19 +323,19 @@ process.exit(1);
     const tokenApi = { reachableRepos: async () => [{ name: "example-org/acme-web", private: true }, { name: "example-org/acme-config", private: true }, { name: "someone/public-lib", private: false }], workflowWriteRefused: async (repo: string) => (probes.push(repo), true) };
     const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, semgrep: { program: semgrep }, pulls: () => pulls, prPollMs: 50, tokenCheck: () => tokenApi });
     const stopAt = ["green", "failed", "refused"];
-    await until("the ready pull request", () => stopAt.some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000).catch((err) => {
-      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature(feature)?.state.build.actions)}; last ${JSON.stringify(e.feature(feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-4).map((l) => l.message ?? l.action).join(" | ")}`);
+    await until("the ready pull request", () => stopAt.some((a) => e.feature("acme", feature)?.state.build.actions.includes(a as never)), 90_000).catch((err) => {
+      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature("acme", feature)?.state.build.actions)}; last ${JSON.stringify(e.feature("acme", feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-4).map((l) => l.message ?? l.action).join(" | ")}`);
     });
 
-    expect(JSON.stringify(e.feature(feature)!.state.build.events.at(-1))).not.toMatch(/"(failed|refused)"/);
-    expect(e.feature(feature)!.state.build.actions).toEqual([
+    expect(JSON.stringify(e.feature("acme", feature)!.state.build.events.at(-1))).not.toMatch(/"(failed|refused)"/);
+    expect(e.feature("acme", feature)!.state.build.actions).toEqual([
       "dependencies_merged", "done", "done", "branches_merged", "tests_failed", "product_code", "done", "passed",
       "blocking_finding", "done", "passed", "clean", "pass", "opened", "green",
     ]);
     expect(stageOf(e, feature)).toBe("pull_request");
 
     // AC-11: the feature branch, and only it, was pushed with the owner's token; the PR opened as a draft and went ready on green.
-    const branch = e.feature(feature)!.state.branch;
+    const branch = e.feature("acme", feature)!.state.branch;
     const pushed = git(w.root, "--git-dir", pulls.bare, "rev-parse", `refs/heads/${branch}`);
     expect(git(w.root, "--git-dir", pulls.bare, "for-each-ref", "--format=%(refname:short)", "refs/heads/").split("\n").sort()).toEqual([branch, "main"].sort());
     expect(pulls.created).toEqual([{ title: `${feature}: Export orders as CSV`, head: branch, base: "main", draft: true }]);
@@ -356,10 +356,10 @@ process.exit(1);
     pulls.posted.push({ id: 900, body: "/changes please rewrite it", author: "someone", authorId: 42, authorType: "User", createdAt: "", updatedAt: "", url: "" });
     const polls = pulls.commentReads;
     await until("two more looks at the PR", () => pulls.commentReads >= polls + 2);
-    expect(e.feature(feature)!.state.build.actions.at(-1)).toBe("green");
+    expect(e.feature("acme", feature)!.state.build.actions.at(-1)).toBe("green");
     pulls.pr = { ...pulls.pr!, state: "closed", merged: true, mergeCommit: "c".repeat(40), mergedBy: "acme-owner" };
-    await until("the owner's merge", () => e.feature(feature)?.state.build.actions.includes("owner_merged") ?? false);
-    expect(e.feature(feature)!.state.build.events.at(-1)).toMatchObject({ action: "owner_merged", merge_commit: "c".repeat(40), merged_by: "acme-owner" });
+    await until("the owner's merge", () => e.feature("acme", feature)?.state.build.actions.includes("owner_merged") ?? false);
+    expect(e.feature("acme", feature)!.state.build.events.at(-1)).toMatchObject({ action: "owner_merged", merge_commit: "c".repeat(40), merged_by: "acme-owner" });
     expect(stageOf(e, feature)).toBe("pull_request");
     expect(JSON.parse(git(w.config, "show", "factory/state:prs/example-org/acme-web/1.json")).history.at(-1)).toMatchObject({ action: "merged_on_github", merge_commit: "c".repeat(40) });
     expect(s.count.orchestrator).toBe(1);
@@ -381,7 +381,7 @@ process.exit(1);
     // FR-9: the judge sees the run report and both gate reports; PASS was decided by the engine from its checklist.
     expect(turns.judge).toContain("The engine's last test run report");
     expect(turns.judge).toContain("The Code Review report");
-    const pass = e.feature(feature)!.state.build.events.find((x) => x.action === "pass")!;
+    const pass = e.feature("acme", feature)!.state.build.events.find((x) => x.action === "pass")!;
     expect(pass).toMatchObject({ verdict: "PASS", judge_verdict: "PASS", report: `runs/${feature}/validation/validation-judge-1.json` });
     // AC-7: the classifier sees the failure; the developer's fix turn carries it too.
     expect(turns.classify).toContain("test/export.test.js#May");
@@ -397,7 +397,7 @@ process.exit(1);
     expect(git(w.config, "show", `factory/state:runs/${feature}/test_run/run-1.log`)).toContain("1 failed");
     // The fix is on the feature branch, committed as the owner.
     const local = localClone(w.home);
-    expect(git(local, "show", `${e.feature(feature)!.state.branch}:src/export.js`)).toContain("fixed");
+    expect(git(local, "show", `${e.feature("acme", feature)!.state.branch}:src/export.js`)).toContain("fixed");
   }, 150_000);
 });
 
@@ -471,21 +471,21 @@ require("fs").writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ resul
     const pulls = new MovingMainPulls(path.join(w.root, "remote", "example-org", "acme-web.git"), w.root);
     const tokenApi = { reachableRepos: async () => [{ name: "example-org/acme-web", private: true }, { name: "example-org/acme-config", private: true }, { name: "someone/public-lib", private: false }], workflowWriteRefused: async () => true };
     const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, semgrep: { program: semgrep }, pulls: () => pulls, prPollMs: 50, tokenCheck: () => tokenApi });
-    await until("the ready pull request", () => ["green", "failed", "refused", "escalate"].some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000).catch((err) => {
-      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature(feature)?.state.build.actions)}; last ${JSON.stringify(e.feature(feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-6).map((l) => l.message ?? l.action).join(" | ")}`);
+    await until("the ready pull request", () => ["green", "failed", "refused", "escalate"].some((a) => e.feature("acme", feature)?.state.build.actions.includes(a as never)), 90_000).catch((err) => {
+      throw new Error(`${(err as Error).message}; actions ${JSON.stringify(e.feature("acme", feature)?.state.build.actions)}; last ${JSON.stringify(e.feature("acme", feature)?.state.build.events.at(-1))}; log: ${w.log.lines.slice(-6).map((l) => l.message ?? l.action).join(" | ")}`);
     });
 
-    expect(e.feature(feature)!.state.build.actions).toEqual([
+    expect(e.feature("acme", feature)!.state.build.actions).toEqual([
       "dependencies_merged", "done", "done", "branches_merged", "passed", "clean", "pass", "opened",
       "main_moved", "conflict", "done", "resolved", "passed", "clean", "pass", "opened", "green",
     ]);
-    const conflict = e.feature(feature)!.state.build.events.find((x) => x.action === "conflict")!;
+    const conflict = e.feature("acme", feature)!.state.build.events.find((x) => x.action === "conflict")!;
     expect(conflict).toMatchObject({ from: "main", files: ["README.md"], owners: { developer: ["README.md"], tester: [] } });
     expect(marked).toMatch(/^<{7} [\s\S]*Exports orders as CSV[\s\S]*Now with a changelog[\s\S]*^>{7} /m);
     expect(resolveTurn).toContain("A merge into this branch conflicted");
     expect(resolveTurn).toContain('"files":["README.md"]');
     // Main was merged in, never rebased: the pushed head holds the moved main and the resolution.
-    const pushed = git(w.root, "--git-dir", pulls.bare, "rev-parse", `refs/heads/${e.feature(feature)!.state.branch}`);
+    const pushed = git(w.root, "--git-dir", pulls.bare, "rev-parse", `refs/heads/${e.feature("acme", feature)!.state.branch}`);
     expect(git(w.root, "--git-dir", pulls.bare, "merge-base", "--is-ancestor", pulls.moved, pushed)).toBe("");
     expect(git(w.root, "--git-dir", pulls.bare, "show", `${pushed}:README.md`)).toBe("acme web\n\nExports orders as CSV.\n\nNow with a changelog.");
     expect(pulls.created).toHaveLength(1);
@@ -512,7 +512,7 @@ describe("a developer that reports blocked", () => {
     };
     const s = scriptedSdk({ analyst: async function* () {}, reviewer: async function* () {}, developer: dev, tester: async function* () {} });
     const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh });
-    await until("the stop", () => e.feature(feature)?.state.build.actions.includes("failed") ?? false, 30_000);
+    await until("the stop", () => e.feature("acme", feature)?.state.build.actions.includes("failed") ?? false, 30_000);
     const rep = JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/build_and_test_prep/software-developer-1.json`));
     expect(rep.summary).toMatch(/stopped: it reported blocked\. The agent's summary: Blocked: the spec leaves the runtime/);
     expect(rep.body).toMatchObject({ not_done: ["everything: no runtime decision"] });
@@ -572,11 +572,11 @@ require("fs").writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ resul
 
   it("AC-32: with every check met and the orchestrator approving, the engine merges at the pushed head and records it", async () => {
     const { w, e, s, feature, pulls, turns } = await toReady(true);
-    await until("the auto-merge", () => settled.some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000);
-    expect(e.feature(feature)!.state.build.actions.slice(-3)).toEqual(["opened", "green", "engine_merged"]);
-    const pushed = git(w.root, "--git-dir", pulls.bare, "rev-parse", `refs/heads/${e.feature(feature)!.state.branch}`);
+    await until("the auto-merge", () => settled.some((a) => e.feature("acme", feature)?.state.build.actions.includes(a as never)), 90_000);
+    expect(e.feature("acme", feature)!.state.build.actions.slice(-3)).toEqual(["opened", "green", "engine_merged"]);
+    const pushed = git(w.root, "--git-dir", pulls.bare, "rev-parse", `refs/heads/${e.feature("acme", feature)!.state.branch}`);
     expect(pulls.merges).toEqual([pushed]);
-    expect(e.feature(feature)!.state.build.events.at(-1)).toMatchObject({ action: "engine_merged", pr: 1, merge_commit: "d".repeat(40), report: `runs/${feature}/auto_merge/orchestrator-1.json` });
+    expect(e.feature("acme", feature)!.state.build.events.at(-1)).toMatchObject({ action: "engine_merged", pr: 1, merge_commit: "d".repeat(40), report: `runs/${feature}/auto_merge/orchestrator-1.json` });
     expect(JSON.parse(git(w.config, "show", "factory/state:prs/example-org/acme-web/1.json")).history.at(-1)).toMatchObject({ action: "merged_by_engine", merge_commit: "d".repeat(40) });
     expect(JSON.parse(git(w.config, "show", `factory/state:runs/${feature}/auto_merge/orchestrator-1.json`))).toMatchObject({ role: "orchestrator", body: { gate: "auto_merge" } });
     expect(pulls.posted.at(-1)!.body).toMatch(/^The factory engine merged this pull request/);
@@ -588,8 +588,8 @@ require("fs").writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ resul
 
   it("AC-34: the orchestrator's hold merges nothing and asks the owner; B sends its reason to the developer", async () => {
     const { w, gh, e, feature, pulls } = await toReady(false);
-    await until("the hold", () => settled.some((a) => e.feature(feature)?.state.build.actions.includes(a as never)), 90_000);
-    expect(e.feature(feature)!.state.build.actions.at(-1)).toBe("auto_held");
+    await until("the hold", () => settled.some((a) => e.feature("acme", feature)?.state.build.actions.includes(a as never)), 90_000);
+    expect(e.feature("acme", feature)!.state.build.actions.at(-1)).toBe("auto_held");
     expect(pulls.merges).toEqual([]);
     const held = items(w).find((i) => i.record.effect?.type === "automergehold")!;
     expect(held.record).toMatchObject({ kind: "decision", feature, effect: { note: "Docs: The README doesn't mention the export." } });
@@ -601,16 +601,16 @@ require("fs").writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ resul
     await pollUntil(w, "the hold's issue", () => mirrored() !== undefined);
     const issue = mirrored()!;
     await act(w, gh, issue, "choose:B", false);
-    await pollUntil(w, "the owner's B", () => e.feature(feature)?.state.build.actions.includes("changes") ?? false);
-    expect(e.feature(feature)!.state.build.events.find((x) => x.action === "changes")).toMatchObject({ note: "Docs: The README doesn't mention the export." });
+    await pollUntil(w, "the owner's B", () => e.feature("acme", feature)?.state.build.actions.includes("changes") ?? false);
+    expect(e.feature("acme", feature)!.state.build.events.find((x) => x.action === "changes")).toMatchObject({ note: "Docs: The README doesn't mention the export." });
   }, 150_000);
 
   it("AC-32: a repo above the setting is never auto-merged and no model sees it", async () => {
     const { e, s, feature, pulls } = await toReady(true, "rapid-prototype");
-    await until("the ready pull request", () => e.feature(feature)?.state.build.actions.includes("green") ?? false, 90_000);
+    await until("the ready pull request", () => e.feature("acme", feature)?.state.build.actions.includes("green") ?? false, 90_000);
     const polls = pulls.commentReads;
     await until("two more looks at the PR", () => pulls.commentReads >= polls + 2);
-    expect(e.feature(feature)!.state.build.actions.at(-1)).toBe("green");
+    expect(e.feature("acme", feature)!.state.build.actions.at(-1)).toBe("green");
     expect(pulls.merges).toEqual([]);
     expect(s.count.orchestrator ?? 0).toBe(0);
   }, 150_000);

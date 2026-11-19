@@ -602,6 +602,13 @@ export class World {
     return r.feature;
   }
 
+  /** Starts a feature through one project's own channel (F-023: ids are numbered per project). */
+  async startFeatureIn(p: Project, request = "Let people export their data as CSV"): Promise<string> {
+    const r = await rpcOnce(this.socket(p), "feature.start", { request });
+    if (r.error || r.result === undefined) throw new Error(`feature.start failed: ${JSON.stringify(r.error ?? r)}`);
+    return (r.result as { feature: string }).feature;
+  }
+
   /** Opens a session and approves it on the fake phone, unless this run's earlier approval covers it (F-018 FR-13). */
   async approvedSession(feature: string, asUserId?: number): Promise<string> {
     const open = await this.ok("interview.open", { feature });
