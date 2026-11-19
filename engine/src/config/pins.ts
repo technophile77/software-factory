@@ -33,6 +33,8 @@ export interface Pin {
    * this factory has no chain record of are trusted as they were at this commit, never as anything later.
    */
   state_commit?: string | null;
+  /** F-023 FR-7 (e): the factory whose lease the owner agreed to take over through confirm; cleared once taken. */
+  takeover?: string;
 }
 
 export type PinCheck =

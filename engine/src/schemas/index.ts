@@ -2,6 +2,7 @@ import { z } from "zod";
 import { endpointsFile, engineFile, limitsFile, manifestFile, modelsFile, projectFile, projectsFile } from "./config";
 import { ROLE_BODIES, modelReport, storedReport } from "./agent-report";
 import { advisorAnswer } from "./advisor-answer";
+import { factoryLease } from "./factory-lease";
 import { filedAlerts } from "./filed-alerts";
 import { inboxRecord } from "./inbox-record";
 import { consoleAnswer, inboxPrivate } from "./inbox-local";
@@ -21,6 +22,7 @@ export const SCHEMAS: Record<string, z.ZodType> = {
   "console-answer-1": consoleAnswer,
   "pr-record-1": prRecord,
   "filed-alerts-1": filedAlerts,
+  "factory-lease-1": factoryLease,
   "agent-report-1": storedReport,
   ...Object.fromEntries(Object.keys(ROLE_BODIES).map((r) => [`agent-report-1.${r}`, modelReport(r as keyof typeof ROLE_BODIES)])),
   "run-review-1": runReview,

@@ -365,6 +365,11 @@ export class StateRepo {
     return this.changedPaths(base, remote);
   }
 
+  /** F-023 FR-7 (b): drops a lease commit the remote refused, back to `to`; the same steps as a fast-forward. */
+  rewind(from: string, to: string): Promise<void> {
+    return this.fastForward(from, to);
+  }
+
   /**
    * Moves factory/state forward to `to` (a descendant of `from`) and writes
    * the changed files from their blobs, as the first checkout does.
