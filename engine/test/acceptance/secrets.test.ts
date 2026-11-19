@@ -99,7 +99,8 @@ describe("SR-1: secrets stay out of logs, Git, inbox items, argument lists and p
     expect(w.store.accessed.length).toBeGreaterThan(0);
     const own = new Set([CREDENTIAL_NAMES.model, ...w.projects.map((p) => CREDENTIAL_NAMES.factoryToken(p.name))]);
     // F-015 FR-19: a project's per-owner token names are its own too.
-    const ownerToken = (name: string) => w.projects.some((p) => name.startsWith(`${CREDENTIAL_NAMES.factoryToken(p.name)}/`) && name === CREDENTIAL_NAMES.ownerToken(p.name, name.slice(CREDENTIAL_NAMES.factoryToken(p.name).length + 1)));
+    const projects = w.projects;
+    const ownerToken = (name: string) => projects.some((p) => name.startsWith(`${CREDENTIAL_NAMES.factoryToken(p.name)}/`) && name === CREDENTIAL_NAMES.ownerToken(p.name, name.slice(CREDENTIAL_NAMES.factoryToken(p.name).length + 1)));
     for (const name of w.store.accessed) expect(own.has(name) || ownerToken(name), name).toBe(true);
     expect(w.store.accessed).toContain(CREDENTIAL_NAMES.factoryToken(w.project().name));
   });
