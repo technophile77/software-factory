@@ -515,13 +515,14 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
-## Role policy — v2.9
+## Role policy — v2.10
 
 - Status: Approved (v2.2); v2.3 draft, awaiting owner approval (H-0040);
   v2.4 approved (H-0061, H-0076); v2.5 approved (H-0083); v2.7 approved
   (H-0201, ADR 0026; owner, 2026-11-14, decision card, as drafted); v2.8
   approved (F-020 H-0244; owner, 2026-11-14, decision card); v2.9 approved
-  (F-015 H-0192 and SR-7; owner, 2026-11-14, decision cards)
+  (F-015 H-0192 and SR-7; owner, 2026-11-14, decision cards); v2.10 approved
+  (H-0264; owner, 2026-11-19, decision card)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
@@ -558,7 +559,9 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   endpoint session that must write its report file gets `Write`, for that
   one path (F-020 A-2, SR-11). No manifest changes. v2.9 (F-015 H-0192,
   SR-7) adds the read-only spec folder for code repo sessions and the
-  ask-list subcommands; both tighten, so no manifest changes.
+  ask-list subcommands; both tighten, so no manifest changes. v2.10
+  (H-0264) lets agents read `.env` example files despite the `**/.env.*`
+  deny; no manifest changes.
 
 **Location:** the `policy:` key of the project manifest (change-controlled),
 with optional per-repo overrides under `repos[].policy`. Effective policy
@@ -573,6 +576,12 @@ list at least one tool. Every role with a file tool (`Read`, `Grep`, `Glob`,
 `Edit`, `Write`, `Bash`, `Skill`) must list at least one read glob. Every role
 must deny reading secret files and, from v2.2, the engine's channel file:
 `**/.env`, `**/.env.*`, `**/.envrc`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/*.pfx`, `**/*.jks`, `**/*.keystore`, `**/id_rsa*`, `**/id_dsa*`, `**/id_ecdsa*`, `**/id_ed25519*`, `**/.npmrc`, `**/.pypirc`, `**/.netrc`, `**/.git-credentials`, `**/*.tfvars`, `**/credentials*.json`, `**/*.tfstate`, `**/*.tfstate.*`, `**/.aws/credentials`, `**/.docker/config.json`, `**/*.ppk`, `**/kubeconfig`, `**/.kube/config`, `.factory/engine.json`, `**/.factory/engine.json`.
+From v2.10 (H-0264, owner, 2026-11-19) a file named exactly `.env.example`,
+`.env.sample` or `.env.template` (any case) may be read even though it
+matches `**/.env.*`: by convention these hold placeholders, and blocking
+them stopped every search over a repo that has one. Only that deny is
+waived, only for reading, and a project's own extra deny of such a name
+still holds.
 Every core role must be present, and every role that may write outside
 `.factory/` must deny the change-controlled paths: `CLAUDE.md`, `**/CLAUDE.md`, `CLAUDE.local.md`, `**/CLAUDE.local.md`, `.claude/**`, `.mcp.json`, `.github/**`, `.gitignore`, `.gitattributes`, `.husky/**`, `.pre-commit-config.yaml`, `lefthook.yml`, `osv-scanner.toml`, `agents/**`, `skills/**`, `plugins/**`, `.claude-plugin/**`, `workflows/**`, `**/.claude/**`, `.envrc`, `**/.envrc`, `.git`, `.git/**`, `.gitmodules`, `.vscode/**`, `.devcontainer/**`, and from
 v2.6 (H-0107) the source documents the engine stores for F-009:
