@@ -69,6 +69,8 @@ agents:
 standards: {}
 
 settings:
+  budget:                           # ADR 0012; the engine refuses a project without it
+    mode: <subscription | tokens>   # subscription: the owner's Claude plan; tokens: API billing with caps
   interview_sign_in:                # F-018 FR-15; pinned, a change needs `factory-engine confirm`
     every: <never | engine_start | session | hours>   # never only at rapid-prototype
     # hours: <1-168>                # only with every: hours

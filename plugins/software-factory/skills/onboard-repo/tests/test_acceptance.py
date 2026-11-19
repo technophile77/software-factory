@@ -986,7 +986,7 @@ def filled_manifest(complexity=None):
                      ("<project-specific context every agent reads>", "Nothing special."),
                      ('"<SOURCE_GLOBS>"', '"src/**"'), ('"<TEST_GLOBS>"', '"test/**"'),
                      ("<BUILD_COMMANDS>", '"npm"'), ("<TEST_COMMANDS>", '"npm"'), ("<REGISTRIES>", '"registry.npmjs.org"'),
-                     ("<never | engine_start | session | hours>", "never")):
+                     ("<never | engine_start | session | hours>", "never"), ("<subscription | tokens>", "subscription")):
         text = text.replace(old, new)
     if complexity:
         text = text.replace("# complexity: <simple | moderate | complex>", f"complexity: {complexity}")
