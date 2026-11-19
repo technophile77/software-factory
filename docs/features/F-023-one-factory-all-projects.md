@@ -1,7 +1,7 @@
 # Feature: One factory for all projects
 
 - **Id:** F-023
-- **Status:** Approved (owner sign-off 2026-11-19 02:26Z, decision card); v4 adds the Security and Testability Review's requirements, pending the owner
+- **Status:** In development; approved (owner sign-off 2026-11-19 02:26Z, decision card); v4 with the Security and Testability Review's requirements approved 2026-11-19 21:30Z; readiness gate passed
 - **Requested by / date:** Alex, 2026-11-15 ("it would be nice to have one
   factory that works on all projects that I give it"); v2: Alex,
   2026-11-19 02:00Z (one factory per machine; portable projects; feature
@@ -203,12 +203,12 @@ What the engine does today (main at f7df5f7):
 | SR-4 | A token secret is read only for the project its name gives; a test fails if any code path passes one project's token to another's GitHub client (AC-10). | Analyst (F-015 SR-2) | Approved (owner, 2026-11-19 02:26Z, decision card) |
 | SR-5 | The engine index is owner-only, holds names, paths and channel addresses only, and clients apply today's `engine.json` checks to it and still check each channel's pid. | Analyst (F-005 SR-1) | Approved (owner, 2026-11-19 02:26Z, decision card) |
 | SR-7 | The checkout record in a code repo, which may be public, holds only the project name, feature id, a random factory id and times; nothing about the PC, user, paths or the config repo. | Analyst (owner rule 2026-11-12) | Approved (owner, 2026-11-19 02:26Z, decision card) |
-| SR-8 | Onboarding asks for a branch ruleset on `factory/checkout` in every code repo (no deletion, no force push), and the engine checks it at start. Each checkout commit must descend from the last one this factory saw; a rewrite or deletion stops every project's writes to that repo and files a Security item in each project that uses it. | Security and Testability Review #1 | Proposed (v4) |
-| SR-9 | The checkout record holds a project key (first 16 hex characters of SHA-256 of the config repo URL), not the project name; the console shows the name for projects on this factory and "another project" otherwise. | Security and Testability Review #2 | Proposed (v4) |
-| SR-10 | Only the interface proposal for the shared repo crosses between projects: written for that repo, secrets-scanned, with no text copied from either spec, and handed to the other project's analyst only as a structured, validated result (S9.3). When the projects' owners differ, each owner approves sending it before it is filed in the other's inbox. | Security and Testability Review #3 | Proposed (v4) |
-| SR-11 | The engine refuses any push, branch, pull request, issue or label in a repo the feature's signed-off spec doesn't name as changed, and files a Security item; a read repo's worktree has no push credentials. | Security and Testability Review #4 | Proposed (v4) |
-| SR-12 | The one-factory lock is owner-only and exclusive (Windows: first-instance pipe with an owner-only DACL; elsewhere a socket in an owner-only folder). A held name is reported with its holder's pid; a lock whose holder is gone is cleared. | Security and Testability Review #5 | Proposed (v4) |
-| SR-13 | The engine's feature lookup takes a project and an id together; the bare-id lookup is removed so the compiler finds every caller. AC-6 runs two projects that both have F-001, F-002 and S-0001. | Security and Testability Review #6 | Proposed (v4) |
+| SR-8 | Onboarding asks for a branch ruleset on `factory/checkout` in every code repo (no deletion, no force push), and the engine checks it at start. Each checkout commit must descend from the last one this factory saw; a rewrite or deletion stops every project's writes to that repo and files a Security item in each project that uses it. | Security and Testability Review #1 | Approved (owner, 2026-11-19 21:30Z, decision card) |
+| SR-9 | The checkout record holds a project key (first 16 hex characters of SHA-256 of the config repo URL), not the project name; the console shows the name for projects on this factory and "another project" otherwise. | Security and Testability Review #2 | Approved (owner, 2026-11-19 21:30Z, decision card) |
+| SR-10 | Only the interface proposal for the shared repo crosses between projects: written for that repo, secrets-scanned, with no text copied from either spec, and handed to the other project's analyst only as a structured, validated result (S9.3). When the projects' owners differ, each owner approves sending it before it is filed in the other's inbox. | Security and Testability Review #3 | Approved (owner, 2026-11-19 21:30Z, decision card) |
+| SR-11 | The engine refuses any push, branch, pull request, issue or label in a repo the feature's signed-off spec doesn't name as changed, and files a Security item; a read repo's worktree has no push credentials. | Security and Testability Review #4 | Approved (owner, 2026-11-19 21:30Z, decision card) |
+| SR-12 | The one-factory lock is owner-only and exclusive (Windows: first-instance pipe with an owner-only DACL; elsewhere a socket in an owner-only folder). A held name is reported with its holder's pid; a lock whose holder is gone is cleared. | Security and Testability Review #5 | Approved (owner, 2026-11-19 21:30Z, decision card) |
+| SR-13 | The engine's feature lookup takes a project and an id together; the bare-id lookup is removed so the compiler finds every caller. AC-6 runs two projects that both have F-001, F-002 and S-0001. | Security and Testability Review #6 | Approved (owner, 2026-11-19 21:30Z, decision card) |
 | SR-6 | Agents may not write `projects/`, `engine.yaml` or the engine index: they join the Role policy's denied paths, so an agent can't give the factory a project. | Analyst (F-005 SR-14) | Approved (owner, 2026-11-19 02:26Z, decision card) |
 
 ## 10. Interface requirements
@@ -231,7 +231,7 @@ after the owner approves their text:
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [x] Assumptions explicit (A-1, A-2 approved)
-- [ ] Blocking decisions resolved (spec sign-off; H-0257 to H-0263; Security and Testability Review not yet run)
+- [x] Blocking decisions resolved (spec signed off 02:26Z; Security and Testability Review run, SR-8 to SR-13 and the FR changes approved 21:30Z; H-0257 to H-0263 approved)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
@@ -239,4 +239,5 @@ after the owner approves their text:
 | 1 | 2026-11-15 | Draft from the owner's request, after reading what the engine already does | — |
 | 2 | 2026-11-19 | From the owner's messages 02:00Z and 02:04Z (a safety mechanism so two factories never write to the same project): one factory per PC (FR-1); a portable project file per project, moved between factories, with setup steps and a lease (FR-2 to FR-8); the onboarding skill or the owner gives the factory a project, so the `project add/remove` commands and the JSON registry go (old OQ-1 and OQ-2 closed); feature ids per project (FR-9, reverses F-007 SR-16 / OQ-10); every cross-project map keyed by project (FR-10); a repo is checked out only by a feature that changes it, with no configuration (FR-11, FR-11b, owner's messages 02:08Z and 02:19Z); overlapping changes settled by an Architecture decision filed in each project, joint only if every project's owner agrees (FR-11c, FR-11d, owner's message 02:22Z) | Owner's direction, 2026-11-19 02:00Z to 02:22Z (messages) |
 | 3 | 2026-11-19 | Spec v2 signed off as written, with A-1, A-2, SR-1 to SR-7 and H-0257 to H-0263; status Approved | Owner, 2026-11-19 02:26Z (decision card) |
-| 4 | 2026-11-19 | Security and Testability Review ([F-023-security-testability-review.md](F-023-security-testability-review.md)): 11 findings (0 Critical, 0 High, 6 Medium, 5 Low), none blocking; SR-8 to SR-13; FR-7 (f), (g); FR-11c no timeout; FR-11d round defined | — |
+| 4 | 2026-11-19 | Security and Testability Review ([F-023-security-testability-review.md](F-023-security-testability-review.md)): 11 findings (0 Critical, 0 High, 6 Medium, 5 Low), none blocking; SR-8 to SR-13; FR-7 (f), (g); FR-11c no timeout; FR-11d round defined | Owner, 2026-11-19 21:30Z (decision card, after Discuss first) |
+| 5 | 2026-11-19 | Readiness gate passed (all six checks); status In development | Orchestrator, 2026-11-19 |
