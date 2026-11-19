@@ -6,6 +6,7 @@ import type { Git } from "../git";
 import type { SecretsScanner } from "../gitleaks";
 import type { RolePolicy } from "../policy/role-policy";
 import { SecretFound } from "../state/state-repo";
+import { type CodeFiles, underCodeDir } from "./code-copies";
 import { Breach, pathBreach, writeBreaches } from "./write-check";
 
 /** H-0087: caps on what one session may change. */
@@ -31,6 +32,12 @@ export interface WorktreeCommitInput {
   limits: WorktreeLimits;
   /** F-015 FR-17: code-repo commits are the owner's; config-repo commits keep the engine's identity. */
   identity?: { name: string; email: string };
+  /**
+   * F-007 FR-15: the code copies the engine put in the worktree. They are
+   * never committed; any change to them, a new or missing file included,
+   * rejects the session (AC-22).
+   */
+  frozen?: CodeFiles;
 }
 
 export type WorktreeCommitResult =
@@ -82,8 +89,9 @@ function readNoFollow(full: string): Buffer {
  * whatever the agent wrote. The walk still finishes, so a breach anywhere is
  * still found.
  */
-function walk(root: string, base: Map<string, BaseEntry>, format: "sha1" | "sha256", limits: WorktreeLimits, breaches: Breach[]) {
+function walk(root: string, base: Map<string, BaseEntry>, format: "sha1" | "sha256", limits: WorktreeLimits, breaches: Breach[], frozen?: CodeFiles) {
   const seen = new Set<string>();
+  const frozenSeen = new Set<string>();
   const changed: Changed[] = [];
   // Every changed path, kept past a cap so the write rules still see them all.
   const touched: Array<{ path: string; mode: string }> = [];
@@ -105,6 +113,16 @@ function walk(root: string, base: Map<string, BaseEntry>, format: "sha1" | "sha2
       const full = path.join(dir, name);
       const r = rel ? `${rel}/${name}` : name;
       const st = fs.lstatSync(full);
+      if (frozen && underCodeDir(r)) {
+        if (st.isDirectory() && !st.isSymbolicLink()) visit(full, r);
+        else if (!st.isFile() || !frozen.has(r)) breaches.push({ path: r, reason: "not_allowed" });
+        else {
+          const want = frozen.get(r)!;
+          frozenSeen.add(r);
+          if (blobSha(readNoFollow(full), want.length === 64 ? "sha256" : "sha1") !== want) breaches.push({ path: r, reason: "not_allowed" });
+        }
+        continue;
+      }
       if (st.isDirectory()) {
         visit(full, r);
         continue;
@@ -133,6 +151,7 @@ function walk(root: string, base: Map<string, BaseEntry>, format: "sha1" | "sha2
     }
   };
   visit(root, "");
+  if (frozen) for (const r of frozen.keys()) if (!frozenSeen.has(r)) breaches.push({ path: r, reason: "not_allowed" });
   const removed = [...base.keys()].filter((p) => !seen.has(p) && base.get(p)!.mode !== "160000");
   if (!over && touched.length + removed.length > limits.maxFiles) over = "files changed";
   return { changed, touched, removed, over: over as WorktreeCap | null };
@@ -164,7 +183,7 @@ export async function commitWorktree(i: WorktreeCommitInput): Promise<WorktreeCo
     const m = /^(\d{6}) \w+ ([0-9a-f]{40,64}) +(\d+|-)\t(.*)$/s.exec(line);
     if (m) base.set(m[4]!, { mode: m[1]!, sha: m[2]!, size: m[3] === "-" ? -1 : Number(m[3]) });
   }
-  const { changed, touched, removed, over } = walk(i.worktree, base, format, i.limits, breaches);
+  const { changed, touched, removed, over } = walk(i.worktree, base, format, i.limits, breaches, i.frozen);
   if (touched.length === 0 && removed.length === 0 && breaches.length === 0) return { status: "unchanged" };
   if (over) {
     // No commit to check, so the rules are checked on the paths: a breach still files its Security item (AC-9).
