@@ -3,165 +3,198 @@
 - **Id:** F-023
 - **Status:** In review
 - **Requested by / date:** Alex, 2026-11-15 ("it would be nice to have one
-  factory that works on all projects that I give it")
-- **Spec version:** 1
-- **Depends on:** F-007 (engine, paths file, SR-5 pins, SR-13, SR-16),
-  F-015 v23 (per-project and per-owner tokens, FR-19, PR #115),
+  factory that works on all projects that I give it"); v2: Alex,
+  2026-11-19 02:00Z (one factory per machine; portable projects; feature
+  ids unique per project, not per engine; the onboarding skill gives the
+  factory a project, or the owner does it by hand; review every place where
+  uniqueness spreads across project boundaries)
+- **Spec version:** 2
+- **Depends on:** F-003 (onboarding skill), F-007 (engine, SR-5 pins,
+  SR-13, SR-16), F-015 v23 (per-project and per-owner tokens, FR-19),
   F-018 (`factory-engine interview`), F-021 v7 (`factory-engine inbox`
-  console and watch mode), F-020 (JSON default for agent data)
+  console), F-020 (JSON default; hand-edited config stays YAML)
 
 ## 1. Objective and business purpose
-The owner wants to hand the factory a project and have the one running
-factory pick it up, next to every other project, and to see all of them in
-one place.
+The owner wants one factory per PC that works on every project he gives it,
+and projects that can move from one factory to another and carry on where
+they left off.
 
-What the engine does today (main at 9334d79):
+What the engine does today (main at f7df5f7):
 
-- **One engine process already runs several projects.** `factory-engine
-  start` reads every config repo listed in `factory-projects.local.yaml` in
-  the master clone and runs them side by side; a project that fails is
-  stopped without stopping the others. Feature ids are unique across the
-  engine (F-007 SR-16).
-- **Each project is already kept apart:** its own GitHub token
-  (`factory-token/<project>`, plus `factory-token/<project>/<owner>` for
-  repos of another owner, F-015 FR-19), its own `factory/state` branch and
-  `.factory/` worktree, its own pinned owner keys (SR-5), its own control
-  channel (pipe or socket) and `engine.json`, its own inbox issues and
-  sign-in setting.
-- **The gaps the owner hits:**
-  1. Giving the factory a project means hand-editing the YAML list (which
-     must stay owner-only on Windows), running `factory-engine confirm
-     --project <path>`, then restarting the engine, which stops every other
-     project's work. `confirm` ends with "Restart the engine to run the
-     project."
-  2. The console (`factory-engine inbox`) and `factory-engine interview`
-     find the engine through the folder they run in, so they see one
-     project at a time. Run outside a project folder they refuse.
-  3. The console's status lines (F-021 v7) already list features from every
-     project, but don't say which project each belongs to.
-  4. `factory-engine start` has to run from the master clone or be given
-     `--master`.
+- **One engine process already runs several projects**, listed by path in
+  `factory-projects.local.yaml` in the master clone. A project that fails
+  is stopped without stopping the others.
+- **Each project already has its own** GitHub token(s) (F-015 FR-19),
+  `factory/state` branch, pinned owner keys (SR-5), control channel,
+  inbox issues and sign-in setting.
+- **The gaps:**
+  1. Nothing stops a second engine on the same PC (`--home` gives it a
+     second engine folder).
+  2. Adding a project means hand-editing the shared list, running
+     `factory-engine confirm`, then restarting the engine, which interrupts
+     every other project. The onboarding skill doesn't do it.
+  3. Feature ids are unique across the whole engine (F-007 SR-16, OQ-10),
+     so a project's ids skip numbers taken by other projects.
+  4. Engine-folder state is keyed by the config repo's **path** (pins,
+     run records, chain heads, filed-alert keys, console files). Moving a
+     project to another folder or PC loses it, so it can't pick up where it
+     left off.
+  5. The console and `interview` find the engine through the folder they
+     run in, so they see one project at a time.
 
 ## 2. Expected behavior
-- `factory-engine project add <config repo path>` gives the factory a
-  project. It runs today's checks and the SR-5 confirm (type the project
-  name, approve the GitHub device sign-in), checks the project's token is
-  stored, records the project in the registry, and the running engine
-  starts it within a few seconds. Other projects carry on untouched.
-- `factory-engine project list` shows every project with its state
-  (running, stopped with the reason, disabled, waiting for a confirm) and
-  config repo path.
-- `factory-engine project remove <name>` stops that project in the running
-  engine and takes it out of the registry. Its config repo, `factory/state`
-  history, issues and pins are kept, so adding it back resumes where it was.
-  It asks whether to also delete the project's token secrets (default: keep).
-- `factory-engine inbox`, run from any folder, lists the open items of
-  every running project, each labelled with its project name, and its watch
-  mode shows every project's features as `<project> F-nnn: <status>`.
-  `--project <name or path>` narrows it to one project, as today. Each
-  project's console session still follows that project's
-  `settings.interview_sign_in`.
-- `factory-engine interview <feature id>` works from any folder: the engine
-  knows which project the id belongs to. Without an id and outside a
-  project folder it asks which project first.
-- `factory-engine start` works from any folder once `engine.yaml` names the
-  master clone (`master:`), as it already names `gitleaks:`.
+- **One factory per PC.** Starting a second engine as the same OS user
+  fails with "A factory is already running on this PC (pid N)", whatever
+  `--home` or `--master` it was given.
+- **A project file per project.** The factory serves every project that
+  has a file in `<master clone>/projects/` (git-ignored), named
+  `<project name>.yaml`:
+
+  ```yaml
+  # One project this factory serves (F-023). Move this file to another
+  # factory to move the project.
+  name: example-project
+  config_repo:
+    url: https://github.com/example-owner/example-project-factory
+    path: /path/to/example-project-factory   # this PC's clone
+  ```
+
+- **Giving the factory a project** is the onboarding skill's last step:
+  it writes the project file and lists the setup steps left. The owner can
+  also write or copy the file by hand. The running factory sees a new or
+  changed file within a few seconds and starts the project without touching
+  the others; deleting the file stops it.
+- **Setup steps** the factory checks, in order, and shows in the console
+  as "needs setup" with the exact command until each is done:
+  1. The config repo clone is at `config_repo.path` (if it's missing, the
+     factory clones `config_repo.url` there once the token is stored).
+  2. The project's token(s) are stored (`factory-engine secret set
+     factory-token/<name>`, plus any per-owner tokens).
+  3. The owner confirms the project on this factory (`factory-engine
+     confirm --project <name>`, the SR-5 GitHub device sign-in).
+  4. No other factory is serving the project (the lease, FR-7).
+- **Moving a project:** stop it on the old factory (delete its file there,
+  or that factory is gone), copy the file to the new factory, do the setup
+  steps. Interviews, inbox items, build state and pull requests carry on
+  from `factory/state` and GitHub. What stays on the old PC: console
+  private detail and agent sessions in progress (the run restarts from its
+  last commit).
+- **Feature ids per project.** Each project numbers its own features from
+  F-001. Two projects can both have an F-001.
+- **The console** (`factory-engine inbox`) run from any folder lists every
+  project's items as `<project> <item id>  <title>`, and its watch lines
+  read `<project> F-001: <status>`. `--project <name>` narrows it to one.
+  `factory-engine interview <project> <feature id>` works from any folder;
+  inside a project's repo the project can be left out, as today.
+- `factory-engine start` works from any folder once `engine.yaml` names
+  the master clone (`master:`).
 
 ## 3. Functional requirements
 | Id | Requirement |
 |---|---|
-| FR-1 | **Project registry.** The list of projects the engine serves is `<engine home>/projects.json` (schema `project-registry/1.0`, JSON Schema in `engine/src/schemas/`): `{ "schema": "project-registry/1.0", "projects": [{ "name", "path", "added_at" }] }`. Only `factory-engine project add/remove` writes it, atomically. (OQ-1) |
-| FR-2 | **One-time import.** When `projects.json` is missing and `factory-projects.local.yaml` exists in the master clone, the engine imports its paths once (name from each manifest), writes `projects.json`, and logs that the YAML file is no longer read. The owner can delete it afterwards. |
-| FR-3 | **`project add <path>`** runs, in order: today's path checks (`checkProjectPath`), manifest read, a name check (no other registry entry has the same name or the same real path), the SR-5 confirm (`confirmProject`, unchanged), a check that `factory-token/<name>` is in the credential store (if not, it says the exact `factory-engine secret set` command and stops before writing), then the registry write. Nothing is written if any step fails. |
-| FR-4 | **`project remove <name>`** asks the owner to type the name, removes the entry, and asks "Also delete the stored tokens for <name>? (y/N)". It never touches the config repo, `factory/state`, issues or pins. |
-| FR-5 | **`project list`** prints each registry entry with its state from the running engine (or "engine not running"). |
-| FR-6 | **Live pick-up.** The running engine checks the registry every 5 seconds (size and modified time, then content). A new entry is started with the same start-up steps a project gets at engine start. A removed entry is stopped as a failing project is stopped today: its running agent sessions end, its listener closes, its `engine.json` is removed. Projects whose entry didn't change are not touched. (OQ-2) |
-| FR-7 | **Engine index.** The engine writes `<engine home>/run/engine.json` (owner-only, never in a repo): `{ "schema": "engine-index/1.0", "pid", "projects": [{ "name", "config_repo", "channel" }] }`, listing running projects only, rewritten on every change and removed at stop. |
-| FR-8 | **Console across projects.** `factory-engine inbox` with no `--project` and not inside an onboarded repo reads the engine index and opens a console session on each running project's existing channel. Items are listed as `<project> <item id>  <title>`; `inbox <item id>` needs `--project` only when two projects have that id. Answers go through the project's own channel and session, exactly as today. |
-| FR-9 | **Status by project.** `engine.status` features gain `project` (the manifest name). The console's watch lines and the interview's status line show it. |
-| FR-10 | **Interview from anywhere.** `factory-engine interview <feature id>` outside a project folder finds the feature's project through the engine index and `engine.status`; with no id it lists the running projects to pick from. |
-| FR-11 | **Start from anywhere.** `engine.yaml` may hold `master: <absolute path>`; `--master` still wins, then `master:`, then the current folder. |
-| FR-12 | **Separation stays code-enforced.** Every GitHub call, git push, inbox write and agent session for a project uses only that project's token(s), state worktree, pins and manifest. Removing or failing one project never changes another's state. |
+| FR-1 | **One factory per PC.** At start the engine takes a per-user lock that doesn't depend on `--home` or `--master` (a fixed named pipe on Windows, a fixed socket path under the user's runtime folder elsewhere) and refuses to start while another live engine holds it, naming its pid. |
+| FR-2 | **Project files.** The factory's projects are the `*.yaml` files in `<master clone>/projects/` (git-ignored, schema `project-file/1.0` with a JSON Schema): `name` (as the manifest's), `config_repo.url` (https GitHub URL), `config_repo.path` (absolute). The file name is `<name>.yaml`. Nothing else is allowed in it. |
+| FR-3 | **One-time import.** If `projects/` is missing and `factory-projects.local.yaml` exists, the engine writes one project file per listed path (name and URL from the manifest and `origin`) and logs that the old file is no longer read. |
+| FR-4 | **Live pick-up.** The engine checks `projects/` every 5 seconds (names, sizes, modified times, then content). A new file starts that project through the setup steps; a changed file is re-checked; a deleted file stops the project as a failing project is stopped today (sessions end after the current commit, listener closes, `engine.json` removed, lease released). Other projects are not touched. |
+| FR-5 | **Setup steps.** For each project the engine reports its first unmet step (clone, token, confirm, lease) with the exact command, in the console and the log. Once all are met it runs the project. `factory-engine confirm --project` accepts a project name as well as a path. |
+| FR-6 | **Onboarding writes the file.** The onboarding skill's last step writes `projects/<name>.yaml` (after the owner's yes) and lists the setup steps left. Writing the file by hand has the same effect. |
+| FR-7 | **Lease.** A running project holds a lease on its `factory/state` branch: `.factory/lease.json` (`factory-lease/1.0`: factory id, started, renewed). The factory renews it every 10 minutes when it pushes. A factory finding another factory's lease renewed within 30 minutes refuses the project with "<name> is served by another factory"; the owner can take it over through `confirm`, which shows the other lease and asks. The factory id is random, made once per engine folder. |
+| FR-8 | **Portable state.** Everything needed to carry on lives in the config repo (`factory/state`) or GitHub. Engine-folder state is keyed by project name, not path: pins, run records, chain heads, console files, worktrees. Filed-alert keys move to `factory/state` so a moved project doesn't file the same alert twice. On a factory that has never seen the project, the chain head is taken from the commit the owner confirmed (FR-5 step 3), and interrupted runs restart from their last commit. |
+| FR-9 | **Feature ids per project.** A new feature takes one more than the highest id in its own project (its feature records, `feature/` branches in its config and code repos, `docs/features/` on main). The engine-wide id record, the "Feature id exists in more than one project" alert and the refusal of a duplicate id go. Inside the engine every feature is keyed by project name and id together. |
+| FR-10 | **Every cross-project map is keyed by project.** Running jobs, analyst runs, held-command answers, status, pause and resume key by project and id, never by a bare feature id or inbox item id. |
+| FR-11 | **One project per code repo.** The engine refuses to run a project whose code repo (`owner/repo`) is also a code repo of another project on this factory, since both would use `feature/F-001-…` branches. The second project gets a Security item naming the first. |
+| FR-12 | **Engine index.** The engine writes `<engine home>/run/engine.json` (owner-only, `engine-index/1.0`: pid, and each running project's name, config repo path and channel), rewritten on each change, removed at stop. |
+| FR-13 | **Console across projects.** `factory-engine inbox` outside a project folder reads the engine index and opens a session on each running project's existing channel, each following that project's `settings.interview_sign_in`. `inbox <item id>` needs `--project` when more than one project has that id. |
+| FR-14 | **Status by project.** `engine.status` features gain `project`; `pause` and `resume` take an optional `project`. The console's watch lines and the interview's status line show the project name. |
+| FR-15 | **Interview from anywhere.** `factory-engine interview [<project>] [<feature id>]`: outside a project folder the project is required, or picked from the running projects. |
+| FR-16 | **Start from anywhere.** `engine.yaml` may hold `master: <absolute path>`; `--master` wins, then `master:`, then the current folder. |
 
 ## 4. Acceptance criteria
 | Id | Given / When / Then | Covers |
 |---|---|---|
-| AC-1 | Given an engine running project A, when `project add` is run for project B with a valid manifest, a stored token and an approved device sign-in, then within 10 seconds B is running, A's running sessions were not interrupted, and `project list` shows both running. | FR-3, FR-5, FR-6 |
-| AC-2 | Given `project add` where the token is missing, the confirm is declined, the name is already registered, or the path is the master clone, then `projects.json` is byte-for-byte unchanged and the command says why. | FR-3 |
-| AC-3 | Given A and B running, when `project remove B` is confirmed, then within 10 seconds B's listener is closed and its `engine.json` removed, A keeps running, and B's `factory/state` branch, issues and pins are unchanged; adding B back resumes its features at their recorded stages. | FR-4, FR-6 |
-| AC-4 | Given only `factory-projects.local.yaml` with two paths, when the engine starts, then `projects.json` holds both projects by name, and a second start doesn't import again. | FR-2 |
-| AC-5 | Given A and B each with an open inbox item `D-0001`, when `factory-engine inbox` runs outside any repo, then both are listed with their project names; `inbox D-0001` alone is refused with the two choices; `inbox D-0001 --project B` opens B's item. | FR-8 |
-| AC-6 | Given B's `settings.interview_sign_in` asks for sign-in and A's doesn't, when the all-projects console answers an item of each, then only B's session asks for the GitHub sign-in. | FR-8 |
-| AC-7 | Given features in A and B, then `engine.status` gives each one's `project`, and the watch lines read `A F-001: …` and `B F-001: …` style. | FR-9 |
-| AC-8 | Given a fake GitHub that records the token on each request, when A and B run a feature to a pull request each, then no request for A's repos carries B's token or the reverse, and no commit lands on the other project's `factory/state`. | FR-12 |
-| AC-9 | Given `engine.yaml` with `master:`, when `factory-engine start` runs from another folder, then it starts with that master clone. | FR-11 |
-| AC-10 | Given a registry file that fails its schema, is a symbolic link, or (Windows) is writable by someone other than the owner, then the engine keeps running the projects it already had and files nothing new, and logs why; at start it refuses with that reason. | FR-1, SR-1 |
-| AC-11 | `project-registry/1.0` and `engine-index/1.0` have JSON Schemas, and the state machine for a project's life in the engine (added, starting, running, stopping, removed) has the F-019 dead-end test. | FR-1, FR-6, FR-7 |
+| AC-1 | Given a running engine, when a second `factory-engine start` runs with a different `--home` and `--master`, then it exits non-zero naming the first engine's pid, and the first keeps running. | FR-1 |
+| AC-2 | Given an engine running project A, when a valid `projects/B.yaml` appears and B's setup steps are met, then within 10 seconds B is running and A's sessions were not interrupted. | FR-2, FR-4 |
+| AC-3 | Given `projects/B.yaml` whose token isn't stored, then the console shows "B: needs setup" with the `secret set` command, and nothing is pushed for B; after the token is stored, the next step (confirm) is shown. | FR-5 |
+| AC-4 | Given B running with an open interview and an open inbox item, when its file is deleted, the config repo is cloned to another folder, and a new project file pointing there is written and set up on a fresh engine folder, then the interview carries on at its next question, the item is still open and answerable, no alert is filed a second time, and no feature id changes. | FR-4, FR-7, FR-8 |
+| AC-5 | Given B's lease renewed 5 minutes ago by another factory id, then this factory refuses B with the "served by another factory" reason; after the owner takes it over through `confirm`, B runs and the lease names this factory. | FR-7 |
+| AC-6 | Given projects A and B, when each starts its first feature, then both are F-001, both run, and status, pause, resume, inbox answers and held-command answers for one never reach the other. | FR-9, FR-10, FR-14 |
+| AC-7 | Given A and B whose manifests list the same code repo, then B is refused with a Security item naming A, and A keeps running. | FR-11 |
+| AC-8 | Given only `factory-projects.local.yaml` with two paths, when the engine starts, then `projects/` holds a file for each, and a second start doesn't import again. | FR-3 |
+| AC-9 | Given A and B each with an open item `S-0001`, when `factory-engine inbox` runs outside any repo, then both are listed with their project names; `inbox S-0001` alone is refused with the two choices; `inbox S-0001 --project B` opens B's. Each session follows its own project's sign-in setting. | FR-12, FR-13 |
+| AC-10 | Given a fake GitHub that records the token on each request, when A and B each run a feature to a pull request, then no request for A's repos carries B's token or the reverse, and nothing lands on the other project's `factory/state`. | FR-8, FR-10 |
+| AC-11 | Given a project file that fails its schema, is a link, names a path that isn't a Git work tree, or (Windows) is writable by someone other than the owner, then that project is refused with the reason, and the others keep running. | FR-2, SR-1 |
+| AC-12 | Given `engine.yaml` with `master:`, when `factory-engine start` runs from another folder, then it uses that master clone. | FR-16 |
+| AC-13 | `project-file/1.0`, `factory-lease/1.0` and `engine-index/1.0` have JSON Schemas, and the project's life in the engine (found, needs setup, running, stopping, removed, refused) is a jssm machine with the F-019 dead-end test. | FR-2, FR-4, FR-7, FR-12 |
 
 ## 5. Constraints
 - No new libraries. File checks reuse `paths-file.ts` (owner-only, size
-  limit, no links, SDDL on Windows); the poll uses `fs.statSync`, not
-  `fs.watch`, which is unreliable on Windows network and synced folders.
-- The per-project channel, `engine.json` in each config repo and the
-  `spec-interview` client stay as they are; the console reaches all projects
-  by opening several of today's sessions, not through a new channel.
-- No limit on how many projects or features run at once (ADR 0007 stays).
-  Model endpoint slots are already shared across projects (F-013).
-- Project lifecycle inside the engine is a jssm machine (ADR 0031).
+  limit, no links, SDDL on Windows); the folder poll uses `fs.statSync`,
+  not `fs.watch`, which is unreliable on Windows.
+- The project file is YAML because the owner may write it by hand (F-020:
+  hand-edited config stays YAML); its JSON Schema checks it all the same.
+- Each project keeps its own channel, `engine.json` and sessions; the
+  console reaches all projects by opening several of today's sessions.
+- No limit on how many projects or features run at once (ADR 0007).
+  Model plan limits are counted across all projects on the PC on purpose
+  (F-013 FR-13): they are the owner's limits, not a project's.
 
 ## 6. Edge cases
-- Two projects whose features would take the same id: unchanged, ids are
-  handed out one at a time across the engine (F-007 SR-16), and a clash
-  between already-existing ids is refused in both projects.
+- The project file's `name` differs from the manifest's: refused, with both
+  names shown.
+- Two project files name the same config repo or the same name: both are
+  refused until one is removed.
+- A project is copied to a second PC rather than moved, and both factories
+  run: the lease (FR-7) lets only one serve it; the other shows "served by
+  another factory".
+- The old PC is gone and its lease is fresh: the owner takes it over
+  through `confirm` (FR-7) rather than waiting 30 minutes.
 - A project removed while an agent is mid-commit: the stop waits for the
-  current commit (as engine stop does today), then ends the session.
-- `projects.json` edited by hand into something invalid while the engine
-  runs: AC-10.
-- A project re-added under a new config repo path with the same name: the
-  confirm sees a new path, so SR-5 applies as for a first add.
-- A project's token is revoked: that project stops with the reason, as
-  today; others carry on.
-- The owner runs two engines at once: the second start refuses because
-  `run/engine.json` names a live pid.
-- The engine index lists a project the console can't reach (pipe gone): the
-  console shows "<project>: not reachable" and lists the rest.
+  commit, then ends the session.
+- Private detail of an open item stayed on the old PC: the console on the
+  new PC says the detail is on the other PC; the item can still be
+  answered here or on GitHub.
+- An existing project whose features already skipped numbers keeps its
+  ids; only new features take the next number in their own project.
 
 ## 7. Dependencies
-- `engine/src/cli.ts`, `engine/src/engine.ts` (project start/stop, status),
-  `engine/src/config/paths-file.ts`, `engine/src/config/confirm.ts`,
-  `engine/src/secrets.ts`, `engine/src/terminal/interview.ts`,
+- `engine/src/cli.ts`, `engine/src/engine.ts` (project start and stop,
+  feature ids, status, the maps of FR-10), `engine/src/config/paths-file.ts`,
+  `engine/src/config/confirm.ts`, `engine/src/config/pins.ts`,
+  `engine/src/state/record.ts`, `engine/src/state/runs.ts`,
+  `engine/src/inbox/local.ts`, `engine/src/terminal/interview.ts`,
   `engine/src/mcp/locate.ts`, `engine/src/mcp/operations.ts`.
-- F-015 v23 per-owner tokens (merged, PR #115): FR-3 checks the project's
-  main token only; per-owner tokens are checked when the project starts, as
-  today. The "Onboard mesbot into the factory" thread is told before the
-  build starts, so its onboarding uses `project add`.
+- `plugins/software-factory/skills/onboard-repo/` (FR-6).
+- F-015 v23 per-owner tokens (merged, PR #115) are used as they are. The
+  "Onboard mesbot into the factory" thread is told before the build starts.
 
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | One owner and one engine per PC, running as the owner's OS user (as F-007, F-021 A-1). | — | Pending |
-| A-2 | The engine home folder is owner-only and not synced to a cloud drive (as F-021 A-2), so the registry and engine index are safe there. | — | Pending |
+| A-1 | One owner per PC, and the factory runs as the owner's OS user, so "one factory per PC" is enforced per OS user. | — | Pending |
+| A-2 | The engine folder is owner-only and not synced to a cloud drive (as F-021 A-2). | — | Pending |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Security and Testability Review) | Status |
 |---|---|---|---|
-| SR-1 | The registry decides which config repos (and so which owner ids) the engine trusts, so it gets today's paths-file checks: regular file, no link, at most 64 KiB, owner-only (SDDL on Windows, uid and mode elsewhere), schema-valid. A failing file is never partly applied. | Analyst (F-007 SR-13 carried over) | Pending |
-| SR-2 | Adding a project always passes the SR-5 confirm with the GitHub device sign-in; the registry write happens only after it succeeds. Editing `projects.json` by hand adds no trust: a listed path without a matching pin waits for a confirm, as today. | Analyst (F-007 SR-5) | Pending |
-| SR-3 | The engine index is written owner-only in the engine home, holds names, paths and channel addresses only (no tokens), and is never committed or sent anywhere. Clients apply today's `engine.json` checks to it (owner, mode, no link, size) and still check each channel's pid. | Analyst (F-005 SR-1) | Pending |
-| SR-4 | A token secret is read only for the project named in its secret name; a test fails if any code path passes one project's token to another project's GitHub client (AC-8). | Analyst (F-015 SR-2) | Pending |
-| SR-5 | `project add/remove` refuse unless stdin and stdout are terminals, and the engine refuses them from agent processes it started (F-018 SR-3, F-005 SR-14), so an agent can't add a project or delete tokens. | Analyst | Pending |
+| SR-1 | A project file decides which config repo, and so which owner ids, the factory trusts, so it gets today's paths-file checks: regular file, no link, at most 64 KiB, owner-only (SDDL on Windows, uid and mode elsewhere), schema-valid. A failing file is refused whole and never partly applied. | Analyst (F-007 SR-13 carried over) | Pending |
+| SR-2 | A project file adds no trust by itself: the project runs only after the SR-5 confirm with the GitHub device sign-in on this factory. Moving a project to a new factory always needs that confirm. | Analyst (F-007 SR-5) | Pending |
+| SR-3 | The lease holds a random factory id and times, nothing about the PC, user or paths, since `factory/state` may be pushed to GitHub. | Analyst (owner rule 2026-11-12) | Pending |
+| SR-4 | A token secret is read only for the project its name gives; a test fails if any code path passes one project's token to another's GitHub client (AC-10). | Analyst (F-015 SR-2) | Pending |
+| SR-5 | The engine index is owner-only, holds names, paths and channel addresses only, and clients apply today's `engine.json` checks to it and still check each channel's pid. | Analyst (F-005 SR-1) | Pending |
+| SR-6 | Agents may not write `projects/`, `engine.yaml` or the engine index: they join the Role policy's denied paths, so an agent can't give the factory a project. | Analyst (F-005 SR-14) | Pending |
 
 ## 10. Interface requirements
-Change-controlled edits, one hygiene item each, applied with the build after
-the owner approves their text:
+Change-controlled edits, one hygiene item each, applied with the build
+after the owner approves their text:
 
 | Id | File(s) | Change | Status |
 |---|---|---|---|
-| H-0257 | `docs/interface-contracts.md` (Engine control channel v1.7) | `engine.status` features gain `project` (non-breaking add). New section for the engine index (`<engine home>/run/engine.json`, `engine-index/1.0`) and the client checks on it. | Pending |
-| H-0258 | `docs/interface-contracts.md` (new: Project registry v1.0), `docs/architecture.md` § Data formats | `projects.json` format and who writes it; replaces the paths-file entry (H-0081), with the one-time import. | Pending |
-| H-0259 | `docs/adr/0034-one-engine-registry.md` (new), `docs/adr/README.md` | Records: one engine serves every registered project; projects are added and removed live through commands; each keeps its own token, state and channel. | Pending |
-| H-0260 | `README.md`, `engine/README.md`, `plugins/software-factory/skills/onboard-repo/SKILL.md` | Describe `project add/list/remove`, the all-projects console and `master:` in `engine.yaml`; the onboarding skill's last step becomes `factory-engine project add`. | Pending |
-| H-0261 | `.gitignore`, `scripts/` CI check | Keep ignoring `factory-projects.local.yaml` for old clones; the "paths file never tracked" check also covers `projects.json` should one ever appear in the repo. | Pending |
+| H-0257 | `docs/interface-contracts.md` (Engine control channel v1.7) | `engine.status` features gain `project`; `pause`/`resume` take optional `project` (non-breaking). New section for the engine index (`engine-index/1.0`). | Pending |
+| H-0258 | `docs/interface-contracts.md` (new: Project file v1.0, Factory lease v1.0), `docs/architecture.md` § Data formats | Project file format, the lease on `factory/state`; replaces the paths file (H-0081) with the one-time import. | Pending |
+| H-0259 | `docs/adr/0034-one-factory-portable-projects.md` (new), `docs/adr/README.md` | One factory per PC; a project is a file plus its config repo and moves with them; feature ids per project. | Pending |
+| H-0260 | `docs/features/F-007-engine-interviews.md` (SR-16, OQ-10), `docs/features/F-016-*` and README text that says ids are unique across projects | SR-16 becomes: feature ids are unique within a project; the engine keys every feature by project and id. OQ-10 notes the owner's change of 2026-11-19. | Pending |
+| H-0261 | `README.md`, `engine/README.md`, `plugins/software-factory/skills/onboard-repo/SKILL.md` | Describe project files, setup steps, moving a project, the all-projects console and `master:`; the onboarding skill's last step writes the project file. | Pending |
+| H-0262 | `.gitignore`, Role policy denied paths, `scripts/check_placeholders.py` | Ignore `/projects/`; deny agents `projects/`, `engine.yaml` and the engine index; the "never tracked" CI check covers `projects/`. | Pending |
 
 ## 11. Readiness gate
 - [x] Clear objective
@@ -169,15 +202,10 @@ the owner approves their text:
 - [x] Acceptance criteria testable
 - [x] Constraints documented
 - [ ] Assumptions explicit (A-1, A-2 pending the owner)
-- [ ] Blocking decisions resolved (OQ-1, OQ-2; H-0257 to H-0261; Security and Testability Review not yet run)
+- [ ] Blocking decisions resolved (spec sign-off; H-0257 to H-0262; Security and Testability Review not yet run)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-15 | Draft from the owner's request, after reading what the engine already does | — |
-
-## 13. Open questions
-| Id | Question | Category | Status |
-|---|---|---|---|
-| OQ-1 | Where does the project list live? (a) **A JSON registry in the engine folder** written only by `project add/remove`, imported once from the YAML file. (b) Keep `factory-projects.local.yaml` in the master clone, now written by the commands. **Recommended: (a)**: once commands write it, it is engine data, which is JSON by default (H-0240), and it belongs with the pins and logs on this PC rather than in a repo clone. | Architecture | Open |
-| OQ-2 | Does a new project start without restarting the engine? (a) **Yes, picked up live** within seconds; other projects are untouched. (b) No, `project add` says to restart, as `confirm` does today. **Recommended: (a)**: a restart stops every project's running agents, which grows worse with each project added. | Product | Open |
+| 2 | 2026-11-19 | From the owner's message 02:00Z: one factory per PC (FR-1); a portable project file per project, moved between factories, with setup steps and a lease (FR-2 to FR-8); the onboarding skill or the owner gives the factory a project, so the `project add/remove` commands and the JSON registry go (old OQ-1 and OQ-2 closed); feature ids per project (FR-9, reverses F-007 SR-16 / OQ-10); every cross-project map keyed by project (FR-10); one project per code repo (FR-11) | Owner's direction, 2026-11-19 02:00Z (message); text pending sign-off |
