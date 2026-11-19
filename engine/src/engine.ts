@@ -439,13 +439,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
    * Security item.
    */
   /** F-011: the inbox reads GitHub with the project's factory token, as the pinned owner (SR-2). */
-  async function connectInbox(p: Project): Promise<void> {
+  /** `known` is the config repo's owner/name when the caller resolved it moments ago, which saves a config listing (F-014 FR-7). */
+  async function connectInbox(p: Project, known?: string): Promise<void> {
     if (!p.inbox || !p.state_repo || !(o.issues || o.push)) return;
     const pin = pins.get(p.real!);
     if (!pin) return;
     try {
-      const url = await p.state_repo.remoteUrl(gitBase, await p.state_repo.refuseRedirectingConfig());
-      const repo = url.slice(gitBase.length + 1).replace(/\.git$/, "");
+      // Issues are read through the API with the token, not through the clone's git config, so a slug from this start is safe to reuse.
+      const repo = known || (await p.state_repo.remoteUrl(gitBase, await p.state_repo.refuseRedirectingConfig())).slice(gitBase.length + 1).replace(/\.git$/, "");
       // F-015 FR-19: a project held for a pins confirm has loaded only its default token so far.
       if (p.pinsWaiting) p.token = (await credentials.get(factoryOwnerTokenName(pin.name, repo.split("/")[0]!)).catch(() => null)) ?? p.token;
       if (!p.token) return;
@@ -575,8 +576,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   // Phase 2: authorization (FR-2), transcripts (SR-17), feature id uniqueness (SR-16).
   for (const p of projects) {
     if (p.state !== "running" || !p.manifest || !p.state_repo) continue;
+    let configRepo = "";
     try {
-      const slug = p.state_repo ? (await configSlug(p).catch(() => "")).split("/") : [];
+      configRepo = await configSlug(p).catch(() => "");
+      const slug = configRepo ? configRepo.split("/") : [];
       const config = slug.length === 2 ? { owner: slug[0]!, repo: slug[1]! } : undefined;
       p.tokens = await ProjectTokens.load(credentials, p.manifest.name, [...p.manifest.repos.map((r) => r.owner), ...(config ? [config.owner] : [])]);
       p.token = config ? p.tokens.for(config.owner) : p.tokens.fallback;
@@ -592,7 +595,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       });
       continue;
     }
-    await connectInbox(p);
+    await connectInbox(p, configRepo || undefined);
     await loadFeatures(p);
     await checkRemote(p);
   }
