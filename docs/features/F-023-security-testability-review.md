@@ -7,7 +7,7 @@
 - **Maturity level:** Rapid prototype (the engine repo's level). Only
   Critical findings block there (`security-blocking.json`).
 - **Result:** 11 findings: 0 Critical, 0 High, 6 Medium, 5 Low. Nothing
-  blocks. Each is covered by a proposed requirement (SR-8 to SR-14, and
+  blocks. Each is covered by a proposed requirement (SR-8 to SR-13, and
   changes to FR-7, FR-11c and FR-11d) in spec v4, which need the owner's
   approval.
 - **Not re-opened (owner decisions):** agents on the owner's PC with a full
@@ -25,10 +25,10 @@
 | Permissions needed; each the minimum (S8)? | The factory token already pushes to the code repo; the checkout branch is one more branch there. No new scope. The widening is that a project's state now moves between PCs, which the SR-5 confirm already guards. |
 | New or upgraded external component; S4.1 review and CVE check? | None. |
 | Reads from or acts on anything external; scope, irreversible actions, threat model (S9)? | The checkout record is written to repos that may be public and shared with other people, and is read back from them. Threat model below. No S9.2 action: the factory writes only its own branches and records, as ADR 0017 grants. |
-| A requirement for each? | Yes after v4: SR-8 to SR-14 and the FR changes listed per finding. |
+| A requirement for each? | Yes after v4: SR-8 to SR-13 and the FR changes listed per finding. |
 | Abuse cases in the edge cases? | Added in v4: a forged or deleted checkout record, a squatted lock, clock skew between PCs, another project's text steering an analyst. |
 | Acceptance criteria testable? | All but two: FR-11c's "within the item's wait" and FR-11d's "undo each other more than twice" have no value a test can check (findings 10 and 11). |
-| Needs the owner's decision (Security)? | Approval of SR-8 to SR-14, and of the two definitions in findings 10 and 11. |
+| Needs the owner's decision (Security)? | Approval of SR-8 to SR-13, and of the two definitions in findings 10 and 11. |
 
 ## Threat model (STRIDE, S9.7)
 
@@ -85,8 +85,6 @@
 - **SR-13:** The engine's feature lookup takes a project and an id
   together; the lookup by bare id is removed, so the compiler finds every
   caller. AC-6 runs two projects that both have F-001, F-002 and S-0001.
-- **SR-14:** The checkout and lease commits name only the factory id and
-  times (SR-3, SR-9).
 
 ## Proposed spec changes (spec v4)
 
