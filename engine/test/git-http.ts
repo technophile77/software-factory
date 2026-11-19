@@ -10,6 +10,8 @@ import { AddressInfo } from "node:net";
 export class GitHttp {
   readonly pushes: Array<{ path: string; user: string; password: string }> = [];
   fetches = 0;
+  /** Runs just before a push reaches the repo, so a test can make another factory win a race. */
+  beforePush: (() => void) | null = null;
   private server!: http.Server;
   base = "";
 
@@ -37,7 +39,12 @@ export class GitHttp {
       res.end();
       return;
     }
-    if (push && url.pathname.endsWith("/git-receive-pack")) this.pushes.push({ path: url.pathname, user, password });
+    if (push && url.pathname.endsWith("/git-receive-pack")) {
+      this.pushes.push({ path: url.pathname, user, password });
+      const hook = this.beforePush;
+      this.beforePush = null;
+      hook?.();
+    }
     if (url.pathname.endsWith("/git-upload-pack")) this.fetches++;
     const cgi = spawn("git", ["http-backend"], {
       env: {

@@ -61,20 +61,23 @@ function poison(world: World, variant: "absolute" | "husky") {
   cfg("filter.evil.smudge", join(evil, "smudge"));
   cfg("filter.evil.required", "true");
   cfg("diff.evil.textconv", join(evil, "textconv"));
-  cfg("credential.helper", `!${join(evil, "credential")}`);
-  cfg("core.sshCommand", join(evil, "ssh"));
-  cfg("remote.origin.pushurl", `file://${evilBare}`);
 
   // The owner's global config has a helper too; the engine must not use it (S9.6).
   writeFileSync(
     join(world.home, ".gitconfig"),
     `[user]\n\tname = Owner\n\temail = owner@example.invalid\n[credential]\n\thelper = !${join(evil, "global-credential")}\n[core]\n\thooksPath = ${join(evil, "hooks")}\n`,
   );
-  return { evilBare };
+  // Keys that redirect a push or fetch: set at start, the engine can't read the lease and refuses the project (F-023 FR-7 a).
+  const redirect = () => {
+    cfg("credential.helper", `!${join(evil, "credential")}`);
+    cfg("core.sshCommand", join(evil, "ssh"));
+    cfg("remote.origin.pushurl", `file://${evilBare}`);
+  };
+  return { evilBare, redirect };
 }
 
-async function exercise(world: World) {
-  const r = await answerOne(world, "A plain answer that the engine must commit.");
+async function exercise(world: World, afterBoot?: () => void) {
+  const r = await answerOne(world, "A plain answer that the engine must commit.", afterBoot);
   await world.settle();
   await new Promise((res) => setTimeout(res, 1000));
   return r;
@@ -85,9 +88,16 @@ describe("SR-11: nothing from the repo or the owner's git config runs on the hos
     "[GS-1] SR-11 / AC-18 abuse case (%s hooksPath): no hook, fsmonitor, filter, textconv, credential helper or SSH command runs, and nothing goes to a file:// push URL",
     async (variant) => {
       w = await World.create(undefined, { logGit: true });
-      const { evilBare } = poison(w, variant);
-      await exercise(w);
+      const { evilBare, redirect } = poison(w, variant);
+      await exercise(w, redirect);
       expect(w.gitw.calls().length, "the engine ran git through the given path").toBeGreaterThan(0);
+      expect(readdirSync(w.markers), "code from the repo ran on the host").toEqual([]);
+      expect(git(evilBare, "for-each-ref").trim()).toBe("");
+      // A start with the redirecting keys already set: the lease can't be read, so the project doesn't run.
+      await w.restart();
+      const p = (await w.engine!.projects()).find((x) => x.name === w!.project().name);
+      expect(p?.state).toBe("stopped");
+      expect(p?.reason).toContain("could redirect");
       expect(readdirSync(w.markers), "code from the repo ran on the host").toEqual([]);
       expect(git(evilBare, "for-each-ref").trim()).toBe("");
     },

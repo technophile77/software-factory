@@ -7,7 +7,8 @@ import { MemoryLogger } from "../src/log";
 import { Children } from "../src/proc";
 import { StateRepo } from "../src/state/state-repo";
 import { GitHttp } from "./git-http";
-import { FACTORY_TOKEN, GIT_PATH, addProjectFile, RpcClient, World, engineJson, git, makeWorld, start, tmpdir } from "./helpers";
+import { forge, remoteWorld as makeRemote } from "./remote-world";
+import { FACTORY_TOKEN, GIT_PATH, RpcClient, World, engineJson, git, makeWorld, start, tmpdir } from "./helpers";
 import { securityItemsIn } from "./inbox-items";
 
 let engines: EngineHandle[] = [];
@@ -19,22 +20,10 @@ afterEach(async () => {
   servers = [];
 });
 
-/** A world whose config repo's origin is a bare repo served over loopback git HTTP. */
 async function remoteWorld(): Promise<{ w: World; srv: GitHttp; bare: string }> {
-  const w = makeWorld();
-  const root = path.join(w.root, "remote");
-  const bare = path.join(root, "example-org", "acme-config.git");
-  fs.mkdirSync(path.dirname(bare), { recursive: true });
-  git(w.root, "init", "-q", "--bare", "-b", "main", bare);
-  git(bare, "config", "http.receivepack", "true");
-  git(w.config, "push", "-q", bare, "main");
-  const srv = await new GitHttp(root, FACTORY_TOKEN).start();
-  servers.push(srv);
-  git(w.config, "remote", "set-url", "origin", `${srv.base}/example-org/acme-config`);
-  w.github.webBase = srv.base;
-  // F-023 FR-2: the project file names the config repo on the GitHub the engine is given.
-  addProjectFile(w.master, "acme", w.config, `${srv.base}/example-org/acme-config`);
-  return { w, srv, bare };
+  const r = await makeRemote();
+  servers.push(r.srv);
+  return r;
 }
 
 async function boot(w: World): Promise<EngineHandle> {
@@ -45,20 +34,6 @@ async function boot(w: World): Promise<EngineHandle> {
 
 function securityItems(repo: string): string[] {
   return securityItemsIn(repo).map((i) => i.id);
-}
-
-/** Commits `files` on the remote's factory/state as someone other than the engine. */
-function forge(w: World, bare: string, files: Record<string, string>): string {
-  const tmp = tmpdir();
-  git(w.root, "clone", "-q", "-b", "factory/state", bare, tmp);
-  for (const [f, c] of Object.entries(files)) {
-    fs.mkdirSync(path.dirname(path.join(tmp, f)), { recursive: true });
-    fs.writeFileSync(path.join(tmp, f), c);
-  }
-  git(tmp, "add", "-A");
-  git(tmp, "commit", "-q", "-m", "someone else");
-  git(tmp, "push", "-q", "origin", "factory/state");
-  return git(tmp, "rev-parse", "HEAD");
 }
 
 describe("remote factory/state (GS-4: SR-1, SR-11)", () => {

@@ -10,6 +10,7 @@ import { DockerCli, DockerError, pickEndpoint } from "./docker/cli";
 import { type HostRuntime, resolveClaudeBinary } from "./agent/host";
 import { PinStore } from "./config/pins";
 import { type ProjectStatus, defaultEngineHome, startEngine } from "./engine";
+import { factoryId } from "./state/lease";
 import { ensureOwnerDir, findOnPath } from "./fsutil";
 import { Git } from "./git";
 import { HttpGitHub } from "./github";
@@ -257,7 +258,7 @@ async function main(argv: string[]): Promise<number> {
     try {
       const ok = await confirmProject({
         masterRepo: master, projectPath: f.project, git, github: new HttpGitHub({ log }),
-        pins: new PinStore(home), os: realOsApi(), clock: systemClock, log,
+        pins: new PinStore(home), os: realOsApi(), clock: systemClock, log, factoryId: factoryId(home),
         io: { say: (l) => process.stderr.write(l + "\n"), ask: (q) => new Promise((r) => rl.question(q, r)) },
       });
       return ok ? 0 : 1;

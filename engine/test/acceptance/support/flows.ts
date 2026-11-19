@@ -3,8 +3,9 @@ import { rand, World } from "./world";
 import type { RpcResponse } from "./rpc";
 
 /** A running engine with one feature and an approved session. */
-export async function interviewReady(w: World): Promise<{ feature: string; session: string }> {
+export async function interviewReady(w: World, afterBoot?: () => void): Promise<{ feature: string; session: string }> {
   await w.boot();
+  afterBoot?.();
   const feature = await w.startFeature();
   const session = await w.approvedSession(feature);
   await w.tools(feature);
@@ -20,8 +21,8 @@ export async function askAndFetch(w: World, feature: string, session: string, ar
 }
 
 /** One full exchange that makes the engine write and commit a transcript entry. */
-export async function answerOne(w: World, text = `Answer ${rand(6)}`) {
-  const { feature, session } = await interviewReady(w);
+export async function answerOne(w: World, text = `Answer ${rand(6)}`, afterBoot?: () => void) {
+  const { feature, session } = await interviewReady(w, afterBoot);
   const item = await askAndFetch(w, feature, session);
   const r = await w.reply(session, item, "answer", text);
   return { feature, session, item, reply: r, text };

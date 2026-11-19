@@ -56,6 +56,8 @@ import { Models, MODELS_FILE, readDefaultModels } from "./config/models";
 import { LIMITS_FILE, Limits, LimitsError, agentLimits, stReviewLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, readinessLimits, roleContainerLimits, worktreeLimits, buildLimits } from "./config/limits";
 import { Manifest, interviewSignIn, manifestName, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectClone } from "./config/paths-file";
+import { LEASE_CHECK_MS, LEASE_PATH, LEASE_RENEW_MS, LEASE_STALE_MS, LeaseSightings, factoryId, leaseText, parseLease } from "./state/lease";
+import type { FactoryLease } from "./schemas/factory-lease";
 import { FILED_ALERTS_PATH, FILED_ALERTS_SCHEMA, type FiledAlerts, filedAlerts } from "./schemas/filed-alerts";
 import { type ImportResult, PROJECTS_DIR, type ProjectEntry, importPathsFile, listProjectFiles, readProjectFile, readProjectFiles, refuseDuplicates, sameRepoUrl } from "./config/project-files";
 import { type ProjectMachine, projectMachine } from "./project-life";
@@ -211,8 +213,10 @@ interface Project extends ProjectStatus {
   /** Ends this project's inbox poll on its own when it is taken down (FR-4). */
   abort: AbortController;
   poller: Promise<void> | null;
-  /** Taken down: nothing more is pushed or filed for it. */
+  /** Taken down, or its lease lost: nothing more is pushed or filed for it. */
   gone: boolean;
+  /** F-023 FR-7 (g): when this factory last saw its own lease on the remote. */
+  leaseCheckedAt: number;
   real: string | null;
   manifest: Manifest | null;
   /** Known for every running project (phase 1); see EngineHandle.limits and agentSources. */
@@ -329,6 +333,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const record = new EngineRecord(home);
   const pins = new PinStore(home);
   const runs = new RunBook(record, clock);
+  // F-023 FR-7: this engine folder's factory id and the lease bookkeeping.
+  const myFactory = factoryId(home);
+  const sightings = new LeaseSightings();
+  const ISSUE_WRITES = ["dispatch", "comment", "editComment", "updateIssue"] as const;
+  const PULL_WRITES = ["createPull", "updatePull", "markReady", "comment", "merge"] as const;
+  /** A project refused for another factory's lease is checked again on a takeover confirm, and every 10 minutes for staleness. */
+  const leaseWait = (name: string) => async () => `${pins.get(name)?.takeover ?? ""}|${Math.floor(clock.now() / LEASE_RENEW_MS)}`;
   const interruptedAtStart = runs.markInterrupted();
   for (const r of interruptedAtStart) log.warn(`Run ${r.id} (${r.role}, ${r.feature}) was interrupted; it will resume without counting a retry.`);
   const credentials = o.credentials ?? new OsCredentialStore(() => osApi.credentials());
@@ -408,7 +419,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       path: entry ? (entry.project?.path ?? path.join(o.masterRepo, PROJECTS_DIR, entry.file)) : (e as { path: string }).path,
       name: entry?.project?.name ?? null, state: "stopped", warnings: [],
       file: entry?.file ?? null, fileKey: entry ? entryKey(entry) : null, fileStat: "stat" in e ? e.stat : null, url: entry?.project?.url ?? null,
-      life: projectMachine(), waitKey: null, waitWas: null, abort: new AbortController(), poller: null, gone: false,
+      life: projectMachine(), waitKey: null, waitWas: null, abort: new AbortController(), poller: null, gone: false, leaseCheckedAt: 0,
       real: null, manifest: null, limits: null, sources: null, models: null, state_repo: null,
       features: new Map(), sessions: null, listener: null, conns: new Set(), token: null, tokens: null, inbox: null, pinsWaiting: false,
     };
@@ -553,7 +564,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       // F-015 FR-19: a project held for a pins confirm has loaded only its default token so far.
       if (p.pinsWaiting) p.token = (await credentials.get(factoryOwnerTokenName(pin.name, repo.split("/")[0]!)).catch(() => null)) ?? p.token;
       if (!p.token) return;
-      const api = o.issues ? o.issues(p.token) : new HttpIssues(p.token, log, GITHUB_API_BASE);
+      const api = leased(p, o.issues ? o.issues(p.token) : new HttpIssues(p.token, log, GITHUB_API_BASE), ISSUE_WRITES);
       // SR-9: a token without Issues read and write on the config repo is reported, not polled with every minute.
       try {
         await api.openIssues(repo);
@@ -769,6 +780,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       });
       return;
     }
+    if (!(await takeLease(p))) return;
     await connectInbox(p, configRepo || undefined);
     await loadFeatures(p);
     await checkRemote(p);
@@ -956,7 +968,163 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       await p.state_repo.push(p.token, gitBase);
       log.action({ agent: "engine", action: "git.push", target: `${p.name}:factory/state` });
     } catch (e) {
+      // F-023 FR-7 (c): a push the remote refuses as not a fast-forward is how another factory's takeover shows.
+      if (!(await verifyLease(p))) return;
       log.warn(`${p.name}: factory/state wasn't pushed (${(e as Error).message}); the next commit tries again.`);
+    }
+  }
+
+  // -- The lease: one factory writes to a project (F-023 FR-7) ----------------
+
+
+  /** The remote's lease, fetched now; `error` says why the fetch failed. */
+  async function remoteLease(p: Project): Promise<{ head: string | null; lease: FactoryLease | null; raw: Buffer | null; error?: undefined } | { error: string }> {
+    try {
+      const head = await p.state_repo!.fetch(p.token!, gitBase);
+      const raw = head ? await p.state_repo!.read(LEASE_PATH, head) : null;
+      return { head, lease: parseLease(raw), raw };
+    } catch (e) {
+      log.warn(`${p.name}: factory/state couldn't be fetched to check the lease (${(e as Error).message}).`);
+      return { error: (e as Error).message };
+    }
+  }
+
+  /**
+   * FR-7 (c), (g): whether the remote lease is still this factory's. When
+   * another factory holds it, the project stops at once: no more pushes,
+   * sessions or GitHub writes. A fetch that fails leaves it as it was.
+   */
+  async function verifyLease(p: Project): Promise<boolean> {
+    if (!o.push || !p.token || !p.state_repo) return true;
+    if (p.gone) return false;
+    const r = await remoteLease(p);
+    if (r.error !== undefined) return true;
+    if (r.lease && r.lease.factory !== myFactory) {
+      loseLease(p);
+      return false;
+    }
+    p.leaseCheckedAt = clock.now();
+    return true;
+  }
+
+  /** FR-7 (g): GitHub writes go ahead only on a lease check at most 60 seconds old. */
+  async function leaseFresh(p: Project): Promise<boolean> {
+    if (p.gone) return false;
+    if (!o.push || !p.token || clock.now() - p.leaseCheckedAt <= LEASE_CHECK_MS) return true;
+    return verifyLease(p);
+  }
+
+  /** A GitHub API whose `writes` wait for a fresh lease check and are refused once the project's lease is lost. */
+  function leased<T extends object>(p: Project, api: T, writes: readonly string[]): T {
+    return new Proxy(api, {
+      get(target, prop, recv) {
+        const v = Reflect.get(target, prop, recv) as unknown;
+        if (typeof v !== "function") return v;
+        if (!writes.includes(String(prop))) return (v as (...a: unknown[]) => unknown).bind(target);
+        return async (...args: unknown[]) => {
+          if (!(await leaseFresh(p))) throw new Error(`${p.name} is served by another factory; the GitHub write was not made (F-023 FR-7).`);
+          return (v as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+  }
+
+  /** FR-7 (c): another factory took the lease; this one stops the project now and lists it as refused. */
+  function loseLease(p: Project): void {
+    if (p.gone) return;
+    p.gone = true;
+    const why = `${p.name} is served by another factory: it took the lease over`;
+    log.warn(`${p.name}: stopped: ${why}.`);
+    notify("Factory project stopped", why);
+    void (async () => {
+      await takeDown(p, why);
+      if (!p.file || dead || shuttingDown) return;
+      const np = newProject({ entry: readProjectFile(o.masterRepo, p.file, osApi), stat: p.fileStat });
+      stop(np, `${why}; to take it back, run \`factory-engine confirm --project ${p.name}\``);
+      np.waitKey = leaseWait(np.name ?? "");
+      np.waitWas = await np.waitKey();
+      projects.push(np);
+      tell(np);
+    })().catch((e) => log.warn(`${p.name}: stopping after the lost lease failed (${engineWords(e)}).`));
+  }
+
+
+  /**
+   * FR-7 (a), (b), (e), (f): takes or renews the project's lease before it
+   * runs. Another factory's lease refuses the project unless it is stale by
+   * this factory's clock or the owner took it over through confirm; the take
+   * is a commit on factory/state that the remote accepts only as a
+   * fast-forward, so of two factories racing one wins.
+   */
+  async function takeLease(p: Project): Promise<boolean> {
+    if (!o.push || !p.token || !p.state_repo) return true;
+    const name = p.name!;
+    const r = await remoteLease(p);
+    if (r.error !== undefined) {
+      // FR-7 (a): without the remote's lease the project can't be known to be this factory's, so it doesn't start.
+      stop(p, `factory/state couldn't be fetched to check the project's lease: ${r.error}`);
+      p.waitKey = leaseWait(name);
+      return false;
+    }
+    const theirs = r.lease && r.lease.factory !== myFactory ? r.lease : null;
+    const takeover = !!theirs && pins.get(name)?.takeover === theirs.factory;
+    if (theirs && !takeover && sightings.unchangedFor(name, sha256Hex(r.raw ?? ""), clock.now()) < LEASE_STALE_MS) {
+      stop(p, `${name} is served by another factory (its lease was renewed at ${theirs.renewed} by that factory's clock); to take it over, run \`factory-engine confirm --project ${name}\``);
+      p.waitKey = leaseWait(name);
+      return false;
+    }
+    const local = await p.state_repo.head();
+    if (r.head && r.head !== local && !(await p.state_repo.isAncestor(r.head, local))) {
+      // Commits on the remote this factory didn't make, under its own lease or none: checkRemote judges them (SR-17), and the lease is written at the next renewal.
+      if (!theirs) return true;
+      if (!(await p.state_repo.isAncestor(local, r.head))) {
+        stop(p, "factory/state on GitHub and in this clone have both moved on; the lease wasn't taken");
+        return false;
+      }
+      // The other factory's work is taken as the owner's takeover (or a stale lease) left it, transcripts included.
+      const changed = await p.state_repo.changedPaths(local, r.head);
+      await p.state_repo.fastForward(local, r.head);
+      for (const c of changed) {
+        const m = /^interviews\/(F-\d{3,6})\/transcript\.jsonl$/.exec(c);
+        if (!m) continue;
+        const last = parseTranscript((await p.state_repo.read(c))?.toString("utf8") ?? "").at(-1);
+        if (last) record.setChain(`${name}#${m[1]}`, { seq: last.seq, head: last.hash });
+      }
+    }
+    const before = await p.state_repo.head();
+    const now = iso(clock.now());
+    await p.state_repo.commit([{ path: LEASE_PATH, content: leaseText(myFactory, r.lease?.factory === myFactory ? r.lease.started : now, now) }], `lease: ${name} served by factory ${myFactory.slice(0, 8)}`);
+    try {
+      await p.state_repo.push(p.token, gitBase);
+    } catch {
+      await p.state_repo.rewind(await p.state_repo.head(), before).catch(() => undefined);
+      stop(p, `${name} is served by another factory: it took the lease first`);
+      p.waitKey = leaseWait(name);
+      return false;
+    }
+    if (takeover) {
+      const pin = pins.get(name)!;
+      delete pin.takeover;
+      pins.set(name, pin);
+      log.warn(`${name}: took the lease over from factory ${theirs!.factory.slice(0, 8)} as the owner confirmed (FR-7 e).`);
+    }
+    p.leaseCheckedAt = clock.now();
+    log.action({ agent: "engine", action: "lease.take", target: name });
+    return true;
+  }
+
+  /** FR-7 (d): renews the lease every 10 minutes while the project runs; a lease found taken stops the project. */
+  async function renewLeases(p: Project): Promise<void> {
+    if (!o.push || !p.token) return;
+    const signal = AbortSignal.any([polling.signal, p.abort.signal]);
+    while (true) {
+      await clock.sleep(LEASE_RENEW_MS, signal);
+      if (signal.aborted || dead || p.gone || p.state !== "running") return;
+      if (!(await verifyLease(p))) return;
+      const r = await p.state_repo!.read(LEASE_PATH).catch(() => null);
+      const started = parseLease(r)?.started ?? iso(clock.now());
+      await p.state_repo!.commit([{ path: LEASE_PATH, content: leaseText(myFactory, started, iso(clock.now())) }], `lease: ${p.name} renewed`);
+      await pushState(p);
     }
   }
 
@@ -2146,7 +2314,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const approvedDiff = String(fx.diff ?? "");
       const token = tokenFor(p, repo);
       if (!token || !Number.isSafeInteger(pr) || pr < 1 || !/^[0-9a-f]{64}$/.test(approvedDiff) || !p.manifest!.repos.some((x) => `${x.owner}/${x.repo}` === repo)) return done("hygiene_target_invalid");
-      const api = o.merge ? o.merge(token) : new HttpMerge(token, log, GITHUB_API_BASE);
+      const api = leased(p, o.merge ? o.merge(token) : new HttpMerge(token, log, GITHUB_API_BASE), PULL_WRITES);
       const res = await autoMergeHygiene(api, { itemId: r.id, repo, pr, approvedDiff });
       log.info(`${r.id}: ${res.merged ? `merged ${repo}#${pr} at ${res.sha}` : `merged nothing: ${res.why}`}.`);
       return done(res.merged ? "hygiene_merged" : "hygiene_not_merged");
@@ -2909,7 +3077,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   function pullsFor(p: Project, repo: string): PullsApi {
     const token = tokenFor(p, repo);
     if (!token) throw new SessionRefused("the project has no owner token");
-    return o.pulls ? o.pulls(token) : new HttpPulls(token, log, GITHUB_API_BASE);
+    return leased(p, o.pulls ? o.pulls(token) : new HttpPulls(token, log, GITHUB_API_BASE), PULL_WRITES);
   }
 
   /** F-015 FR-19: the token for a repo's owner; `repo` is `owner/name` or a bare owner login. */
@@ -3057,6 +3225,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       await prRefused(p, f, `secret:${head}`, `A secret is in ${f.id}'s commits`, `gitleaks flagged the commits or pull request text (rules: ${[...new Set(rules)].slice(0, 10).join(", ")}) (F-015 SR-5)`);
       return;
     }
+    if (!(await leaseFresh(p))) throw new SessionRefused(`${p.name} is served by another factory; the branch wasn't pushed (F-023 FR-7)`);
     await ctx.repo.pushFeature(ctx.branches.feature, head, codeToken!);
     log.action({ agent: "engine", action: "git.push", target: `${repo} ${ctx.branches.feature} ${head}`, outcome: "ok" });
     const api = pullsFor(p, repo);
@@ -3216,7 +3385,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const verdict = r.invalid ? { approve: false, reason: `the orchestrator's report was invalid (${r.invalid})` } : orchestratorApproves(body);
     const again = verdict.approve ? await facts() : [];
     const res = verdict.approve && !again.length
-      ? await autoMergeFeature(o.merge ? o.merge(tokenFor(p, a.repo)!) : new HttpMerge(tokenFor(p, a.repo)!, log, GITHUB_API_BASE), { repo: a.repo, pr: a.n, branch: ctx.branches.feature, sha: head })
+      ? await autoMergeFeature(leased(p, o.merge ? o.merge(tokenFor(p, a.repo)!) : new HttpMerge(tokenFor(p, a.repo)!, log, GITHUB_API_BASE), PULL_WRITES), { repo: a.repo, pr: a.n, branch: ctx.branches.feature, sha: head })
       : null;
     if (res?.merged) {
       await api.comment(a.repo, a.n, `The factory engine merged this pull request: the project's \`settings.auto_merge_up_to\` covers this repo's maturity level, the tests passed at ${head}, every check was green, the definition of done was met, and the orchestrator approved (${verdict.reason.slice(0, 1000)}).`).catch((e) => log.warn(`${f.id}: the auto-merge comment wasn't posted (${(e as Error).message}).`));
@@ -4041,7 +4210,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return i;
     },
     confirmProject: (projectPath, io) =>
-      runConfirm({ masterRepo: o.masterRepo, projectPath, git, github, pins, os: osApi, clock, log, io }),
+      runConfirm({ masterRepo: o.masterRepo, projectPath, git, github, pins, os: osApi, clock, log, io, factoryId: myFactory }),
     stop() {
       stopping ??= (async () => {
         // Sessions end with their turn streams; their work is committed and the runs stay open to resume (FR-14).
@@ -4139,6 +4308,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   const startPolling = (p: Project) => {
     if ((p.state === "running" || p.pinsWaiting) && p.inbox?.connected) pollers.push((p.poller = pollInbox(p)));
+    if (p.state === "running") pollers.push(renewLeases(p).catch((e) => log.warn(`${p.name}: the lease renewal stopped (${engineWords(e)}).`)));
   };
 
   for (const p of projects) await resumeProject(p);
