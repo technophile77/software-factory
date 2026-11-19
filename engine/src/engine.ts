@@ -53,8 +53,9 @@ import { RoleAssignmentError, manifestAssignments, planAdvisory, planRole } from
 import { type Endpoint, EndpointsError, readEndpointsFile } from "./config/endpoints";
 import { Models, MODELS_FILE, readDefaultModels } from "./config/models";
 import { LIMITS_FILE, Limits, LimitsError, agentLimits, stReviewLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, readinessLimits, roleContainerLimits, worktreeLimits, buildLimits } from "./config/limits";
-import { Manifest, interviewSignIn, readManifest } from "./config/manifest";
+import { Manifest, interviewSignIn, manifestName, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectClone } from "./config/paths-file";
+import { FILED_ALERTS_PATH, FILED_ALERTS_SCHEMA, type FiledAlerts, filedAlerts } from "./schemas/filed-alerts";
 import { type ImportResult, PROJECTS_DIR, type ProjectEntry, importPathsFile, listProjectFiles, readProjectFile, readProjectFiles, refuseDuplicates, sameRepoUrl } from "./config/project-files";
 import { type ProjectMachine, projectMachine } from "./project-life";
 import { PinStore, comparePin, pinnedKeys } from "./config/pins";
@@ -469,16 +470,34 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     return out.slice(-max).join("\n");
   };
 
+  /** F-023 FR-8: the alerts filed for this project by any factory, from its factory/state. */
+  const filedOnState = async (p: Project): Promise<FiledAlerts> => {
+    const raw = await p.state_repo?.read(FILED_ALERTS_PATH).catch(() => null);
+    if (raw) {
+      try {
+        return filedAlerts.parse(JSON.parse(raw.toString("utf8")));
+      } catch {
+        log.warn(`${p.name}: ${FILED_ALERTS_PATH} on factory/state is unreadable; it is written again with the next alert.`);
+      }
+    }
+    return { schema: FILED_ALERTS_SCHEMA, alerts: {} };
+  };
+
   const alert = async (p: Project, key: string, a: SecurityAlert) => {
     if (!p.inbox || dead || p.gone) return;
-    const k = sha256Hex(`${p.real}\0${key}`);
-    if (record.alert(k)) return;
+    const k = sha256Hex(`${p.name}\0${key}`);
+    const onState = await filedOnState(p);
+    if (record.alert(k) || onState.alerts[k]) return;
+    // Keys from before F-023 were made with the config repo's path, and before that in an older form.
     const old = legacyAlertKey(key);
-    if (old && record.alert(sha256Hex(`${p.real}\0${old}`))) return;
+    if (record.alert(sha256Hex(`${p.real}\0${key}`)) || (old && record.alert(sha256Hex(`${p.real}\0${old}`)))) return;
     try {
       const id = await fileSecurityItem(p.inbox, key.split(":", 1)[0]!, a);
       record.setAlert(k, id);
       log.warn(`${p.name ?? p.path}: filed Security item ${id}: ${a.title}`);
+      onState.alerts[k] = id;
+      await p.state_repo!.commit([{ path: FILED_ALERTS_PATH, content: JSON.stringify(onState, null, 2) + "\n" }], `${id}: alert filed`);
+      await pushState(p);
     } catch (e) {
       log.warn(`${p.name ?? p.path}: couldn't file a Security item (${(e as Error).message}).`);
     }
@@ -525,7 +544,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   /** `known` is the config repo's owner/name when the caller resolved it moments ago, which saves a config listing (F-014 FR-7). */
   async function connectInbox(p: Project, known?: string): Promise<void> {
     if (!p.inbox || !p.state_repo || !(o.issues || o.push)) return;
-    const pin = pins.get(p.real!);
+    const pin = pins.get(p.name!);
     if (!pin) return;
     try {
       // Issues are read through the API with the token, not through the clone's git config, so a slug from this start is safe to reuse.
@@ -586,6 +605,30 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     return false;
   }
 
+  /** F-023 FR-8: the engine folder's per-project folders and socket, by the project's name, never its path. */
+  const folderKey = (p: Project) => sha256Hex(`project:${p.name}`).slice(0, 16);
+
+  /**
+   * F-023 FR-8: state an engine kept under the config repo's path (pins, run
+   * records, chain heads, the console's private files) moves to the
+   * project's name, once. Worktrees of earlier runs stay where their run
+   * records say.
+   */
+  async function migrateState(p: Project): Promise<void> {
+    if (!p.name || !p.real) return;
+    // Only under the name the manifest gives: a file with the wrong name is refused later and must not take the pin.
+    if (p.file && (await manifestName(git, p.real).catch(() => null)) !== p.name) return;
+    const paths = [...new Set([p.real, p.path])];
+    pins.moveToName(paths, p.name, p.url);
+    record.renameProject(paths, p.name);
+    const old = sha256Hex(p.real).slice(0, 16);
+    for (const kind of ["private", "answers"]) {
+      const from = path.join(home, kind, old);
+      const to = path.join(home, kind, folderKey(p));
+      if (fs.existsSync(from) && !fs.existsSync(to)) fs.renameSync(from, to);
+    }
+  }
+
   /** F-023 FR-5: the project waits on the owner for `step`; nothing is pushed or filed for it meanwhile (AC-3). */
   const needsSetup = (p: Project, step: SetupStep, what: string, command: string, waitKey: () => Promise<string>) => {
     p.state = "needs_setup";
@@ -630,6 +673,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       stop(p, `the project file's config_repo.url is ${p.url}, but the clone's origin is ${origin ?? "missing"}`);
       return;
     }
+    await migrateState(p);
     p.state_repo = new StateRepo(git, scanner, p.real, log, tmpDir);
     try {
       await p.state_repo.ensureWorktree();
@@ -638,8 +682,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       stop(p, `factory/state couldn't be checked out at .factory (${(e as Error).message})`);
       return;
     }
-    // F-021: private detail and console answer proofs stay in the engine folder, keyed by the project's path (H-0246).
-    p.inbox = new Inbox({ state: p.state_repo, clock, log, notify, local: new InboxLocal(home, sha256Hex(p.real!).slice(0, 16)), scrub: scrubPrivate });
+    // F-021: private detail and console answer proofs stay in the engine folder (H-0246), keyed by the project's name (F-023 FR-8).
+    p.inbox = new Inbox({ state: p.state_repo, clock, log, notify, local: new InboxLocal(home, folderKey(p)), scrub: scrubPrivate });
     const legacy = await p.inbox.legacyRecords();
     if (legacy.length) {
       // F-020 SR-4: filing an item here would hide the open ones in the unread files, so the owner is told on the PC only.
@@ -667,13 +711,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     }
     p.name = p.manifest.name;
     if (!(await checkSources(p))) return;
-    const real = p.real;
-    const pinKey = async () => JSON.stringify(pins.get(real));
-    const pin = pins.get(real);
-    const cmp = comparePin(pin, p.manifest);
+    const name = p.name!;
+    const pinKey = async () => JSON.stringify(pins.get(name));
+    const pin = pins.get(name);
+    // F-023 FR-8: a pin is for the config repo the owner confirmed; a file naming another one is a new project here.
+    const cmp = pin?.url && p.url && !sameRepoUrl(pin.url, p.url) ? { status: "new_path" as const } : comparePin(pin, p.manifest);
     if (cmp.status === "new_path") {
       // SR-2: a project file adds no trust by itself; the owner confirms it on this factory first.
-      needsSetup(p, "confirm", "this factory hasn't confirmed the project's owner keys", `factory-engine confirm --project ${p.file ? p.manifest.name : quote(real)}`, pinKey);
+      needsSetup(p, "confirm", "this factory hasn't confirmed the project's owner keys", `factory-engine confirm --project ${p.file ? p.manifest.name : quote(p.real)}`, pinKey);
       return;
     }
     if (cmp.status !== "match") {
@@ -731,7 +776,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   /** OQ-3: a project held for a pins confirm keeps its inbox; the token is looked up under the pinned name, never the changed manifest's. */
   async function holdForPins(p: Project): Promise<void> {
     if (!p.pinsWaiting || !p.real) return;
-    const pin = pins.get(p.real);
+    const pin = pins.get(p.name!);
     if (!pin) return;
     // The config repo owner's own token, if any, is picked in connectInbox, which reads the remote URL anyway.
     p.tokens = await ProjectTokens.load(credentials, pin.name, []).catch(() => null);
@@ -774,9 +819,29 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   /** Reads a feature's transcript from local factory/state and checks it against the engine's chain head (SR-17). */
+  /**
+   * F-023 FR-8: on a factory that has never seen this feature, its transcript
+   * as it stood at the factory/state commit the owner confirmed here is taken
+   * as the chain head; nothing added after that commit is, unless this
+   * factory wrote it.
+   */
+  async function adoptConfirmed(p: Project, f: FeatureInterview): Promise<void> {
+    if (record.chain(f.chainKey)) return;
+    const at = pins.get(p.name!)?.state_commit;
+    if (!at) return;
+    const then = await git.readBlob(p.real!, at, transcriptPath(f.id)).catch(() => null);
+    if (!then) return;
+    const entries = parseTranscript(then.toString("utf8"));
+    const last = entries.at(-1);
+    if (!last) return;
+    record.setChain(f.chainKey, { seq: last.seq, head: last.hash });
+    log.info(`${p.name}: ${f.id}'s transcript taken as of the confirmed factory/state ${at.slice(0, 12)} (F-023 FR-8).`);
+  }
+
   async function readTranscript(p: Project, f: FeatureInterview): Promise<{ entries: Entry[]; intact: boolean; raw: Buffer | null; why?: string }> {
     const raw = await p.state_repo!.read(transcriptPath(f.id));
     try {
+      await adoptConfirmed(p, f);
       const entries = parseTranscript(raw?.toString("utf8") ?? "");
       if (checkAgainstHead(entries, record.chain(f.chainKey)) === "pending") {
         // The engine was killed after committing its own append and before recording it.
@@ -868,7 +933,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   function newFeature(p: Project, fid: string): FeatureInterview {
-    const f = new FeatureInterview(fid, `${p.real}#${fid}`, {
+    const f = new FeatureInterview(fid, `${p.name}#${fid}`, {
       record, clock, log,
       persist: async (feature, text, extra, message) => {
         if (dead) throw new Error("the engine has stopped");
@@ -1022,7 +1087,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const fid = f.id;
     const have = analystRuns.get(f);
     if (have && record.run(have)?.status === "running") return have;
-    const run = runs.start({ project: p.real!, feature: fid, role: "requirements-analyst", stage: INTERVIEW_STAGE, worktree });
+    const run = runs.start({ project: p.name!, feature: fid, role: "requirements-analyst", stage: INTERVIEW_STAGE, worktree });
     analystRuns.set(f, run.id);
     return run.id;
   }
@@ -1059,7 +1124,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const images = new Map<string, Promise<{ id: string; tag: string }>>();
   let proxyImage: Promise<string> | null = null;
   let shuttingDown = false;
-  const worktreeDir = (p: Project, fid: string) => path.join(home, "worktrees", sha256Hex(p.real!).slice(0, 16), fid);
+  const worktreeDir = (p: Project, fid: string) => path.join(home, "worktrees", folderKey(p), fid);
   const engineWords = (e: unknown) => (e instanceof ConfigError || e instanceof DockerError || e instanceof SessionRefused || e instanceof HostError ? (e as Error).message.slice(0, 300) : "an internal error");
 
   // -- Where agent sessions run (ADR 0026, H-0204) -------------------------------
@@ -1220,7 +1285,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       let summary = plan?.mode === "from_commit" ? plan.summary : "";
       if (plan?.mode === "session" && !resumeId) summary = transcriptSummary(f.state);
       // A new run after one that ended (an analyststop or breach restart) would otherwise start from the request alone (F-016 FR-13).
-      if (!plan && record.runs().some((x) => x.id !== runId && x.feature === f.id && x.project === p.real && x.role === "requirements-analyst")) summary = transcriptSummary(f.state);
+      if (!plan && record.runs().some((x) => x.id !== runId && x.feature === f.id && x.project === p.name && x.role === "requirements-analyst")) summary = transcriptSummary(f.state);
       const facts: RunFacts = { model: models["requirements-analyst"] };
       const docText = f.state.document ? await documentText(p, f) : null;
       if (f.state.document && docText === null) throw new SessionRefused("the feature's source document is missing or doesn't match its recorded hash");
@@ -1538,11 +1603,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const known = resume?.run;
     const wt = await prepareWorktree(git, p.real!, known?.worktree ?? wtDir, f.state.branch, known?.git_dir, commit);
     await populateWorktree(git, p.real!, commit, wt.path, wt.gitDir);
-    const run = known ?? runs.start({ project: p.real!, feature: f.id, role: REVIEWER_ROLE, stage: ST_REVIEW_STAGE, worktree: wt.path });
+    const run = known ?? runs.start({ project: p.name!, feature: f.id, role: REVIEWER_ROLE, stage: ST_REVIEW_STAGE, worktree: wt.path });
     const runId = run.id;
     runs.update(runId, { git_dir: wt.gitDir, last_commit: commit });
     if (!known) await f.exclusive(() => f.append([{ type: "st_review_run", run: runId, commit }], "security and testability review started"));
-    const reportBase = (dir: string) => path.join(home, dir, sha256Hex(p.real!).slice(0, 16), runId);
+    const reportBase = (dir: string) => path.join(home, dir, folderKey(p), runId);
     // A run started before the gate rename keeps the report folder it was given.
     const reportDir = known && fs.existsSync(reportBase("gate1")) ? reportBase("gate1") : reportBase("st-review");
     let resumeId = resume?.mode === "session" ? resume.sessionId : undefined;
@@ -1858,7 +1923,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   /** Phase 3 for one project: its sessions, channel and engine.json (FR-4). Throws when the channel can't be served. */
   async function serveProject(p: Project): Promise<void> {
     if (p.state !== "running" || !p.manifest || !p.state_repo) return;
-    const pin = pins.get(p.real!)!;
+    const pin = pins.get(p.name!)!;
     const signInSetting = interviewSignIn(p.manifest);
     p.sessions = new SessionManager(p.manifest.name, { githubId: pin.owner.github_id, oauthClientId: pin.owner.oauth_client_id }, github, clock, log, async (fid, no, signIn) => {
       const f = p.features.get(fid);
@@ -1878,7 +1943,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     };
     p.listener = osApi.platform === "win32"
       ? await listenPipe({ os: osApi.windows(), children, log, onConnection })
-      : await listenUnix({ dir: runtimeDir, name: `${sha256Hex(p.real!).slice(0, 16)}.sock`, os: osApi.unix(), children, log, onConnection });
+      : await listenUnix({ dir: runtimeDir, name: `${folderKey(p)}.sock`, os: osApi.unix(), children, log, onConnection });
     p.channel = p.listener.path;
     writeFileAtomic(path.join(p.state_repo.factoryDir, ENGINE_JSON), JSON.stringify({ version: SERVED_CHANNEL_VERSION, capabilities: CAPABILITIES, path: p.listener.path, pid: process.pid }) + "\n");
     log.info(`${p.manifest.name}: serving channel v${SERVED_CHANNEL_VERSION}`);
@@ -2074,14 +2139,14 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (type === "pins") {
       // OQ-3: the inbox proves the previously pinned owner (the inbox reads only that id), so the change is pinned as `factory-engine confirm` pins it.
       const m = p.manifest;
-      const pin = p.real ? pins.get(p.real) : null;
+      const pin = p.name ? pins.get(p.name) : null;
       if (!m || !pin || e.actor_id !== pin.owner.github_id) return done("record_only");
       // Code Review M2: the approval covers the manifest commit the item named, never a later change on main.
       if (r.effect?.commit !== m.commit) {
         notify(`Factory: ${m.name} not confirmed`, `${r.id} named another manifest commit. Restart the engine for a new item.`);
         return done("pins_stale");
       }
-      pins.set(p.real!, { ...pinnedKeys(m), pinned_at: iso(clock.now()), commit: m.commit });
+      pins.set(m.name, { ...pin, ...pinnedKeys(m), pinned_at: iso(clock.now()), commit: m.commit });
       log.action({ agent: "owner", action: "pins.confirm", target: m.name, approval_id: `inbox:${r.id}`, outcome: "pinned" });
       notify(`Factory: ${m.name} confirmed`, "The engine starts the project within a few seconds (F-023 FR-5).");
       return done("pinned");
@@ -2153,7 +2218,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const asks = new Map<string, (ok: boolean, withdrawn?: string) => void>();
   // Item ids are numbered per project, so two projects can each have an S-0001 waiting.
   const askKey = (p: Project, id: string) => `${p.real}\0${id}`;
-  const buildRoot = (p: Project) => path.join(home, "build", sha256Hex(p.real!).slice(0, 16));
+  const buildRoot = (p: Project) => path.join(home, "build", folderKey(p));
   const BUILD_WHAT: Record<BuildRole, { state: BuildState; what: string; rerun: BuildAction }> = {
     "software-developer": { state: "developer", what: "developer", rerun: "rerun_developer" },
     "test-engineer": { state: "test_engineer", what: "test engineer", rerun: "rerun_test_engineer" },
@@ -2385,7 +2450,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   /** FR-12: the newest interrupted run of this role and feature resumes, counted against MAX_RESUMES. */
   function resumableRun(p: Project, f: FeatureInterview, role: string, stage: string): RunRecord | null {
-    const last = record.runs().filter((r) => r.project === p.real && r.feature === f.id && r.role === role && r.stage === stage).sort((a, b) => a.started_at.localeCompare(b.started_at)).at(-1);
+    const last = record.runs().filter((r) => r.project === p.name && r.feature === f.id && r.role === role && r.stage === stage).sort((a, b) => a.started_at.localeCompare(b.started_at)).at(-1);
     return last?.status === "interrupted" ? last : null;
   }
 
@@ -2425,7 +2490,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (plan.mode === "session" && (await hasSession(rt, known.id))) resumeId = plan.sessionId;
     }
     const wt = await prepareWorktree(git, ctx.repo.localDir, known?.worktree ?? path.join(buildRoot(p), f.id, fix ? "fix" : role), branch, known?.git_dir);
-    known ??= runs.start({ project: p.real!, feature: f.id, role, stage, worktree: wt.path });
+    known ??= runs.start({ project: p.name!, feature: f.id, role, stage, worktree: wt.path });
     const runId = known.id;
     runs.update(runId, { git_dir: wt.gitDir });
     const facts: RunFacts = { model };
@@ -2746,7 +2811,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     let note = "";
     const ms = { total: 0 };
     for (let investigation = 0; ; investigation++) {
-      const run = runs.start({ project: p.real!, feature: f.id, role: "orchestrator", stage: "orchestrator_review", worktree: last.worktree });
+      const run = runs.start({ project: p.name!, feature: f.id, role: "orchestrator", stage: "orchestrator_review", worktree: last.worktree });
       const group = await agents.group(run.id);
       result = null;
       const r = await runReviewerSessions({
@@ -3188,7 +3253,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (!credential) throw new SessionRefused("no model credential is stored or set");
     const sdk = await rt.sdk();
     const agents = await agentsFor(rt, p, credential);
-    const run = runs.start({ project: p.real!, feature: f.id, role: o2.role, stage: o2.stage, worktree: o2.checkout.path });
+    const run = runs.start({ project: p.name!, feature: f.id, role: o2.role, stage: o2.stage, worktree: o2.checkout.path });
     const group = await agents.group(run.id);
     let kept: unknown = null;
     const r = await runReviewerSessions({
@@ -3538,7 +3603,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const n = await nextReadinessReport(p, f.id);
     const wt = await prepareWorktree(git, p.real!, path.join(path.dirname(worktreeDir(p, f.id)), `${f.id}-ready`), f.state.branch, undefined, commit);
     await populateWorktree(git, p.real!, commit, wt.path, wt.gitDir);
-    const run = runs.start({ project: p.real!, feature: f.id, role: READINESS_ROLE, stage: READINESS_STAGE, worktree: wt.path });
+    const run = runs.start({ project: p.name!, feature: f.id, role: READINESS_ROLE, stage: READINESS_STAGE, worktree: wt.path });
     runs.update(run.id, { git_dir: wt.gitDir, last_commit: commit });
     await f.exclusive(() => f.append([{ type: "readiness_run", run: run.id, commit }], "readiness gate started"));
     const facts: RunFacts = { model: model! };
@@ -3986,7 +4051,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   async function resumeProject(p: Project): Promise<void> {
     if (p.state !== "running") return;
     for (const r of runs.interrupted()) {
-      if (r.project !== p.real) continue;
+      if (r.project !== p.name) continue;
       const f = p.features.get(r.feature);
       if (!f) continue;
       if (r.role === REVIEWER_ROLE) {
@@ -4025,12 +4090,12 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       else if (isBuildStage(f.stage())) startBuild(p, f);
       else if (f.stage() === INTERVIEW_STAGE && f.state.stReview.pending && f.state.stReview.reportAt) {
         const since = f.state.stReview.reportAt;
-        const tried = record.runs().some((r) => r.feature === f.id && r.project === p.real && r.role === "requirements-analyst" && r.started_at >= since);
+        const tried = record.runs().some((r) => r.feature === f.id && r.project === p.name && r.role === "requirements-analyst" && r.started_at >= since);
         if (!tried) launchAnalyst(p, f);
       }
       if (f.stage() === INTERVIEW_STAGE && !jobs.has(f)) {
         // FR-13: a feature whose analyst stopped before this engine (or before this rule) would wait forever.
-        const last = record.runs().filter((r) => r.feature === f.id && r.project === p.real && r.role === "requirements-analyst").sort((a, b) => a.started_at.localeCompare(b.started_at)).at(-1);
+        const last = record.runs().filter((r) => r.feature === f.id && r.project === p.name && r.role === "requirements-analyst").sort((a, b) => a.started_at.localeCompare(b.started_at)).at(-1);
         if (last?.status === "failed") void offerRerun(p, f, last.id, last.reason ?? "the run failed");
       }
     }

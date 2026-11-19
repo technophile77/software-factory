@@ -30,6 +30,7 @@ export interface RunUsed {
 
 export interface RunRecord {
   id: string;
+  /** The project's name (F-023 FR-8); records made before hold the config repo's path until the engine renames them. */
   project: string;
   feature: string;
   role: string;
@@ -100,6 +101,29 @@ export class EngineRecord {
     this.save();
   }
 
+
+  /**
+   * F-023 FR-8: run records and chain heads kept under a config repo's path
+   * move to the project's name, once, the first time the engine sees it.
+   */
+  renameProject(paths: readonly string[], name: string): void {
+    let changed = false;
+    for (const r of Object.values(this.data.runs)) {
+      if (paths.includes(r.project)) {
+        r.project = name;
+        changed = true;
+      }
+    }
+    for (const [k, v] of Object.entries(this.data.chains)) {
+      const at = k.lastIndexOf("#");
+      if (at < 0 || !paths.includes(k.slice(0, at))) continue;
+      const to = `${name}${k.slice(at)}`;
+      this.data.chains[to] ??= v;
+      delete this.data.chains[k];
+      changed = true;
+    }
+    if (changed) this.save();
+  }
 
   runs(): RunRecord[] {
     return Object.values(this.data.runs);

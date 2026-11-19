@@ -7,6 +7,8 @@ import type { EngineHandle, EngineOptions } from "../src/engine";
 import { realOsApi } from "../src/os/ffi";
 import { liveness, type MachineSpec } from "../src/machine/machine";
 import { PROJECT_MACHINE } from "../src/project-life";
+import { EngineRecord } from "../src/state/record";
+import { securityItemsIn } from "./inbox-items";
 import { grantWrite } from "./acceptance/support/platform";
 import { ORG_ID, OWNER_ID, RpcClient, type World, addProjectFile, driveClock, engineJson, git, initRepo, makeWorld, manifestYaml, start } from "./helpers";
 
@@ -223,8 +225,9 @@ describe("F-023 FR-5: setup steps", () => {
 
   it("findProject takes a project name or a config repo path named by a project file", () => {
     const w = makeWorld();
-    expect(findProject(w.master, "acme", realOsApi())).toBe(w.config);
-    expect(findProject(w.master, w.config, realOsApi())).toBe(w.config);
+    const acme = { name: "acme", url: "https://github.com/example-org/acme-config", path: w.config };
+    expect(findProject(w.master, "acme", realOsApi())).toEqual(acme);
+    expect(findProject(w.master, w.config, realOsApi())).toEqual(acme);
     expect(() => findProject(w.master, "nobody", realOsApi())).toThrow(/No project file in projects\/ is named nobody/);
   });
 });
@@ -232,5 +235,60 @@ describe("F-023 FR-5: setup steps", () => {
 describe("F-023 AC-13: the project's life is a machine", () => {
   it("has no dead end (F-019)", () => {
     expect(liveness(PROJECT_MACHINE as unknown as MachineSpec<string, string, string>)).toEqual([]);
+  });
+});
+
+describe("F-023 FR-8: portable state", () => {
+  it("state kept under the config repo's path moves to the project's name", async () => {
+    const w = makeWorld();
+    const e = await boot(w);
+    const c = await RpcClient.connect(engineJson(w).path);
+    clients.push(c);
+    const { feature } = (await c.ok("feature.start", { request: "Export" })) as { feature: string };
+    const pins = JSON.parse(fs.readFileSync(path.join(w.home, "pins.json"), "utf8")) as { projects: Record<string, unknown> };
+    expect(Object.keys(pins.projects)).toEqual(["acme"]);
+    expect(new EngineRecord(w.home).chain(`acme#${feature}`)).not.toBeNull();
+    void e;
+  });
+
+  it("an alert filed once isn't filed again by an engine folder that never saw it: its key is on factory/state", async () => {
+    const w = makeWorld({ manifest: manifestYaml({ extra: "limits:\n  analyst:\n    turns: many\n" }) });
+    await (await boot(w)).stop();
+    engines = [];
+    expect(securityItemsIn(w.config)).toHaveLength(1);
+    expect(git(w.config, "show", "factory/state:alerts/filed.json")).toContain("\"schema\": \"filed-alerts/1.0\"");
+    fs.rmSync(path.join(w.home, "record.json"));
+    await boot(w);
+    expect(securityItemsIn(w.config)).toHaveLength(1);
+  });
+
+  it("AC-4: moved to another clone and a fresh engine folder, the project carries on once confirmed: same feature, transcript intact", async () => {
+    const w = makeWorld();
+    const first = await boot(w);
+    const c = await RpcClient.connect(engineJson(w).path);
+    const { feature } = (await c.ok("feature.start", { request: "Export" })) as { feature: string };
+    c.close();
+    await first.stop();
+    engines = [];
+    // The owner removes the file, clones the config repo elsewhere and gives a new engine folder the project.
+    const moved = path.join(w.root, "moved", "acme-config");
+    git(w.root, "clone", "-q", w.config, moved);
+    git(moved, "remote", "set-url", "origin", "https://github.com/example-org/acme-config");
+    fs.rmSync(path.join(w.master, "projects", "acme.yaml"));
+    addProjectFile(w.master, "acme", moved);
+    const home2 = path.join(w.root, "home2");
+    const e = await boot(w, { engineHome: home2 });
+    expect(e.projects[0]).toMatchObject({ state: "needs_setup", setup: { step: "confirm" } });
+    w.github.approver = OWNER_ID;
+    const said: string[] = [];
+    expect(await driveClock(w, e.confirmProject("acme", { say: (l) => said.push(l), ask: async () => "acme" }), 5000)).toBe(true);
+    expect(said.some((l) => /^factory\/state is at [0-9a-f]{40}: its interviews are taken as written by a factory/.test(l))).toBe(true);
+    await e.stop();
+    engines = [];
+    const again = await boot(w, { engineHome: home2 });
+    expect(again.projects[0]!.state).toBe("running");
+    const f = again.feature("acme", feature);
+    expect(f?.chainIntact).toBe(true);
+    expect(securityItemsIn(moved)).toHaveLength(0);
   });
 });

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "filed-alerts/1.0"
+    },
+    "alerts": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[A-Z]-\\d{4,8}$"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "alerts"
+  ],
+  "additionalProperties": false
+}

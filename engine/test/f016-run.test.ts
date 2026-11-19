@@ -8,7 +8,6 @@ import { MAX_RESUMES } from "../src/constants";
 import { GitHubError } from "../src/github";
 import { FakeDocker } from "./fakes";
 import { PinStore } from "../src/config/pins";
-import { realPath } from "../src/fsutil";
 import { World, git, manifestYaml, start as startEngine } from "./helpers";
 import { FakeIssues, OWNER } from "./inbox-fake";
 import { inboxItems } from "./inbox-items";
@@ -529,7 +528,7 @@ describe("F-016 OQ-3: pinned keys changed, approved in the inbox", () => {
     git(w.config, "commit", "-qam", `owner ${id}`);
     return git(w.config, "rev-parse", "HEAD");
   }
-  const pinnedOwner = (w: World) => new PinStore(w.home).get(realPath(w.config))!.owner.github_id;
+  const pinnedOwner = (w: World) => new PinStore(w.home).get("acme")!.owner.github_id;
 
   it("a confirmed A from the pinned owner pins the manifest commit the item named; an older item's A pins nothing (Code Review M2)", async () => {
     const w = world();

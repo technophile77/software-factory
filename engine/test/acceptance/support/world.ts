@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { devNull, tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CREDENTIAL_NAMES,
@@ -520,7 +520,8 @@ export class World {
     const file = join(this.stateDir, "pins.json");
     if (!existsSync(file)) return false;
     const projects = (JSON.parse(readFileSync(file, "utf8")) as { projects?: Record<string, unknown> }).projects ?? {};
-    return Object.keys(projects).some((k) => samePath(realpathSync.native(k), realpathSync.native(p.configRepo)));
+    // F-023 FR-8: pins are kept by project name; older ones by the config repo's path.
+    return Object.keys(projects).some((k) => k === p.name || (isAbsolute(k) && existsSync(k) && samePath(realpathSync.native(k), realpathSync.native(p.configRepo))));
   }
 
   /** The SR-5 confirm command with no engine running, approved as `asUserId`. */
