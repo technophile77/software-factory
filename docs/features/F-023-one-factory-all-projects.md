@@ -1,14 +1,14 @@
 # Feature: One factory for all projects
 
 - **Id:** F-023
-- **Status:** In review
+- **Status:** Approved (owner sign-off 2026-11-19 02:26Z, decision card); Security and Testability Review next
 - **Requested by / date:** Alex, 2026-11-15 ("it would be nice to have one
   factory that works on all projects that I give it"); v2: Alex,
   2026-11-19 02:00Z (one factory per machine; portable projects; feature
   ids unique per project, not per engine; the onboarding skill gives the
   factory a project, or the owner does it by hand; review every place where
   uniqueness spreads across project boundaries)
-- **Spec version:** 2
+- **Spec version:** 3
 - **Depends on:** F-003 (onboarding skill), F-007 (engine, SR-5 pins,
   SR-13, SR-16), F-015 v23 (per-project and per-owner tokens, FR-19),
   F-018 (`factory-engine interview`), F-021 v7 (`factory-engine inbox`
@@ -191,19 +191,19 @@ What the engine does today (main at f7df5f7):
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | One owner per PC, and the factory runs as the owner's OS user, so "one factory per PC" is enforced per OS user. | — | Pending |
-| A-2 | The engine folder is owner-only and not synced to a cloud drive (as F-021 A-2). | — | Pending |
+| A-1 | One owner per PC, and the factory runs as the owner's OS user, so "one factory per PC" is enforced per OS user. | Owner, 2026-11-19 02:26Z (decision card) | Approved |
+| A-2 | The engine folder is owner-only and not synced to a cloud drive (as F-021 A-2). | Owner, 2026-11-19 02:26Z (decision card) | Approved |
 
 ## 9. Security considerations
 | Id | Requirement | Source (analyst / Security and Testability Review) | Status |
 |---|---|---|---|
-| SR-1 | A project file decides which config repo, and so which owner ids, the factory trusts, so it gets today's paths-file checks: regular file, no link, at most 64 KiB, owner-only (SDDL on Windows, uid and mode elsewhere), schema-valid. A failing file is refused whole and never partly applied. | Analyst (F-007 SR-13 carried over) | Pending |
-| SR-2 | A project file adds no trust by itself: the project runs only after the SR-5 confirm with the GitHub device sign-in on this factory. Moving a project to a new factory always needs that confirm. | Analyst (F-007 SR-5) | Pending |
-| SR-3 | The lease holds a random factory id and times, nothing about the PC, user or paths, since `factory/state` may be pushed to GitHub. | Analyst (owner rule 2026-11-12) | Pending |
-| SR-4 | A token secret is read only for the project its name gives; a test fails if any code path passes one project's token to another's GitHub client (AC-10). | Analyst (F-015 SR-2) | Pending |
-| SR-5 | The engine index is owner-only, holds names, paths and channel addresses only, and clients apply today's `engine.json` checks to it and still check each channel's pid. | Analyst (F-005 SR-1) | Pending |
-| SR-7 | The checkout record in a code repo, which may be public, holds only the project name, feature id, a random factory id and times; nothing about the PC, user, paths or the config repo. | Analyst (owner rule 2026-11-12) | Pending |
-| SR-6 | Agents may not write `projects/`, `engine.yaml` or the engine index: they join the Role policy's denied paths, so an agent can't give the factory a project. | Analyst (F-005 SR-14) | Pending |
+| SR-1 | A project file decides which config repo, and so which owner ids, the factory trusts, so it gets today's paths-file checks: regular file, no link, at most 64 KiB, owner-only (SDDL on Windows, uid and mode elsewhere), schema-valid. A failing file is refused whole and never partly applied. | Analyst (F-007 SR-13 carried over) | Approved (owner, 2026-11-19 02:26Z, decision card) |
+| SR-2 | A project file adds no trust by itself: the project runs only after the SR-5 confirm with the GitHub device sign-in on this factory. Moving a project to a new factory always needs that confirm. | Analyst (F-007 SR-5) | Approved (owner, 2026-11-19 02:26Z, decision card) |
+| SR-3 | The lease holds a random factory id and times, nothing about the PC, user or paths, since `factory/state` may be pushed to GitHub. | Analyst (owner rule 2026-11-12) | Approved (owner, 2026-11-19 02:26Z, decision card) |
+| SR-4 | A token secret is read only for the project its name gives; a test fails if any code path passes one project's token to another's GitHub client (AC-10). | Analyst (F-015 SR-2) | Approved (owner, 2026-11-19 02:26Z, decision card) |
+| SR-5 | The engine index is owner-only, holds names, paths and channel addresses only, and clients apply today's `engine.json` checks to it and still check each channel's pid. | Analyst (F-005 SR-1) | Approved (owner, 2026-11-19 02:26Z, decision card) |
+| SR-7 | The checkout record in a code repo, which may be public, holds only the project name, feature id, a random factory id and times; nothing about the PC, user, paths or the config repo. | Analyst (owner rule 2026-11-12) | Approved (owner, 2026-11-19 02:26Z, decision card) |
+| SR-6 | Agents may not write `projects/`, `engine.yaml` or the engine index: they join the Role policy's denied paths, so an agent can't give the factory a project. | Analyst (F-005 SR-14) | Approved (owner, 2026-11-19 02:26Z, decision card) |
 
 ## 10. Interface requirements
 Change-controlled edits, one hygiene item each, applied with the build
@@ -211,24 +211,25 @@ after the owner approves their text:
 
 | Id | File(s) | Change | Status |
 |---|---|---|---|
-| H-0257 | `docs/interface-contracts.md` (Engine control channel v1.7) | `engine.status` features gain `project`; `pause`/`resume` take optional `project` (non-breaking). New section for the engine index (`engine-index/1.0`). | Pending |
-| H-0258 | `docs/interface-contracts.md` (new: Project file v1.0, Factory lease v1.0), `docs/architecture.md` § Data formats | Project file format, the lease on `factory/state`; replaces the paths file (H-0081) with the one-time import. | Pending |
-| H-0259 | `docs/adr/0034-one-factory-portable-projects.md` (new), `docs/adr/README.md` | One factory per PC; a project is a file plus its config repo and moves with them; feature ids per project. | Pending |
-| H-0260 | `docs/features/F-007-engine-interviews.md` (SR-16, OQ-10), `docs/features/F-016-*` and README text that says ids are unique across projects | SR-16 becomes: feature ids are unique within a project; the engine keys every feature by project and id. OQ-10 notes the owner's change of 2026-11-19. | Pending |
-| H-0261 | `README.md`, `engine/README.md`, `plugins/software-factory/skills/onboard-repo/SKILL.md` | Describe project files, setup steps, moving a project, the all-projects console and `master:`; the onboarding skill's last step writes the project file. | Pending |
-| H-0263 | `docs/interface-contracts.md` (new: Repo checkout v1.0) | The `factory/checkout` record and the `feature/<project>/F-nnn-<slug>` branch name in a repo more than one project uses. No manifest change. | Pending |
-| H-0262 | `.gitignore`, Role policy denied paths, `scripts/check_placeholders.py` | Ignore `/projects/`; deny agents `projects/`, `engine.yaml` and the engine index; the "never tracked" CI check covers `projects/`. | Pending |
+| H-0257 | `docs/interface-contracts.md` (Engine control channel v1.7) | `engine.status` features gain `project`; `pause`/`resume` take optional `project` (non-breaking). New section for the engine index (`engine-index/1.0`). | Approved (owner, 2026-11-19 02:26Z, decision card); text drafted at build |
+| H-0258 | `docs/interface-contracts.md` (new: Project file v1.0, Factory lease v1.0), `docs/architecture.md` § Data formats | Project file format, the lease on `factory/state`; replaces the paths file (H-0081) with the one-time import. | Approved (owner, 2026-11-19 02:26Z, decision card); text drafted at build |
+| H-0259 | `docs/adr/0034-one-factory-portable-projects.md` (new), `docs/adr/README.md` | One factory per PC; a project is a file plus its config repo and moves with them; feature ids per project. | Approved (owner, 2026-11-19 02:26Z, decision card); text drafted at build |
+| H-0260 | `docs/features/F-007-engine-interviews.md` (SR-16, OQ-10), `docs/features/F-016-*` and README text that says ids are unique across projects | SR-16 becomes: feature ids are unique within a project; the engine keys every feature by project and id. OQ-10 notes the owner's change of 2026-11-19. | Approved (owner, 2026-11-19 02:26Z, decision card); text drafted at build |
+| H-0261 | `README.md`, `engine/README.md`, `plugins/software-factory/skills/onboard-repo/SKILL.md` | Describe project files, setup steps, moving a project, the all-projects console and `master:`; the onboarding skill's last step writes the project file. | Approved (owner, 2026-11-19 02:26Z, decision card); text drafted at build |
+| H-0263 | `docs/interface-contracts.md` (new: Repo checkout v1.0) | The `factory/checkout` record and the `feature/<project>/F-nnn-<slug>` branch name in a repo more than one project uses. No manifest change. | Approved (owner, 2026-11-19 02:26Z, decision card); text drafted at build |
+| H-0262 | `.gitignore`, Role policy denied paths, `scripts/check_placeholders.py` | Ignore `/projects/`; deny agents `projects/`, `engine.yaml` and the engine index; the "never tracked" CI check covers `projects/`. | Approved (owner, 2026-11-19 02:26Z, decision card); text drafted at build |
 
 ## 11. Readiness gate
 - [x] Clear objective
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit (A-1, A-2 pending the owner)
+- [x] Assumptions explicit (A-1, A-2 approved)
 - [ ] Blocking decisions resolved (spec sign-off; H-0257 to H-0263; Security and Testability Review not yet run)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-15 | Draft from the owner's request, after reading what the engine already does | — |
-| 2 | 2026-11-19 | From the owner's messages 02:00Z and 02:04Z (a safety mechanism so two factories never write to the same project): one factory per PC (FR-1); a portable project file per project, moved between factories, with setup steps and a lease (FR-2 to FR-8); the onboarding skill or the owner gives the factory a project, so the `project add/remove` commands and the JSON registry go (old OQ-1 and OQ-2 closed); feature ids per project (FR-9, reverses F-007 SR-16 / OQ-10); every cross-project map keyed by project (FR-10); a repo is checked out only by a feature that changes it, with no configuration (FR-11, FR-11b, owner's messages 02:08Z and 02:19Z); overlapping changes settled by an Architecture decision filed in each project, joint only if every project's owner agrees (FR-11c, FR-11d, owner's message 02:22Z) | Owner's direction, 2026-11-19 02:00Z (message); text pending sign-off |
+| 2 | 2026-11-19 | From the owner's messages 02:00Z and 02:04Z (a safety mechanism so two factories never write to the same project): one factory per PC (FR-1); a portable project file per project, moved between factories, with setup steps and a lease (FR-2 to FR-8); the onboarding skill or the owner gives the factory a project, so the `project add/remove` commands and the JSON registry go (old OQ-1 and OQ-2 closed); feature ids per project (FR-9, reverses F-007 SR-16 / OQ-10); every cross-project map keyed by project (FR-10); a repo is checked out only by a feature that changes it, with no configuration (FR-11, FR-11b, owner's messages 02:08Z and 02:19Z); overlapping changes settled by an Architecture decision filed in each project, joint only if every project's owner agrees (FR-11c, FR-11d, owner's message 02:22Z) | Owner's direction, 2026-11-19 02:00Z to 02:22Z (messages) |
+| 3 | 2026-11-19 | Spec v2 signed off as written, with A-1, A-2, SR-1 to SR-7 and H-0257 to H-0263; status Approved | Owner, 2026-11-19 02:26Z (decision card) |
