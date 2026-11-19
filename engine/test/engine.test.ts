@@ -22,8 +22,9 @@ import {
 import { securityItemsIn } from "./inbox-items";
 
 // F-014 AC-2. On main before F-014 the first start took 22.
-const BUDGET_FIRST_START = 13;
-const BUDGET_SECOND_START = 9;
+// Both +1 since PR #103: authorization reads the config repo's owner/name (public factory/state warning, and F-015 FR-19 picks its token by owner).
+const BUDGET_FIRST_START = 14;
+const BUDGET_SECOND_START = 10;
 
 let engines: EngineHandle[] = [];
 let clients: RpcClient[] = [];
