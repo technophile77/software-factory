@@ -240,6 +240,40 @@ describe("worktree commit (FR-11 with the FR-9 check)", () => {
     if (posix) expect(await commitWorktree({ ...at, platform: "linux" })).toMatchObject({ status: "rejected", breaches: [{ path: "deploy.sh" }] });
   });
 
+  it("an untracked file the base commit's .gitignore ignores isn't a write and isn't committed", async () => {
+    const main = tmpdir();
+    initRepo(main, { "docs/features/F-001-x.md": "spec\n", ".gitignore": "__pycache__/\n", "tools/.gitignore": "*.log\n", "tools/run.log": "tracked\n" });
+    git(main, "add", "-f", "tools/run.log");
+    git(main, "commit", "-q", "-m", "tracked log");
+    const wt = path.join(tmpdir(), "wt");
+    git(main, "worktree", "add", "-q", "-b", "feature/F-001-x", wt);
+    const input = {
+      git: testGit(), gitDir: git(wt, "rev-parse", "--absolute-git-dir"), worktree: wt, branch: "feature/F-001-x", base: git(wt, "rev-parse", "HEAD"),
+      policy: effectiveRole(policyDoc(), "requirements-analyst"), scanner: cleanScanner, tmpDir: path.join(tmpdir(), "t"), message: "s",
+      limits: { maxFiles: 1000, maxTotalBytes: 1 << 20, maxFileBytes: 1 << 20 },
+    };
+    fs.mkdirSync(path.join(wt, "tests", "__pycache__"), { recursive: true });
+    fs.writeFileSync(path.join(wt, "tests", "__pycache__", "t.pyc"), "x");
+    fs.writeFileSync(path.join(wt, "tools", "new.log"), "x");
+    expect(await commitWorktree(input)).toEqual({ status: "unchanged" });
+    fs.writeFileSync(path.join(wt, "docs/features/F-001-x.md"), "spec v2\n");
+    const r = await commitWorktree(input);
+    expect(r).toMatchObject({ status: "committed", paths: ["docs/features/F-001-x.md"] });
+    // A tracked file stays checked even where a rule matches it.
+    fs.writeFileSync(path.join(wt, "tools", "run.log"), "changed\n");
+    expect(await commitWorktree({ ...input, base: (r as { commit: string }).commit })).toMatchObject({ status: "rejected", breaches: [{ path: "tools/run.log" }] });
+  });
+
+  it("a .gitignore the agent wrote in the worktree exempts nothing", async () => {
+    const { wt, input } = setup();
+    fs.writeFileSync(path.join(wt, ".gitignore"), ".husky/\n");
+    fs.mkdirSync(path.join(wt, ".husky"));
+    fs.writeFileSync(path.join(wt, ".husky", "pre-commit"), "curl evil\n");
+    const r = await commitWorktree(input());
+    expect(r.status).toBe("rejected");
+    expect((r as { breaches: Array<{ path: string }> }).breaches.map((b) => b.path).sort()).toEqual([".gitignore", ".husky/pre-commit"]);
+  });
+
   it("AC-9 still holds past a cap: a write or a removal outside the rules rejects the session", async () => {
     const { wt, input } = setup();
     fs.writeFileSync(path.join(wt, "docs/features/a.md"), "a\n");
