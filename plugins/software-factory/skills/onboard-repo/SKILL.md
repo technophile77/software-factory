@@ -236,6 +236,16 @@ item's `history` (`by: owner`) per the Inbox item v1.0 contract.
 - New project: ask the owner before creating a private
   `<project>-factory` repo (`gh repo create --private`), then commit
   `factory-project.yaml` from the template.
+- Set up the inbox in the config repo (F-011, F-016's F-003 amendment),
+  after the owner's yes for each step, since they change GitHub settings:
+  copy the master's `templates/config-repo/.github/workflows/factory-inbox.yml`
+  into the config repo unchanged and commit it; set the repo variable with
+  `gh variable set FACTORY_OWNER_LOGIN --repo <config repo> --body <owner login>`;
+  and confirm the project token has Issues read and write on the config repo
+  (the engine also checks this at start, F-016 SR-9). Then run
+  `CHECK config-repo <config repo checkout> --master <factory checkout>`: it
+  exits 1 unless the workflow is there and matches the master's. Without
+  these, inbox items never become GitHub issues and the owner isn't told.
 - Either way, run `CHECK validate-manifest factory-project.yaml` (add
   `--master <factory checkout>`) before committing. Fix errors in what you
   added; an error in an owner-set value goes to the owner (see the rules).

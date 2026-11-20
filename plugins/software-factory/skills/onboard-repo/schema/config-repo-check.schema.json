@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Config repo check",
+  "description": "Written by factory_check.py config-repo. Internal to the onboard-repo skill (F-003), not an inter-agent contract.",
+  "type": "object",
+  "required": ["schema", "inbox_workflow", "owner_variable"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "config-repo-check/1.0"},
+    "inbox_workflow": {"enum": ["ok", "missing", "differs"]},
+    "owner_variable": {"type": "string"}
+  }
+}

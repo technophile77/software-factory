@@ -1897,6 +1897,31 @@ def _through_symlink(path):
     return False
 
 
+INBOX_WORKFLOW = ".github/workflows/factory-inbox.yml"
+
+
+def config_repo(config_dir, master):
+    """F-016's F-003 amendment: the config repo carries the master's inbox workflow, unchanged.
+
+    The engine files inbox items through it (F-011 FR-4); without it, or with
+    an edited copy, items never become GitHub issues and the owner isn't told.
+    Line endings are ignored, since a Windows checkout may convert them.
+    """
+    def read(path):
+        try:
+            with open(path, "rb") as f:
+                return f.read().replace(b"\r\n", b"\n")
+        except FileNotFoundError:
+            return None
+    want = read(os.path.join(master, "templates", "config-repo", INBOX_WORKFLOW))
+    if want is None:
+        raise CheckError(f"the master checkout has no templates/config-repo/{INBOX_WORKFLOW}")
+    have = read(os.path.join(config_dir, INBOX_WORKFLOW))
+    status = "missing" if have is None else ("ok" if have == want else "differs")
+    return {"schema": "config-repo-check/1.0", "inbox_workflow": status,
+            "owner_variable": "FACTORY_OWNER_LOGIN (check with: gh variable get FACTORY_OWNER_LOGIN --repo <config repo>)"}
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1917,6 +1942,9 @@ def main(argv=None):
     i.add_argument("--complexity", action="store_true", help="also file the complexity preset decision (new project)")
     i.add_argument("--write", action="store_true", help="write the items; without it, only print the plan")
     i.add_argument("--level", choices=LEVELS, help="file tool decisions only for levels up to this one")
+    c = sub.add_parser("config-repo")
+    c.add_argument("config_dir")
+    c.add_argument("--master", required=True, help="master factory checkout holding templates/config-repo")
     v = sub.add_parser("plugin-version")
     v.add_argument("--manifest", help="factory-project.yaml whose factory.version must be this plugin's tag")
     args = p.parse_args(argv)
@@ -1951,6 +1979,10 @@ def main(argv=None):
             errors = validate_manifest(data, args.master, os.path.dirname(os.path.abspath(args.manifest)))
             print("\n".join(errors) or "Manifest is valid.")
             return 1 if errors else 0
+        if args.cmd == "config-repo":
+            result = config_repo(args.config_dir, args.master)
+            print(json.dumps(result, indent=2))
+            return 0 if result["inbox_workflow"] == "ok" else 1
         if args.cmd == "plugin-version":
             result = plugin_version(args.manifest)
             print(json.dumps(result, indent=2))

@@ -1306,3 +1306,39 @@ class LimitsV14(unittest.TestCase):
             block.append(line[2:])
         self.assertIn("lower", "\n".join(lines[start - 4:start]))
         self.assertEqual(self.errors("\n".join(block) + "\n"), [])
+
+
+class ConfigRepoTest(unittest.TestCase):
+    """F-016's F-003 amendment: onboarding installs the master's inbox workflow in the config repo."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.master = os.path.join(self.tmp, "master")
+        self.config = os.path.join(self.tmp, "config")
+        wf = os.path.join(self.master, "templates", "config-repo", ".github", "workflows")
+        os.makedirs(wf)
+        with open(os.path.join(wf, "factory-inbox.yml"), "w", newline="\n") as f:
+            f.write("name: factory-inbox\non: {}\n")
+        os.makedirs(self.config)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def _put(self, text):
+        d = os.path.join(self.config, ".github", "workflows")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "factory-inbox.yml"), "w", newline="") as f:
+            f.write(text)
+
+    def test_missing_workflow_fails(self):
+        self.assertEqual(fc.config_repo(self.config, self.master)["inbox_workflow"], "missing")
+        self.assertEqual(fc.main(["config-repo", self.config, "--master", self.master]), 1)
+
+    def test_same_workflow_passes_even_with_windows_line_endings(self):
+        self._put("name: factory-inbox\r\non: {}\r\n")
+        self.assertEqual(fc.config_repo(self.config, self.master)["inbox_workflow"], "ok")
+        self.assertEqual(fc.main(["config-repo", self.config, "--master", self.master]), 0)
+
+    def test_edited_workflow_fails(self):
+        self._put("name: factory-inbox\non: {}\n# edited\n")
+        self.assertEqual(fc.config_repo(self.config, self.master)["inbox_workflow"], "differs")
