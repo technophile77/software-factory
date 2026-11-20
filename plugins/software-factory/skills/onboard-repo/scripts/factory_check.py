@@ -1552,6 +1552,35 @@ def _check_source_globs(where, rule, errors):
                       "use file-type patterns for where the code lives (e.g. `src/**/*.ts`, `*.py`)")
 
 
+# F-015 FR-23: files that hold only the test dependencies, by their usual names.
+TEST_DEPENDENCY_FILE = re.compile(r"(^|/)((requirements|reqs)[-_](dev|test|tests)|(dev|test|tests)[-_]requirements|requirements/(dev|test|tests))\.(txt|in)$")
+
+
+def _writable(path, rule):
+    write = (rule or {}).get("write") or {}
+    allow = write.get("allow") or []
+    deny = write.get("deny") or []
+    match = lambda g: fnmatch.fnmatchcase(path, g) or fnmatch.fnmatchcase(path, g.replace("**/", ""))
+    return any(match(g) for g in allow) and not any(match(g) for g in deny)
+
+
+def _check_test_dependencies(data, errors):
+    # A test dependency file the repo's commands install, that no build role may
+    # write, leaves a missing test package with no one to add it (mesbot F-003).
+    for repo in data.get("repos") or []:
+        if not isinstance(repo, dict):
+            continue
+        commands = repo.get("commands") or {}
+        args = [a for key in ("build", "test") for a in (commands.get(key) or []) if isinstance(a, str)]
+        tokens = [t.removeprefix("./").removeprefix("-r") for a in args for t in re.split(r"[\s=]+", a)]
+        files = sorted({t for t in tokens if TEST_DEPENDENCY_FILE.search(t)})
+        roles = effective_policy(data, repo.get("name"))
+        for f in files:
+            if not any(_writable(f, roles.get(r)) for r in ("test-engineer", "software-developer")):
+                errors.append(f"repo {repo.get('name')}: its commands install the test dependency file {f}, which no role may write; "
+                              "add it to the test engineer's write allow list")
+
+
 def _check_may_request(where, role, value, errors):
     allowed = MAY_REQUEST.get(role)
     if allowed is None:
@@ -1652,6 +1681,7 @@ def validate_policy(data, agents):
                 _check_source_globs(f"repos[{i}].policy.roles.{role}", rule, errors)
     if errors:
         return errors
+    _check_test_dependencies(data, errors)
     # Any role that can write outside the factory's own records must be denied change-controlled files.
     # The project policy is checked on its own too: it applies wherever a repo
     # has no override, and an override can hide a bad project rule (Code Review #10).

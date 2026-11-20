@@ -788,6 +788,17 @@ class ManifestPolicy(Base):
         mixed = files.replace('"main.py", "server.py"', '"*.py", "requirements.txt"')
         self.assertEqual(self.errors(self.manifest(repo_policy=mixed)), [])
 
+    def test_test_dependency_file_has_a_writer(self):
+        # F-015 FR-23 (mesbot F-003): a test package no role could add left the build stuck.
+        cmds = "    commands:\n      build: [\"python\", \"-m\", \"pip\", \"install\", \"-r\", \"requirements-dev.txt\"]\n"
+        errs = self.errors(self.manifest(repo_policy=cmds))
+        self.assertTrue(any("requirements-dev.txt, which no role may write" in e for e in errs), errs)
+        tester = (cmds + "    policy:\n      roles:\n        test-engineer:\n          write:\n"
+                  f"            allow: [\"tests/**\", \"requirements-dev.txt\"]\n            deny: {self.CC}\n")
+        self.assertEqual(self.errors(self.manifest(repo_policy=tester)), [])
+        shell = "    commands:\n      build: [\"bash\", \"-c\", \"pip install -r ./requirements-test.txt\"]\n"
+        self.assertTrue(any("requirements-test.txt" in e for e in self.errors(self.manifest(repo_policy=shell))))
+
     def test_policy_is_optional(self):
         text = self.manifest().split("policy:")[0]
         self.assertEqual(self.errors(text), [])

@@ -235,7 +235,13 @@ item's `history` (`by: owner`) per the Inbox item v1.0 contract.
   today, and never `**`; the checker refuses both. Single files the
   developer must also change, such as `requirements.txt`, may be added
   beside the patterns. Test globs go in the developer's `deny`, so a source
-  pattern that also matches tests (`test_*.py`, `conftest.py`) is safe. Never widen a role's
+  pattern that also matches tests (`test_*.py`, `conftest.py`) is safe.
+  Test-only dependency files (`requirements-dev.txt`, `requirements-test.txt`)
+  belong to the test engineer: put them in its write allow list, and make
+  `commands.build` install both the product and the test dependency files
+  into the test environment, so a change to either takes effect on the
+  engine's next test run (F-015 FR-23). The checker reports a test
+  dependency file the build commands name that no role may write. Never widen a role's
   `tools` or `read` rules or drop its secret-file denies; that is a
   Security decision for the owner.
 - Existing project: clone its config repo, add the repo under `repos`, and

@@ -10,7 +10,7 @@ import { GitHttp } from "./git-http";
 import { FACTORY_TOKEN, OWNER_ID, addProjectFile, git, tmpdir } from "./helpers";
 import { FakeIssues } from "./inbox-fake";
 import { type Script, boot, entries, interview, runsOf, scriptedSdk, stageOf, until, world } from "./agents-harness";
-import { act, analyst, items, orchestrator, pollUntil, reviewer, start } from "./signoff-flow";
+import { act, analyst, effects, items, orchestrator, pollUntil, reviewer, start } from "./signoff-flow";
 import { nodeProgram } from "./acceptance/support/platform";
 import type { CheckRun, Pull, PullsApi, RequiredCheck } from "../src/build/pulls";
 import type { IssueComment } from "../src/inbox/github-issues";
@@ -522,6 +522,82 @@ describe("a developer that reports blocked", () => {
     expect(rep.body).toMatchObject({ not_done: ["everything: no runtime decision"] });
     await until("the stop item", () => items(w).some((i) => String(i.record.title).includes("developer for") && String(i.record.title).includes("stopped")));
   }, 90_000);
+});
+
+
+describe("F-015 FR-21: no answer leaves a build at a dead end", () => {
+  const twoPolls = async (w: Parameters<typeof items>[0]) => {
+    for (let i = 0; i < 2; i++) {
+      await w.clock.advance(60_000);
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  };
+  it("AC-42, AC-43: a request for changes on a stopped step files one What next item, and sending it to the developer runs the developer with the note", async () => {
+    const { w, d, gh, id } = await signedOff();
+    const feature = id.value;
+    const turns: string[] = [];
+    const dev = async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
+      const turn = (await sc.next())!;
+      turns.push(turn);
+      const commit = turnFact(turn, /commit "([0-9a-f]{40})"/);
+      const wt = turnFact(turn, /You work in (\S+), a checkout/);
+      if (n > 1 && wt) {
+        fs.mkdirSync(path.join(wt, "src"), { recursive: true });
+        fs.writeFileSync(path.join(wt, "src", "export.js"), "export const toCsv = (rows) => rows.join('\\n');\n");
+      }
+      yield {
+        type: "result", subtype: "success", session_id: `dev-${n}`, num_turns: 2,
+        structured_output: {
+          schema: "agent-report/1.0", role: "software-developer", feature, stage: turnFact(turn, /stage "([a-z_]+)"/), commit, outcome: n > 1 ? "complete" : "blocked",
+          summary: n > 1 ? "Export added." : "Blocked: may I add a helper module?",
+          body: { files_changed: n > 1 ? ["src/export.js"] : [], spec_deviations: [], not_done: n > 1 ? [] : ["everything"], docs_updated: [] },
+        },
+      } as SdkMessage;
+    };
+    const s = scriptedSdk({ analyst: async function* () {}, reviewer: async function* () {}, developer: dev, tester: async function* () {} });
+    const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh });
+    await until("the stop", () => e.feature("acme", feature)?.state.build.actions.includes("failed") ?? false, 30_000);
+    const stop = () => items(w).find((i) => i.record.effect?.type === "buildstop");
+    await pollUntil(w, "the stop item's issue", () => stop()?.record.issue !== undefined);
+    expect(stop()!.record.options.map((o: { label: string }) => o.label)).toEqual(["Run the developer again", "Keep the feature stopped", "Send it to the developer", "Send it to the test engineer"]);
+
+    gh.say(stop()!.record.issue, "/changes Add the helper module src/csv.js.");
+    const next = () => items(w).filter((i) => i.record.effect?.type === "whatnext");
+    await pollUntil(w, "the What next item", () => next().length === 1 && next()[0]!.record.issue !== undefined);
+    expect(next()[0]!.record).toMatchObject({ feature, title: `What next for ${feature}?` });
+    // Filed once: more polls file no second one while it is open.
+    await twoPolls(w);
+    expect(next()).toHaveLength(1);
+
+    await act(w, gh, next()[0]!.record.issue, "choose:A");
+    await pollUntil(w, "the developer's second run", () => turns.length === 2);
+    await until("the tests after it", () => e.feature("acme", feature)?.state.build.actions.slice(-2).join() === "to_developer,done", 30_000);
+    expect(turns).toHaveLength(2);
+    expect(turns[1]).toContain("The owner sent the feature to you with this note");
+    expect(turns[1]).toContain("Add the helper module src/csv.js.");
+    expect(e.feature("acme", feature)!.state.build.events.find((x) => x.action === "to_developer")).toMatchObject({ note: "Add the helper module src/csv.js." });
+  }, 120_000);
+
+  it("AC-43: keeping the feature stopped files no What next item", async () => {
+    const { w, d, gh, id } = await signedOff();
+    const feature = id.value;
+    const dev = async function* (sc: Script): AsyncGenerator<SdkMessage> {
+      const turn = (await sc.next())!;
+      yield {
+        type: "result", subtype: "success", session_id: "dev-1", num_turns: 2,
+        structured_output: { schema: "agent-report/1.0", role: "software-developer", feature, stage: "build_and_test_prep", commit: turnFact(turn, /commit "([0-9a-f]{40})"/), outcome: "blocked", summary: "Blocked.", body: { files_changed: [], spec_deviations: [], not_done: ["everything"], docs_updated: [] } },
+      } as SdkMessage;
+    };
+    const s = scriptedSdk({ analyst: async function* () {}, reviewer: async function* () {}, developer: dev, tester: async function* () {} });
+    const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh });
+    await until("the stop", () => e.feature("acme", feature)?.state.build.actions.includes("failed") ?? false, 30_000);
+    const stop = () => items(w).find((i) => i.record.effect?.type === "buildstop");
+    await pollUntil(w, "the stop item's issue", () => stop()?.record.issue !== undefined);
+    await act(w, gh, stop()!.record.issue, "choose:B");
+    await pollUntil(w, "the answer acted on", () => effects(w, stop()!.id).length > 0);
+    await twoPolls(w);
+    expect(items(w).filter((i) => i.record.effect?.type === "whatnext")).toHaveLength(0);
+  }, 120_000);
 });
 
 /** FakePulls with the merge API, merging only at the head it is given. */

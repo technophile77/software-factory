@@ -181,6 +181,42 @@ export function readResults(worktree: string, rel: string): TestCase[] {
   }
 }
 
+const MISSING = "mapped to a criterion but not in the results file";
+
+/** A mapped test id's file and test name: `tests/test_x.py::test_a`, `test/x.test.js#May`. */
+function splitTest(t: string): { file: string; name: string } {
+  const i = t.indexOf("::") >= 0 ? t.indexOf("::") : t.lastIndexOf("#");
+  if (i < 0) return { file: "", name: t };
+  const sep = t.startsWith("::", i) ? 2 : 1;
+  const name = t.slice(i + sep).split("::").pop()!;
+  return { file: t.slice(0, i), name };
+}
+
+/** `tests/test_x.py` and `tests.test_x` alike, for matching a file to a result's class or id. */
+const fileKey = (f: string) => f.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\.(py|[cm]?[jt]sx?)$/, "").replace(/\//g, ".").toLowerCase();
+
+/**
+ * F-015 FR-24: why a mapped test is missing from the results: its file failed
+ * to load, the same name is under another id, nothing from its file ran, or
+ * none of these.
+ */
+export function whyMissing(t: string, cases: TestCase[]): string {
+  const { file, name } = splitTest(t);
+  const key = file ? fileKey(file) : "";
+  const fromFile = (c: TestCase) => !!key && [c.classname, c.id, c.name].some((x) => fileKey(x).includes(key));
+  // A load error is reported as the file itself, or as an error that says it couldn't collect or import it; not a test of the file that errored.
+  const isFile = (c: TestCase) => !!key && [c.name, c.id].some((x) => fileKey(x).endsWith(key));
+  const loadError = cases.find((c) => c.status === "error" && (isFile(c) || (fromFile(c) && /collect|import|load|syntax/i.test(`${c.message}\n${c.detail}`))));
+  if (loadError) {
+    const line = (loadError.message || loadError.detail).split(/\r?\n/).map((x) => x.trim()).find(Boolean) ?? "no message";
+    return `${MISSING}: its file failed to load (${loadError.id}: ${line})`;
+  }
+  const same = cases.find((c) => c.name === name || undoubled(c.name) === name);
+  if (same) return `${MISSING}: a test with the same name is in the results as ${same.id}`;
+  if (key && !cases.some(fromFile)) return `${MISSING}: no test from ${file} is in the results`;
+  return MISSING;
+}
+
 export interface RunReport {
   commit: string;
   complete: boolean;
@@ -216,7 +252,7 @@ export function runReport(commit: string, cases: TestCase[], criteriaMap: Record
       return { test: t, status: c?.status ?? "missing" };
     });
   }
-  for (const t of missing) not_run.push({ test: t.slice(0, 300), reason: "mapped to a criterion but not in the results file" });
+  for (const t of missing) not_run.push({ test: t.slice(0, 300), reason: whyMissing(t, cases).slice(0, 1000) });
   const unexplained = cases.filter((c) => c.status === "skipped" && !c.message.trim());
   const incomplete = problem ?? (cases.length === 0 ? "the results file lists no tests"
     : unexplained.length ? `${unexplained.length} test${unexplained.length > 1 ? "s were" : " was"} skipped with no reason`

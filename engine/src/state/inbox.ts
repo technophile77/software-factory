@@ -15,6 +15,8 @@ export interface SecurityAlert {
   effectData?: Record<string, string | number>;
   /** F-021 FR-4: detail shown only in the console, never on GitHub. */
   private?: Array<{ name: string; text: string }>;
+  /** F-015 FR-21: further options after A and B, such as sending a stopped build to another role. */
+  more?: Array<{ id: "C" | "D"; label: string; detail: string }>;
 }
 
 /**
@@ -28,13 +30,13 @@ export async function fileSecurityItem(inbox: Inbox, type: string, a: SecurityAl
   return inbox.file({
     kind: "decision", title: a.title, category: "Security", priority: "high", blocking: true, created_by: "engine",
     ...(a.feature ? { feature: a.feature } : {}),
-    options: [{ id: "A", label: a.confirm }, { id: "B", label: a.hold }],
+    options: [{ id: "A", label: a.confirm }, { id: "B", label: a.hold }, ...(a.more ?? []).map((m) => ({ id: m.id, label: m.label }))],
     recommendation: a.recommendation,
     effect: { ...a.effectData, type, ...(a.feature ? { feature: a.feature } : {}) },
     ...(a.private?.length ? { private: a.private } : {}),
     sections: {
       Context: [{ engine: a.context }],
-      Options: [{ engine: `- **A. ${a.confirm}.** Pro: work resumes. Con: wrong if you didn't make the change.\n- **B. ${a.hold}.** Pro: nothing runs until you've looked. Con: the project stays stopped.` }],
+      Options: [{ engine: `- **A. ${a.confirm}.** Pro: work resumes. Con: wrong if you didn't make the change.\n- **B. ${a.hold}.** Pro: nothing runs until you've looked. Con: the project stays stopped.${(a.more ?? []).map((m) => `\n- **${m.id}. ${m.label}.** ${m.detail}`).join("")}` }],
       "Project impact": [{ engine: a.impact }],
       Recommendation: [{ engine: `Option ${a.recommendation}.` }],
       "Cost of delay": [{ engine: "The affected work stays stopped until this is decided." }],
