@@ -186,6 +186,7 @@ export class TerminalInterview {
   private offered = "";
   /** The last reply sent, so a lost one can be checked and, on the owner's word, resent. */
   private lastSent: { item: Item; kind: string; text: string } | null = null;
+<<<<<<< HEAD
   /** F-021 FR-18: `inbox -v`, the agents' live transcript under the status. */
   verbose = false;
   /** The transcript position read up to; unset until the first read. */
@@ -202,6 +203,10 @@ export class TerminalInterview {
   private answerOnly = false;
   /** FR-17: features whose waiting question the owner put off, until they stop waiting. */
   private putOff = new Set<string>();
+=======
+  /** Set when the engine came back, so a session it no longer knows is opened again without asking (FR-16). */
+  private reconnected = false;
+>>>>>>> 80ddcdd90abb1ab140f1828824509c999bb6fb3d
 
   constructor(
     private readonly runner: Runner,
@@ -657,6 +662,7 @@ export class TerminalInterview {
         shown = text;
         this.speaker = "";
       }
+<<<<<<< HEAD
       // F-021 FR-17: a feature waiting for the owner's answer is offered here, once until it stops waiting.
       const asking = waitingForAnswer(st);
       for (const id of [...this.putOff]) if (!asking.includes(id)) this.putOff.delete(id);
@@ -675,6 +681,8 @@ export class TerminalInterview {
         } else this.putOff.add(ask);
         continue;
       }
+=======
+>>>>>>> 80ddcdd90abb1ab140f1828824509c999bb6fb3d
       const r = await this.inboxItems(this.runner);
       if (r.ok !== true) {
         this.show(r);
@@ -697,6 +705,7 @@ export class TerminalInterview {
   }
 
   /**
+<<<<<<< HEAD
    * F-021 FR-18: prints what the agents said and did since the last read. A
    * heading with the time, feature and role starts each run of lines from
    * one agent; the lines themselves are engine text, cleaned and marked
@@ -728,6 +737,8 @@ export class TerminalInterview {
   }
 
   /**
+=======
+>>>>>>> 80ddcdd90abb1ab140f1828824509c999bb6fb3d
    * The open items. An engine that went away is waited for, and a console
    * session the restarted engine doesn't know is opened again, once per call
    * (F-021 FR-16).
@@ -791,8 +802,11 @@ export class TerminalInterview {
     }
     if (st.ok === true) {
       this.reconnected = true;
+<<<<<<< HEAD
       // A restarted engine numbers its transcript from the start again.
       this.transcriptAt = undefined;
+=======
+>>>>>>> 80ddcdd90abb1ab140f1828824509c999bb6fb3d
       this.say(`[${this.clock()}] ${starting ? "Connected" : "Reconnected"} to the engine.`);
     }
     return st;
