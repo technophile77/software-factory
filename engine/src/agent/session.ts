@@ -400,6 +400,8 @@ export interface SessionEvents {
   onWebSearch?(query: string): void;
   /** Each finished turn (a `result` message). */
   onTurnEnd?(): void;
+  /** Each assistant message: the session is working. */
+  onWorking?(): void;
   /** Given, the session's wall-time cap runs on it, so an ask can hold it. */
   wall?(onExpire: () => void): WallTimer;
 }
@@ -424,6 +426,7 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
         ev.onSessionId?.(m.session_id);
       }
       if (m.type === "assistant") {
+        ev.onWorking?.();
         const msg = (m as Extract<SdkMessage, { type: "assistant" }>).message;
         for (const c of msg.content ?? []) {
           if (c.type === "tool_use" && c.name === "WebSearch") {
