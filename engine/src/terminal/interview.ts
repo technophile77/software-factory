@@ -46,7 +46,7 @@ export const ACTIVITY: Record<string, string> = {
   security_reviewing: "Security reviewer is reviewing the specification",
   readiness_check: "Checking readiness",
   advisor_working: "Advisor is working",
-  waiting_for_owner: "Getting your next question",
+  waiting_for_owner: "Waiting for your answer",
   waiting_for_decision: "Waiting for your decision",
   paused: "The feature is paused",
   idle: "The factory is idle",
@@ -83,6 +83,13 @@ export function statusLines(st: Obj): string[] {
     const label = code === "waiting_for_decision" && decisions.length ? `${ACTIVITY[code]} on ${decisions.join(", ")}` : ACTIVITY[code] ?? "Working";
     return `${id}: ${label}`;
   });
+}
+
+/** F-021 FR-17: the features whose analyst waits for the owner's answer, from the operation's checked lists. */
+export function waitingForAnswer(st: Obj): string[] {
+  const ids = Array.isArray(st.features) ? (st.features as unknown[]).filter((x): x is string => typeof x === "string") : [];
+  const activities = (st.activities ?? {}) as Record<string, string>;
+  return ids.filter((id) => activities[id] === "waiting_for_owner");
 }
 
 /** Stages from which the interview can still send the owner items, so the command keeps waiting. */
@@ -179,6 +186,14 @@ export class TerminalInterview {
   private lastSent: { item: Item; kind: string; text: string } | null = null;
   /** Set when the engine came back, so a session it no longer knows is opened again without asking (FR-16). */
   private reconnected = false;
+  /**
+   * F-021 FR-17: the inbox console answers a feature's waiting questions in
+   * place; the session then ends as soon as nothing more is waiting, instead
+   * of following the analyst's work, and the console goes back to watching.
+   */
+  private answerOnly = false;
+  /** FR-17: features whose waiting question the owner put off, until they stop waiting. */
+  private putOff = new Set<string>();
 
   constructor(
     private readonly runner: Runner,
@@ -395,6 +410,10 @@ export class TerminalInterview {
     if (r.ok !== true) return this.failed(feature, r);
     this.reconnected = false;
     const item = (r.item ?? r.next ?? null) as Item | null;
+    if (this.answerOnly && (item === null || item.status === "researching" || r.waiting === true)) {
+      if (r.interview_done !== true) this.say(`\nNothing more is waiting for you on ${feature}; back to watching the factory.`);
+      return null;
+    }
     // Security and Testability Review and the readiness check can still send the feature back with new questions.
     if (item === null && typeof r.stage === "string" && WAIT_STAGES.has(r.stage)) return this.waitForItem(feature);
     this.show(r);
@@ -628,6 +647,24 @@ export class TerminalInterview {
       if (text !== shown) {
         this.say(`\n[${new Date(this.timing.now()).toTimeString().slice(0, 8)}]\n${text}`);
         shown = text;
+      }
+      // F-021 FR-17: a feature waiting for the owner's answer is offered here, once until it stops waiting.
+      const asking = waitingForAnswer(st);
+      for (const id of [...this.putOff]) if (!asking.includes(id)) this.putOff.delete(id);
+      const ask = asking.find((id) => !this.putOff.has(id));
+      if (ask) {
+        this.say(`\n${ask} has a question waiting for you.`);
+        const c = await this.choose([{ label: "Answer it here", key: "answer" }, { label: "Not now", key: "later" }]);
+        if ("key" in c && c.key === "answer") {
+          this.answerOnly = true;
+          try {
+            await this.session(ask);
+          } finally {
+            this.answerOnly = false;
+          }
+          shown = "";
+        } else this.putOff.add(ask);
+        continue;
       }
       const r = await this.inboxItems(this.runner);
       if (r.ok !== true) {
