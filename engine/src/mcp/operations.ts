@@ -54,6 +54,7 @@ export const FIELDS: Record<Operation, readonly string[]> = {
 const INBOX_ACTION_RE = /^(?:choose:[A-D]|step:[1-9]\d?|approve|reject|changes|research|defer|restore|dismiss)$/;
 /** F-021 FR-18: what a transcript entry may name; anything else is dropped. */
 const ROLE_RE = /^[a-z][a-z0-9-]{0,40}$/;
+const RUN_RE = /^R-[0-9a-f]{12}$/;
 const MAX_ENTRY_TEXT = 8000;
 const INBOX_KINDS = ["decision", "testing", "hygiene", "spec", "maturity", "notice"];
 const PRIORITY_WORDS = ["critical", "high", "medium", "low"];
@@ -377,11 +378,18 @@ export class Interview {
     const r = result(await this.sessionCall(req, run, "engine.transcript", req.after !== undefined ? { after: req.after } : {}));
     const entries = (Array.isArray(r.entries) ? r.entries.filter(isObj) : []).flatMap((e) => {
       if (!isInt(e.seq) || typeof e.at !== "string" || !TIMESTAMP_RE.test(e.at) || typeof e.feature !== "string" || !ID_RE.test(e.feature)) return [];
+      if (typeof e.run !== "string" || !RUN_RE.test(e.run)) return [];
       if (typeof e.role !== "string" || !ROLE_RE.test(e.role) || (e.kind !== "text" && e.kind !== "tool") || typeof e.text !== "string") return [];
-      return [{ seq: e.seq, at: e.at, feature: e.feature, role: e.role, kind: e.kind, text: e.text.slice(0, MAX_ENTRY_TEXT) }];
+      return [{ seq: e.seq, at: e.at, run: e.run, feature: e.feature, role: e.role, kind: e.kind, text: e.text.slice(0, MAX_ENTRY_TEXT) }];
+    });
+    const agents = (Array.isArray(r.agents) ? r.agents.filter(isObj) : []).flatMap((a) => {
+      if (typeof a.run !== "string" || !RUN_RE.test(a.run) || typeof a.feature !== "string" || !ID_RE.test(a.feature)) return [];
+      if (typeof a.role !== "string" || !ROLE_RE.test(a.role) || typeof a.started_at !== "string" || !TIMESTAMP_RE.test(a.started_at)) return [];
+      const cost = typeof a.cost_usd === "number" && Number.isFinite(a.cost_usd) && a.cost_usd >= 0 ? { cost_usd: a.cost_usd } : {};
+      return [{ run: a.run, feature: a.feature, role: a.role, started_at: a.started_at, ...(a.ended === true ? { ended: true } : {}), ...cost }];
     });
     if (!isInt(r.next) || r.next < 0) throw new ChannelFailure("bad_response", "The engine sent an invalid transcript position.", { sent: true });
-    return { entries, next: r.next, skipped: isInt(r.skipped) && r.skipped > 0 ? r.skipped : 0 };
+    return { agents, entries, next: r.next, skipped: isInt(r.skipped) && r.skipped > 0 ? r.skipped : 0 };
   }
 
   private async inboxList(req: Obj, run: Run): Promise<Obj> {

@@ -1207,7 +1207,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           confirm: async (a) => answeredInConsole(p, await ib.consoleConfirm(a)),
         };
       },
-      transcript: (after) => live.read(p.name!, after),
+      transcript: (after) => {
+        const r = live.read(p.name!, after);
+        // Spend so far, where the run has reported it (F-024 FR-6).
+        const agents = r.agents.map((a) => {
+          const cost = record.run(a.run)?.used?.costUsd;
+          return typeof cost === "number" ? { ...a, cost_usd: Math.round(cost * 100) / 100 } : a;
+        });
+        return { ...r, agents };
+      },
       secretRefused: async (where, found, fid) => {
         const rules = [...new Set(found.rules)].filter((r) => /^[A-Za-z0-9_.-]{1,80}$/.test(r));
         // Each refusal is its own event, so the alert key never repeats.
@@ -1335,9 +1343,19 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   /** F-021 FR-18: the run's sessions feed the live transcript, which lets go of them when the run's group closes. */
   function liveGroup(runId: string, g: AgentGroup): AgentGroup {
     const close = g.close.bind(g);
-    g.transcript = (kind, text) => {
+    const open = g.open.bind(g);
+    const who = () => {
       const r = record.run(runId);
-      if (r) live.add(runId, { project: r.project, feature: r.feature, role: r.role }, kind, text);
+      return r ? { project: r.project, feature: r.feature, role: r.role } : null;
+    };
+    g.open = async () => {
+      await open();
+      const w = who();
+      if (w) live.begin(runId, w);
+    };
+    g.transcript = (kind, text) => {
+      const w = who();
+      if (w) live.add(runId, w, kind, text);
     };
     g.close = async () => {
       try {

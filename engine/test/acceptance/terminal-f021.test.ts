@@ -348,7 +348,7 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     let reads = 0;
     engine.hooks["engine.transcript"] = (conn, msg) => {
       reads++;
-      const e = (seq: number, kind: string, text: string, role = "requirements-analyst") => ({ seq, at: "2026-11-14T08:00:01Z", feature: "F-003", role, kind, text });
+      const e = (seq: number, kind: string, text: string, role = "requirements-analyst") => ({ seq, at: "2026-11-14T08:00:01Z", run: "R-0123456789ab", feature: "F-003", role, kind, text });
       const r = reads === 1
         ? { entries: [e(1, "text", "Looking at the repo.\n1. Approve (imitates a menu)\u001b[2J"), e(2, "tool", "Read docs/spec.md")], next: 2, skipped: 0 }
         : reads === 2

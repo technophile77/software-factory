@@ -10,7 +10,7 @@ import type { ConsoleResult } from "../inbox/store";
 import type { InboxRecord } from "../inbox/model";
 import type { PrivateDetail } from "../inbox/local";
 import { SessionManager } from "./sessions";
-import type { LiveEntry } from "../agent/live-transcript";
+import type { LiveAgent, LiveEntry } from "../agent/live-transcript";
 
 /** F-021: what the channel needs from the project's inbox to answer items in the console. */
 export interface ConsoleInbox {
@@ -32,7 +32,7 @@ export interface ProjectChannel {
   /** F-021: the project's inbox for console answers, or null while it has none. */
   inbox(): ConsoleInbox | null;
   /** F-021 FR-18 (channel v1.7, H-0265): the project's live agent transcript after `after`. */
-  transcript(after: number | undefined): { entries: LiveEntry[]; next: number; skipped: number };
+  transcript(after: number | undefined): { agents: Array<LiveAgent & { cost_usd?: number }>; entries: LiveEntry[]; next: number; skipped: number };
   /** Files the Security item behind a -32008 for a secret the scan found (H-0084). */
   secretRefused(where: string, found: SecretFound, feature?: string): Promise<void>;
 }

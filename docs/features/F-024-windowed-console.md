@@ -1,7 +1,7 @@
 # Feature: Windowed console with an agent transcript
 
 - **Id:** F-024
-- **Status:** Draft
+- **Status:** In development (approved: owner sign-off 2026-11-20 18:58Z, decision card; readiness gate passed on v1)
 - **Requested by / date:** Alex, 2026-11-20 ("add a -v (verbose) option to
   the inbox that will show the current session transcript"; "organized into
   different view sections using ascii art to define 'windows' ... detect the
@@ -124,37 +124,37 @@ The windows (owner, 2026-11-20 18:56Z):
 
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | "Window mode by default with a flag for the old mode" applies to both commands, and the flag is `--plain`. | Owner, 2026-11-20 18:56Z (point 5) | Pending |
-| A-2 | Ink is the screen library (owner left it to the recommendation, 18:56Z point 4). | ADR 0035 | Pending |
+| A-1 | "Window mode by default with a flag for the old mode" applies to both commands, and the flag is `--plain`. | Owner, 2026-11-20 18:56Z (point 5) | Approved (sign-off 18:58Z) |
+| A-2 | Ink is the screen library (owner left it to the recommendation, 18:56Z point 4). | ADR 0035 | Approved (sign-off 18:58Z) |
 
 ## 9. Security considerations
 
 | Id | Requirement | Source | Status |
 |---|---|---|---|
-| SR-1 | All engine and agent text (item sections, private detail, status words from the engine, transcript lines) is cleaned of escape and control sequences before it is drawn (as F-018 SR-1) and drawn with the engine-text marker inside its window; the title line, tabs and answer bar are drawn only from the command's own words and checked ids (F-018 SR-2). | analyst | Proposed |
-| SR-2 | The transcript holds assistant text and tool names with targets only, never tool output, and lives only in the engine's memory and the console's screen: never on disk, in a repo, on GitHub or in a log. **Residual risk to accept:** an agent's own message, or a command line it runs, may quote a secret it saw; that would be shown in the console on this PC. | analyst | Proposed (risk acceptance needed) |
-| SR-3 | `engine.transcript` answers only an approved console session of the same project (F-021 SR-3, FR-13 sign-in setting), and returns only that project's runs. | analyst | Proposed |
-| SR-4 | The new libraries are pinned exactly and pass the S4.1 review and CVE check before they are added; the bundle stays a single file with no install step on the owner's PC. | analyst | Proposed |
+| SR-1 | All engine and agent text (item sections, private detail, status words from the engine, transcript lines) is cleaned of escape and control sequences before it is drawn (as F-018 SR-1) and drawn with the engine-text marker inside its window; the title line, tabs and answer bar are drawn only from the command's own words and checked ids (F-018 SR-2). | analyst | Approved (owner, 2026-11-20 18:58Z) |
+| SR-2 | The transcript holds assistant text and tool names with targets only, never tool output, and lives only in the engine's memory and the console's screen: never on disk, in a repo, on GitHub or in a log. **Residual risk to accept:** an agent's own message, or a command line it runs, may quote a secret it saw; that would be shown in the console on this PC. | analyst | Approved (owner, 2026-11-20 18:58Z), residual risk accepted |
+| SR-3 | `engine.transcript` answers only an approved console session of the same project (F-021 SR-3, FR-13 sign-in setting), and returns only that project's runs. | analyst | Approved (owner, 2026-11-20 18:58Z) |
+| SR-4 | The new libraries are pinned exactly and pass the S4.1 review and CVE check before they are added; the bundle stays a single file with no install step on the owner's PC. | analyst | Approved (owner, 2026-11-20 18:58Z) |
 
 ## 10. Interface requirements
 
 | Id | Where | Change | Status |
 |---|---|---|---|
-| H-0265 | `docs/interface-contracts.md` (Engine control channel v1.7) | New method `engine.transcript { session, after?: int }` returning `{ agents: [{ run, feature, role, started_at, ended?: bool, cost_usd? }], entries: [{ seq, at, run, feature, role, kind: "text" \| "tool", text (at most 8000 chars) }], next, skipped }`. Needs an approved console session (`inbox.open`); `after` is the last call's `next` (absent: the newest 50 entries); `skipped` counts entries dropped from a run's 500-entry buffer before this client read them. `kind: "tool"` text is the tool's name and target, never its output. `engine.json` capabilities gain `"transcript"`. Adding the method is non-breaking. | Proposed |
-| H-0266 | `docs/adr/0035-ink-for-the-windowed-console.md` (new), `docs/adr/README.md` | Record Ink as the console's screen library (options: Ink, blessed / neo-blessed, terminal-kit, hand-written ANSI). | Proposed |
-| H-0267 | `README.md`, `engine/README.md` | FR-14. | Proposed |
+| H-0265 | `docs/interface-contracts.md` (Engine control channel v1.7) | New method `engine.transcript { session, after?: int }` returning `{ agents: [{ run, feature, role, started_at, ended?: bool, cost_usd? }], entries: [{ seq, at, run, feature, role, kind: "text" \| "tool", text (at most 8000 chars) }], next, skipped }`. Needs an approved console session (`inbox.open`); `after` is the last call's `next` (absent: the newest 50 entries); `skipped` counts entries dropped from a run's 500-entry buffer before this client read them. `kind: "tool"` text is the tool's name and target, never its output. `engine.json` capabilities gain `"transcript"`. Adding the method is non-breaking. | Approved (owner, 2026-11-20 18:58Z); applied |
+| H-0266 | `docs/adr/0035-ink-for-the-windowed-console.md` (new), `docs/adr/README.md` | Record Ink as the console's screen library (options: Ink, blessed / neo-blessed, terminal-kit, hand-written ANSI). | Approved (owner, 2026-11-20 18:58Z); applied |
+| H-0267 | `README.md`, `engine/README.md` | FR-14. | Approved (owner, 2026-11-20 18:58Z); applied with the build |
 
 ## 11. Readiness gate
 
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+- [x] Clear objective
+- [x] Expected behavior defined
+- [x] Acceptance criteria testable
+- [x] Constraints documented
+- [x] Assumptions explicit
+- [x] Blocking decisions resolved (approved, not deferred)
 
 ## 12. Change log
 
 | Version | Date | Change | Approved by |
 |---|---|---|---|
-| 1 | 2026-11-20 | Draft from the owner's requests 18:42Z and 18:47Z and his answers 18:56Z (six windows, transcript only when switched on, tabs, one agent at a time, windows by default with a flag for the old mode). F-021's `-v` proposal (v10 draft) folded in here. | Pending |
+| 1 | 2026-11-20 | Draft from the owner's requests 18:42Z and 18:47Z and his answers 18:56Z (six windows, transcript only when switched on, tabs, one agent at a time, windows by default with a flag for the old mode). F-021's `-v` proposal (v10 draft) folded in here. | Owner, 2026-11-20 18:58Z (decision card, approved as written, incl. A-1, A-2, SR-1 to SR-4 with the SR-2 risk, H-0265 to H-0267) |

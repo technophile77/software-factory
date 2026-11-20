@@ -293,7 +293,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
 
 ---
 
-## Engine control channel — v1.6
+## Engine control channel — v1.7
 
 - Status: Approved
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
@@ -305,7 +305,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
   (F-006, the advisor) approved by the owner, 2026-11-10 (H-0063 and
   amendment H-0075: advisor fields stated exactly, call limits, budget flag,
   advice revision and hash; decision card, as drafted; renumbered from v1.2
-  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted); v1.4 capability list approved by the owner, 2026-11-12 (decision card); v1.5 (F-016 H-0183, `waiting_on`) approved by the owner, 2026-11-13 (decision card); v1.6 (F-021 H-0245, inbox answers in the console) approved by the owner, 2026-11-14 (decision card)
+  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted); v1.4 capability list approved by the owner, 2026-11-12 (decision card); v1.5 (F-016 H-0183, `waiting_on`) approved by the owner, 2026-11-13 (decision card); v1.6 (F-021 H-0245, inbox answers in the console) approved by the owner, 2026-11-14 (decision card); v1.7 (F-024 H-0265, `engine.transcript`) approved by the owner, 2026-11-20 (decision card, F-024 spec v1)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -359,6 +359,7 @@ it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 | `inbox.answer` | `{ session, item, rev, action, note?, reply_id }` | one of `{ recorded: true }`, `{ confirm: { words, code, expires_at } }`, `{ already: { by: "github" \| "console" \| "engine", action? } }`, `{ changed: { rev } }` (v1.6) |
 | `inbox.confirm` | `{ session, item, rev, code }` | `{ recorded: true }`, or the refusal `confirm_failed` (wrong or expired code) (v1.6) |
 | `inbox.close` | `{ session }` | `{ ok: true }` (v1.6) |
+| `engine.transcript` | `{ session, after?: int }` | `{ agents: [{ run, feature, role, started_at, ended?: true, cost_usd? }], entries: [{ seq, at, run, feature, role, kind: "text" \| "tool", text }], next, skipped }`. Needs an approved console session (`inbox.open`) and returns only that project's runs. The engine keeps each assistant message's text and each tool call's name and target, never tool output, in memory only: the last 500 entries per run, dropped 60 s after the run ends. `after` is the last call's `next` (absent: the newest 50 entries); `skipped` counts entries dropped before this client read them; `text` is at most 8000 characters. `engine.json` capabilities list `"transcript"` (v1.7, F-024 FR-13) |
 
 `Item` (v1.1) is `{ id, revision, kind: "question" | "assumption", text, why,
 suggested?, options?: [string], findings?: [{ text, source }], status }`.

@@ -10,6 +10,7 @@ export type EntryKind = "text" | "tool";
 export interface LiveEntry {
   seq: number;
   at: string;
+  run: string;
   feature: string;
   role: string;
   kind: EntryKind;
@@ -27,8 +28,20 @@ const DROP_LOG = 10_000;
 
 interface RunBuffer {
   project: string;
+  feature: string;
+  role: string;
+  startedAt: string;
   entries: LiveEntry[];
   endedAt: number | null;
+}
+
+/** A running (or just ended) agent session, for the console's Agents window (F-024 FR-6). */
+export interface LiveAgent {
+  run: string;
+  feature: string;
+  role: string;
+  started_at: string;
+  ended?: true;
 }
 
 /** The one line a tool call shows: its name and what it works on, never its output. */
@@ -74,14 +87,18 @@ export class LiveTranscript {
 
   constructor(private readonly now: () => number = Date.now) {}
 
+  /** The run's first session started; it is listed as an agent from now, before it says anything. */
+  begin(runId: string, who: { project: string; feature: string; role: string }): void {
+    const b = this.runs.get(runId);
+    if (b) b.endedAt = null;
+    else this.runs.set(runId, { ...who, startedAt: new Date(this.now()).toISOString(), entries: [], endedAt: null });
+  }
+
   add(runId: string, who: { project: string; feature: string; role: string }, kind: EntryKind, text: string): void {
     if (!text.trim()) return;
-    let b = this.runs.get(runId);
-    if (!b) {
-      b = { project: who.project, entries: [], endedAt: null };
-      this.runs.set(runId, b);
-    }
-    b.entries.push({ seq: ++this.seq, at: new Date(this.now()).toISOString(), feature: who.feature, role: who.role, kind, text: text.slice(0, MAX_TEXT) });
+    this.begin(runId, who);
+    const b = this.runs.get(runId)!;
+    b.entries.push({ seq: ++this.seq, at: new Date(this.now()).toISOString(), run: runId, feature: who.feature, role: who.role, kind, text: text.slice(0, MAX_TEXT) });
     if (b.entries.length > PER_RUN) this.drop(b.project, b.entries.splice(0, b.entries.length - PER_RUN));
   }
 
@@ -95,18 +112,21 @@ export class LiveTranscript {
    * The project's entries after `after`, oldest first. With no `after`, the
    * newest few, so a console that just started isn't flooded.
    */
-  read(project: string, after: number | undefined): { entries: LiveEntry[]; next: number; skipped: number } {
+  read(project: string, after: number | undefined): { agents: LiveAgent[]; entries: LiveEntry[]; next: number; skipped: number } {
     this.prune();
     const all: LiveEntry[] = [];
-    for (const b of this.runs.values()) if (b.project === project) all.push(...b.entries);
-    all.sort((a, b) => a.seq - b.seq);
-    if (!after) {
-      const entries = all.slice(-FIRST_READ);
-      return { entries, next: this.seq, skipped: 0 };
+    const agents: LiveAgent[] = [];
+    for (const [run, b] of this.runs) {
+      if (b.project !== project) continue;
+      all.push(...b.entries);
+      agents.push({ run, feature: b.feature, role: b.role, started_at: b.startedAt, ...(b.endedAt !== null ? { ended: true as const } : {}) });
     }
+    all.sort((a, b) => a.seq - b.seq);
+    agents.sort((a, b) => a.started_at.localeCompare(b.started_at));
+    if (!after) return { agents, entries: all.slice(-FIRST_READ), next: this.seq, skipped: 0 };
     const entries = all.filter((e) => e.seq > after);
     const skipped = (this.dropped.get(project) ?? []).filter((s) => s > after).length;
-    return { entries, next: this.seq, skipped };
+    return { agents, entries, next: this.seq, skipped };
   }
 
   private drop(project: string, gone: LiveEntry[]): void {

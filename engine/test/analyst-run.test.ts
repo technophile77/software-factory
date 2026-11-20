@@ -181,6 +181,9 @@ describe("the analyst, wired end to end with fake Docker and SDK (FR-8 to FR-11)
       [feature, "requirements-analyst", "tool", `Bash ${"x".repeat(200)}`],
     ]);
     expect(JSON.stringify(first)).not.toContain("secret-file-content");
+    const run = runOf(w, feature)!.id;
+    expect(got.every((x) => x.run === run)).toBe(true);
+    expect(first.agents).toEqual([expect.objectContaining({ run, feature, role: "requirements-analyst" })]);
     expect(first.skipped).toBe(0);
     // Read from where the last read ended: nothing new.
     expect((await c.ok("engine.transcript", { session, after: first.next })).entries).toEqual([]);
