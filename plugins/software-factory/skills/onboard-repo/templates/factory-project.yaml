@@ -97,7 +97,7 @@ policy:
         allow: []
     software-developer:
       tools:
-        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
+        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash", "Monitor", "TaskStop"]
       read:
         allow: ["**"]
         deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
@@ -110,7 +110,7 @@ policy:
         allow: []
     test-engineer:
       tools:
-        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
+        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash", "Monitor", "TaskStop"]
       read:
         allow: ["**"]
         deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
