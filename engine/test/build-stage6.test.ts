@@ -82,6 +82,24 @@ describe("run report (FR-6, AC-6)", () => {
     expect(r.criteria["AC-1"]).toEqual([{ test: "export#May & June", status: "passed" }]);
     expect(r.not_run).toContainEqual({ test: "export#nope", reason: "mapped to a criterion but not in the results file" });
   });
+  it("AC-46: gives each missing mapped test a reason", () => {
+    const xml = `<testsuites><testsuite name="pytest">
+      <testcase classname="" name="tests.test_dump"><error message="collection failure">ImportError: No module named 'pygments'</error></testcase>
+      <testcase classname="tests.test_watch" name="test_stall_dump"/>
+      <testcase classname="tests.test_other" name="test_ok"/>
+    </testsuite></testsuites>`;
+    const r = runReport("c".repeat(40), parseJunit(xml), {
+      "AC-1": ["tests/test_dump.py::test_writes_file"],
+      "AC-2": ["tests/test_stall.py::test_stall_dump"],
+      "AC-3": ["tests/test_gone.py::test_never"],
+      "AC-4": ["nothing_like_it"],
+    });
+    const why = Object.fromEntries(r.not_run.map((x) => [x.test, x.reason]));
+    expect(why["tests/test_dump.py::test_writes_file"]).toBe("mapped to a criterion but not in the results file: its file failed to load (tests.test_dump: collection failure)");
+    expect(why["tests/test_stall.py::test_stall_dump"]).toBe("mapped to a criterion but not in the results file: a test with the same name is in the results as tests.test_watch#test_stall_dump");
+    expect(why["tests/test_gone.py::test_never"]).toBe("mapped to a criterion but not in the results file: no test from tests/test_gone.py is in the results");
+    expect(why["nothing_like_it"]).toBe("mapped to a criterion but not in the results file");
+  });
   it("an unexplained skip makes the run incomplete", () => {
     const r = runReport("c".repeat(40), parseJunit(`<testsuite><testcase name="a"/><testcase name="b"><skipped/></testcase></testsuite>`), {});
     expect(r.incomplete).toMatch(/skipped with no reason/);

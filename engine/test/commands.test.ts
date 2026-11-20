@@ -176,7 +176,7 @@ describe("the session watchdog (FR-20)", () => {
   });
 });
 
-describe("background commands for build agents (FR-20, Role policy v2.11)", () => {
+describe("background commands for build agents (FR-20, Role policy v2.11) and the repo's commands (FR-22)", () => {
   const sig = { signal: new AbortController().signal };
   const policy = (role: string, tools: RolePolicy["tools"]): RolePolicy => ({
     role, tools, read: { allow: ["**"], deny: [...SECRET_DENIES] }, write: { allow: ["src/**"], deny: [] }, commands: ["ls"], network: [], mayRequest: [],
@@ -206,6 +206,17 @@ describe("background commands for build agents (FR-20, Role policy v2.11)", () =
     for (const role of ["software-developer", "test-engineer"] as const) {
       expect(buildTurn(role, { ...facts, background: true })).toMatch(/in the background \(`Bash` with `run_in_background`\).*`TaskStop`.*silent for 10 minutes is killed/s);
       expect(buildTurn(role, facts)).not.toMatch(/run_in_background/);
+    }
+  });
+
+  it("AC-44: names the repo's build and test commands and says to test with them", () => {
+    const facts = { feature: "F-1", title: "t", repo: "r", branch: "b", worktree: "/w", spec: "/s", folder: "/f", version: 1, commit: "c".repeat(40), stage: "build_and_test_prep" };
+    for (const role of ["software-developer", "test-engineer"] as const) {
+      const turn = buildTurn(role, { ...facts, commands: { build: ["python", "-m", "pip", "install", "-r", "requirements-dev.txt"], test: ["python", "-m", "pytest"] } });
+      expect(turn).toContain('running ["python","-m","pip","install","-r","requirements-dev.txt"], then ["python","-m","pytest"]. Test your work the same way');
+      expect(turn).toMatch(/Don't build a test environment of your own/);
+      expect(buildTurn(role, { ...facts, commands: { build: null, test: ["npm", "test"] } })).toContain('by running ["npm","test"]. Test');
+      expect(buildTurn(role, facts)).not.toMatch(/Test your work the same way/);
     }
   });
 });

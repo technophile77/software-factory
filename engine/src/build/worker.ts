@@ -200,6 +200,8 @@ export interface TurnFacts {
   background?: boolean;
   /** The role's write rules, so the agent knows them before a write is refused. */
   write?: { allow: string[]; deny: string[] };
+  /** F-015 FR-22: the repo's own build and test commands, which the engine's test run uses. */
+  commands?: { build: string[] | null; test: string[] };
 }
 
 /**
@@ -219,6 +221,9 @@ export function buildTurn(role: BuildRole, t: TurnFacts): string {
     ...(t.background
       ? ["Run anything that may take long or may block in the background (`Bash` with `run_in_background`): test runs, servers, and scripts that start threads or wait on events. Watch it with `Monitor` or check its output with `Bash`, stop it with `TaskStop` when it stalls, and don't end your session while a background command of yours is still running. A command that sits silent for 10 minutes is killed."]
       : []),
+    ...(t.commands
+      ? [`The engine tests the feature in a fresh checkout by running ${t.commands.build ? `${JSON.stringify(t.commands.build)}, then ` : ""}${JSON.stringify(t.commands.test)}. Test your work the same way: run those commands in your worktree. Don't build a test environment of your own, such as a new virtual environment, or install packages anywhere else; a package that seems missing is one the engine's run may well have.`]
+      : []),
     ...(t.write
       ? [`You may create or change only paths, relative to the worktree, that match one of ${JSON.stringify(t.write.allow)} and none of ${JSON.stringify(t.write.deny)}. Anything else, a new file included, is refused, and a change outside them made any other way rejects your whole session. If the spec needs a path outside them, don't work around it: say so in your report.`]
       : []),
@@ -230,7 +235,7 @@ export function buildTurn(role: BuildRole, t: TurnFacts): string {
     return [task, ...common, t.fix].join("\n\n");
   }
   if (t.fix !== undefined) {
-    const why = t.fixFrom === "code_review" ? "Code Review found security problems that block the feature" : t.fixFrom === "validation" ? "The validation judge failed the feature" : t.fixFrom === "owner" ? "The owner asked for changes on the pull request" : "Tests fail";
+    const why = t.fixFrom === "code_review" ? "Code Review found security problems that block the feature" : t.fixFrom === "validation" ? "The validation judge failed the feature" : t.fixFrom === "owner" ? "The owner asked for changes" : "Tests fail";
     const fixTask = role === "software-developer"
       ? `${why}${t.fixFrom ? "" : " because of the product code"}. Fix the product code so ${t.fixFrom ? "each finding below is resolved" : "they pass"}; don't change tests, CI workflows or test configuration.`
       : `${why}${t.fixFrom ? "" : " because of the test code"}. Fix those tests so they check what the spec says, and for each test you change name the spec section it follows in your report's summary. Don't change product code.`;
