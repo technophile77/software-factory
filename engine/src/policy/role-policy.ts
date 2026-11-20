@@ -1,9 +1,9 @@
 import { Rules, globError } from "./glob";
 
-/** Role policy v2.5: the built-in tools a role may list, and the engine tool `fetch_page`. */
-export const KNOWN_TOOLS = ["Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill", "fetch_page"] as const;
+/** Role policy v2.5: the built-in tools a role may list, and the engine tool `fetch_page`; v2.11 adds `Monitor` and `TaskStop` (F-015 FR-20). */
+export const KNOWN_TOOLS = ["Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill", "fetch_page", "Monitor", "TaskStop"] as const;
 export type ToolName = (typeof KNOWN_TOOLS)[number];
-const FILE_TOOLS: ReadonlySet<string> = new Set(["Read", "Grep", "Glob", "Edit", "Write", "Bash", "Skill"]);
+const FILE_TOOLS: ReadonlySet<string> = new Set(["Read", "Grep", "Glob", "Edit", "Write", "Bash", "Skill", "Monitor"]);
 const WEB_ONLY_TOOLS: ReadonlySet<string> = new Set(["fetch_page", "WebFetch", "WebSearch"]);
 
 export const SECRET_DENIES = [

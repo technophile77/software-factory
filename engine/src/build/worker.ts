@@ -4,7 +4,7 @@ import { SessionRefused } from "../agent/analyst";
 import type { AgentGroup } from "../agent/sandbox";
 import type { AgentSdk, UserTurn } from "../agent/sdk";
 import { remaining } from "../agent/reviewer";
-import { FULL_SHELL_ROLES, HostGate, SessionCaps, SessionOutcome, WallTimer, runSession, sessionOptions } from "../agent/session";
+import { FULL_SHELL_ROLES, HostGate, SessionCaps, SessionOutcome, WallTimer, TOOL_SILENCE_MS, runSession, sessionOptions } from "../agent/session";
 import type { RunUsed } from "../state/record";
 import type { WorktreeCommitResult } from "../agent/worktree-commit";
 
@@ -124,6 +124,15 @@ export async function runWorkerSessions(i: WorkerRunInput): Promise<WorkerResult
           onSessionId: i.onSessionId,
           onEntry: (k, t) => i.group.transcript?.(k, t),
           wall: (onExpire) => (timer = new WallTimer(caps.wallTimeMs, onExpire)),
+          ...(agent.killCommands
+            ? {
+              onSilentTool: async () => {
+                const n = await agent.killCommands!();
+                i.log.warn(`${i.policy.role}: a tool call had no answer for ${TOOL_SILENCE_MS / 60_000} minutes; killed ${n} process(es) the session started (F-015 FR-20)`);
+                return n;
+              },
+            }
+            : {}),
         });
       } finally {
         // The agent's processes must be gone before the engine reads and commits the worktree.
@@ -187,6 +196,8 @@ export interface TurnFacts {
   fix?: string;
   /** What sent the feature back; stage 6 test failures when unset. */
   fixFrom?: FixFrom;
+  /** F-015 FR-20: the role has `Monitor` and `TaskStop`, so it is told to run long commands in the background. */
+  background?: boolean;
   /** The role's write rules, so the agent knows them before a write is refused. */
   write?: { allow: string[]; deny: string[] };
 }
@@ -205,6 +216,9 @@ export function buildTurn(role: BuildRole, t: TurnFacts): string {
     `You work in ${t.worktree}, a checkout of branch ${t.branch}. The approved spec${t.version !== null ? ` (version ${t.version})` : ""} is ${t.spec}; the interface contracts, when the project has them, are in ${t.folder}. That folder is read-only.`,
     "The engine commits your changes when your session ends. Don't commit, push, add remotes or change git config yourself.",
     `Your report goes back as your structured result, with feature "${t.feature}", stage "${t.stage}" and commit "${t.commit}" (the commit you started from).`,
+    ...(t.background
+      ? ["Run anything that may take long or may block in the background (`Bash` with `run_in_background`): test runs, servers, and scripts that start threads or wait on events. Watch it with `Monitor` or check its output with `Bash`, stop it with `TaskStop` when it stalls, and don't end your session while a background command of yours is still running. A command that sits silent for 10 minutes is killed."]
+      : []),
     ...(t.write
       ? [`You may create or change only paths, relative to the worktree, that match one of ${JSON.stringify(t.write.allow)} and none of ${JSON.stringify(t.write.deny)}. Anything else, a new file included, is refused, and a change outside them made any other way rejects your whole session. If the spec needs a path outside them, don't work around it: say so in your report.`]
       : []),

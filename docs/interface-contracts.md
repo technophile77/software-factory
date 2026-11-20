@@ -523,7 +523,8 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   (H-0201, ADR 0026; owner, 2026-11-14, decision card, as drafted); v2.8
   approved (F-020 H-0244; owner, 2026-11-14, decision card); v2.9 approved
   (F-015 H-0192 and SR-7; owner, 2026-11-14, decision cards); v2.10 approved
-  (H-0264; owner, 2026-11-19, decision card); v2.11 draft (F-015 FR-20)
+  (H-0264; owner, 2026-11-19, decision card); v2.11 approved
+  (F-015 FR-20; owner, 2026-11-20, decision card and in thread)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
