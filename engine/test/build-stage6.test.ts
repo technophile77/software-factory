@@ -100,6 +100,25 @@ describe("run report (FR-6, AC-6)", () => {
     expect(why["tests/test_gone.py::test_never"]).toBe("mapped to a criterion but not in the results file: no test from tests/test_gone.py is in the results");
     expect(why["nothing_like_it"]).toBe("mapped to a criterion but not in the results file");
   });
+  it("matches pytest node ids, a parametrized test by all its cases (mesbot F-003)", () => {
+    const xml = `<testsuites><testsuite name="pytest">
+      <testcase classname="tests.test_stall_dump" name="test_ac1_header"/>
+      <testcase classname="tests.test_stall_dump.TestDump" name="test_in_class"/>
+      <testcase classname="tests.test_stall_dump" name="test_ac15[fresh]"/>
+      <testcase classname="tests.test_stall_dump" name="test_ac15[none]"/>
+      <testcase classname="tests.test_stall_dump" name="test_ac16[a]"/>
+      <testcase classname="tests.test_stall_dump" name="test_ac16[b]"><failure message="no"/></testcase>
+    </testsuite></testsuites>`;
+    const r = runReport("c".repeat(40), parseJunit(xml), {
+      "AC-1": ["tests/test_stall_dump.py::test_ac1_header", "tests/test_stall_dump.py::TestDump::test_in_class"],
+      "AC-15": ["tests/test_stall_dump.py::test_ac15"],
+      "AC-16": ["tests/test_stall_dump.py::test_ac16", "tests/test_stall_dump.py::test_ac16[a]"],
+    });
+    expect(r.criteria["AC-1"]!.map((x) => x.status)).toEqual(["passed", "passed"]);
+    expect(r.criteria["AC-15"]).toEqual([{ test: "tests/test_stall_dump.py::test_ac15", status: "passed" }]);
+    expect(r.criteria["AC-16"]!.map((x) => x.status)).toEqual(["failed", "passed"]);
+    expect(r.complete).toBe(true);
+  });
   it("an unexplained skip makes the run incomplete", () => {
     const r = runReport("c".repeat(40), parseJunit(`<testsuite><testcase name="a"/><testcase name="b"><skipped/></testcase></testsuite>`), {});
     expect(r.incomplete).toMatch(/skipped with no reason/);

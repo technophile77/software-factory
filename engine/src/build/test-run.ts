@@ -233,6 +233,24 @@ export interface RunReport {
 }
 
 /**
+ * A pytest node id (`tests/test_x.py::Class::test_y`) as JUnit names it
+ * (`tests.test_x.Class` and `test_y`), with a parametrized test's cases
+ * (`test_y[a]`) counted as the one test: the worst status of them all.
+ */
+function pytestStatus(t: string, cases: TestCase[]): TestCase["status"] | null {
+  const parts = t.split("::");
+  if (parts.length < 2) return null;
+  const module = parts[0]!.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\.py$/, "").split("/").join(".");
+  const name = parts.at(-1)!;
+  const classname = [module, ...parts.slice(1, -1)].join(".");
+  const params = !name.includes("[");
+  const hits = cases.filter((c) => c.classname === classname && (c.name === name || (params && c.name.startsWith(`${name}[`))));
+  if (!hits.length) return null;
+  const rank: Array<TestCase["status"]> = ["error", "failed", "skipped", "passed"];
+  return rank.find((r) => hits.some((c) => c.status === r)) ?? hits[0]!.status;
+}
+
+/**
  * The run report (testing-strategy.md § Run report): counts, failures, what
  * didn't run and why, and the test engineer's criteria map joined to the
  * results. An unexplained skip or a mapped test missing from the results
@@ -247,9 +265,9 @@ export function runReport(commit: string, cases: TestCase[], criteriaMap: Record
   const missing: string[] = [];
   for (const [ac, tests] of Object.entries(criteriaMap)) {
     criteria[ac] = tests.map((t) => {
-      const c = find(t);
-      if (!c) missing.push(t);
-      return { test: t, status: c?.status ?? "missing" };
+      const status = find(t)?.status ?? pytestStatus(t, cases);
+      if (!status) missing.push(t);
+      return { test: t, status: status ?? "missing" };
     });
   }
   for (const t of missing) not_run.push({ test: t.slice(0, 300), reason: whyMissing(t, cases).slice(0, 1000) });
