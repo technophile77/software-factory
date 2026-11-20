@@ -5,6 +5,9 @@ import { activityOf } from "../src/interview/activity";
 import type { FeatureInterview } from "../src/interview/feature";
 import { InterviewState, wire } from "../src/interview/model";
 import { makeEntry } from "../src/state/transcript";
+import { EngineRecord } from "../src/state/record";
+import { RunBook } from "../src/state/runs";
+import { FakeClock, tmpdir } from "./helpers";
 
 /** Just what TurnQueue reads of a feature. */
 function fakeFeature() {
@@ -63,5 +66,39 @@ describe("issue #130: a revised question stays readable", () => {
     s.apply(created());
     s.apply(makeEntry(null, { type: "item_revised", item: "Q-001", revision: 1, text: "q2", why: "w2", question_type: "conflict" }, "t"));
     expect(s.items.get("Q-001")).toMatchObject({ revision: 1, type: "conflict" });
+  });
+});
+
+describe("F-007 FR-14 (owner, 2026-11-20): a restart while the analyst waits on the owner costs no resume", () => {
+  it("resumes without counting while awaiting the owner, and counts again once it works", () => {
+    const book = new RunBook(new EngineRecord(tmpdir()), new FakeClock());
+    const r = book.start({ project: "p", feature: "F-001", role: "requirements-analyst", stage: "requirements_interview" });
+    book.update(r.id, { session_id: "s", awaiting_owner: true });
+    for (let i = 0; i < 5; i++) {
+      book.markInterrupted();
+      expect(book.resume(r.id)).toMatchObject({ mode: "session", run: { resumes: 0, status: "running" } });
+    }
+    book.update(r.id, { awaiting_owner: false });
+    for (let i = 1; i <= 3; i++) {
+      book.markInterrupted();
+      expect(book.resume(r.id)).toMatchObject({ run: { resumes: i } });
+    }
+    book.markInterrupted();
+    expect(book.resume(r.id)).toMatchObject({ mode: "failed" });
+  });
+
+  it("the turn queue tells the run when it starts and stops waiting on the owner", async () => {
+    const f = fakeFeature();
+    const seen: boolean[] = [];
+    const q = new TurnQueue(f as unknown as FeatureInterview, "start", (idle) => seen.push(idle));
+    const it = q[Symbol.asyncIterator]();
+    await it.next();
+    q.turnEnded();
+    const pending = it.next();
+    f.state.undelivered.push("reply");
+    f.changed.emit("change");
+    await pending;
+    expect(seen).toEqual([false, true, false]);
+    q.close();
   });
 });
