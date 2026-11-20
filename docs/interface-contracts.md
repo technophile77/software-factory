@@ -516,14 +516,15 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
-## Role policy — v2.10
+## Role policy — v2.11
 
 - Status: Approved (v2.2); v2.3 draft, awaiting owner approval (H-0040);
   v2.4 approved (H-0061, H-0076); v2.5 approved (H-0083); v2.7 approved
   (H-0201, ADR 0026; owner, 2026-11-14, decision card, as drafted); v2.8
   approved (F-020 H-0244; owner, 2026-11-14, decision card); v2.9 approved
   (F-015 H-0192 and SR-7; owner, 2026-11-14, decision cards); v2.10 approved
-  (H-0264; owner, 2026-11-19, decision card)
+  (H-0264; owner, 2026-11-19, decision card); v2.11 approved
+  (F-015 FR-20; owner, 2026-11-20, decision card and in thread)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
@@ -562,7 +563,9 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   SR-7) adds the read-only spec folder for code repo sessions and the
   ask-list subcommands; both tighten, so no manifest changes. v2.10
   (H-0264) lets agents read `.env` example files despite the `**/.env.*`
-  deny; no manifest changes.
+  deny; no manifest changes. v2.11 (F-015 FR-20) adds the tools `Monitor`
+  and `TaskStop`, for commands run in the background; a manifest needs no
+  change, and a role gets them only where its `tools` list names them.
 
 **Location:** the `policy:` key of the project manifest (change-controlled),
 with optional per-repo overrides under `repos[].policy`. Effective policy
@@ -571,7 +574,9 @@ replace the project's and its `deny` lists are added to the project's.
 Each role has five sections: `tools` (the agent's built-in tools: `Read`,
 `Grep`, `Glob`, `Edit`, `Write`, `Bash`, `WebFetch`, `WebSearch`, from
 v2.2 `Skill`, which loads only the master factory's shared skills, and from
-v2.5 the engine tool `fetch_page`), `read`,
+v2.5 the engine tool `fetch_page`, and from v2.11 `Monitor` and `TaskStop`,
+which watch and stop a command run in the background; `Monitor` runs a
+command, so the rules for `Bash` commands apply to it), `read`,
 `write`, `commands` (programs `Bash` may run) and `network`. Every role must
 list at least one tool. Every role with a file tool (`Read`, `Grep`, `Glob`,
 `Edit`, `Write`, `Bash`, `Skill`) must list at least one read glob. Every role

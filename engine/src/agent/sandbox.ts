@@ -88,6 +88,8 @@ export interface AgentContainer {
   spawn(o: SpawnOptions): SpawnedProcess;
   /** True for a session on the owner's PC (ADR 0026): the tool gate then applies the ask rule. */
   host: boolean;
+  /** F-015 FR-20, on the owner's PC: kills every process the session's Claude Code started, not Claude Code; how many were found. */
+  killCommands?(): Promise<number>;
 }
 
 export interface StartAgentOptions {

@@ -196,9 +196,10 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
       }
       return { behavior: "allow", updatedInput: input };
     }
-    if (name === "Bash") {
+    // Role policy v2.11: Monitor runs a command, so it is held to Bash's rules; a WebSocket watch has no rule, so it is refused.
+    if (name === "Bash" || name === "Monitor") {
       const cmd = typeof input.command === "string" ? input.command.trim() : "";
-      if (!cmd) return deny("no command");
+      if (!cmd) return deny(name === "Monitor" ? "Monitor may only watch a command" : "no command");
       const fullShell = host !== undefined && FULL_SHELL_ROLES.includes(policy.role);
       if (!fullShell) {
         const program = cmd.split(/\s+/)[0] ?? "";
@@ -213,7 +214,7 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
           let ok: boolean;
           if (prior && Date.now() - prior.at < 60_000) ok = prior.ok;
           else {
-            log.warn(`${policy.role}: Bash command held for the owner (ask rule, ${matched}): ${JSON.stringify(cmd).slice(0, 300)}`);
+            log.warn(`${policy.role}: ${name} command held for the owner (ask rule, ${matched}): ${JSON.stringify(cmd).slice(0, 300)}`);
             ok = await host.ask(cmd, matched, o?.signal).catch(() => false);
             log.info(`${policy.role}: the held command was ${ok ? "approved and runs once" : "denied"}`);
             answered.set(cmd, { ok, at: Date.now() });
@@ -223,7 +224,8 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
       }
       return { behavior: "allow", updatedInput: input };
     }
-    if (name === "WebSearch" || name === "Skill") return { behavior: "allow", updatedInput: input };
+    // TaskStop only stops a command the session started in the background.
+    if (name === "WebSearch" || name === "Skill" || name === "TaskStop") return { behavior: "allow", updatedInput: input };
     return deny("no rule for this tool");
   };
 }
@@ -407,7 +409,18 @@ export interface SessionEvents {
   onEntry?(kind: EntryKind, text: string): void;
   /** Given, the session's wall-time cap runs on it, so an ask can hold it. */
   wall?(onExpire: () => void): WallTimer;
+  /**
+   * F-015 FR-20 watchdog: a tool call has been open for `silenceMs` with no
+   * message from the session. Kills the session's commands; resolves to how
+   * many processes were found.
+   */
+  onSilentTool?(): Promise<number>;
+  /** Tests only; FR-20's 10 minutes otherwise. */
+  silenceMs?: number;
 }
+
+/** F-015 FR-20: how long a tool call may sit with no message from the session before its commands are killed. */
+export const TOOL_SILENCE_MS = 10 * 60_000;
 
 /**
  * Runs one session to its end, a cap, or an error (SR-18). A cap stops the
@@ -422,8 +435,28 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
   };
   const wall = ev.wall ? ev.wall(() => stop("wall time")) : new WallTimer(caps.wallTimeMs, () => stop("wall time"), now);
   wall.start();
+  // FR-20: tool calls the session has made and not had answered, and when the session last said anything.
+  const open = new Set<string>();
+  let heard = now();
+  let killing = false;
+  const silence = ev.silenceMs ?? TOOL_SILENCE_MS;
+  const watchdog = ev.onSilentTool
+    ? setInterval(() => {
+      if (killing || open.size === 0 || now() - heard < silence) return;
+      killing = true;
+      void ev.onSilentTool!().catch(() => 0).finally(() => {
+        killing = false;
+        heard = now();
+      });
+    }, Math.max(10, Math.min(30_000, Math.floor(silence / 4))))
+    : null;
   try {
     for await (const m of sdk.query({ prompt: turns, options: opts }) as AsyncIterable<SdkMessage>) {
+      heard = now();
+      if (m.type === "user") {
+        const content = (m as { message?: { content?: unknown } }).message?.content;
+        if (Array.isArray(content)) for (const c of content) if (c && typeof c === "object" && (c as { type?: unknown }).type === "tool_result") open.delete(String((c as { tool_use_id?: unknown }).tool_use_id));
+      }
       if (typeof m.session_id === "string" && m.session_id && m.session_id !== out.sessionId) {
         out.sessionId = m.session_id;
         ev.onSessionId?.(m.session_id);
@@ -436,6 +469,7 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
             if (c.type === "text") ev.onEntry("text", String((c as { text?: unknown }).text ?? ""));
             else if (c.type === "tool_use") ev.onEntry("tool", toolLine(String(c.name), c.input));
           }
+          if (c.type === "tool_use") open.add(String((c as { id?: unknown }).id));
           if (c.type === "tool_use" && c.name === "WebSearch") {
             const q = (c.input as { query?: unknown } | undefined)?.query;
             ev.onWebSearch?.(typeof q === "string" ? q.slice(0, 2000) : "");
@@ -444,6 +478,7 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
         out.outputTokens += msg.usage?.output_tokens ?? 0;
         if (caps.maxOutputTokens !== undefined && out.outputTokens > caps.maxOutputTokens) stop("output tokens");
       } else if (m.type === "result") {
+        open.clear();
         ev.onTurnEnd?.();
         const r = m as Extract<SdkMessage, { type: "result" }>;
         out.turns = r.num_turns ?? out.turns;
@@ -465,6 +500,7 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
     if (out.status === "complete") Object.assign(out, { status: "error", reason: (e as Error).message.slice(0, 300) });
   } finally {
     wall.stop();
+    if (watchdog) clearInterval(watchdog);
     out.durationMs = now() - started;
   }
   return out;

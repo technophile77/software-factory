@@ -1434,7 +1434,7 @@ CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.
 POLICY_KEYS = {"tools": {"allow"}, "read": {"allow", "deny"}, "write": {"allow", "deny"},
                "commands": {"allow"}, "network": {"allow"}}
 # fetch_page is the engine's own page fetch, which strips hidden content (Role policy v2.5).
-AGENT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill", "fetch_page"}
+AGENT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill", "fetch_page", "Monitor", "TaskStop"}
 FILE_TOOLS = AGENT_TOOLS - {"WebFetch", "WebSearch", "fetch_page"}
 # Role policy v2.2: no agent reads these, whatever its allow list says. The
 # channel file would let an agent answer the owner's interview (F-005 SR-14).

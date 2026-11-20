@@ -7,6 +7,7 @@ import { ensureOwnerDir } from "../fsutil";
 import type { Logger } from "../log";
 import type { RolePolicy } from "../policy/role-policy";
 import { type Children, killTree } from "../proc";
+import { type ProcessOps, killUnder, realProcessOps } from "./commands";
 import type { ModelCredential } from "../proxy/server";
 import { type AgentContainer, type AgentGroup, DUMMY_KEY, ProxyClient, type StartAgentOptions } from "./sandbox";
 import type { SpawnOptions, SpawnedProcess } from "./sdk";
@@ -103,7 +104,7 @@ export function hostEnv(o: { from: NodeJS.ProcessEnv; platform: NodeJS.Platform;
  * starts are killed when the session is aborted, and the engine's channel
  * refuses them all (channel v1.1).
  */
-export function hostSpawn(o: { bin: string; cwd: string; env: Record<string, string>; children: Children; platform?: NodeJS.Platform; spawner?: typeof spawn }): (s: SpawnOptions) => SpawnedProcess {
+export function hostSpawn(o: { bin: string; cwd: string; env: Record<string, string>; children: Children; platform?: NodeJS.Platform; spawner?: typeof spawn; onPid?(pid: number): void }): (s: SpawnOptions) => SpawnedProcess {
   return (s) => {
     if (s.args.some((a) => FORBIDDEN_ARGS.test(a) || a === "--permission-mode=bypassPermissions")) throw new HostError("refused: a bypass permission mode");
     for (const r of REQUIRED_ARGS) if (!s.args.includes(r)) throw new HostError(`refused: the CLI arguments lack ${r}`);
@@ -119,6 +120,7 @@ export function hostSpawn(o: { bin: string; cwd: string; env: Record<string, str
     if (pid) {
       o.children.add(pid);
       child.once("exit", () => o.children.remove(pid));
+      o.onPid?.(pid);
     }
     child.stderr?.resume();
     const kill = () => killTree(child, platform);
@@ -146,6 +148,8 @@ export interface HostGroupConfig {
   platform?: NodeJS.Platform;
   /** Tests replace the processes. */
   spawner?: typeof spawn;
+  /** F-015 FR-20: how a session's commands are found and killed; tests replace it. */
+  processes?: ProcessOps;
 }
 
 const RUN_ID_RE = /^[A-Za-z0-9-]{1,100}$/;
@@ -169,7 +173,7 @@ export class HostGroup implements AgentGroup {
   private proxyChild: ChildProcess | null = null;
   private port = 0;
   private seq = 0;
-  private readonly agents = new Map<string, AgentContainer & { home: string; temp: boolean }>();
+  private readonly agents = new Map<string, AgentContainer & { home: string; temp: boolean; pids: number[] }>();
 
   constructor(private readonly c: HostGroupConfig) {
     if (!RUN_ID_RE.test(c.runId)) throw new HostError("bad run id");
@@ -225,9 +229,16 @@ export class HostGroup implements AgentGroup {
     const env = hostEnv({ from: this.c.env, platform, home, port: this.port, cred, fullShell });
     const cwd = worktree ?? path.join(home, "tmp");
     this.proxy.send({ t: "grant", cred, session: name, role: policy.role, allow: policy.network, webSearch: policy.role === "web-reader" && policy.tools.includes("WebSearch") });
+    const pids: number[] = [];
+    const ops = this.c.processes ?? realProcessOps(platform);
     const a = {
-      name, role: policy.role, cred, cwd, workspace: worktree ?? cwd, host: true, home, temp: !keep,
-      spawn: hostSpawn({ bin, cwd, env, children: this.c.children, platform, ...(this.c.spawner ? { spawner: this.c.spawner } : {}) }),
+      name, role: policy.role, cred, cwd, workspace: worktree ?? cwd, host: true, home, temp: !keep, pids,
+      spawn: hostSpawn({ bin, cwd, env, children: this.c.children, platform, onPid: (pid) => pids.push(pid), ...(this.c.spawner ? { spawner: this.c.spawner } : {}) }),
+      killCommands: async () => {
+        let n = 0;
+        for (const pid of pids) n += await killUnder(ops, pid).catch(() => 0);
+        return n;
+      },
     };
     this.agents.set(name, a);
     return a;
@@ -243,6 +254,13 @@ export class HostGroup implements AgentGroup {
     this.proxy?.send({ t: "revoke", cred: a.cred });
     const mine = this.agents.get(a.name);
     this.agents.delete(a.name);
+    if (mine) {
+      // F-015 FR-20 (c): what the session left running goes with it. Windows keeps an orphan's parent pid; POSIX keeps its process group.
+      const left = await mine.killCommands!().catch(() => 0);
+      const ops = this.c.processes ?? realProcessOps(this.c.platform ?? process.platform);
+      for (const pid of mine.pids) ops.killGroup?.(pid);
+      if (left) this.c.log.info(`${a.name}: killed ${left} process(es) the session left running`);
+    }
     if (mine?.temp) fs.rmSync(mine.home, { recursive: true, force: true });
   }
 
