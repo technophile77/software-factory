@@ -291,6 +291,17 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(s.drawn.at(-1)).toBe("");
   });
 
+  test("AC-16 (v8 FR-16): with no running engine at start the console waits for one, counting down", async () => {
+    await engine.stop();
+    const s = new Script([]);
+    s.aborted = () => s.drawn.includes("Reconnecting in 1s (attempt 3)");
+    const { code } = await inbox([], undefined, s);
+    expect(code).toBe(0);
+    expect(s.out).toContain("The engine isn't running. Waiting for it to start; press Ctrl+C to stop.");
+    expect(s.drawn).toContain("Reconnecting in 4s (attempt 3)");
+    expect(engine.connections).toBe(0);
+  });
+
   test("an engine without the inbox capability is refused before anything is sent", async () => {
     writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document"] });
     const { code, s } = await inbox([]);

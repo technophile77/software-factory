@@ -90,7 +90,6 @@ export function statusLines(st: Obj): string[] {
 const WAIT_STAGES = new Set(["requirements_interview", "security_testability_review", "security_gate_1", "readiness_gate"]);
 
 const POLL_MS = 2000;
-const STATUS_TRIES = 15;
 const STATUS_RETRY_MS = 2000;
 /** Channel errors a busy engine can cause; a read that hit one is safe to repeat. */
 const CHANNEL_HICCUPS = new Set(["connection_lost", "engine_unreachable", "timeout"]);
@@ -101,12 +100,13 @@ const NEXT_EVERY_MS = 15_000;
 const ASK_AFTER_MS = 30 * 60_000;
 const BUSY_DELAY_MS = 1000;
 
-/** Errors that mean the engine went away; the inbox console waits for it to come back (F-021 FR-16). */
+/** Errors that mean the engine is away; both commands wait for it to come back (F-021 FR-16). */
 const ENGINE_GONE = new Set(["engine_not_running", "engine_unreachable", "connection_lost", "timeout"]);
 const RECONNECT_FIRST_MS = 1000;
 const RECONNECT_MAX_MS = 60_000;
 
 const errorOf = (r: Obj): Obj => (r.error ?? {}) as Obj;
+const engineAway = (r: Obj): boolean => r.ok !== true && ENGINE_GONE.has(String(errorOf(r).code));
 
 const BUSY: Partial<Record<Operation, string>> = {
   status: "Connecting to the engine", start: "Sending your request", list: "Getting the feature list",
@@ -177,6 +177,8 @@ export class TerminalInterview {
   private offered = "";
   /** The last reply sent, so a lost one can be checked and, on the owner's word, resent. */
   private lastSent: { item: Item; kind: string; text: string } | null = null;
+  /** Set when the engine came back, so a session it no longer knows is opened again without asking (FR-16). */
+  private reconnected = false;
 
   constructor(
     private readonly runner: Runner,
@@ -200,7 +202,7 @@ export class TerminalInterview {
     this.say("Don't type secrets into your answers: the interview transcript is committed to the project's config repo "
       + "and sent to the model provider (F-005 SR-4).");
     try {
-      const status = await this.run("status", {});
+      const status = await this.connect();
       if (status.ok !== true) {
         this.show(status);
         return 1;
@@ -391,6 +393,7 @@ export class TerminalInterview {
    */
   private async handle(feature: string, r: Obj): Promise<Obj | null> {
     if (r.ok !== true) return this.failed(feature, r);
+    this.reconnected = false;
     const item = (r.item ?? r.next ?? null) as Item | null;
     // Security and Testability Review and the readiness check can still send the feature back with new questions.
     if (item === null && typeof r.stage === "string" && WAIT_STAGES.has(r.stage)) return this.waitForItem(feature);
@@ -420,23 +423,6 @@ export class TerminalInterview {
   }
 
   /**
-   * A status read while waiting. It only reads, so a dropped or busy channel
-   * is tried again a few times before the wait gives up: the engine can be
-   * busy for seconds as a gate finishes, and a lost read loses nothing.
-   */
-  private async status(): Promise<Obj> {
-    let st: Obj = {};
-    for (let i = 0; i < STATUS_TRIES; i++) {
-      st = await this.runner("status", {});
-      const code = (st.error as Obj | undefined)?.code;
-      if (st.ok === true || !CHANNEL_HICCUPS.has(String(code))) return st;
-      if (this.io.aborted?.()) return st;
-      await this.timing.sleep(STATUS_RETRY_MS);
-    }
-    return st;
-  }
-
-  /**
    * Waits for the next item, printing each change of the feature's activity
    * with the time and a spinner on the current one (FR-14). Returns the item's
    * `next` result, or null when the interview is over or the owner stops.
@@ -453,7 +439,12 @@ export class TerminalInterview {
     try {
       for (;;) {
         if (this.io.aborted?.()) throw new Stop();
-        const st = await this.status();
+        let st = await this.runner("status", {});
+        if (engineAway(st)) {
+          clear();
+          shown = null;
+          st = await this.reconnect();
+        }
         if (st.ok !== true) {
           clear();
           this.show(st);
@@ -571,7 +562,7 @@ export class TerminalInterview {
   /** `factory-engine inbox [<item id>]`. Exit code as FR-11 of F-018 (F-021 FR-14). */
   async inboxMain(itemArg?: string): Promise<number> {
     try {
-      const status = await this.run("status", {});
+      const status = await this.connect();
       if (status.ok !== true) {
         this.show(status);
         return 1;
@@ -623,16 +614,15 @@ export class TerminalInterview {
     let shown = "";
     for (;;) {
       if (this.io.aborted?.()) throw new Stop();
-      const st = await this.runner("status", {});
-      if (st.ok !== true) {
-        const failed = ENGINE_GONE.has(String(errorOf(st).code)) ? await this.reconnect() : st;
-        if (failed) {
-          this.show(failed);
-          return 1;
-        }
+      let st = await this.runner("status", {});
+      if (engineAway(st)) {
+        st = await this.reconnect();
         // The status is printed again, so the owner sees where the restarted factory stands.
         shown = "";
-        continue;
+      }
+      if (st.ok !== true) {
+        this.show(st);
+        return 1;
       }
       const text = statusLines(st).join("\n");
       if (text !== shown) {
@@ -663,9 +653,9 @@ export class TerminalInterview {
       const r = await call("inbox_list", { feature: CONSOLE_KEY });
       if (r.ok === true) return r;
       const err = errorOf(r);
-      if (ENGINE_GONE.has(String(err.code))) {
-        const failed = await this.reconnect();
-        if (failed) return failed;
+      if (engineAway(r)) {
+        const st = await this.reconnect();
+        if (st.ok !== true) return st;
         continue;
       }
       if (reopened || (err.name !== "session_expired" && err.code !== "not_open")) return r;
@@ -677,14 +667,26 @@ export class TerminalInterview {
   }
 
   /**
+   * The first status read. An engine that isn't running yet is waited for,
+   * as after a restart (F-021 FR-16).
+   */
+  private async connect(): Promise<Obj> {
+    const st = await this.run("status", {});
+    return engineAway(st) ? this.reconnect(true) : st;
+  }
+
+  /**
    * F-021 FR-16: waits for the engine to come back, counting down to each
    * attempt on one redrawn line; the wait doubles from 1 s up to 60 s, with
-   * no limit on attempts. Returns null once `engine.status` answers, or the
-   * failure when it is something other than the engine being away.
+   * no limit on attempts. Returns the status once `engine.status` answers,
+   * or the failure when it is something other than the engine being away.
    */
-  private async reconnect(): Promise<Obj | null> {
-    this.say(`\n[${this.clock()}] Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.`);
+  private async reconnect(starting = false): Promise<Obj> {
+    this.say(starting
+      ? `\n[${this.clock()}] The engine isn't running. Waiting for it to start; press Ctrl+C to stop.`
+      : `\n[${this.clock()}] Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.`);
     let wait = RECONNECT_FIRST_MS;
+    let st: Obj;
     try {
       for (let attempt = 1; ; attempt++) {
         for (let left = wait; left > 0; left -= 1000) {
@@ -695,16 +697,18 @@ export class TerminalInterview {
           await this.timing.sleep(Math.min(1000, left));
         }
         this.io.redraw?.(`Reconnecting (attempt ${attempt})`);
-        const st = await this.runner("status", {});
-        if (st.ok === true) break;
-        if (!ENGINE_GONE.has(String(errorOf(st).code))) return st;
+        st = await this.runner("status", {});
+        if (!engineAway(st)) break;
         wait = Math.min(wait * 2, RECONNECT_MAX_MS);
       }
     } finally {
       this.io.redraw?.("");
     }
-    this.say(`[${this.clock()}] Reconnected to the engine.`);
-    return null;
+    if (st.ok === true) {
+      this.reconnected = true;
+      this.say(`[${this.clock()}] ${starting ? "Connected" : "Reconnected"} to the engine.`);
+    }
+    return st;
   }
 
   private clock(): string {
@@ -818,12 +822,30 @@ export class TerminalInterview {
   /** A failed `next` or `reply`. */
   private async failed(feature: string, r: Obj): Promise<Obj | null> {
     const err = (r.error ?? {}) as Obj;
+    if (engineAway(r)) {
+      // F-021 FR-16: wait for the engine, then carry on; a reply that may be lost is still the owner's to resend.
+      const st = await this.reconnect();
+      if (st.ok !== true) {
+        this.show(st);
+        return null;
+      }
+      if (typeof r.reply_id === "string") return this.lostReply(feature, r);
+      return this.run("next", { feature, wait_s: WAIT_S });
+    }
+    if (err.name === "session_expired" || err.code === "not_open") {
+      this.feature = null;
+      // A restarted engine knows no session: open the feature again without asking (F-021 FR-16).
+      if (this.reconnected) {
+        this.reconnected = false;
+        if (!(await this.open(feature))) return null;
+        return this.run("next", { feature, wait_s: WAIT_S });
+      }
+    }
     this.show(r);
     switch (err.name) {
       case "stale":
         return this.run("next", { feature, wait_s: WAIT_S });
       case "session_expired": {
-        this.feature = null;
         const c = await this.choose([{ label: "Open the feature again", key: "open" }, { label: "Stop for now", key: "stop" }]);
         if (!("key" in c) || c.key === "stop" || !(await this.open(feature))) return null;
         return this.run("next", { feature, wait_s: WAIT_S });

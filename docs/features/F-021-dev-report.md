@@ -38,9 +38,12 @@
 - `npm run typecheck`, `python3 scripts/check_docs.py`: pass.
 - Not run here: Windows (AC-14). The console methods use the same pipe code the interview already uses on Windows CI (`terminal-pipe.test.ts`); CI runs the platform suite.
 
-## v8: reconnect after an engine restart (FR-16, 2026-11-20)
+## v8: wait for the engine and reconnect after a restart (FR-16, 2026-11-20)
 
-- `engine/src/terminal/interview.ts`: the inbox watch and item list treat `engine_not_running`, `engine_unreachable`, `connection_lost` and `timeout` as the engine being away. `reconnect()` prints the loss once, counts down to each `engine.status` attempt on one redrawn line (1 s doubling to 60 s, no limit, Ctrl+C stops), and says when it is back. `inboxItems()` opens the console session again, once per call, when the restarted engine no longer knows it (`session_expired`, or `not_open` after the client forgot it). A missing engine at start still exits 1.
-- `engine/src/cli.ts`: the terminal's `redraw` draws that line in place.
-- Interpretation: a `timeout` also starts the countdown. A busy engine answers again at the next attempt, a second later, and keeps its session, so nothing is reopened.
-- Tests run locally: `test/acceptance/terminal-f021.test.ts` (AC-16, two new tests) and `test/acceptance/terminal-f018.test.ts`, 45 passed; `tsc --noEmit` clean.
+- `engine/src/terminal/interview.ts`: `engine_not_running`, `engine_unreachable`, `connection_lost` and `timeout` mean the engine is away. `connect()` waits for it at start in both commands. `reconnect()` prints the loss once, counts down to each `engine.status` attempt on one redrawn line (1 s doubling to 60 s, no limit, Ctrl+C stops), and says when it is back.
+  - Inbox: the watch and the item list wait; `inboxItems()` opens the console session again, once per call, when the restarted engine no longer knows it (`session_expired`, or `not_open` after the client forgot it).
+  - Interview: the wait for the next item and a failed `next` or `reply` wait; after a reconnect, a session the engine no longer knows is opened again without asking. A reply that may be lost still goes through the existing "Send it again" choice.
+  - The silent 30 s status retry from #136 is replaced by the visible countdown, whose first attempt comes after 1 s.
+- `engine/src/cli.ts`: the terminal's `redraw` draws the countdown line in place.
+- Interpretation: a `timeout` also starts the countdown. A busy engine answers again at the next attempt and keeps its session, so nothing is reopened.
+- Tests run locally: `test/acceptance/terminal-f021.test.ts` and `terminal-f018.test.ts` (48 passed, 6 new or changed: AC-16, AC-17, F-018 AC-10 now waits); `test/terminal-pipe.test.ts` and the MCP suites that drive the same operations (`mcp-f005`, `mcp-f006`, `mcp-e2e`, `mcp-tools`, `mcp-f009`: 228 passed); `tsc --noEmit` clean.

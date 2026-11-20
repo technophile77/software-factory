@@ -191,12 +191,87 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
     expect(s.out).toContain(`${MARK}  1. Approve`);
   });
 
-  test("AC-10: no running engine gives the engine's reason and exit code 1", async () => {
+  test("AC-10 (F-021 FR-16): with no running engine the command waits for one, counting down, and Ctrl+C ends it with exit 0", async () => {
     await engine.stop();
     const { code, s } = await run([], "F-1");
-    expect(code).toBe(1);
-    expect(s.out).toMatch(/engine/i);
+    expect(code).toBe(0);
+    expect(s.out).toContain("The engine isn't running. Waiting for it to start; press Ctrl+C to stop.");
+    expect(s.out).toContain("Reconnecting in 1s (attempt 1)");
+    expect(s.out).toContain("Reconnecting in 2s (attempt 2)");
     expect(s.prompts).toEqual([]);
+  });
+
+  test("F-021 FR-16: an engine that starts while the command waits is used, and the interview goes on", async () => {
+    engine.addFeature("F-1", "Export", [assumption("A1")]);
+    const live = engine;
+    await engine.stop();
+    const s = new Script(["1"]);
+    const ops = new Interview({ os: realOsApi(), projectDir: repo });
+    const base = fastTiming();
+    let started = false;
+    const timing: Timing = { now: base.now, sleep: async (ms) => {
+      // The engine comes up during the second countdown.
+      if (!started && s.out.includes("(attempt 2)")) {
+        started = true;
+        engine = await FakeEngine.start(live);
+        writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document"] });
+      }
+      await base.sleep(ms);
+    } };
+    const code = await new TerminalInterview((op, req) => ops.run(op, req), s, MARK, timing).main("F-1");
+    await live.cleanup();
+    expect(code).toBe(0);
+    expect(s.out).toContain("Connected to the engine.");
+    expect(replies().map((x) => x.kind)).toEqual(["approve_assumption"]);
+  });
+
+  test("F-021 FR-16: an engine restart while the command waits is waited out, the feature opened again without asking, and the interview goes on", async () => {
+    engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["a"] })]);
+    const old = engine;
+    let gone = false;
+    const restartedStatus = (e: FakeEngine) => {
+      e.hooks["engine.status"] = (conn, msg) => {
+        conn.respond(msg, ["result", { version: "1.4", capabilities: ["document"], uptime_s: 1,
+          features: [{ id: "F-1", stage: "security_testability_review", active_agents: 1, activity: "security_reviewing" }] }]);
+        return true;
+      };
+    };
+    old.hooks["engine.status"] = (conn, msg) => {
+      // Once Q1 is answered and the command waits, the engine goes away.
+      if (old.transcript.length > 0) {
+        gone = true;
+        conn.close();
+        return true;
+      }
+      conn.respond(msg, ["result", { version: "1.4", capabilities: ["document"], uptime_s: 1,
+        features: [{ id: "F-1", stage: "requirements_interview", active_agents: 0, activity: "waiting_for_owner" }] }]);
+      return true;
+    };
+    const s = new Script(["1", "1"]);
+    const ops = new Interview({ os: realOsApi(), projectDir: repo });
+    const base = fastTiming();
+    let restarted = false;
+    const timing: Timing = { now: base.now, sleep: async (ms) => {
+      if (gone && !restarted && s.out.includes("Reconnecting in 2s (attempt 2)")) {
+        restarted = true;
+        await old.stop();
+        engine = await FakeEngine.start(old);
+        engine.features.get("F-1")!.items.push(assumption("A1"));
+        restartedStatus(engine);
+        writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document"] });
+      }
+      await base.sleep(ms);
+    } };
+    const code = await new TerminalInterview((op, req) => ops.run(op, req), s, MARK, timing).main("F-1");
+    await old.cleanup();
+    expect(code).toBe(0);
+    expect(restarted).toBe(true);
+    expect(s.out).toContain("Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.");
+    expect(s.out).toContain("Reconnected to the engine.");
+    expect(s.out).not.toContain("Open the feature again");
+    expect(old.calls("interview.reply").map((m) => m.params.kind)).toEqual(["answer"]);
+    expect(replies().map((x) => x.kind)).toEqual(["approve_assumption"]);
+    expect(engine.calls("interview.open")).toHaveLength(1);
   });
 
   test("AC-11: a new feature from a description, then its first question", async () => {
