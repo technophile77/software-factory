@@ -187,6 +187,8 @@ export interface TurnFacts {
   fix?: string;
   /** What sent the feature back; stage 6 test failures when unset. */
   fixFrom?: FixFrom;
+  /** The role's write rules, so the agent knows them before a write is refused. */
+  write?: { allow: string[]; deny: string[] };
 }
 
 /**
@@ -203,6 +205,9 @@ export function buildTurn(role: BuildRole, t: TurnFacts): string {
     `You work in ${t.worktree}, a checkout of branch ${t.branch}. The approved spec${t.version !== null ? ` (version ${t.version})` : ""} is ${t.spec}; the interface contracts, when the project has them, are in ${t.folder}. That folder is read-only.`,
     "The engine commits your changes when your session ends. Don't commit, push, add remotes or change git config yourself.",
     `Your report goes back as your structured result, with feature "${t.feature}", stage "${t.stage}" and commit "${t.commit}" (the commit you started from).`,
+    ...(t.write
+      ? [`You may create or change only paths, relative to the worktree, that match one of ${JSON.stringify(t.write.allow)} and none of ${JSON.stringify(t.write.deny)}. Anything else, a new file included, is refused, and a change outside them made any other way rejects your whole session. If the spec needs a path outside them, don't work around it: say so in your report.`]
+      : []),
   ];
   if (t.fix !== undefined && t.fixFrom === "conflict") {
     // ADR 0013: each role resolves only its own files and keeps the approved behavior of both sides.

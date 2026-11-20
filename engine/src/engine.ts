@@ -2772,7 +2772,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (!base) throw new SessionRefused(`the branch ${branch} is gone`);
       const first = resumeId
         ? "The engine restarted. Continue where you left off."
-        : buildTurn(role, { feature: f.id, title: f.state.title, repo: ctx.target.name, branch, worktree: wt.path, spec: folder.spec, folder: folder.root, version: ctx.so.version, commit: base, stage, ...(fix ? { fix: fix.data, ...(fix.from ? { fixFrom: fix.from } : {}) } : {}) });
+        : buildTurn(role, { feature: f.id, title: f.state.title, repo: ctx.target.name, branch, worktree: wt.path, spec: folder.spec, folder: folder.root, version: ctx.so.version, commit: base, stage, write: policy.write, ...(fix ? { fix: fix.data, ...(fix.from ? { fixFrom: fix.from } : {}) } : {}) });
       const group = await agents.group(runId);
       const r = await runWorkerSessions({
         sdk, group, policy, worktree: wt.path, instructions: md.text, caps: role === "software-developer" ? caps.developer : caps.tester,

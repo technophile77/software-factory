@@ -66,6 +66,8 @@ function developer(feature: () => string, seen: { refused: string[] }) {
     const commit = turnFact(first, /commit "([0-9a-f]{40})"/);
     const spec = turnFact(first, /The approved spec \(version \d+\) is (\S+);/);
     expect(fs.readFileSync(spec, "utf8")).toContain("Export orders in a date range as CSV.");
+    // The developer is told its write rules up front, CI paths included, not only when a write is refused.
+    expect(first).toMatch(/You may create or change only paths, relative to the worktree, that match one of \[.+\] and none of \[.*"\.github\/workflows\/\*\*".*\]/);
     // H-0192: the spec folder is for reading; F-015 SR-3: the CI workflows aren't the developer's to change.
     for (const file of [spec, path.join(wt, "test", "sneaky.test.js"), path.join(wt, ".github", "workflows", "ci.yml")]) {
       const r = await sc.options.canUseTool!("Write", { file_path: file, content: "x" }, { signal: new AbortController().signal } as never);
