@@ -784,6 +784,48 @@ describe("F-016 FR-13, FR-14: an analyst run that stopped (issues #64, #65)", ()
   }, 60_000);
 });
 
+describe("F-016 FR-13: an approved rerun whose launch failed", () => {
+  it("starts at the next engine start, with no new item; a worktree an older engine left at another path gives up the branch", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    let feature = "";
+    const scripts = {
+      analyst: async function* (sc: Script, n: number): AsyncGenerator<SdkMessage> {
+        await sc.next();
+        yield { type: "result", subtype: n === 1 ? "error_max_turns" : "success", session_id: `a-${n}` } as SdkMessage;
+      },
+      reviewer: reviewer(d, () => feature),
+    };
+    const first = await start(w, d, scripts);
+    feature = (await first.c.ok("feature.start", { request: "Export" })).feature as string;
+    await until("the analyststop item", () => items(w).length === 1);
+    await first.e.stop();
+    // The branch is held by a checkout that isn't the engine's, so the approved launch fails before a run begins.
+    const branch = git(w.config, "for-each-ref", "--format=%(refname:short)", "refs/heads/feature/").trim();
+    const wts = path.join(w.home, "worktrees");
+    const engineWt = fs.readdirSync(wts).map((k) => path.join(wts, k, feature)).find((x) => fs.existsSync(x))!;
+    git(w.config, "worktree", "remove", "--force", engineWt);
+    const owners = path.join(w.home, "..", `owner-${path.basename(w.home)}`);
+    git(w.config, "worktree", "add", "-q", owners, branch);
+
+    const second = await start(w, d, scripts, first.gh);
+    await pollUntil(w, "the issue", () => first.gh.issues.size === 1);
+    await act(w, first.gh, 1, "choose:A");
+    await pollUntil(w, "the effect", () => effects(w, "D-0001").length === 1);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(second.s.count.analyst).toBe(0);
+    await second.e.stop();
+
+    // An older engine's worktree, at a path this engine no longer derives, holds the branch now.
+    git(w.config, "worktree", "remove", "--force", owners);
+    git(w.config, "worktree", "add", "-q", path.join(wts, "0123456789abcdef", feature), branch);
+    const third = await start(w, d, scripts, first.gh);
+    await until("the approved run", () => third.s.count.analyst === 1);
+    expect(items(w)).toHaveLength(1);
+    await third.e.stop();
+  }, 60_000);
+});
+
 describe("F-016 FR-15: Security and Testability Review findings the interview didn't take up", () => {
   const FINDING = { criterion: "S5.2", severity: "Medium", location: "FR-1", explanation: "Errors may show stack traces.", fix: "Errors show no internals.", needs_owner: false };
 

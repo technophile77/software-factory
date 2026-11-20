@@ -1296,6 +1296,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   let shuttingDown = false;
   const worktreeDir = (p: Project, fid: string) => path.join(home, "worktrees", folderKey(p), fid);
   const engineWords = (e: unknown) => (e instanceof ConfigError || e instanceof DockerError || e instanceof SessionRefused || e instanceof HostError ? (e as Error).message.slice(0, 300) : "an internal error");
+  /** For the PC's own log only: an unexpected error keeps its class and message, scanned for secrets first, so it can be diagnosed. */
+  const logWords = async (e: unknown): Promise<string> => {
+    const why = engineWords(e);
+    if (why !== "an internal error") return why;
+    const detail = e instanceof Error ? `${e.name}: ${e.message.slice(0, 500)}` : String(e).slice(0, 500);
+    return `${why} (${await scrubPrivate(detail).catch(() => REMOVED)})`;
+  };
 
   // -- Where agent sessions run (ADR 0026, H-0204) -------------------------------
 
@@ -1395,7 +1402,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const job: Job = { turns: null, done: Promise.resolve() };
     jobs.set(f, job);
     job.done = runAnalyst(rt, p, f, job, plan)
-      .catch((e) => log.warn(`${f.id}: the analyst run stopped: ${engineWords(e)}`))
+      .catch(async (e) => log.warn(`${f.id}: the analyst run stopped: ${await logWords(e)}`))
       .finally(() => {
         jobs.delete(f);
         // F-008 FR-1: a spec that passed the interview checks goes on to Security and Testability Review once the analyst's work is committed.
@@ -1606,7 +1613,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const why = engineWords(e);
       if (record.run(runId)?.status === "running") runs.interrupt(runId, why);
       // The log keeps docker's whole stderr tail (4 KiB at most); the owner's note keeps the short form.
-      log.warn(`${f.id}: no analyst session started: ${e instanceof DockerError ? e.message : why}`);
+      log.warn(`${f.id}: no analyst session started: ${e instanceof DockerError ? e.message : await logWords(e)}`);
       await noteAnalyst(f, "waiting", `No analyst session started: ${why}. The run resumes at the next engine start.`);
     }
   }
@@ -2573,7 +2580,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           stop(p, e.message);
           return;
         }
-        log.warn(`${f.id}: the build stopped: ${engineWords(e)}`);
+        log.warn(`${f.id}: the build stopped: ${await logWords(e)}`);
       })
       .finally(() => jobs.delete(f));
   }
@@ -3751,7 +3758,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const job: Job = { turns: null, done: Promise.resolve() };
     jobs.set(f, job);
     job.done = runReadiness(p, f)
-      .catch((e) => log.warn(`${f.id}: the readiness gate stopped: ${engineWords(e)}`))
+      .catch(async (e) => log.warn(`${f.id}: the readiness gate stopped: ${await logWords(e)}`))
       .finally(() => {
         jobs.delete(f);
         if (!dead && !shuttingDown && f.stage() === INTERVIEW_STAGE) launchAnalyst(p, f);
@@ -4310,7 +4317,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (f.stage() === INTERVIEW_STAGE && !jobs.has(f)) {
         // FR-13: a feature whose analyst stopped before this engine (or before this rule) would wait forever.
         const last = record.runs().filter((r) => r.feature === f.id && r.project === p.name && r.role === "requirements-analyst").sort((a, b) => a.started_at.localeCompare(b.started_at)).at(-1);
-        if (last?.status === "failed") void offerRerun(p, f, last.id, last.reason ?? "the run failed");
+        if (last?.status === "failed") {
+          // The owner's approved rerun stands when its launch failed before a run began; the answered item would never be asked again.
+          const since = last.ended_at ?? last.started_at;
+          const approved = (await p.inbox?.records().catch(() => []) ?? []).some((x) => x.effect?.type === "analyststop" && x.effect.feature === f.id && x.history.some((h) => h.action === "effect_done" && h.effect === "restarted" && h.at > since));
+          if (approved) launchAnalyst(p, f);
+          else void offerRerun(p, f, last.id, last.reason ?? "the run failed");
+        }
       }
     }
   }
