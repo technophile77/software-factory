@@ -406,6 +406,7 @@ function windowsApi(): WindowsApi {
         const mode = (m: number) => {
           if (!SetNamedPipeHandleState(h, [m], null, null)) throw new FfiError("SetNamedPipeHandleState");
         };
+        let deadPid = 0;
         const tick = () => {
           try {
             ConnectNamedPipe(h, null);
@@ -415,9 +416,15 @@ function windowsApi(): WindowsApi {
               return resolve();
             }
             // A client that came and went between two polls leaves the instance unusable (ERROR_NO_DATA)
-            // until it is disconnected; a known client pid with a dead pipe is that case.
+            // until it is disconnected; a known client pid with a dead pipe is that case. A client can also
+            // connect between the Peek and this check, so only a pid seen dead on two polls in a row is
+            // disconnected; disconnecting at once cut off live clients ("The engine closed the connection").
             const pid = [0];
-            if (GetNamedPipeClientProcessId(h, pid) && pid[0]) DisconnectNamedPipe(h);
+            const now = GetNamedPipeClientProcessId(h, pid) && pid[0] ? pid[0] : 0;
+            if (now && now === deadPid) {
+              DisconnectNamedPipe(h);
+              deadPid = 0;
+            } else deadPid = now;
           } catch {
             return reject(new FfiError("ConnectNamedPipe"));
           }

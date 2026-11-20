@@ -85,6 +85,11 @@ export function statusLines(st: Obj): string[] {
 const WAIT_STAGES = new Set(["requirements_interview", "security_testability_review", "security_gate_1", "readiness_gate"]);
 
 const POLL_MS = 2000;
+const STATUS_TRIES = 15;
+const STATUS_RETRY_MS = 2000;
+/** Channel errors a busy engine can cause; a read that hit one is safe to repeat. */
+const CHANNEL_HICCUPS = new Set(["connection_lost", "engine_unreachable", "timeout"]);
+
 /** How often the inbox console's watch looks again (F-021 v7 FR-2). */
 const WATCH_MS = 5000;
 const NEXT_EVERY_MS = 15_000;
@@ -403,6 +408,23 @@ export class TerminalInterview {
   }
 
   /**
+   * A status read while waiting. It only reads, so a dropped or busy channel
+   * is tried again a few times before the wait gives up: the engine can be
+   * busy for seconds as a gate finishes, and a lost read loses nothing.
+   */
+  private async status(): Promise<Obj> {
+    let st: Obj = {};
+    for (let i = 0; i < STATUS_TRIES; i++) {
+      st = await this.runner("status", {});
+      const code = (st.error as Obj | undefined)?.code;
+      if (st.ok === true || !CHANNEL_HICCUPS.has(String(code))) return st;
+      if (this.io.aborted?.()) return st;
+      await this.timing.sleep(STATUS_RETRY_MS);
+    }
+    return st;
+  }
+
+  /**
    * Waits for the next item, printing each change of the feature's activity
    * with the time and a spinner on the current one (FR-14). Returns the item's
    * `next` result, or null when the interview is over or the owner stops.
@@ -419,7 +441,7 @@ export class TerminalInterview {
     try {
       for (;;) {
         if (this.io.aborted?.()) throw new Stop();
-        const st = await this.runner("status", {});
+        const st = await this.status();
         if (st.ok !== true) {
           clear();
           this.show(st);
@@ -460,6 +482,12 @@ export class TerminalInterview {
         if (changed || now - asked >= NEXT_EVERY_MS) {
           asked = now;
           const n = await this.runner("next", { feature });
+          // A dropped read loses nothing: the next poll reads the status again, with its own retries.
+          if (n.ok !== true && CHANNEL_HICCUPS.has(String((n.error as Obj | undefined)?.code))) {
+            asked = 0;
+            await this.timing.sleep(STATUS_RETRY_MS);
+            continue;
+          }
           if (n.ok !== true || (n.item ?? null) !== null) {
             clear();
             return n;
@@ -583,7 +611,7 @@ export class TerminalInterview {
     let shown = "";
     for (;;) {
       if (this.io.aborted?.()) throw new Stop();
-      const st = await this.runner("status", {});
+      const st = await this.status();
       if (st.ok !== true) {
         this.show(st);
         return 1;
