@@ -98,7 +98,7 @@ describe("Semgrep (FR-8, H-0196)", () => {
     const o = { root, requirements: req, python: "/usr/bin/python3", platform: process.platform, run };
     const program = await semgrepVenv(o);
     expect(calls.map((c) => c.slice(0, 3))).toEqual([["python3", "-m", "venv"], [process.platform === "win32" ? "python.exe" : "python", "-m", "pip"], [path.basename(program), "--version"]]);
-    expect(calls[1]).toEqual(expect.arrayContaining(["--require-hashes", "--only-binary", ":all:", "-r", req]));
+    expect(calls[1]).toEqual(expect.arrayContaining(["--no-deps", "--require-hashes", "--only-binary", ":all:", "-r", req]));
     calls.length = 0;
     expect(await semgrepVenv(o)).toBe(program);
     expect(calls).toEqual([[path.basename(program), "--version"]]);

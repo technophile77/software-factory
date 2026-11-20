@@ -147,16 +147,16 @@ policy:
         allow: []
     orchestrator:
       tools:
-        allow: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
+        allow: ["Read", "Grep", "Glob", "Write"]   # the readiness gate refuses Edit and Bash (F-016, H-0184)
       read:
         allow: ["**"]
         deny: ["**/.env", "**/.env.*", "**/.envrc", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore", "**/id_rsa*", "**/id_dsa*", "**/id_ecdsa*", "**/id_ed25519*", "**/.npmrc", "**/.pypirc", "**/.netrc", "**/.git-credentials", "**/*.tfvars", "**/credentials*.json", "**/*.tfstate", "**/*.tfstate.*", "**/.aws/credentials", "**/.docker/config.json", "**/*.ppk", "**/kubeconfig", "**/.kube/config", ".factory/engine.json", "**/.factory/engine.json"]
       write:
-        allow: [".factory/inbox/**", ".factory/runs/**"]
+        allow: [".factory/runs/**/orchestrator-*.json"]
       commands:
-        allow: ["git", "gh"]
+        allow: []
       network:
-        allow: ["github.com", "api.github.com"]
+        allow: []
     web-reader:                # reads web pages for the analyst; sees no project files
       tools:
         allow: ["fetch_page", "WebSearch"]   # fetch_page is the engine's stripped fetch (Role policy v2.5)

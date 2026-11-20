@@ -64,8 +64,10 @@ export async function semgrepVenv(o: { root: string; requirements: string; pytho
     };
     await step("venv", o.python, ["-m", "venv", venv]);
     const py = path.join(binDir(venv, o.platform), exe("python", o.platform));
-    // H-0196: hashes for every package and wheels only, so no package's build code runs.
-    await step("pip install", py, ["-m", "pip", "install", "--require-hashes", "--only-binary", ":all:", "--no-input", "--disable-pip-version-check", "-r", o.requirements]);
+    // H-0196: hashes for every package and wheels only, so no package's build code runs. --no-deps (owner,
+    // 2026-11-20): the file pins the whole tree, and it pins mcp past the exact version Semgrep asks for, to fix
+    // GHSA-qx49-fqc8-xw99; pip's dependency check would refuse that.
+    await step("pip install", py, ["-m", "pip", "install", "--no-deps", "--require-hashes", "--only-binary", ":all:", "--no-input", "--disable-pip-version-check", "-r", o.requirements]);
   }
   const v = await o.run(program, ["--version"], o.root);
   if (v.code !== 0 || v.output.trim() !== SEMGREP_VERSION) throw new SemgrepError(`the Semgrep venv doesn't hold Semgrep ${SEMGREP_VERSION}`);
