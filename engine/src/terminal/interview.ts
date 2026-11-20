@@ -103,6 +103,8 @@ const CHANNEL_HICCUPS = new Set(["connection_lost", "engine_unreachable", "timeo
 
 /** How often the inbox console's watch looks again (F-021 v7 FR-2). */
 const WATCH_MS = 5000;
+/** F-021 FR-18: how often `inbox -v` reads the agents' transcript. */
+const TRANSCRIPT_MS = 1000;
 const NEXT_EVERY_MS = 15_000;
 const ASK_AFTER_MS = 30 * 60_000;
 const BUSY_DELAY_MS = 1000;
@@ -184,6 +186,12 @@ export class TerminalInterview {
   private offered = "";
   /** The last reply sent, so a lost one can be checked and, on the owner's word, resent. */
   private lastSent: { item: Item; kind: string; text: string } | null = null;
+  /** F-021 FR-18: `inbox -v`, the agents' live transcript under the status. */
+  verbose = false;
+  /** The transcript position read up to; unset until the first read. */
+  private transcriptAt: number | undefined;
+  /** Whose lines were printed last, so the heading repeats only when the agent changes. */
+  private speaker = "";
   /** Set when the engine came back, so a session it no longer knows is opened again without asking (FR-16). */
   private reconnected = false;
   /**
@@ -647,6 +655,7 @@ export class TerminalInterview {
       if (text !== shown) {
         this.say(`\n[${new Date(this.timing.now()).toTimeString().slice(0, 8)}]\n${text}`);
         shown = text;
+        this.speaker = "";
       }
       // F-021 FR-17: a feature waiting for the owner's answer is offered here, once until it stops waiting.
       const asking = waitingForAnswer(st);
@@ -675,7 +684,46 @@ export class TerminalInterview {
         this.say("\nAn item is waiting for you.");
         return null;
       }
-      await this.timing.sleep(WATCH_MS);
+      if (!this.verbose) {
+        await this.timing.sleep(WATCH_MS);
+        continue;
+      }
+      for (let t = 0; t < WATCH_MS && this.verbose; t += TRANSCRIPT_MS) {
+        if (this.io.aborted?.()) throw new Stop();
+        await this.tail();
+        await this.timing.sleep(TRANSCRIPT_MS);
+      }
+    }
+  }
+
+  /**
+   * F-021 FR-18: prints what the agents said and did since the last read. A
+   * heading with the time, feature and role starts each run of lines from
+   * one agent; the lines themselves are engine text, cleaned and marked
+   * (SR-8). An engine that is away is left to the next status read.
+   */
+  private async tail(): Promise<void> {
+    const r = await this.runner("transcript", { feature: CONSOLE_KEY, ...(this.transcriptAt !== undefined ? { after: this.transcriptAt } : {}) });
+    if (r.ok !== true) {
+      if (errorOf(r).code === "transcript_unsupported") {
+        this.show(r);
+        this.verbose = false;
+      }
+      return;
+    }
+    this.transcriptAt = r.next as number;
+    if ((r.skipped as number) > 0) {
+      this.say(`\n(${String(r.skipped)} earlier lines not shown)`);
+      this.speaker = "";
+    }
+    for (const e of r.entries as Array<{ at: string; feature: string; role: string; kind: string; text: string }>) {
+      const who = `${e.feature} ${e.role}`;
+      if (who !== this.speaker) {
+        this.say(`\n[${new Date(e.at).toTimeString().slice(0, 8)}] ${who}`);
+        this.speaker = who;
+      }
+      if (e.kind === "tool") this.say(`${this.marker}* ${clean(e.text.replace(/[\r\n]+/g, " "), true)}`);
+      else for (const l of e.text.split("\n")) this.say(this.marker + clean(l, true));
     }
   }
 
@@ -743,6 +791,8 @@ export class TerminalInterview {
     }
     if (st.ok === true) {
       this.reconnected = true;
+      // A restarted engine numbers its transcript from the start again.
+      this.transcriptAt = undefined;
       this.say(`[${this.clock()}] ${starting ? "Connected" : "Reconnected"} to the engine.`);
     }
     return st;

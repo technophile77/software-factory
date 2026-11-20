@@ -109,6 +109,7 @@ export async function runAnalystSession(i: AnalystRunInput): Promise<{ outcome: 
         onSessionId: i.onSessionId,
         onTurnEnd: () => i.turns.turnEnded?.(),
         onWorking: () => i.turns.working?.(),
+        onEntry: (k, t) => i.group.transcript?.(k, t),
         onWebSearch: (q) => i.log.info(`analyst ${agent.name}: WebSearch ${JSON.stringify(q).slice(0, 500)}`),
       });
     } finally {

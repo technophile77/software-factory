@@ -22,7 +22,7 @@ import { clean, fence, isWellFormed, quotesReply } from "./text";
 type Obj = Record<string, unknown>;
 export type Operation =
   | "status" | "start" | "list" | "open" | "approval" | "next" | "reply" | "state" | "close"
-  | "inbox_open" | "inbox_list" | "inbox_show" | "inbox_answer" | "inbox_confirm";
+  | "inbox_open" | "inbox_list" | "inbox_show" | "inbox_answer" | "inbox_confirm" | "transcript";
 
 /**
  * F-021: the session key a console session is kept under. Feature ids are
@@ -48,9 +48,13 @@ export const FIELDS: Record<Operation, readonly string[]> = {
   inbox_show: ["feature", "item"],
   inbox_answer: ["feature", "item", "rev", "action", "note", "reply_id"],
   inbox_confirm: ["feature", "item", "rev", "code"],
+  transcript: ["feature", "after"],
 };
 
 const INBOX_ACTION_RE = /^(?:choose:[A-D]|step:[1-9]\d?|approve|reject|changes|research|defer|restore|dismiss)$/;
+/** F-021 FR-18: what a transcript entry may name; anything else is dropped. */
+const ROLE_RE = /^[a-z][a-z0-9-]{0,40}$/;
+const MAX_ENTRY_TEXT = 8000;
 const INBOX_KINDS = ["decision", "testing", "hygiene", "spec", "maturity", "notice"];
 const PRIORITY_WORDS = ["critical", "high", "medium", "low"];
 const MAX_INBOX_NOTE = 4000;
@@ -127,7 +131,8 @@ export function validate(op: Operation, req: Obj): void {
       }
     }
   }
-  if (["open", "approval", "next", "reply", "state", "close", "inbox_list", "inbox_show", "inbox_answer", "inbox_confirm"].includes(op)) needId(req, "feature");
+  if (["open", "approval", "next", "reply", "state", "close", "inbox_list", "inbox_show", "inbox_answer", "inbox_confirm", "transcript"].includes(op)) needId(req, "feature");
+  if (op === "transcript" && req.after !== undefined && (!isInt(req.after) || req.after < 0)) throw new Refused("bad_request", "`after` must be the `next` of the last transcript read.");
   if (op === "inbox_show" || op === "inbox_answer" || op === "inbox_confirm") {
     if (typeof req.item !== "string" || !INBOX_ID_RE.test(req.item)) throw new Refused("bad_request", "`item` must be an inbox item id such as D-0007.");
   }
@@ -218,6 +223,10 @@ export class Interview {
       }
       // The file is read before connecting, so a refused document sends nothing.
       if (doc) run.document = readDocument(doc.path, doc.provenance, this.env.projectDir);
+      if (op === "transcript" && !where.capabilities.has("transcript")) {
+        throw new Refused("transcript_unsupported", "This engine can't show the agents' transcript; it needs an engine whose "
+          + "engine.json lists the \"transcript\" capability (F-021 FR-18). Nothing was sent.");
+      }
       if (op.startsWith("inbox_") && !where.capabilities.has("inbox")) {
         throw new Refused("inbox_unsupported", "This engine can't take inbox answers in the console; it needs an engine whose "
           + "engine.json lists the \"inbox\" capability (F-021). Answer on the item's GitHub issue instead. Nothing was sent.");
@@ -253,6 +262,7 @@ export class Interview {
       case "inbox_show": return this.inboxShow(req, run);
       case "inbox_answer": return this.inboxAnswer(req, run, replyId!);
       case "inbox_confirm": return this.inboxConfirm(req, run);
+      case "transcript": return this.transcript(req, run);
     }
   }
 
@@ -358,6 +368,22 @@ export class Interview {
   }
 
   /** FR-2: each item's checked fields; a title is cleaned to one line, as the menu shows it. */
+  /**
+   * F-021 FR-18: the agents' live transcript. Only entries whose fields check
+   * out get through; their text is engine text, which the terminal cleans and
+   * marks (SR-8).
+   */
+  private async transcript(req: Obj, run: Run): Promise<Obj> {
+    const r = result(await this.sessionCall(req, run, "engine.transcript", req.after !== undefined ? { after: req.after } : {}));
+    const entries = (Array.isArray(r.entries) ? r.entries.filter(isObj) : []).flatMap((e) => {
+      if (!isInt(e.seq) || typeof e.at !== "string" || !TIMESTAMP_RE.test(e.at) || typeof e.feature !== "string" || !ID_RE.test(e.feature)) return [];
+      if (typeof e.role !== "string" || !ROLE_RE.test(e.role) || (e.kind !== "text" && e.kind !== "tool") || typeof e.text !== "string") return [];
+      return [{ seq: e.seq, at: e.at, feature: e.feature, role: e.role, kind: e.kind, text: e.text.slice(0, MAX_ENTRY_TEXT) }];
+    });
+    if (!isInt(r.next) || r.next < 0) throw new ChannelFailure("bad_response", "The engine sent an invalid transcript position.", { sent: true });
+    return { entries, next: r.next, skipped: isInt(r.skipped) && r.skipped > 0 ? r.skipped : 0 };
+  }
+
   private async inboxList(req: Obj, run: Run): Promise<Obj> {
     const r = result(await this.sessionCall(req, run, "inbox.list", {}));
     const items = (Array.isArray(r.items) ? r.items.filter(isObj) : []).flatMap((i) => {

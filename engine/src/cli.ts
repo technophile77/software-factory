@@ -40,9 +40,10 @@ const USAGE = `factory-engine <command>
           Answers the requirements analyst's questions in this terminal (F-018).
           --project defaults to the current folder, inside the project's repo.
           Started by the software-factory plugin, not by hand.
-  inbox [<item id>] [--project <path>]
+  inbox [<item id>] [--project <path>] [-v | --verbose]
           Lists the project's open inbox items and answers them in this terminal
           (F-021). Every item is still a GitHub issue; the first answer counts.
+          -v also shows what each running agent says and does, as it happens.
 `;
 
 function flags(args: string[]): Record<string, string> {
@@ -172,7 +173,10 @@ function terminalIo(ascii: boolean): TerminalIo & { close(): void } {
 }
 
 /** `interview` (F-018) and `inbox` (F-021) share their checks and their terminal. */
-async function interview(rest: string[], command: "interview" | "inbox" = "interview"): Promise<number> {
+async function interview(args: string[], command: "interview" | "inbox" = "interview"): Promise<number> {
+  // F-021 FR-18: the inbox's verbose switch; the interview command has none.
+  const verbose = command === "inbox" && args.some((a) => a === "-v" || a === "--verbose");
+  const rest = command === "inbox" ? args.filter((a) => a !== "-v" && a !== "--verbose") : args;
   const feature = rest[0] && !rest[0].startsWith("--") ? rest[0] : undefined;
   let f: Record<string, string>;
   try {
@@ -198,6 +202,7 @@ async function interview(rest: string[], command: "interview" | "inbox" = "inter
   const io = terminalIo(ascii);
   try {
     const t = new TerminalInterview((op, req) => ops.run(op, req), io, marker);
+    t.verbose = verbose;
     return await (command === "inbox" ? t.inboxMain(feature) : t.main(feature));
   } finally {
     io.close();

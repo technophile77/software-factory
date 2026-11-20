@@ -122,6 +122,7 @@ export async function runWorkerSessions(i: WorkerRunInput): Promise<WorkerResult
         }, abort);
         outcome = await runSession(i.sdk, opts, once(turn), caps, {
           onSessionId: i.onSessionId,
+          onEntry: (k, t) => i.group.transcript?.(k, t),
           wall: (onExpire) => (timer = new WallTimer(caps.wallTimeMs, onExpire)),
         });
       } finally {

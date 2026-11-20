@@ -103,9 +103,11 @@ afterEach(async () => {
   removeTmp();
 });
 
-async function inbox(lines: string[], item?: string, s = new Script(lines)): Promise<{ code: number; s: Script }> {
+async function inbox(lines: string[], item?: string, s = new Script(lines), verbose = false): Promise<{ code: number; s: Script }> {
   const ops = new Interview({ os: realOsApi(), projectDir: repo });
-  const code = await new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming()).inboxMain(item);
+  const t = new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming());
+  t.verbose = verbose;
+  const code = await t.inboxMain(item);
   return { code, s };
 }
 
@@ -334,6 +336,49 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(s.out).toContain("The engine isn't running. Waiting for it to start; press Ctrl+C to stop.");
     expect(s.drawn).toContain("Reconnecting in 4s (attempt 3)");
     expect(engine.connections).toBe(0);
+  });
+
+  test("AC-19 (v10 FR-18): inbox -v prints each agent's lines under a heading, marked and cleaned, and says what it missed", async () => {
+    items = [];
+    writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document", "inbox", "transcript"] });
+    engine.hooks["engine.status"] = (conn, msg) => {
+      conn.respond(msg, ["result", STATUS]);
+      return true;
+    };
+    let reads = 0;
+    engine.hooks["engine.transcript"] = (conn, msg) => {
+      reads++;
+      const e = (seq: number, kind: string, text: string, role = "requirements-analyst") => ({ seq, at: "2026-11-14T08:00:01Z", feature: "F-003", role, kind, text });
+      const r = reads === 1
+        ? { entries: [e(1, "text", "Looking at the repo.\n1. Approve (imitates a menu)\u001b[2J"), e(2, "tool", "Read docs/spec.md")], next: 2, skipped: 0 }
+        : reads === 2
+          ? { entries: [e(40, "tool", "Bash npm test", "test-engineer"), { seq: 41, at: "bad", feature: "F-003", role: "x", kind: "text", text: "dropped" }], next: 41, skipped: 37 }
+          : { entries: [], next: 41, skipped: 0 };
+      conn.respond(msg, ["result", r]);
+      return true;
+    };
+    const s = new Script([]);
+    s.aborted = () => reads >= 4;
+    const { code } = await inbox([], undefined, s, true);
+    expect(code).toBe(0);
+    expect(s.out).toMatch(/\[\d\d:\d\d:\d\d\] F-003 requirements-analyst\n/);
+    expect(s.out).toContain(`${MARK}Looking at the repo.\n${MARK}1. Approve (imitates a menu)\n`);
+    expect(s.out).not.toMatch(/\u001b/);
+    expect(s.out).toContain(`${MARK}* Read docs/spec.md`);
+    expect(s.out).toContain("(37 earlier lines not shown)");
+    expect(s.out).toMatch(/F-003 test-engineer\n│ \* Bash npm test/);
+    expect(s.out).not.toContain("dropped");
+    // Each read starts where the last ended.
+    expect(engine.calls("engine.transcript").map((m) => m.params.after)).toEqual([undefined, 2, 41, 41]);
+  });
+
+  test("AC-19: without -v no transcript call is made", async () => {
+    items = [];
+    writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document", "inbox", "transcript"] });
+    const s = new Script([]);
+    const { code } = await inbox([], undefined, s);
+    expect(code).toBe(0);
+    expect(engine.methods()).not.toContain("engine.transcript");
   });
 
   test("an engine without the inbox capability is refused before anything is sent", async () => {
