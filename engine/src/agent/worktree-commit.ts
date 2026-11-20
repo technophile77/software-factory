@@ -38,6 +38,8 @@ export interface WorktreeCommitInput {
    * rejects the session (AC-22).
    */
   frozen?: CodeFiles;
+  /** Tests only; the walk reads executable bits differently on Windows. */
+  platform?: NodeJS.Platform;
 }
 
 export type WorktreeCommitResult =
@@ -89,7 +91,7 @@ function readNoFollow(full: string): Buffer {
  * whatever the agent wrote. The walk still finishes, so a breach anywhere is
  * still found.
  */
-function walk(root: string, base: Map<string, BaseEntry>, format: "sha1" | "sha256", limits: WorktreeLimits, breaches: Breach[], frozen?: CodeFiles) {
+function walk(root: string, base: Map<string, BaseEntry>, format: "sha1" | "sha256", limits: WorktreeLimits, breaches: Breach[], frozen?: CodeFiles, platform: NodeJS.Platform = process.platform) {
   const seen = new Set<string>();
   const frozenSeen = new Set<string>();
   const changed: Changed[] = [];
@@ -134,7 +136,9 @@ function walk(root: string, base: Map<string, BaseEntry>, format: "sha1" | "sha2
         const target = Buffer.from(fs.readlinkSync(full), "utf8");
         [mode, size, read] = ["120000", target.length, () => target];
       } else if (st.isFile()) {
-        [mode, size, read] = [process.platform !== "win32" && st.mode & 0o111 ? "100755" : "100644", st.size, () => readNoFollow(full)];
+        // Windows has no executable bit to read, so a file keeps its base mode there; reading it as 100644 made every executable file look changed.
+        const exec = platform === "win32" ? base.get(r)?.mode === "100755" : (st.mode & 0o111) !== 0;
+        [mode, size, read] = [exec ? "100755" : "100644", st.size, () => readNoFollow(full)];
       } else {
         breaches.push({ path: r, reason: "not_allowed" });
         continue;
@@ -183,7 +187,7 @@ export async function commitWorktree(i: WorktreeCommitInput): Promise<WorktreeCo
     const m = /^(\d{6}) \w+ ([0-9a-f]{40,64}) +(\d+|-)\t(.*)$/s.exec(line);
     if (m) base.set(m[4]!, { mode: m[1]!, sha: m[2]!, size: m[3] === "-" ? -1 : Number(m[3]) });
   }
-  const { changed, touched, removed, over } = walk(i.worktree, base, format, i.limits, breaches, i.frozen);
+  const { changed, touched, removed, over } = walk(i.worktree, base, format, i.limits, breaches, i.frozen, i.platform);
   if (touched.length === 0 && removed.length === 0 && breaches.length === 0) return { status: "unchanged" };
   if (over) {
     // No commit to check, so the rules are checked on the paths: a breach still files its Security item (AC-9).
