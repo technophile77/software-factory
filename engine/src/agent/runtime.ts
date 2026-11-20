@@ -39,21 +39,33 @@ const turn = (content: string): UserTurn => ({ type: "user", message: { role: "u
 export class TurnQueue implements AsyncIterable<UserTurn> {
   private closed = false;
   private wake: (() => void) | null = null;
-  private given = 0;
-  private ended = 0;
+  private started = false;
+  private busy = false;
 
   /** `onIdle` hears each change of `idle`, so the run record can say whether a restart would cut off work. */
   constructor(private readonly f: FeatureInterview, private readonly first: string | null, private readonly onIdle?: (idle: boolean) => void) {}
 
-  /** The session finished a turn (its `result` message). */
+  /**
+   * The session finished a turn (its `result` message). Claude Code can fold
+   * a reply handed over mid-turn into that turn, so one result can end
+   * several handed-over turns; counting them left the analyst "working" forever.
+   */
   turnEnded(): void {
-    this.ended++;
-    if (this.idle) this.onIdle?.(true);
+    if (!this.busy) return;
+    this.busy = false;
+    this.onIdle?.(true);
   }
 
-  /** Issue #124: every turn handed to the session has finished, so the analyst is waiting for the owner, not working. */
+  /** The session is producing output, so a turn handed over earlier is being worked on. */
+  working(): void {
+    if (!this.started || this.busy) return;
+    this.busy = true;
+    this.onIdle?.(false);
+  }
+
+  /** Issue #124: the session finished its work and waits for the owner. */
   get idle(): boolean {
-    return this.given > 0 && this.ended >= this.given;
+    return this.started && !this.busy;
   }
 
   close(): void {
@@ -61,18 +73,22 @@ export class TurnQueue implements AsyncIterable<UserTurn> {
     this.wake?.();
   }
 
+  private handOver(): void {
+    this.started = true;
+    this.busy = true;
+    this.onIdle?.(false);
+  }
+
   async *[Symbol.asyncIterator](): AsyncIterator<UserTurn> {
     if (this.first) {
-      this.given++;
-      this.onIdle?.(false);
+      this.handOver();
       yield turn(this.first);
     }
     while (!this.closed) {
       if (!this.f.paused && this.f.state.undelivered.length) {
         const t = await this.f.takeTurn().catch(() => null);
         if (t && !this.closed) {
-          this.given++;
-          this.onIdle?.(false);
+          this.handOver();
           yield turn(t.message);
           continue;
         }

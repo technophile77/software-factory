@@ -40,7 +40,7 @@ export interface AnalystRunInput {
   billingCheck(): string | null;
   /** The analyst's tools for the feature, given the web reader to research with. */
   tools(research: ResearchConfig | undefined): InterviewTools;
-  turns: AsyncIterable<UserTurn> & { turnEnded?(): void };
+  turns: AsyncIterable<UserTurn> & { turnEnded?(): void; working?(): void };
   /** FR-11 with FR-9's check: called once the container is gone. */
   commit(policy: RolePolicy): Promise<WorktreeCommitResult>;
   onSessionId(id: string): void;
@@ -108,6 +108,7 @@ export async function runAnalystSession(i: AnalystRunInput): Promise<{ outcome: 
       outcome = await runSession(i.sdk, opts, i.turns, i.limits.analyst, {
         onSessionId: i.onSessionId,
         onTurnEnd: () => i.turns.turnEnded?.(),
+        onWorking: () => i.turns.working?.(),
         onWebSearch: (q) => i.log.info(`analyst ${agent.name}: WebSearch ${JSON.stringify(q).slice(0, 500)}`),
       });
     } finally {

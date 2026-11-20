@@ -35,6 +35,34 @@ describe("issue #124: a feature whose analyst waits for the owner says so", () =
     q.close();
   });
 
+  it("a reply handed over mid-turn and folded into it: one result leaves the queue idle (mesbot F-003)", async () => {
+    const f = fakeFeature();
+    f.state.undelivered.push("owner reply recorded before the run");
+    const q = new TurnQueue(f as unknown as FeatureInterview, "start");
+    const it = q[Symbol.asyncIterator]();
+    await it.next();
+    await it.next();
+    q.working();
+    q.turnEnded();
+    expect(q.idle).toBe(true);
+    q.close();
+  });
+
+  it("a reply worked on as its own turn after a result shows as working again once the session produces output", async () => {
+    const f = fakeFeature();
+    f.state.undelivered.push("reply");
+    const q = new TurnQueue(f as unknown as FeatureInterview, "start");
+    const it = q[Symbol.asyncIterator]();
+    await it.next();
+    await it.next();
+    q.turnEnded();
+    q.working();
+    expect(q.idle).toBe(false);
+    q.turnEnded();
+    expect(q.idle).toBe(true);
+    q.close();
+  });
+
   it("an open question with the analyst's turn over is waiting_for_owner, not analyst_reviewing", () => {
     expect(activityOf({ stage: "requirements_interview", paused: false, running: false, statuses: ["open"] })).toBe("waiting_for_owner");
     expect(activityOf({ stage: "requirements_interview", paused: false, running: true, statuses: ["open"] })).toBe("analyst_reviewing");
