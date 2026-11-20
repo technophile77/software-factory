@@ -225,6 +225,21 @@ describe("worktree commit (FR-11 with the FR-9 check)", () => {
     expect((await commitWorktree(input(cleanScanner, { maxFiles: 1, maxFileBytes: 5, maxTotalBytes: 5 }))).status).toBe("committed");
   });
 
+  it("on Windows an executable file in the base keeps its mode, so it isn't a write", async () => {
+    const { main, input } = setup();
+    fs.writeFileSync(path.join(main, "deploy.sh"), "#!/bin/sh\n");
+    git(main, "add", "deploy.sh");
+    git(main, "update-index", "--chmod=+x", "deploy.sh");
+    git(main, "commit", "-q", "-m", "exec");
+    const wt = path.join(tmpdir(), "wt2");
+    git(main, "worktree", "add", "-q", "-b", "feature/F-001-y", wt);
+    // What Windows shows the walk: no executable bit on any file.
+    fs.chmodSync(path.join(wt, "deploy.sh"), 0o644);
+    const at = { ...input(), worktree: wt, branch: "feature/F-001-y", gitDir: git(wt, "rev-parse", "--absolute-git-dir"), base: git(wt, "rev-parse", "HEAD") };
+    expect(await commitWorktree({ ...at, platform: "win32" })).toEqual({ status: "unchanged" });
+    if (posix) expect(await commitWorktree({ ...at, platform: "linux" })).toMatchObject({ status: "rejected", breaches: [{ path: "deploy.sh" }] });
+  });
+
   it("AC-9 still holds past a cap: a write or a removal outside the rules rejects the session", async () => {
     const { wt, input } = setup();
     fs.writeFileSync(path.join(wt, "docs/features/a.md"), "a\n");
