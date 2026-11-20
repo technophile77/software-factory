@@ -239,6 +239,8 @@ describe("FR-15: inputs", () => {
       inbox_open: [], inbox_list: ["feature"], inbox_show: ["feature", "item"],
       inbox_answer: ["action", "feature", "item", "note", "reply_id", "rev"],
       inbox_confirm: ["code", "feature", "item", "rev"],
+      // F-024: the windowed console's session transcript.
+      transcript: ["after", "feature"],
     });
   });
 });
