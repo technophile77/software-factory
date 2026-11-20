@@ -516,7 +516,7 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
-## Role policy — v2.11
+## Role policy — v2.12
 
 - Status: Approved (v2.2); v2.3 draft, awaiting owner approval (H-0040);
   v2.4 approved (H-0061, H-0076); v2.5 approved (H-0083); v2.7 approved
@@ -524,7 +524,8 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   approved (F-020 H-0244; owner, 2026-11-14, decision card); v2.9 approved
   (F-015 H-0192 and SR-7; owner, 2026-11-14, decision cards); v2.10 approved
   (H-0264; owner, 2026-11-19, decision card); v2.11 approved
-  (F-015 FR-20; owner, 2026-11-20, decision card and in thread)
+  (F-015 FR-20; owner, 2026-11-20, decision card and in thread); v2.12
+  draft (F-015 v26 FR-25, test runs go through `run_tests`)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
@@ -576,7 +577,9 @@ Each role has five sections: `tools` (the agent's built-in tools: `Read`,
 v2.2 `Skill`, which loads only the master factory's shared skills, and from
 v2.5 the engine tool `fetch_page`, and from v2.11 `Monitor` and `TaskStop`,
 which watch and stop a command run in the background; `Monitor` runs a
-command, so the rules for `Bash` commands apply to it), `read`,
+command, so the rules for `Bash` commands apply to it; from v2.12 the
+gate refuses a developer's or test engineer's `Bash` or `Monitor` command
+that runs tests, which go through `run_tests`, Build tools v1.0), `read`,
 `write`, `commands` (programs `Bash` may run) and `network`. Every role must
 list at least one tool. Every role with a file tool (`Read`, `Grep`, `Glob`,
 `Edit`, `Write`, `Bash`, `Skill`) must list at least one read glob. Every role
@@ -868,7 +871,7 @@ section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.10
+## Project manifest — v1.11
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014);
   v1.3 approved (H-0080); v1.4 approved (H-0087); v1.5 approved (H-0135);
@@ -876,7 +879,7 @@ section allows nothing); a role missing from the policy may not run.
   approved (F-015 H-0193, owner, decision card, 2026-11-14); v1.8 approved
   (F-018 H-0227, owner, decision card, 2026-11-14); v1.9 approved (F-015
   SR-6 H-0249, owner, decision card and thread, 2026-11-14); v1.10 approved
-  (F-015 FR-18 H-0253, owner, decision card, 2026-11-15)
+  (F-015 FR-18 H-0253, owner, decision card, 2026-11-15); v1.11 draft (F-015 v26 FR-25, `commands.test_one`)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
   adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
   `complexity` and `settings.agents` (F-002 A-6, A-8); v1.3 adds `enabled`,
@@ -899,7 +902,7 @@ the preset used only for initial calibration) and
 ladder; the engine refuses a rung that doesn't exist in the pinned factory
 version or is below the role's floor). Both change only through hygiene
 items (F-002). The manifest is the only record of repo and project maturity
-levels. `schema` stays `factory-project/1.0`: v1.1 to v1.10 only add optional keys.
+levels. `schema` stays `factory-project/1.0`: v1.1 to v1.11 only add optional keys.
 
 From v1.5, optional `settings.endpoints`: a list of model endpoint names
 (Model endpoints file v1.0) this project's code may be sent to; default
@@ -945,6 +948,13 @@ path that must resolve inside the worktree under the ADR 0015 path rule. A
 repo without `commands.test` can't enter stage 5 (F-015). `commit_name` is a
 non-empty string of at most 100 characters with no control characters.
 Onboarding (F-003) asks for the commands per repo.
+
+From v1.11 (F-015 FR-25), optional `commands.test_one`: the command that
+runs one test, as an argument list in which exactly one element is
+`{test}`. The engine replaces that element with the test id, as one
+argument, never through a shell; the command writes `test_results` like
+`test`. Example for pytest: `["python", "-m", "pytest", "--junitxml=reports/junit.xml", "{test}"]`.
+Without it, agents can only run the whole suite.
 
 From v1.8 (F-018 FR-15), optional `settings.interview_sign_in`: how often
 the owner signs in to GitHub to open interview sessions. `every` is
@@ -1234,6 +1244,41 @@ output, checked against `docs/schemas/web-reader-answer-1.schema.json`.
 holds the page's address (untrusted text); false relaxes no check (F-020
 SR-10). The engine keeps only facts whose `source` is a page it fetched for
 the reader.
+
+## Build tools — v1.0
+
+- Status: draft (F-015 v26 FR-25)
+- Used by: engine (serves them), software developer and test engineer (call them)
+- Compatibility: adding a tool or an optional parameter is non-breaking;
+  changing a parameter, a result or a limit is breaking.
+
+The engine gives the developer and test engineer this tool in their build
+sessions, through the in-process MCP server named `factory`. It is their
+only way to run tests (Role policy v2.12).
+
+| Tool | Params | Result |
+|---|---|---|
+| `run_tests` | `{ test?: string, criteria_map?: { "<AC id>": [test id] } }` | `{ complete, incomplete, tests_run, passed, failed, skipped, failures: [{ test, message }], not_run: [{ test, reason }], criteria: { "<AC id>": [{ test, status }] } }` |
+
+Rules:
+- The engine runs the repo's `commands.build`, when set, then
+  `commands.test`, on the session's worktree as it is at the call, as it
+  runs the stage 6 test run (F-015 FR-6, SR-8, SR-9): allowlisted
+  environment, the test run caps, the process tree killed at a cap. The
+  `test_results` file is read, then deleted; it is never committed.
+- With no `test`, it runs the whole suite. With `test`, it runs that one
+  test through the repo's `commands.test_one` (Project manifest v1.11).
+  The id must be one of the criteria map's test ids, so an agent can't pass
+  other arguments or paths; it is refused with `not_in_map` otherwise, and
+  with `no_single_test_command` when the repo has no `test_one`. A
+  parametrized test runs all its cases. A single test's result is only for
+  the agent: it never counts toward stage 6.
+- `criteria_map` is joined to the results as the stage 6 run joins it
+  (F-015 FR-24); without one, the test engineer's newest reported map is
+  used, and with none, `criteria` is `{}`.
+- One call at a time per session; a second call while one runs is refused
+  with `busy`. Failure messages are capped at 2 KiB each and pass the
+  secrets scan.
 
 ## Interview tools — v1.2
 
