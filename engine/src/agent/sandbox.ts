@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import type { EntryKind } from "./live-transcript";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -107,6 +108,8 @@ export interface AgentGroup {
   stopAgent(a: AgentContainer): Promise<void>;
   close(): Promise<void>;
   deadlineHit(): boolean;
+  /** F-021 FR-18: where the run's sessions report what they say and do; set by the engine. */
+  transcript?(kind: EntryKind, text: string): void;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);

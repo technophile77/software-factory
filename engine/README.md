@@ -15,6 +15,7 @@ is F-007, the first engine increment: real spec interviews. It holds:
 |---|---|
 | `src/policy/` | Role policy v2.5 from the manifest, the H-0046 glob dialect and the ADR 0015 path rule |
 | `src/docker/` | the `docker` command line (SR-14), container and network plans, the post-start `docker inspect` check, and the agent image build |
+| `src/console-ui/` | the windowed console's screen (Ink, F-024); the console's logic is `src/terminal/console-model.ts` |
 | `src/proxy/` | the sidecar proxy and credential gateway (SR-6 to SR-9), on Node built-ins only; bundled to `dist/proxy.js` |
 | `src/agent/` | session options (SR-10), the container spawn, SR-18 caps, the `factory` MCP tools, `fetch_page`, the web reader, the worktree commit and end-of-session write check (FR-9, FR-11) |
 | `docker/` | the agent image: base image by digest, Claude Code 2.1.311 checked against the Agent SDK manifest, no npm in the final stage |
@@ -39,7 +40,7 @@ and `npx vitest run test/docker-real.test.ts`.
 ```
 npm ci --ignore-scripts
 npm run typecheck
-npm run build      # dist/engine.js (koffi stays external) and dist/proxy.js (the sidecar proxy)
+npm run build      # dist/engine.js (koffi stays external), dist/console.mjs (the windowed console's screen) and dist/proxy.js (the sidecar proxy)
 npm test           # unit tests (test/*.test.ts) and the acceptance suite (test/acceptance, its own config)
 npm run test:platform  # only the files that exercise OS-specific code (what PRs run on macOS and Windows)
 npm run coverage   # the same with V8 coverage; reported, not gated
@@ -99,6 +100,11 @@ factory-engine mcp                      # started by Claude Code, not by hand
   showing what each feature is doing, until an item opens or you press
   Ctrl+C. Like `interview`, it runs only in a terminal and needs a running
   engine.
+- Both open the windowed console (F-024, ADR 0035) unless given `--plain`:
+  Status, Inbox, Agents, Log and, with `-v` or the `v` key, Transcript (the
+  selected agent's messages and tool calls, from `engine.transcript`, never
+  tool output), with the answer bar at the bottom. The screen is Ink, bundled
+  separately as `dist/console.mjs` because Ink is ES modules only.
 
 The gitleaks binary's absolute path comes from `--gitleaks` or from
 `gitleaks:` in `<engine home>/engine.yaml`. The engine refuses to run any

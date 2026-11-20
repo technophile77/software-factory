@@ -12,6 +12,7 @@ import { judgePolicy, orchestratorPolicy, runReviewerSessions, reviewerPolicy } 
 import type { RouterConfig } from "./agent/sandbox";
 import type { ModelCredential } from "./proxy/server";
 import { type AgentGroup, SessionGroup, runVolume } from "./agent/sandbox";
+import { LiveTranscript } from "./agent/live-transcript";
 import { HostError, HostGroup, runHome, sweepHomes } from "./agent/host";
 import { ASK_WAIT_MS, type HostGate, WORKSPACE, type SessionCaps, type SessionOutcome, denyAsk } from "./agent/session";
 import { CODE_DIR, type CodeFiles, placeCodeCopies, removeCodeCopies } from "./agent/code-copies";
@@ -334,6 +335,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const record = new EngineRecord(home);
   const pins = new PinStore(home);
   const runs = new RunBook(record, clock);
+  const live = new LiveTranscript(() => clock.now());
   // F-023 FR-7: this engine folder's factory id and the lease bookkeeping.
   const myFactory = factoryId(home);
   const sightings = new LeaseSightings();
@@ -1205,6 +1207,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           confirm: async (a) => answeredInConsole(p, await ib.consoleConfirm(a)),
         };
       },
+      transcript: (after) => {
+        const r = live.read(p.name!, after);
+        // Spend so far, where the run has reported it (F-024 FR-6).
+        const agents = r.agents.map((a) => {
+          const cost = record.run(a.run)?.used?.costUsd;
+          return typeof cost === "number" ? { ...a, cost_usd: Math.round(cost * 100) / 100 } : a;
+        });
+        return { ...r, agents };
+      },
       secretRefused: async (where, found, fid) => {
         const rules = [...new Set(found.rules)].filter((r) => /^[A-Za-z0-9_.-]{1,80}$/.test(r));
         // Each refusal is its own event, so the alert key never repeats.
@@ -1325,6 +1336,38 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
    * every session runs in the project's agent image as before.
    */
   async function agentsFor(rt: AgentRuntime, p: Project, credential: ModelCredential): Promise<RunAgents> {
+    const made = await agentsForRun(rt, p, credential);
+    return { ...made, group: async (id, router) => liveGroup(id, await made.group(id, router)) };
+  }
+
+  /** F-021 FR-18: the run's sessions feed the live transcript, which lets go of them when the run's group closes. */
+  function liveGroup(runId: string, g: AgentGroup): AgentGroup {
+    const close = g.close.bind(g);
+    const open = g.open.bind(g);
+    const who = () => {
+      const r = record.run(runId);
+      return r ? { project: r.project, feature: r.feature, role: r.role } : null;
+    };
+    g.open = async () => {
+      await open();
+      const w = who();
+      if (w) live.begin(runId, w);
+    };
+    g.transcript = (kind, text) => {
+      const w = who();
+      if (w) live.add(runId, w, kind, text);
+    };
+    g.close = async () => {
+      try {
+        await close();
+      } finally {
+        live.end(runId);
+      }
+    };
+    return g;
+  }
+
+  async function agentsForRun(rt: AgentRuntime, p: Project, credential: ModelCredential): Promise<RunAgents> {
     const m = p.manifest!;
     const sources = p.sources!;
     const limits = p.limits!;

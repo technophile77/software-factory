@@ -151,7 +151,7 @@ export async function runReviewerSessions(i: ReviewerRunInput): Promise<Reviewer
           workspace: agent.workspace, ...(agent.host ? { host: i.host ?? denyAsk(undefined) } : {}),
           spawn: agent.spawn, log: i.log,
         }, abort);
-        outcome = await runSession(i.sdk, opts, once(turn), caps, { onSessionId: i.onSessionId });
+        outcome = await runSession(i.sdk, opts, once(turn), caps, { onSessionId: i.onSessionId, onEntry: (k, t) => i.group.transcript?.(k, t) });
       } finally {
         // The container must be gone before the worktree and the report are read, so nothing changes under the checks.
         await i.group.stopAgent(agent);

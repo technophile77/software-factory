@@ -10,6 +10,7 @@ import type { ConsoleResult } from "../inbox/store";
 import type { InboxRecord } from "../inbox/model";
 import type { PrivateDetail } from "../inbox/local";
 import { SessionManager } from "./sessions";
+import type { LiveAgent, LiveEntry } from "../agent/live-transcript";
 
 /** F-021: what the channel needs from the project's inbox to answer items in the console. */
 export interface ConsoleInbox {
@@ -30,6 +31,8 @@ export interface ProjectChannel {
   startFeature(request: string, document?: SourceDocument): Promise<string>;
   /** F-021: the project's inbox for console answers, or null while it has none. */
   inbox(): ConsoleInbox | null;
+  /** F-021 FR-18 (channel v1.7, H-0265): the project's live agent transcript after `after`. */
+  transcript(after: number | undefined): { agents: Array<LiveAgent & { cost_usd?: number }>; entries: LiveEntry[]; next: number; skipped: number };
   /** Files the Security item behind a -32008 for a secret the scan found (H-0084). */
   secretRefused(where: string, found: SecretFound, feature?: string): Promise<void>;
 }
@@ -216,6 +219,15 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
         only(p, ["session"]);
         project.sessions.close(p.session);
         return { ok: true };
+      case "engine.transcript": {
+        only(p, ["session", "after"]);
+        project.sessions.approved(p.session);
+        const after = p.after;
+        if (after !== undefined && (typeof after !== "number" || !Number.isSafeInteger(after) || after < 0)) {
+          throw new RpcError(RPC.invalidParams, "after must be a non-negative integer.");
+        }
+        return project.transcript(after as number | undefined);
+      }
       case "inbox.list": {
         only(p, ["session"]);
         project.sessions.approved(p.session);

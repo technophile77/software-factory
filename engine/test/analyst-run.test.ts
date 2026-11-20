@@ -153,6 +153,46 @@ describe("the analyst, wired end to end with fake Docker and SDK (FR-8 to FR-11)
     expect(d.started.size).toBe(0);
   });
 
+  it("F-021 FR-18: what the analyst says and which tools it calls reach engine.transcript, tool output never does", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    const s = scriptedSdk(async function* ({ next, call }) {
+      await next();
+      yield { type: "system", subtype: "init", session_id: "s-1" };
+      yield { type: "assistant", session_id: "s-1", message: { content: [
+        { type: "text", text: "Looking at the repo first." },
+        { type: "tool_use", name: "Read", input: { file_path: "/workspace/README.md" } },
+        { type: "tool_use", name: "Bash", input: { command: "x".repeat(300) } },
+      ] } } as SdkMessage;
+      yield { type: "user", session_id: "s-1", message: { role: "user", content: [{ type: "tool_result", content: "TOKEN=secret-file-content" }] } } as unknown as SdkMessage;
+      await call("interview_ask", { text: "Which columns?", why: "To size the export." });
+      await next();
+      yield { type: "result", subtype: "success", session_id: "s-1", result: "done", num_turns: 1 };
+    });
+    const { e, c } = await boot(w, runtime(d, s.sdk));
+    const feature = (await c.ok("feature.start", { request: "Export orders as CSV" })).feature as string;
+    await until("the question", () => (e.feature("acme", feature)?.state.items.size ?? 0) > 0);
+    const session = await approvedSession(w, c, feature);
+    const first = await c.ok("engine.transcript", { session });
+    const got = first.entries as Array<Record<string, unknown>>;
+    expect(got.map((x) => [x.feature, x.role, x.kind, x.text])).toEqual([
+      [feature, "requirements-analyst", "text", "Looking at the repo first."],
+      [feature, "requirements-analyst", "tool", "Read /workspace/README.md"],
+      [feature, "requirements-analyst", "tool", `Bash ${"x".repeat(200)}`],
+    ]);
+    expect(JSON.stringify(first)).not.toContain("secret-file-content");
+    const run = runOf(w, feature)!.id;
+    expect(got.every((x) => x.run === run)).toBe(true);
+    expect(first.agents).toEqual([expect.objectContaining({ run, feature, role: "requirements-analyst" })]);
+    expect(first.skipped).toBe(0);
+    // Read from where the last read ended: nothing new.
+    expect((await c.ok("engine.transcript", { session, after: first.next })).entries).toEqual([]);
+    const bad = await c.call("engine.transcript", { session, after: -1 });
+    expect((bad.error as { code: number }).code).toBe(-32602);
+    const none = await c.call("engine.transcript", { session: "0".repeat(32) });
+    expect((none.error as { code: number }).code).toBe(-32004);
+  });
+
   it("SR-18: a session at a cap stops, fails the run and reports which cap", async () => {
     const w = world();
     const d = new FakeDocker();

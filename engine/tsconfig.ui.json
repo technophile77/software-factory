@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/console-ui",
+    "src/terminal/console-model.ts",
+    "test/console-screen.test.ts"
+  ],
+  "exclude": []
+}

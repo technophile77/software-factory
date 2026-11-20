@@ -5,6 +5,7 @@ import type { Logger } from "../log";
 import { OutsideWorktree, allowedBy, readableBy, worktreeRelative } from "../policy/glob";
 import { askMatch, projectAsk } from "../policy/ask";
 import type { RolePolicy } from "../policy/role-policy";
+import { type EntryKind, toolLine } from "./live-transcript";
 import type { AgentSdk, CanUseTool, FactoryTool, PreToolUseHook, SdkMessage, SessionOptions, SpawnOptions, SpawnedProcess, UserTurn } from "./sdk";
 
 /** Where the worktree is mounted in every agent container. */
@@ -402,6 +403,8 @@ export interface SessionEvents {
   onTurnEnd?(): void;
   /** Each assistant message: the session is working. */
   onWorking?(): void;
+  /** F-021 FR-18: each assistant text and tool call (name and target only), for the live transcript. */
+  onEntry?(kind: EntryKind, text: string): void;
   /** Given, the session's wall-time cap runs on it, so an ask can hold it. */
   wall?(onExpire: () => void): WallTimer;
 }
@@ -429,6 +432,10 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
         ev.onWorking?.();
         const msg = (m as Extract<SdkMessage, { type: "assistant" }>).message;
         for (const c of msg.content ?? []) {
+          if (ev.onEntry) {
+            if (c.type === "text") ev.onEntry("text", String((c as { text?: unknown }).text ?? ""));
+            else if (c.type === "tool_use") ev.onEntry("tool", toolLine(String(c.name), c.input));
+          }
           if (c.type === "tool_use" && c.name === "WebSearch") {
             const q = (c.input as { query?: unknown } | undefined)?.query;
             ev.onWebSearch?.(typeof q === "string" ? q.slice(0, 2000) : "");

@@ -18,7 +18,10 @@ import { FileLogger } from "./log";
 import { realOsApi } from "./os/ffi";
 import { Interview } from "./mcp/operations";
 import { ID_RE } from "./mcp/limits";
-import { TerminalInterview, type TerminalIo } from "./terminal/interview";
+import { type Runner, TerminalInterview, type TerminalIo } from "./terminal/interview";
+import { ConsoleModel } from "./terminal/console-model";
+import { Poller, windowedIo } from "./terminal/windowed";
+import { pathToFileURL } from "node:url";
 import { Children } from "./proc";
 import { OsCredentialStore, SecretError, canonicalSecretName, isSecretName } from "./secrets";
 
@@ -36,13 +39,16 @@ const USAGE = `factory-engine <command>
           Names: model-credential, factory-token/<project name>, and
           factory-token/<project name>/<GitHub owner> for repos of an owner
           the project's main token can't reach (F-015 FR-19).
-  interview [<feature id>] [--project <path>]
+  interview [<feature id>] [--project <path>] [-v | --verbose] [--plain]
           Answers the requirements analyst's questions in this terminal (F-018).
           --project defaults to the current folder, inside the project's repo.
           Started by the software-factory plugin, not by hand.
-  inbox [<item id>] [--project <path>]
+  inbox [<item id>] [--project <path>] [-v | --verbose] [--plain]
           Lists the project's open inbox items and answers them in this terminal
           (F-021). Every item is still a GitHub issue; the first answer counts.
+          Both commands open a windowed console (F-024): Tab or 1-5 switch
+          windows, q quits. -v shows the Transcript window from the start (v
+          switches it in the console); --plain prints line by line instead.
 `;
 
 function flags(args: string[]): Record<string, string> {
@@ -172,7 +178,12 @@ function terminalIo(ascii: boolean): TerminalIo & { close(): void } {
 }
 
 /** `interview` (F-018) and `inbox` (F-021) share their checks and their terminal. */
-async function interview(rest: string[], command: "interview" | "inbox" = "interview"): Promise<number> {
+async function interview(args: string[], command: "interview" | "inbox" = "interview"): Promise<number> {
+  // F-024 FR-1, FR-7: windows unless --plain; the Transcript window from the start with -v.
+  const SWITCHES = ["-v", "--verbose", "--plain"];
+  const verbose = args.some((a) => a === "-v" || a === "--verbose");
+  const plain = args.includes("--plain");
+  const rest = args.filter((a) => !SWITCHES.includes(a));
   const feature = rest[0] && !rest[0].startsWith("--") ? rest[0] : undefined;
   let f: Record<string, string>;
   try {
@@ -191,16 +202,54 @@ async function interview(rest: string[], command: "interview" | "inbox" = "inter
     process.stderr.write(`factory-engine ${command} runs only in a terminal, with you typing the answers.\n`);
     return 2;
   }
-  const ops = new Interview({ os: realOsApi(), projectDir: path.resolve(f.project ?? process.cwd()) });
+  const projectDir = path.resolve(f.project ?? process.cwd());
+  const ops = new Interview({ os: realOsApi(), projectDir });
+  const runner: Runner = (op, req) => ops.run(op, req);
   // Windows consoles without Windows Terminal may not draw box characters.
   const ascii = process.platform === "win32" && !process.env.WT_SESSION;
   const marker = ascii ? "| " : "\u2502 ";
-  const io = terminalIo(ascii);
+  const go = (t: TerminalInterview) => (command === "inbox" ? t.inboxMain(feature) : t.main(feature));
+  if (plain) {
+    const io = terminalIo(ascii);
+    try {
+      return await go(new TerminalInterview(runner, io, marker));
+    } finally {
+      io.close();
+    }
+  }
+  return windowed(runner, { project: path.basename(projectDir), transcript: verbose, ascii, marker }, go);
+}
+
+/** What dist/console.mjs exports (src/console-ui/screen.ts, typed there against Ink). */
+interface ScreenModule {
+  mount(model: ConsoleModel, o: { ascii: boolean; marker: string }): { unmount(): void };
+}
+
+/**
+ * F-024: the windowed console. The screen (Ink) is ES modules only, so it is
+ * its own bundle beside this one and loaded with import() (SR-4, ADR 0035).
+ */
+async function windowed(runner: Runner, o: { project: string; transcript: boolean; ascii: boolean; marker: string }, go: (t: TerminalInterview) => Promise<number>): Promise<number> {
+  const timing = { now: () => Date.now(), sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)) };
+  const model = new ConsoleModel({ project: o.project, transcript: o.transcript });
+  const t = new TerminalInterview(runner, windowedIo(model, timing), o.marker);
+  const poller = new Poller(model, runner, () => t.sessionKey(), timing);
+  const ui = (await import(pathToFileURL(path.join(__dirname, "console.mjs")).href)) as ScreenModule;
+  const screen = ui.mount(model, { ascii: o.ascii, marker: o.marker });
+  const stop = () => model.stop();
+  process.once("SIGTERM", stop);
+  void poller.run();
+  let code = 1;
   try {
-    const t = new TerminalInterview((op, req) => ops.run(op, req), io, marker);
-    return await (command === "inbox" ? t.inboxMain(feature) : t.main(feature));
+    code = await go(t);
+    return code;
   } finally {
-    io.close();
+    poller.stop();
+    model.stop();
+    process.off("SIGTERM", stop);
+    screen.unmount();
+    // The alternate screen is gone; a failure's reason must still be readable.
+    if (code !== 0) process.stdout.write(model.lastWritten(20) + "\n");
   }
 }
 

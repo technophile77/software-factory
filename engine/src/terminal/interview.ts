@@ -29,6 +29,8 @@ export interface TerminalIo {
    * empty string clears it (F-021 FR-16). Absent where nothing is drawn.
    */
   redraw?(text: string): void;
+  /** F-024: the windowed console, which shows the factory's status in a window of its own. */
+  windowed?: boolean;
 }
 
 export interface Timing {
@@ -103,6 +105,7 @@ const CHANNEL_HICCUPS = new Set(["connection_lost", "engine_unreachable", "timeo
 
 /** How often the inbox console's watch looks again (F-021 v7 FR-2). */
 const WATCH_MS = 5000;
+
 const NEXT_EVERY_MS = 15_000;
 const ASK_AFTER_MS = 30 * 60_000;
 const BUSY_DELAY_MS = 1000;
@@ -201,6 +204,11 @@ export class TerminalInterview {
     private readonly marker: string,
     private readonly timing: Timing = realTiming,
   ) {}
+
+  /** F-024: the session the windowed console's own reads go under; null while none is open. */
+  sessionKey(): string | null {
+    return this.consoleOpen ? CONSOLE_KEY : this.feature;
+  }
 
   /** Every engine call shows the spinner once it takes over a second (FR-14). */
   private async run(op: Operation, req: Obj): Promise<Obj> {
@@ -644,7 +652,8 @@ export class TerminalInterview {
         return 1;
       }
       const text = statusLines(st).join("\n");
-      if (text !== shown) {
+      // F-024: the windowed console shows the status in its own window.
+      if (text !== shown && !this.io.windowed) {
         this.say(`\n[${new Date(this.timing.now()).toTimeString().slice(0, 8)}]\n${text}`);
         shown = text;
       }
