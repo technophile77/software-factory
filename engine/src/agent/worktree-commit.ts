@@ -91,7 +91,7 @@ function readNoFollow(full: string): Buffer {
  * whatever the agent wrote. The walk still finishes, so a breach anywhere is
  * still found.
  */
-function walk(root: string, base: Map<string, BaseEntry>, format: "sha1" | "sha256", limits: WorktreeLimits, breaches: Breach[], frozen?: CodeFiles, platform: NodeJS.Platform = process.platform) {
+function walk(root: string, base: Map<string, BaseEntry>, format: "sha1" | "sha256", limits: WorktreeLimits, breaches: Breach[], frozen?: CodeFiles, platform: NodeJS.Platform = process.platform, skip: Set<string> = new Set()) {
   const seen = new Set<string>();
   const frozenSeen = new Set<string>();
   const changed: Changed[] = [];
@@ -136,6 +136,7 @@ function walk(root: string, base: Map<string, BaseEntry>, format: "sha1" | "sha2
         const target = Buffer.from(fs.readlinkSync(full), "utf8");
         [mode, size, read] = ["120000", target.length, () => target];
       } else if (st.isFile()) {
+        if (skip.has(r)) continue;
         // Windows has no executable bit to read, so a file keeps its base mode there; reading it as 100644 made every executable file look changed.
         const exec = platform === "win32" ? base.get(r)?.mode === "100755" : (st.mode & 0o111) !== 0;
         [mode, size, read] = [exec ? "100755" : "100644", st.size, () => readNoFollow(full)];
@@ -159,6 +160,32 @@ function walk(root: string, base: Map<string, BaseEntry>, format: "sha1" | "sha2
   const removed = [...base.keys()].filter((p) => !seen.has(p) && base.get(p)!.mode !== "160000");
   if (!over && touched.length + removed.length > limits.maxFiles) over = "files changed";
   return { changed, touched, removed, over: over as WorktreeCap | null };
+}
+
+/**
+ * Of `paths` (none of them in the base), those the base commit's own
+ * .gitignore files ignore: byproducts such as test caches, which are neither
+ * written by the agent's choice nor ever committed (owner, 2026-11-20). The
+ * rules come from the base's blobs in a scratch repo, never from the
+ * worktree, whose .gitignore the agent can change (SR-11).
+ */
+async function ignoredByBase(i: WorktreeCommitInput, base: Map<string, BaseEntry>, paths: string[]): Promise<Set<string>> {
+  const rules = [...base].filter(([p, e]) => (p === ".gitignore" || p.endsWith("/.gitignore")) && (e.mode === "100644" || e.mode === "100755"));
+  if (!rules.length || !paths.length) return new Set();
+  ensureOwnerDir(i.tmpDir);
+  const dir = path.join(i.tmpDir, `wt-ignore-${process.pid}-${crypto.randomBytes(6).toString("hex")}`);
+  try {
+    await i.git.run(i.tmpDir, ["init", "-q", dir]);
+    for (const [p, e] of rules) {
+      const blob = (await i.git.run(i.worktree, ["--git-dir", i.gitDir, "cat-file", "blob", e.sha])).stdout;
+      fs.mkdirSync(path.dirname(path.join(dir, p)), { recursive: true });
+      fs.writeFileSync(path.join(dir, p), blob);
+    }
+    const out = await i.git.run(dir, ["-c", "core.excludesFile=", "check-ignore", "--no-index", "-z", "--stdin"], { input: paths.join("\0") + "\0", okCodes: [1] });
+    return new Set(out.stdout.toString("utf8").split("\0").filter(Boolean));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -187,7 +214,15 @@ export async function commitWorktree(i: WorktreeCommitInput): Promise<WorktreeCo
     const m = /^(\d{6}) \w+ ([0-9a-f]{40,64}) +(\d+|-)\t(.*)$/s.exec(line);
     if (m) base.set(m[4]!, { mode: m[1]!, sha: m[2]!, size: m[3] === "-" ? -1 : Number(m[3]) });
   }
-  const { changed, touched, removed, over } = walk(i.worktree, base, format, i.limits, breaches, i.frozen, i.platform);
+  const first: Breach[] = [];
+  let walked = walk(i.worktree, base, format, i.limits, first, i.frozen, i.platform);
+  const skip = await ignoredByBase(i, base, walked.touched.filter((t) => !base.has(t.path) && t.mode !== "120000").map((t) => t.path));
+  if (skip.size) {
+    first.length = 0;
+    walked = walk(i.worktree, base, format, i.limits, first, i.frozen, i.platform, skip);
+  }
+  breaches.push(...first);
+  const { changed, touched, removed, over } = walked;
   if (touched.length === 0 && removed.length === 0 && breaches.length === 0) return { status: "unchanged" };
   if (over) {
     // No commit to check, so the rules are checked on the paths: a breach still files its Security item (AC-9).
