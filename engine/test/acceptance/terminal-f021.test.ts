@@ -19,7 +19,11 @@ const SESSION = "c".repeat(32);
 class Script {
   out = "";
   at: number[] = [];
+  drawn: string[] = [];
   constructor(private readonly lines: string[]) {}
+  redraw = (t: string) => {
+    this.drawn.push(t);
+  };
   write = (t: string) => {
     this.out += t;
   };
@@ -99,8 +103,7 @@ afterEach(async () => {
   removeTmp();
 });
 
-async function inbox(lines: string[], item?: string): Promise<{ code: number; s: Script }> {
-  const s = new Script(lines);
+async function inbox(lines: string[], item?: string, s = new Script(lines)): Promise<{ code: number; s: Script }> {
   const ops = new Interview({ os: realOsApi(), projectDir: repo });
   const code = await new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming()).inboxMain(item);
   return { code, s };
@@ -211,6 +214,92 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(s.out).toContain("An item is waiting for you.");
     expect(answers()).toEqual([expect.objectContaining({ item: "D-0007", action: "choose:A" })]);
     expect(engine.methods()).toContain("interview.close");
+  });
+
+  const STATUS = { version: "1.4", capabilities: ["document", "inbox"], uptime_s: 1, features: [{ id: "F-002", stage: "orchestrator_review", active_agents: 1, activity: "tests_running" }] };
+
+  test("AC-16 (v8 FR-16): an engine restart is waited out with a countdown, the console session opened again, and the watch carries on", async () => {
+    items = [];
+    let calls = 0;
+    let restarted = false;
+    const NEW_SESSION = "d".repeat(32);
+    engine.hooks["engine.status"] = (conn, msg) => {
+      calls++;
+      // The second and third looks find the engine gone; the fourth finds a new engine with an item filed.
+      if (calls === 2 || calls === 3) {
+        conn.close();
+        return true;
+      }
+      if (calls >= 4 && !restarted) {
+        restarted = true;
+        items = [DECISION()];
+      }
+      conn.respond(msg, ["result", STATUS]);
+      return true;
+    };
+    engine.hooks["inbox.open"] = (conn, msg) => {
+      conn.respond(msg, ["result", { session: restarted ? NEW_SESSION : SESSION, started_at: "2026-11-14T08:00:00Z" }]);
+      return true;
+    };
+    const list = engine.hooks["inbox.list"]!;
+    engine.hooks["inbox.list"] = (conn, msg) => {
+      // The restarted engine doesn't know the old session.
+      if (restarted && msg.params.session === SESSION) {
+        conn.respond(msg, ["error", -32004, "Unknown or expired session."]);
+        return true;
+      }
+      return list(conn, msg);
+    };
+    engine.hooks["interview.close"] = (conn, msg) => {
+      conn.respond(msg, ["result", { ok: true }]);
+      return true;
+    };
+    const { code, s } = await inbox(["1", "1"]);
+    expect(code).toBe(0);
+    expect(s.out).toContain("Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.");
+    expect(s.drawn).toContain("Reconnecting in 1s (attempt 1)");
+    expect(s.drawn).toContain("Reconnecting in 2s (attempt 2)");
+    expect(s.drawn).toContain("Reconnecting in 1s (attempt 2)");
+    expect(s.drawn.at(-1)).toBe("");
+    expect(s.out).toContain("Reconnected to the engine.");
+    // The status is shown again after the restart.
+    expect(s.out.split("F-002: Tests are running").length).toBe(3);
+    expect(engine.calls("inbox.open").length).toBe(2);
+    expect(s.out).toContain("An item is waiting for you.");
+    expect(answers()).toEqual([expect.objectContaining({ item: "D-0007", action: "choose:A" })]);
+  });
+
+  test("AC-16 (v8 FR-16): the wait doubles up to 60 s, and Ctrl+C during the countdown ends with exit 0", async () => {
+    items = [];
+    let calls = 0;
+    engine.hooks["engine.status"] = (conn, msg) => {
+      if (++calls === 1) conn.respond(msg, ["result", STATUS]);
+      else conn.close();
+      return true;
+    };
+    const s = new Script([]);
+    s.aborted = () => s.drawn.includes("Reconnecting in 1s (attempt 9)");
+    const { code } = await inbox([], undefined, s);
+    expect(code).toBe(0);
+    // Each attempt's countdown starts at its wait.
+    const first = new Map<string, number>();
+    for (const d of s.drawn) {
+      const m = /^Reconnecting in (\d+)s \(attempt (\d+)\)$/.exec(d);
+      if (m && !first.has(m[2]!)) first.set(m[2]!, Number(m[1]));
+    }
+    expect([...first.values()]).toEqual([1, 2, 4, 8, 16, 32, 60, 60, 60]);
+    expect(s.drawn.at(-1)).toBe("");
+  });
+
+  test("AC-16 (v8 FR-16): with no running engine at start the console waits for one, counting down", async () => {
+    await engine.stop();
+    const s = new Script([]);
+    s.aborted = () => s.drawn.includes("Reconnecting in 1s (attempt 3)");
+    const { code } = await inbox([], undefined, s);
+    expect(code).toBe(0);
+    expect(s.out).toContain("The engine isn't running. Waiting for it to start; press Ctrl+C to stop.");
+    expect(s.drawn).toContain("Reconnecting in 4s (attempt 3)");
+    expect(engine.connections).toBe(0);
   });
 
   test("an engine without the inbox capability is refused before anything is sent", async () => {
