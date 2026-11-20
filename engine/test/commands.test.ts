@@ -209,14 +209,14 @@ describe("background commands for build agents (FR-20, Role policy v2.11) and th
     }
   });
 
-  it("AC-44: names the repo's build and test commands and says to test with them", () => {
+  it("AC-44, AC-49: tells the build roles to test only with run_tests", () => {
     const facts = { feature: "F-1", title: "t", repo: "r", branch: "b", worktree: "/w", spec: "/s", folder: "/f", version: 1, commit: "c".repeat(40), stage: "build_and_test_prep" };
     for (const role of ["software-developer", "test-engineer"] as const) {
-      const turn = buildTurn(role, { ...facts, commands: { build: ["python", "-m", "pip", "install", "-r", "requirements-dev.txt"], test: ["python", "-m", "pytest"] } });
-      expect(turn).toContain('running ["python","-m","pip","install","-r","requirements-dev.txt"], then ["python","-m","pytest"]. Test your work the same way');
-      expect(turn).toMatch(/Don't build a test environment of your own/);
-      expect(buildTurn(role, { ...facts, commands: { build: null, test: ["npm", "test"] } })).toContain('by running ["npm","test"]. Test');
-      expect(buildTurn(role, facts)).not.toMatch(/Test your work the same way/);
+      const turn = buildTurn(role, { ...facts, runTests: { single: true } });
+      expect(turn).toMatch(/Run tests only with the factory tool `run_tests`.*with `test` set to a test id.*A shell command that runs tests is refused/s);
+      expect(turn.includes("criteria_map")).toBe(role === "test-engineer");
+      expect(buildTurn(role, { ...facts, runTests: { single: false } })).not.toMatch(/with `test` set/);
+      expect(buildTurn(role, facts)).not.toMatch(/run_tests/);
     }
   });
 });

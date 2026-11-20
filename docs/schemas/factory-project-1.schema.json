@@ -137,6 +137,15 @@
                   "type": "string",
                   "maxLength": 500
                 }
+              },
+              "test_one": {
+                "minItems": 2,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 500
+                }
               }
             },
             "additionalProperties": false

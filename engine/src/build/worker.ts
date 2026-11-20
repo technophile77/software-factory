@@ -2,7 +2,7 @@ import type { Logger } from "../log";
 import { PolicyError, RolePolicy, effectiveRole } from "../policy/role-policy";
 import { SessionRefused } from "../agent/analyst";
 import type { AgentGroup } from "../agent/sandbox";
-import type { AgentSdk, UserTurn } from "../agent/sdk";
+import type { AgentSdk, FactoryTool, UserTurn } from "../agent/sdk";
 import { remaining } from "../agent/reviewer";
 import { FULL_SHELL_ROLES, HostGate, SessionCaps, SessionOutcome, WallTimer, TOOL_SILENCE_MS, runSession, sessionOptions } from "../agent/session";
 import type { RunUsed } from "../state/record";
@@ -55,6 +55,8 @@ export interface WorkerRunInput {
   /** ADR 0012: the session's changes committed by the engine, with the write check and the secrets scan. */
   commit(policy: RolePolicy): Promise<WorktreeCommitResult>;
   onSessionId(id: string): void;
+  /** F-015 FR-25: the factory tools the role gets, such as `run_tests`. */
+  tools?: FactoryTool[];
   log: Logger;
 }
 
@@ -115,7 +117,7 @@ export async function runWorkerSessions(i: WorkerRunInput): Promise<WorkerResult
         const abort = new AbortController();
         const opts = sessionOptions({
           policy: i.policy, cwd: agent.cwd, worktree: i.worktree, workspace: agent.workspace, instructions: i.instructions,
-          factoryServer: i.sdk.createFactoryServer([]), factoryTools: [], caps,
+          factoryServer: i.sdk.createFactoryServer(i.tools ?? []), factoryTools: (i.tools ?? []).map((t) => t.name), caps,
           ...(i.skillsPluginDir ? { skillsPluginDir: i.skillsPluginDir } : {}),
           model: i.model, ...(resume ? { resume } : {}), outputSchema: i.outputSchema,
           host, spawn: agent.spawn, log: i.log,
@@ -200,8 +202,8 @@ export interface TurnFacts {
   background?: boolean;
   /** The role's write rules, so the agent knows them before a write is refused. */
   write?: { allow: string[]; deny: string[] };
-  /** F-015 FR-22: the repo's own build and test commands, which the engine's test run uses. */
-  commands?: { build: string[] | null; test: string[] };
+  /** F-015 FR-22, FR-25: the role has `run_tests`; `single` when the repo can run one test on its own. */
+  runTests?: { single: boolean };
 }
 
 /**
@@ -221,8 +223,8 @@ export function buildTurn(role: BuildRole, t: TurnFacts): string {
     ...(t.background
       ? ["Run anything that may take long or may block in the background (`Bash` with `run_in_background`): test runs, servers, and scripts that start threads or wait on events. Watch it with `Monitor` or check its output with `Bash`, stop it with `TaskStop` when it stalls, and don't end your session while a background command of yours is still running. A command that sits silent for 10 minutes is killed."]
       : []),
-    ...(t.commands
-      ? [`The engine tests the feature in a fresh checkout by running ${t.commands.build ? `${JSON.stringify(t.commands.build)}, then ` : ""}${JSON.stringify(t.commands.test)}. Test your work the same way: run those commands in your worktree. Don't build a test environment of your own, such as a new virtual environment, or install packages anywhere else; a package that seems missing is one the engine's run may well have.`]
+    ...(t.runTests
+      ? [`Run tests only with the factory tool \`run_tests\`, which runs them exactly as the engine's own test run does and returns the results as JSON. With no arguments it runs the whole suite${t.runTests.single ? "; with `test` set to a test id from the criteria map it runs that one test" : ""}.${role === "test-engineer" ? " Pass your criteria map as `criteria_map` so the results are joined to it, as the engine will join them." : ""} A shell command that runs tests is refused. Don't build a test environment of your own or install packages anywhere else.`]
       : []),
     ...(t.write
       ? [`You may create or change only paths, relative to the worktree, that match one of ${JSON.stringify(t.write.allow)} and none of ${JSON.stringify(t.write.deny)}. Anything else, a new file included, is refused, and a change outside them made any other way rejects your whole session. If the spec needs a path outside them, don't work around it: say so in your report.`]

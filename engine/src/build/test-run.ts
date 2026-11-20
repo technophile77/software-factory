@@ -181,6 +181,45 @@ export function readResults(worktree: string, rel: string): TestCase[] {
   }
 }
 
+export interface SuiteRun {
+  cases: TestCase[];
+  /** Why the run is incomplete before its results are joined, if it is. */
+  problem: string | null;
+  /** Each command's exit and output, unscrubbed. */
+  out: string[];
+}
+
+/**
+ * FR-6, SR-8, SR-9: the build command, when set, then the test command, in a
+ * worktree with the allowlisted environment and the caps, then the results
+ * file. The stage 6 run and `run_tests` (FR-25) both run tests this way.
+ */
+export async function runSuite(o: {
+  git: Git; worktree: string; gitDir: string; build: string[] | null; test: string[]; results: string;
+  env: NodeJS.ProcessEnv; platform: NodeJS.Platform; wallMs: number; maxOutput: number; children: Children;
+}): Promise<SuiteRun> {
+  let problem: string | null = null;
+  let cases: TestCase[] = [];
+  const out: string[] = [];
+  try {
+    await clearResults(o.git, o.worktree, o.gitDir, o.results);
+    for (const [what, argv] of [["build", o.build], ["test", o.test]] as const) {
+      if (!argv) continue;
+      const program = resolveProgram(argv[0]!, o.worktree, o.env, o.platform);
+      const r = await runCommand({ program, args: argv.slice(1), cwd: o.worktree, env: o.env, wallMs: o.wallMs, maxOutput: o.maxOutput, platform: o.platform, children: o.children });
+      out.push(`$ ${what} (exit ${r.code ?? r.signal ?? "none"}${r.timedOut ? ", killed at the time cap" : ""}${r.truncated ? ", output cut at the cap" : ""})`, r.output);
+      if (r.timedOut) problem = `the ${what} command ran past the ${Math.round(o.wallMs / 60_000)}-minute cap`;
+      else if (what === "build" && r.code !== 0) problem = `the build command failed (exit ${r.code ?? r.signal})`;
+      if (problem) break;
+    }
+    if (!problem) cases = readResults(o.worktree, o.results);
+  } catch (e) {
+    if (!(e instanceof TestRunError)) throw e;
+    problem = e.message;
+  }
+  return { cases, problem, out };
+}
+
 const MISSING = "mapped to a criterion but not in the results file";
 
 /** A mapped test id's file and test name: `tests/test_x.py::test_a`, `test/x.test.js#May`. */

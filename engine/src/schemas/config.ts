@@ -88,6 +88,8 @@ const repo = z.strictObject({
     test: z.array(text(500)).min(1).max(50).optional(),
     test_results: text(500).optional(),
     build: z.array(text(500)).min(1).max(50).optional(),
+    // Project manifest v1.11 (F-015 FR-25): one test, with exactly one `{test}` element the engine fills.
+    test_one: z.array(text(500)).min(2).max(50).refine((a) => a.filter((x) => x === "{test}").length === 1, "needs exactly one \"{test}\" element").optional(),
   }).optional(),
 });
 

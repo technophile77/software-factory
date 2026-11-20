@@ -1571,7 +1571,7 @@ def _check_test_dependencies(data, errors):
         if not isinstance(repo, dict):
             continue
         commands = repo.get("commands") or {}
-        args = [a for key in ("build", "test") for a in (commands.get(key) or []) if isinstance(a, str)]
+        args = [a for key in ("build", "test", "test_one") for a in (commands.get(key) or []) if isinstance(a, str)]
         tokens = [t.removeprefix("./").removeprefix("-r") for a in args for t in re.split(r"[\s=]+", a)]
         files = sorted({t for t in tokens if TEST_DEPENDENCY_FILE.search(t)})
         roles = effective_policy(data, repo.get("name"))
