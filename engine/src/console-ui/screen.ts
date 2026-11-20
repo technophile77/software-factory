@@ -6,7 +6,7 @@
  */
 import { Box, Text, render, useInput, useStdout } from "ink";
 import { createElement as h, useEffect, useState } from "react";
-import type { ConsoleModel } from "../terminal/console-model";
+import { type ConsoleModel, PANE_COLS } from "../terminal/console-model";
 
 export interface ScreenOptions {
   ascii: boolean;
@@ -45,9 +45,21 @@ function Screen({ model, o }: { model: ConsoleModel; o: ScreenOptions }) {
     h(Box, { height: 1 }, ...f.tabs.map((t) => h(Text, { key: t.label, inverse: t.selected, wrap: "truncate-end" }, ` ${t.label} `))),
     h(
       Box,
-      { borderStyle: border, flexDirection: "column", flexGrow: 1, width: cols },
-      h(Text, { bold: true, wrap: "truncate-end" }, f.windowTitle),
-      ...f.lines.map((l, i) => h(Text, { key: i, wrap: "truncate-end" }, l || " ")),
+      { flexDirection: f.pane.side ? "row" : "column", flexGrow: 1, width: cols },
+      h(
+        Box,
+        { borderStyle: border, flexDirection: "column", flexGrow: 1 },
+        h(Text, { bold: true, wrap: "truncate-end" }, f.windowTitle),
+        ...f.lines.map((l, i) => h(Text, { key: i, wrap: "truncate-end" }, l || " ")),
+      ),
+      // FR-15: the side pane, a column on wide terminals and a strip under the window on narrow ones.
+      h(
+        Box,
+        f.pane.side
+          ? { borderStyle: border, flexDirection: "column", width: PANE_COLS, flexShrink: 0 }
+          : { borderStyle: border, flexDirection: "column", height: f.pane.lines.length + 2, flexShrink: 0 },
+        ...f.pane.lines.map((l, i) => h(Text, { key: i, wrap: "truncate-end", bold: f.pane.side && /^(Features|Agents) \(/.test(l) }, l || " ")),
+      ),
     ),
     h(
       Box,

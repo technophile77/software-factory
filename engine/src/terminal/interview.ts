@@ -31,6 +31,8 @@ export interface TerminalIo {
   redraw?(text: string): void;
   /** F-024: the windowed console, which shows the factory's status in a window of its own. */
   windowed?: boolean;
+  /** F-024 FR-11: a status the command read; the windowed console shows it at once, so a reconnect clears "(stale)". */
+  status?(st: Obj): void;
 }
 
 export interface Timing {
@@ -74,7 +76,42 @@ export const ACTIVITY: Record<string, string> = {
  * F-021 v7 FR-2, FR-12: one line per feature the engine runs, in the
  * command's own words; ids come from the operation's checked lists.
  */
-export function statusLines(st: Obj): string[] {
+/** F-024 FR-4, FR-15: the command's own short words for each workflow stage; an unknown stage shows its checked id. */
+export const STAGE: Record<string, string> = {
+  request: "Request",
+  requirements_interview: "Interview",
+  security_testability_review: "Security review",
+  security_gate_1: "Security review",
+  readiness_gate: "Readiness",
+  build_and_test_prep: "Building",
+  orchestrator_review: "Testing",
+  code_review: "Code review",
+  validation: "Validation",
+  pull_request: "Pull request",
+  blocked: "Blocked",
+  run_review: "Run review",
+};
+
+export interface FeatureRow {
+  id: string;
+  stage: string;
+  activity: string;
+}
+
+/** F-024 FR-15: each running feature with its stage and activity in the command's words. */
+export function featureRows(st: Obj): FeatureRow[] {
+  const ids = Array.isArray(st.features) ? (st.features as unknown[]).filter((x): x is string => typeof x === "string") : [];
+  const stages = (st.stages ?? {}) as Record<string, string>;
+  const activities = (st.activities ?? {}) as Record<string, string>;
+  return ids.map((id) => {
+    const s = stages[id];
+    return { id, stage: s ? STAGE[s] ?? s : "", activity: ACTIVITY[activities[id] ?? ""] ?? "Working" };
+  });
+}
+
+/** With `stage` (F-024 FR-4), each row also names the feature's stage: "F-003 (Building): Developer is working". */
+export function statusLines(st: Obj, stage = false): string[] {
+  const stages = (st.stages ?? {}) as Record<string, string>;
   const ids = Array.isArray(st.features) ? (st.features as unknown[]).filter((x): x is string => typeof x === "string") : [];
   const activities = (st.activities ?? {}) as Record<string, string>;
   const waiting = (st.waiting_on ?? {}) as Record<string, string[]>;
@@ -83,7 +120,8 @@ export function statusLines(st: Obj): string[] {
     const code = activities[id] ?? "";
     const decisions = waiting[id] ?? [];
     const label = code === "waiting_for_decision" && decisions.length ? `${ACTIVITY[code]} on ${decisions.join(", ")}` : ACTIVITY[code] ?? "Working";
-    return `${id}: ${label}`;
+    const s = stage && stages[id] ? ` (${STAGE[stages[id]!] ?? stages[id]})` : "";
+    return `${id}${s}: ${label}`;
   });
 }
 
@@ -651,6 +689,7 @@ export class TerminalInterview {
         this.show(st);
         return 1;
       }
+      this.io.status?.(st);
       const text = statusLines(st).join("\n");
       // F-024: the windowed console shows the status in its own window.
       if (text !== shown && !this.io.windowed) {
@@ -752,6 +791,7 @@ export class TerminalInterview {
     }
     if (st.ok === true) {
       this.reconnected = true;
+      this.io.status?.(st);
       this.say(`[${this.clock()}] ${starting ? "Connected" : "Reconnected"} to the engine.`);
     }
     return st;

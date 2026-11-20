@@ -23,7 +23,8 @@ describe("F-024 console model", () => {
     for (let i = 1; i <= 50; i++) m.write(`line ${i}\n`);
     m.key("2", {});
     const f = m.frame(M);
-    expect(f.lines).toHaveLength(20 - CHROME_ROWS);
+    // Under 24 rows the side pane is a 2-line strip with its borders (FR-15).
+    expect(f.lines).toHaveLength(20 - CHROME_ROWS - 4);
     expect(f.lines.at(-1)).toBe("");
     expect(f.lines.at(-2)).toBe("line 50");
     m.key("", { upArrow: true });
@@ -95,5 +96,60 @@ describe("F-024 console model", () => {
     expect(m.wantsTranscript()).toBe(true);
     m.key("1", {});
     expect(m.wantsTranscript()).toBe(false);
+  });
+
+  it("FR-15: the side pane lists features with their stage and the agents, beside the window when wide, under it when narrow", () => {
+    const m = model({ transcript: true });
+    m.setStatus(["F-001 (Interview): Waiting for your answer", "F-003 (Building): Developer is working"], 0, [
+      { id: "F-001", stage: "Interview", activity: "Waiting for your answer" },
+      { id: "F-003", stage: "Building", activity: "Developer is working" },
+    ]);
+    m.setAgents([{ run: "R-000000000001", feature: "F-003", role: "software-developer", started_at: "2026-11-20T18:48:00Z" }]);
+    m.key("4", {});
+    m.resize(120, 30);
+    let f = m.frame(M);
+    expect(m.tab).toBe("transcript");
+    expect(f.pane.side).toBe(true);
+    expect(f.pane.lines).toEqual(expect.arrayContaining(["Features (2)", "F-001 Interview", "  Waiting for your answer", "F-003 Building", "Agents (1)", "F-003 software-developer 12 min"]));
+    for (let i = 1; i <= 40; i++) m.write(`${"word ".repeat(30)}${i}\n`);
+    m.key("2", {});
+    f = m.frame(M);
+    expect(f.lines).toHaveLength(30 - CHROME_ROWS);
+    expect(Math.max(...f.lines.map((l) => l.length))).toBeLessThanOrEqual(120 - 32 - 2);
+    m.resize(80, 24);
+    f = m.frame(M);
+    expect(f.pane.side).toBe(false);
+    expect(f.pane.lines[0]).toBe("Features: F-001 Interview, F-003 Building");
+    expect(f.pane.lines[1]).toBe("Agents: F-003 software-developer 12 min");
+    expect(f.pane.lines).toHaveLength(4);
+    expect(f.lines).toHaveLength(24 - CHROME_ROWS - 6);
+    expect(f.lines.at(-2)).toMatch(/ 40$/);
+  });
+
+  it("FR-15: what doesn't fit is counted as \"+<n> more\"", () => {
+    const m = model();
+    const feats = Array.from({ length: 30 }, (_, i) => ({ id: `F-${100 + i}`, stage: "Building", activity: "Developer is working" }));
+    m.setStatus(feats.map((x) => `${x.id} (Building): Developer is working`), 0, feats);
+    m.setAgents(Array.from({ length: 12 }, (_, i) => ({ run: `R-00000000000${(i + 10).toString(16)}`, feature: `F-${100 + i}`, role: "software-developer", started_at: "2026-11-20T18:58:00Z" })));
+    m.resize(120, 30);
+    const side = m.frame(M).pane.lines;
+    expect(side.length).toBeLessThanOrEqual(30 - CHROME_ROWS + 1);
+    expect(side.filter((l) => /^\+\d+ more$/.test(l))).toHaveLength(2);
+    m.resize(80, 30);
+    const strip = m.frame(M).pane.lines;
+    expect(strip[0]).toMatch(/\+\d+ more$/);
+    expect(Array.from(strip[0]!).length).toBeLessThanOrEqual(78);
+    expect(strip.at(-1)).toMatch(/\+\d+ more$/);
+  });
+
+  it("FR-11: a status read after a reconnect clears \"(stale)\"", () => {
+    const m = model();
+    m.setStatus([], 0);
+    m.away("Engine away: reconnecting in 4s (attempt 2)");
+    expect(m.frame(M).title).toContain("(stale)");
+    m.away(null);
+    m.setStatus(["F-003 (Building): Developer is working"], null, [{ id: "F-003", stage: "Building", activity: "Developer is working" }]);
+    expect(m.frame(M).title).not.toContain("(stale)");
+    expect(m.frame(M).title).toContain("1 feature running");
   });
 });

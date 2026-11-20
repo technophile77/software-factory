@@ -103,7 +103,8 @@ factory-engine mcp                      # started by Claude Code, not by hand
 - Both open the windowed console (F-024, ADR 0035) unless given `--plain`:
   Status, Inbox, Agents, Log and, with `-v` or the `v` key, Transcript (the
   selected agent's messages and tool calls, from `engine.transcript`, never
-  tool output), with the answer bar at the bottom. The screen is Ink, bundled
+  tool output), a side pane listing the running features with their stage
+  and the running agents, and the answer bar at the bottom. The screen is Ink, bundled
   separately as `dist/console.mjs` because Ink is ES modules only.
 
 The gitleaks binary's absolute path comes from `--gitleaks` or from
