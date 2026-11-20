@@ -72,7 +72,7 @@ export class RunBook {
     return run;
   }
 
-  update(id: string, patch: Partial<Pick<RunRecord, "session_id" | "last_commit" | "git_dir" | "used">>): RunRecord {
+  update(id: string, patch: Partial<Pick<RunRecord, "session_id" | "last_commit" | "git_dir" | "used" | "awaiting_owner">>): RunRecord {
     const run = this.must(id);
     const next = { ...run, ...patch };
     this.record.putRun(next);
@@ -108,10 +108,21 @@ export class RunBook {
     return this.record.runs().filter((r) => r.status === "interrupted");
   }
 
-  /** Plans the next resume of an interrupted run and counts it; the fourth is refused. */
+  /**
+   * Plans the next resume of an interrupted run and counts it; the fourth is
+   * refused. A run that was only waiting for the owner when the engine stopped
+   * resumes without counting (F-007 FR-14, owner 2026-11-20): the cap stops
+   * runs that keep failing, and an engine update isn't one.
+   */
   resume(id: string, state?: InterviewState): ResumePlan {
     const run = this.must(id);
     if (run.status !== "interrupted") throw new Error(`${id} is not interrupted`);
+    if (run.awaiting_owner) {
+      const next: RunRecord = { ...run, status: "running" };
+      this.record.putRun(next);
+      if (run.session_id) return { mode: "session", sessionId: run.session_id, run: next };
+      return { mode: "from_commit", commit: run.last_commit ?? null, summary: state ? transcriptSummary(state) : "", run: next };
+    }
     if (run.resumes >= MAX_RESUMES) {
       return { mode: "failed", run: this.finish(id, "failed", `stopped after ${MAX_RESUMES} resumes`) };
     }

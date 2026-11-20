@@ -1528,7 +1528,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
             return;
           }
         }
-        const turns = new TurnQueue(f, first);
+        const turns = new TurnQueue(f, first, (idle) => void (dead || runs.update(runId, { awaiting_owner: idle })));
         job.turns = turns;
         if (shuttingDown || dead) turns.close();
         const base = await git.revParse(p.real!, `refs/heads/${branch}`);

@@ -49,6 +49,8 @@ export interface RunRecord {
   worktree?: string;
   /** What the run's ended sessions used, for caps that cover the whole run (F-008 SR-11). */
   used?: RunUsed;
+  /** F-007 FR-14 (owner, 2026-11-20): the session finished its turn and waits for the owner, so a restart now costs no resume. */
+  awaiting_owner?: boolean;
   reason?: string;
 }
 

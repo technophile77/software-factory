@@ -42,11 +42,13 @@ export class TurnQueue implements AsyncIterable<UserTurn> {
   private given = 0;
   private ended = 0;
 
-  constructor(private readonly f: FeatureInterview, private readonly first: string | null) {}
+  /** `onIdle` hears each change of `idle`, so the run record can say whether a restart would cut off work. */
+  constructor(private readonly f: FeatureInterview, private readonly first: string | null, private readonly onIdle?: (idle: boolean) => void) {}
 
   /** The session finished a turn (its `result` message). */
   turnEnded(): void {
     this.ended++;
+    if (this.idle) this.onIdle?.(true);
   }
 
   /** Issue #124: every turn handed to the session has finished, so the analyst is waiting for the owner, not working. */
@@ -62,6 +64,7 @@ export class TurnQueue implements AsyncIterable<UserTurn> {
   async *[Symbol.asyncIterator](): AsyncIterator<UserTurn> {
     if (this.first) {
       this.given++;
+      this.onIdle?.(false);
       yield turn(this.first);
     }
     while (!this.closed) {
@@ -69,6 +72,7 @@ export class TurnQueue implements AsyncIterable<UserTurn> {
         const t = await this.f.takeTurn().catch(() => null);
         if (t && !this.closed) {
           this.given++;
+          this.onIdle?.(false);
           yield turn(t.message);
           continue;
         }
