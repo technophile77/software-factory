@@ -143,6 +143,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     push: true,
     // Acceptance worlds add projects before the engine starts; the 5-second folder check would only park a wait on the fake clock.
     projectPollMs: 0,
+    // As in test/helpers.ts: a real toast would show on the owner's desktop when the suite runs on their PC
+    // (a "proj0: Factory inbox off" toast was one). test/notify.test.ts covers the notifier.
+    notify: Object.assign(() => undefined, { settled: async () => undefined, stop: async () => undefined }),
     ...(o.agents ? { agents: o.agents } : {}),
     resumeAnalyst: o.resumeAnalyst
       ? (r: { feature: string; worktree: string; tools: Record<string, any>; plan: ResumedRun["plan"] }) =>

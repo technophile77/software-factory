@@ -338,6 +338,45 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
     expect(replies().map((x) => x.kind)).toEqual(["answer", "approve_assumption"]);
   });
 
+  test("a status read the engine drops while the command waits is tried again, and the wait goes on (mesbot F-003)", async () => {
+    engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["a"] })]);
+    let dropped = 0;
+    engine.hooks["engine.status"] = (conn, msg) => {
+      if (engine.transcript.length > 0 && dropped < 2) {
+        dropped++;
+        conn.close();
+        return true;
+      }
+      if (engine.transcript.length > 0 && !engine.features.get("F-1")!.items.some((i) => i.id === "A1")) engine.features.get("F-1")!.items.push(assumption("A1"));
+      conn.respond(msg, ["result", { version: "1.4", capabilities: ["document"], uptime_s: 1,
+        features: [{ id: "F-1", stage: "security_testability_review", active_agents: 1, activity: "security_reviewing" }] }]);
+      return true;
+    };
+    const { s } = await run(["1", "1"], "F-1");
+    expect(dropped).toBe(2);
+    expect(s.out).not.toContain("The engine closed the connection");
+    expect(replies().map((x) => x.kind)).toEqual(["answer", "approve_assumption"]);
+  });
+
+  test("a next read the engine drops while the command waits is tried again", async () => {
+    engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["a"] })]);
+    activities(["security_reviewing"], () => undefined, "security_testability_review");
+    let dropped = 0;
+    engine.hooks["interview.next"] = (conn) => {
+      if (engine.transcript.length === 0) return false;
+      if (dropped++ === 0) {
+        conn.close();
+        return true;
+      }
+      if (!engine.features.get("F-1")!.items.some((i) => i.id === "A1")) engine.features.get("F-1")!.items.push(assumption("A1"));
+      return false;
+    };
+    const { s } = await run(["1", "1"], "F-1");
+    expect(dropped).toBeGreaterThan(1);
+    expect(s.out).not.toContain("The engine closed the connection");
+    expect(replies().map((x) => x.kind)).toEqual(["answer", "approve_assumption"]);
+  });
+
   test("AC-14: when the feature leaves the interview stages, the command says so and stops waiting", async () => {
     engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["a"] })]);
     activities(["analyst_writing_spec"], () => undefined, "build_and_test_prep");
