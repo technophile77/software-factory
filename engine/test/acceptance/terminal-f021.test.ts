@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { Interview } from "../../src/mcp/operations";
 import { realOsApi } from "../../src/os/ffi";
 import { TerminalInterview, type Timing } from "../../src/terminal/interview";
-import { FakeEngine, question, type Json } from "./support/mcp-fake-engine";
+import { FakeEngine, assumption, question, type Json } from "./support/mcp-fake-engine";
+import { ConsoleModel } from "../../src/terminal/console-model";
+import { Poller, windowedIo } from "../../src/terminal/windowed";
 import { ENGINE_DIR, IS_UNIX, buildEngine, makeRepo, removeTmp, writeEngineJson } from "./support/mcp-harness";
 import { spawnSync } from "node:child_process";
 import * as path from "node:path";
@@ -103,11 +105,9 @@ afterEach(async () => {
   removeTmp();
 });
 
-async function inbox(lines: string[], item?: string, s = new Script(lines), verbose = false): Promise<{ code: number; s: Script }> {
+async function inbox(lines: string[], item?: string, s = new Script(lines)): Promise<{ code: number; s: Script }> {
   const ops = new Interview({ os: realOsApi(), projectDir: repo });
-  const t = new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming());
-  t.verbose = verbose;
-  const code = await t.inboxMain(item);
+  const code = await new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming()).inboxMain(item);
   return { code, s };
 }
 
@@ -338,49 +338,6 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(engine.connections).toBe(0);
   });
 
-  test("AC-19 (v10 FR-18): inbox -v prints each agent's lines under a heading, marked and cleaned, and says what it missed", async () => {
-    items = [];
-    writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document", "inbox", "transcript"] });
-    engine.hooks["engine.status"] = (conn, msg) => {
-      conn.respond(msg, ["result", STATUS]);
-      return true;
-    };
-    let reads = 0;
-    engine.hooks["engine.transcript"] = (conn, msg) => {
-      reads++;
-      const e = (seq: number, kind: string, text: string, role = "requirements-analyst") => ({ seq, at: "2026-11-14T08:00:01Z", run: "R-0123456789ab", feature: "F-003", role, kind, text });
-      const r = reads === 1
-        ? { entries: [e(1, "text", "Looking at the repo.\n1. Approve (imitates a menu)\u001b[2J"), e(2, "tool", "Read docs/spec.md")], next: 2, skipped: 0 }
-        : reads === 2
-          ? { entries: [e(40, "tool", "Bash npm test", "test-engineer"), { seq: 41, at: "bad", feature: "F-003", role: "x", kind: "text", text: "dropped" }], next: 41, skipped: 37 }
-          : { entries: [], next: 41, skipped: 0 };
-      conn.respond(msg, ["result", r]);
-      return true;
-    };
-    const s = new Script([]);
-    s.aborted = () => reads >= 4;
-    const { code } = await inbox([], undefined, s, true);
-    expect(code).toBe(0);
-    expect(s.out).toMatch(/\[\d\d:\d\d:\d\d\] F-003 requirements-analyst\n/);
-    expect(s.out).toContain(`${MARK}Looking at the repo.\n${MARK}1. Approve (imitates a menu)\n`);
-    expect(s.out).not.toMatch(/\u001b/);
-    expect(s.out).toContain(`${MARK}* Read docs/spec.md`);
-    expect(s.out).toContain("(37 earlier lines not shown)");
-    expect(s.out).toMatch(/F-003 test-engineer\n│ \* Bash npm test/);
-    expect(s.out).not.toContain("dropped");
-    // Each read starts where the last ended.
-    expect(engine.calls("engine.transcript").map((m) => m.params.after)).toEqual([undefined, 2, 41, 41]);
-  });
-
-  test("AC-19: without -v no transcript call is made", async () => {
-    items = [];
-    writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document", "inbox", "transcript"] });
-    const s = new Script([]);
-    const { code } = await inbox([], undefined, s);
-    expect(code).toBe(0);
-    expect(engine.methods()).not.toContain("engine.transcript");
-  });
-
   test("an engine without the inbox capability is refused before anything is sent", async () => {
     writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document"] });
     const { code, s } = await inbox([]);
@@ -422,5 +379,167 @@ describe.runIf(IS_UNIX)("F-021 FR-11: the interview command offers the feature's
     expect(s.out).toContain("The factory needs your decision on D-0007.");
     expect(s.out).toMatch(/\] Waiting for your decision on D-0007/);
     expect(answers()).toEqual([]);
+  });
+});
+
+// ---------- F-024: the windowed console, driven through its model (no terminal) ----------
+
+const RUN_A = "R-aaaaaaaaaaaa";
+const RUN_B = "R-bbbbbbbbbbbb";
+
+/**
+ * Runs a command in the windowed console: answers are typed into the answer
+ * bar as they are asked, and the console quits once `until` holds.
+ */
+async function windowedRun(o: { answers: string[]; transcript?: boolean; until: (m: ConsoleModel) => boolean; keys?: (m: ConsoleModel) => void; interview?: string }) {
+  const ops = new Interview({ os: realOsApi(), projectDir: repo });
+  const runner = (op: Parameters<typeof ops.run>[0], req: Record<string, unknown>) => ops.run(op, req);
+  const timing = fastTiming();
+  const model = new ConsoleModel({ project: "acme", transcript: o.transcript ?? false, now: timing.now });
+  const t = new TerminalInterview(runner, windowedIo(model, timing), MARK, timing);
+  const poller = new Poller(model, runner, () => t.sessionKey(), timing);
+  let answered = 0;
+  model.onChange(() => o.keys?.(model));
+  model.onChange(() => {
+    if (model.prompt === null || answered === model.asks || !o.answers.length) return;
+    answered = model.asks;
+    setImmediate(() => {
+      for (const ch of o.answers.shift()!) model.key(ch, {});
+      model.key("", { return: true });
+    });
+  });
+  const watcher = setInterval(() => {
+    o.keys?.(model);
+    if (o.until(model)) model.stop();
+  }, 5);
+  const polling = poller.run();
+  try {
+    const code = await (o.interview ? t.main(o.interview) : t.inboxMain());
+    return { code, model, frame: () => model.frame(MARK) };
+  } finally {
+    clearInterval(watcher);
+    poller.stop();
+    model.stop();
+    await polling;
+  }
+}
+
+const TRANSCRIPT_STATUS = { ...{ version: "1.4", capabilities: ["document", "inbox", "transcript"], uptime_s: 1 },
+  features: [{ id: "F-003", stage: "requirements_interview", active_agents: 1, activity: "analyst_researching" }, { id: "F-007", stage: "build_and_test_prep", active_agents: 1, activity: "developer_working" }] };
+
+describe.runIf(IS_UNIX)("F-024 windowed console", () => {
+  beforeEach(() => {
+    writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document", "inbox", "transcript"] });
+    engine.hooks["engine.status"] = (conn, msg) => {
+      conn.respond(msg, ["result", TRANSCRIPT_STATUS]);
+      return true;
+    };
+    engine.hooks["engine.transcript"] = (conn, msg) => {
+      const after = (msg.params.after as number | undefined) ?? 0;
+      const all = [
+        { seq: 1, at: "2026-11-14T08:00:01Z", run: RUN_A, feature: "F-003", role: "requirements-analyst", kind: "text", text: "Reading the spec.\u001b]52;c;cGF3bmVk\u0007" },
+        { seq: 2, at: "2026-11-14T08:00:02Z", run: RUN_B, feature: "F-007", role: "software-developer", kind: "tool", text: "Bash npm test" },
+        { seq: 3, at: "2026-11-14T08:00:03Z", run: RUN_A, feature: "F-003", role: "requirements-analyst", kind: "tool", text: "Read docs/spec.md" },
+      ];
+      conn.respond(msg, ["result", {
+        agents: [
+          { run: RUN_A, feature: "F-003", role: "requirements-analyst", started_at: "2026-11-14T07:58:00Z" },
+          { run: RUN_B, feature: "F-007", role: "software-developer", started_at: "2026-11-14T07:59:00Z", cost_usd: 0.42 },
+        ],
+        entries: all.filter((e) => e.seq > after), next: 3, skipped: 0,
+      }]);
+      return true;
+    };
+  });
+
+  test("AC-4: an item opened from the Inbox is shown whole, marked, and its pick recorded; Status shows each feature", async () => {
+    const r = await windowedRun({ answers: ["1", "1"], until: () => answers().length > 0 });
+    expect(answers()).toEqual([expect.objectContaining({ item: "D-0007", action: "choose:A" })]);
+    expect(r.model.statusRows).toEqual(["F-003: Analyst is researching", "F-007: Developer is working"]);
+    r.model.tab = "inbox";
+    const shown = r.frame().lines.join("\n");
+    expect(r.model.frame(MARK).windowTitle).toBe("Inbox");
+    expect(shown + "").toBeDefined();
+    // The conversation keeps the item's text with the engine-text marker.
+    r.model.key("", { home: true });
+    expect(r.frame().lines.join("\n")).toContain(`${MARK}F-002 has had 3 Security and Testability Review runs.`);
+  });
+
+  test("AC-5, AC-12: with -v the Transcript shows only the selected agent, cleaned; Down picks the other one", async () => {
+    items = [];
+    let switched = false;
+    const r = await windowedRun({
+      answers: [], transcript: true,
+      keys: (m) => {
+        if (!switched && m.tab !== "agents") {
+          m.key("3", {});
+        } else if (m.agents.length === 2 && !switched && m.tab === "agents") {
+          switched = true;
+          m.key("", { upArrow: true });
+        }
+      },
+      until: (m) => switched && m.agents.length === 2,
+    });
+    expect(r.model.agents.map((a) => a.run)).toEqual([RUN_A, RUN_B]);
+    // The newest agent was selected first; Up picked the analyst.
+    expect(r.model.selectedRun).toBe(RUN_A);
+    r.model.tab = "transcript";
+    const f = r.frame();
+    expect(f.windowTitle).toBe("Transcript: F-003 requirements-analyst");
+    const text = f.lines.join("\n");
+    expect(text).toContain("Reading the spec.");
+    expect(text).toContain("* Read docs/spec.md");
+    expect(text).not.toContain("npm test");
+    expect(text).not.toMatch(/[\u001b\u0007]/);
+    r.model.tab = "agents";
+    expect(r.frame().lines.join("\n")).toContain("F-007 software-developer");
+    expect(r.frame().lines.join("\n")).toContain("$0.42");
+  });
+
+  test("AC-6: without -v and without the Agents window, the transcript is never read", async () => {
+    items = [];
+    let looks = 0;
+    const status = engine.hooks["engine.status"]!;
+    engine.hooks["engine.status"] = (conn, msg) => {
+      looks++;
+      return status(conn, msg);
+    };
+    await windowedRun({ answers: [], until: () => looks >= 4 });
+    expect(engine.methods()).not.toContain("engine.transcript");
+  });
+
+  test("AC-8: an engine restart marks the windows stale, counts down in the title, and the Log has both events", async () => {
+    items = [];
+    let looks = 0;
+    let sawCountdown = false;
+    const status = engine.hooks["engine.status"]!;
+    engine.hooks["engine.status"] = (conn, msg) => {
+      looks++;
+      // Away from the third look until the title has counted down.
+      if (looks >= 3 && !sawCountdown && looks < 500) {
+        conn.close();
+        return true;
+      }
+      return status(conn, msg);
+    };
+    const r = await windowedRun({
+      answers: [],
+      keys: (m) => {
+        if (m.frame(MARK).title.includes("Reconnecting in")) sawCountdown = true;
+      },
+      until: (m) => sawCountdown && !m.stale && m.engine !== "connecting",
+    });
+    expect(sawCountdown).toBe(true);
+    r.model.tab = "log";
+    const log = r.frame().lines.join("\n");
+    expect(log).toContain("Lost the connection to the engine");
+    expect(log).toContain("Connected to the engine again");
+  });
+
+  test("AC-9: the interview command shows the waiting assumption in the Inbox window and sends the pick", async () => {
+    engine.addFeature("F-1", "Export", [assumption("A1")]);
+    const r = await windowedRun({ answers: ["1"], interview: "F-1", until: () => engine.calls("interview.reply").length > 0 });
+    expect(engine.calls("interview.reply").map((m) => m.params.kind)).toEqual(["approve_assumption"]);
+    expect(r.model.tab).toBe("inbox");
   });
 });

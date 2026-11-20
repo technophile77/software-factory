@@ -67,3 +67,13 @@ new item as soon as one opens; Ctrl+C ends it. When an
 interview has nothing to ask and the feature waits on your decision,
 `factory-engine interview` offers the items too, and its status line says
 "Waiting for your decision on …" rather than idle.
+
+Both commands open a windowed console (F-024, ADR 0035): a title line with
+the project, the engine connection and what is waiting; tabs for Status,
+Inbox, Agents, Log and, when you want it, Transcript; and an answer bar at the
+bottom. Tab or the number keys switch windows, Up and Down scroll (and pick
+an agent in Agents), `v` shows or hides the Transcript, and `q` quits. The
+Transcript shows what the selected agent says and which tools it calls, live;
+tool output is never shown. `-v` opens with the Transcript switched on, and
+`--plain` keeps the line-by-line console. The layout follows the terminal's
+size, and the old Windows console gets plain ASCII borders.
