@@ -2890,6 +2890,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           return commitWorktree({
             git, gitDir: wt.gitDir, worktree: wt.path, branch, base: head, policy: pol, scanner, tmpDir,
             message: `${f.id}: ${w.what} ${fix ? "fix" : "session"} (run ${runId})`, limits: worktreeLimits(p.limits!), identity,
+            outputs: [repoCommands(m, ctx.target.name).results].filter((x): x is string => !!x),
           });
         },
         onSessionId: (id) => void (dead || runs.update(runId, { session_id: id })),

@@ -264,6 +264,17 @@ describe("worktree commit (FR-11 with the FR-9 check)", () => {
     expect(await commitWorktree({ ...input, base: (r as { commit: string }).commit })).toMatchObject({ status: "rejected", breaches: [{ path: "tools/run.log" }] });
   });
 
+  it("F-015 FR-22: the repo's test results file is engine output, not a write, unless the base tracks it", async () => {
+    const { wt, input } = setup();
+    fs.mkdirSync(path.join(wt, "test-results"));
+    fs.writeFileSync(path.join(wt, "test-results", "junit.xml"), "<testsuites/>");
+    expect((await commitWorktree(input())).status).toBe("rejected");
+    expect(await commitWorktree({ ...input(), outputs: ["./test-results/junit.xml"] })).toEqual({ status: "unchanged" });
+    // Only that path: another file beside it is still checked.
+    fs.writeFileSync(path.join(wt, "test-results", "other.xml"), "x");
+    expect(await commitWorktree({ ...input(), outputs: ["test-results/junit.xml"] })).toMatchObject({ status: "rejected", breaches: [{ path: "test-results/other.xml" }] });
+  });
+
   it("a .gitignore the agent wrote in the worktree exempts nothing", async () => {
     const { wt, input } = setup();
     fs.writeFileSync(path.join(wt, ".gitignore"), ".husky/\n");

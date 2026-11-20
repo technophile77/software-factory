@@ -38,6 +38,12 @@ export interface WorktreeCommitInput {
    * rejects the session (AC-22).
    */
   frozen?: CodeFiles;
+  /**
+   * F-015 FR-22: files the repo's own commands write, such as the test results
+   * file, relative to the worktree. When the base commit doesn't track one, it
+   * is engine output: skipped like a base-ignored file, never committed.
+   */
+  outputs?: string[];
   /** Tests only; the walk reads executable bits differently on Windows. */
   platform?: NodeJS.Platform;
 }
@@ -216,7 +222,10 @@ export async function commitWorktree(i: WorktreeCommitInput): Promise<WorktreeCo
   }
   const first: Breach[] = [];
   let walked = walk(i.worktree, base, format, i.limits, first, i.frozen, i.platform);
-  const skip = await ignoredByBase(i, base, walked.touched.filter((t) => !base.has(t.path) && t.mode !== "120000").map((t) => t.path));
+  const untracked = walked.touched.filter((t) => !base.has(t.path) && t.mode !== "120000").map((t) => t.path);
+  const skip = await ignoredByBase(i, base, untracked);
+  const outputs = new Set((i.outputs ?? []).map((o) => o.split("\\").join("/").replace(/^(\.\/)+/, "")));
+  for (const t of untracked) if (outputs.has(t)) skip.add(t);
   if (skip.size) {
     first.length = 0;
     walked = walk(i.worktree, base, format, i.limits, first, i.frozen, i.platform, skip);
