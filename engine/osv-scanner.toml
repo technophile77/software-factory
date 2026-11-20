@@ -15,6 +15,11 @@ ignoreUntil = 2027-02-12
 reason = "mcp 1.29.0 Streamable HTTP server sessions: the engine runs only `semgrep scan`, never `semgrep mcp`, so no MCP server starts."
 
 [[IgnoredVulns]]
+id = "GHSA-qx49-fqc8-xw99"
+ignoreUntil = 2026-12-20
+reason = "mcp 1.29.0 OAuth client credentials sent where the server chooses: only an MCP client that signs in with OAuth is affected, and `semgrep scan` starts no MCP client. Semgrep pins mcp==1.29.0, so 1.30.0 can't be installed with it (owner, 2026-11-20: 30 days, then check again)."
+
+[[IgnoredVulns]]
 id = "GHSA-5h93-6whr-6q8j"
 ignoreUntil = 2027-02-12
 reason = "mcp 1.29.0 HTTP client redirects: Semgrep's MCP client code runs only under `semgrep mcp`, which the engine never starts."
