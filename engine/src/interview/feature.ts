@@ -128,7 +128,9 @@ export class FeatureInterview {
   async revise(id: string, c: ItemContent): Promise<number> {
     const item = this.state.items.get(id)!;
     const revision = item.revision + 1;
-    await this.append([{ type: "item_revised", item: id, revision, ...c }], `revise ${id}`);
+    // The question type travels as `question_type`: spread as `type` it took the event's own `type` key (issue #130).
+    const { type: questionType, ...rest } = c;
+    await this.append([{ type: "item_revised", item: id, revision, ...rest, ...(questionType ? { question_type: questionType } : {}) }], `revise ${id}`);
     this.changed.emit("itemReady", id);
     return revision;
   }
