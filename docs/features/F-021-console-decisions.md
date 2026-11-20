@@ -8,15 +8,10 @@
   Alex, 2026-11-15 ("when there is nothing waiting for a decision leave it
   connected, so I can watch the status of the factory there"); v8: Alex,
   2026-11-20 ("try and reconnect to the factory if it restarts instead of
-<<<<<<< HEAD
   giving up ... with an exponential backoff countdown timer"); v9: Alex,
   2026-11-20 (decision card "Yes, answer them in the inbox", after the inbox
   showed "Getting your next question" while F-003's Q-002 waited unseen)
 - **Spec version:** 10
-=======
-  giving up ... with an exponential backoff countdown timer")
-- **Spec version:** 8
->>>>>>> 80ddcdd90abb1ab140f1828824509c999bb6fb3d
 - **Depends on:** F-011 (inbox on GitHub issues, ADR 0022), F-016 (answers
   and their effects, Code Review M1 check), F-018 (`factory-engine interview`,
   live status), F-020 (inbox records as JSON, `inbox-record/4.0`)
@@ -98,11 +93,8 @@ answer from either path is the one recorded.
 | FR-14 | Exit codes as F-018 FR-11: 0 when the owner stopped or nothing was left, 1 when the engine refused or failed for a reason other than being away (an engine that is away is waited for, FR-16), 2 on bad arguments. |
 | FR-15 | The engine README and the root README describe the command beside `interview`; the engine's `--help` lists it. |
 | FR-16 | **Waits for the engine and reconnects after a restart (v8).** Both `factory-engine inbox` and `factory-engine interview` treat a call that finds the engine away (not running, unreachable, connection dropped, or timed out) as something to wait out, not a reason to exit. At start the command prints the time and "The engine isn't running. Waiting for it to start; press Ctrl+C to stop."; later it prints the time and "Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.". It then tries `engine.status` again after 1 s, doubling the wait each time up to 60 s, without limit. While it waits, one line redrawn in place counts down each second: "Reconnecting in <n>s (attempt <k>)". When `engine.status` answers, it prints the time and "Connected to the engine." (at start) or "Reconnected to the engine.", and carries on. The inbox opens a new console session if the engine no longer knows the old one, prints the status lines again and lists any open items. The interview opens the feature again without asking if the engine no longer knows its session, and goes on waiting for or showing the next item. The project's sign-in setting applies to a new session (FR-13). Any other failure ends the command as FR-14. Nothing is resent on its own: a reply or answer that was in flight is handled as F-018 FR-13 (the command says it may be recorded and asks). For an engine that is away, this replaces F-018 FR-11's exit code 1 and F-018 AC-10. |
-<<<<<<< HEAD
 | FR-17 | **The inbox console answers waiting interview questions too (v9).** The `waiting_for_owner` activity reads "Waiting for your answer" in both commands (it read "Getting your next question"). While `factory-engine inbox` watches (FR-2), a feature whose activity is `waiting_for_owner` is offered once: "<feature> has a question waiting for you." with "Answer it here" and "Not now". Answer it here opens the feature's interview session, as `factory-engine interview <feature>` does (FR-13 sign-in applies), and shows and sends each waiting item as F-018 does; as soon as no item is waiting (the analyst is working, researching, or the interview is done) it closes that session, says "Nothing more is waiting for you on <feature>; back to watching the factory.", and the watch carries on with the status printed again. Not now sends nothing; the feature isn't offered again until its activity has changed and it waits again. |
 | FR-18 | **Verbose mode: the agents' live transcript (v10).** `factory-engine inbox -v` (or `--verbose`) prints, as it happens, what each running agent session of the project says and does, below the status lines: the text of each assistant message in full, and one line per tool call naming the tool and its target (the file path, search pattern or URL, or the first 200 characters of a command). Each line starts with the time, the feature and the role, for example "[12:41:07] F-003 analyst: Read docs/spec.md". Tool output isn't shown. The lines come from `engine.transcript` (H-0265), read with the console session about once a second while the command watches; the engine keeps the last 500 entries of each running session in memory only, never on disk, in a repo or on GitHub. When the console falls more than 500 entries behind, it prints "(<n> earlier lines not shown)". Every line is cleaned and marked as engine text (SR-1, SR-8). While the owner answers an item, lines wait and are printed when the watch resumes. Without `-v` nothing changes. |
-=======
->>>>>>> 80ddcdd90abb1ab140f1828824509c999bb6fb3d
 
 ## 4. Acceptance criteria
 Run against a test engine with a fake GitHub (as the F-016 inbox tests),
@@ -127,11 +119,8 @@ driving the command through its input and output streams.
 | AC-15 | Given `factory-engine inbox` with no open items, then the command stays open, prints "F-002: Tests are running" (one line per feature) once and again only when it changes, and when an item opens it lists it and the owner can answer it; Ctrl+C ends it with exit 0. Given a build feature whose tests are running, `engine.status` reports `tests_running`, not `idle`. | FR-2, FR-12 |
 | AC-16 | Given `factory-engine inbox` watching with no open items, when the engine stops, then the command prints "Lost the connection to the engine", counts down "Reconnecting in 1s (attempt 1)", then waits 2 s, 4 s and so on up to 60 s between attempts; when an engine is running again it prints "Reconnected to the engine.", opens a new console session, prints the status lines again and lists an item that opened meanwhile. Given no running engine at start, it prints "The engine isn't running. Waiting for it to start" and counts down the same way. Ctrl+C during a countdown ends the command with exit 0. | FR-16, FR-14 |
 | AC-17 | Given `factory-engine interview` waiting for the analyst, when the engine restarts, then the command counts down as AC-16, says "Reconnected to the engine.", opens the feature again without asking, and shows the item the restarted engine has. Given no running engine at start, it waits as AC-16 and, once one starts, says "Connected to the engine." and runs the interview. | FR-16 |
-<<<<<<< HEAD
 | AC-18 | Given `factory-engine inbox` watching with no inbox item open and a feature whose analyst waits for the owner's answer, then the status line reads "<feature>: Waiting for your answer" and the console offers the question; Answer it here shows the item, sends the pick, and once the analyst is working again the console says it is back to watching and prints the new status. Not now sends nothing and doesn't offer the same wait again. | FR-17 |
 | AC-19 | Given `factory-engine inbox -v` watching while F-003's analyst reads a file and writes a message, then the console prints "F-003 analyst: Read <path>" and the message text, each with the time, marked as engine text and with escape sequences removed; no tool output is printed. Given more than 500 entries since the last read, it prints "(<n> earlier lines not shown)". Without `-v`, no transcript call is made. | FR-18, SR-8 |
-=======
->>>>>>> 80ddcdd90abb1ab140f1828824509c999bb6fb3d
 
 ## 5. Constraints
 - PC terminal only, as F-018. The phone keeps answering through GitHub
@@ -233,10 +222,7 @@ after the owner approves their text:
 | 6 | 2026-11-14 | H-0245 to H-0248 approved as written; readiness gate passed (all six checks); spec signed off, status Approved | Owner, 2026-11-14 10:30Z and 10:31Z (decision cards) |
 | 7 | 2026-11-15 | From the owner's request 04:37Z: the inbox console stays open with the factory's status when nothing waits (FR-2); build-stage activity codes, so a building feature is never shown as idle (FR-12); AC-15; H-0251, H-0252 | Owner, 2026-11-15 04:46Z (decision card) |
 | 8 | 2026-11-20 | From the owner's request 18:20Z: the inbox and interview commands wait for the engine at start and reconnect after a restart, with a backoff countdown (FR-16, AC-16, AC-17; FR-14 and the edge case follow) | Owner, 2026-11-20 18:26Z (in thread: approved, also wait at start and also in the interview command) |
-<<<<<<< HEAD
 | 10 | 2026-11-20 | From the owner's request 18:42Z: `inbox -v` shows the agents' live transcript (FR-18, AC-19, SR-8, H-0265) | Pending owner approval |
-=======
->>>>>>> 80ddcdd90abb1ab140f1828824509c999bb6fb3d
 
 ## 13. Open questions
 | Id | Question | Category | Status |
