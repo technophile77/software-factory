@@ -228,7 +228,14 @@ item's `history` (`by: owner`) per the Inbox item v1.0 contract.
   enforces (ADR 0004). A new project gets the template's project policy;
   each repo gets a `policy:` override with its stack's source and test
   globs, build and test commands, and package registries. A placeholder you
-  can't fill becomes an empty list, never a guess. Never widen a role's
+  can't fill becomes an empty list, never a guess. Source globs are
+  file-type patterns for where the code lives (`src/**/*.ts`; for a flat
+  Python repo `*.py` and `<package>/**/*.py`), so the developer can create
+  the new modules a spec allows. Never write a list of the files that exist
+  today, and never `**`; the checker refuses both. Single files the
+  developer must also change, such as `requirements.txt`, may be added
+  beside the patterns. Test globs go in the developer's `deny`, so a source
+  pattern that also matches tests (`test_*.py`, `conftest.py`) is safe. Never widen a role's
   `tools` or `read` rules or drop its secret-file denies; that is a
   Security decision for the owner.
 - Existing project: clone its config repo, add the repo under `repos`, and

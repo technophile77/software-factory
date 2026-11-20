@@ -777,6 +777,17 @@ class ManifestPolicy(Base):
             with self.subTest(glob=glob):
                 self.assertFalse(fc._escapes_worktree(glob))
 
+    def test_developer_writes_source_globs_not_a_file_list(self):
+        # Owner, 2026-11-20 (mesbot D-0003): a file list refuses every new module a spec allows.
+        files = ("    policy:\n      roles:\n        software-developer:\n          write:\n"
+                 "            allow: [\"main.py\", \"server.py\", \"docs/**\"]\n")
+        errs = self.errors(self.manifest(repo_policy=files))
+        self.assertTrue(any("repos[0]" in e and "lists files, not source globs" in e for e in errs), errs)
+        errs = self.errors(self.manifest().replace('allow: ["src/**"]', 'allow: ["**"]'))
+        self.assertTrue(any("has `**`" in e for e in errs), errs)
+        mixed = files.replace('"main.py", "server.py"', '"*.py", "requirements.txt"')
+        self.assertEqual(self.errors(self.manifest(repo_policy=mixed)), [])
+
     def test_policy_is_optional(self):
         text = self.manifest().split("policy:")[0]
         self.assertEqual(self.errors(text), [])
