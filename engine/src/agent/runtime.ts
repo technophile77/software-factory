@@ -132,7 +132,14 @@ export async function prepareWorktree(git: Git, repo: string, dir: string, branc
   // The folder goes first: prune forgets only worktrees whose folder is missing, and a stale registration makes `add` fail.
   fs.rmSync(dir, { recursive: true, force: true });
   await git.run(repo, ["worktree", "prune"]);
-  await git.run(repo, detachAt ? ["worktree", "add", "--no-checkout", "--detach", dir, detachAt] : ["worktree", "add", "--no-checkout", dir, branch]);
+  const add = () => git.run(repo, detachAt ? ["worktree", "add", "--no-checkout", "--detach", dir, detachAt] : ["worktree", "add", "--no-checkout", dir, branch]);
+  try {
+    await add();
+  } catch (e) {
+    // A run of an older engine can hold the branch in a worktree at a path the engine no longer derives (F-023 moved them).
+    if (detachAt || !(await dropStaleCheckout(git, repo, path.dirname(path.dirname(dir)), dir, branch))) throw e;
+    await add();
+  }
   const link = fs.readFileSync(path.join(dir, ".git"), "utf8").trim();
   const m = /^gitdir: (.+)$/.exec(link);
   if (!m) throw new Error("git made a worktree without a gitdir link");
@@ -142,6 +149,38 @@ export async function prepareWorktree(git: Git, repo: string, dir: string, branc
   if (!head) throw new Error(`no branch ${branch}`);
   await populateWorktree(git, repo, head, dir, made);
   return { path: dir, gitDir: made };
+}
+
+/**
+ * Removes another worktree that has `branch` checked out, only when it is
+ * one of the engine's own (under `root`), so git lets `dir` take the branch.
+ * True when one was removed.
+ */
+async function dropStaleCheckout(git: Git, repo: string, root: string, dir: string, branch: string): Promise<boolean> {
+  const list = await git.out(repo, ["worktree", "list", "--porcelain"]);
+  const want = `branch refs/heads/${branch}`;
+  let rootReal: string;
+  try {
+    rootReal = realPath(root);
+  } catch {
+    return false;
+  }
+  let dropped = false;
+  for (const block of list.split(/\n\s*\n/)) {
+    const lines = block.split("\n").map((l) => l.trim());
+    const at = lines.find((l) => l.startsWith("worktree "))?.slice("worktree ".length);
+    if (!at || !lines.includes(want)) continue;
+    let real: string;
+    try {
+      real = realPath(at);
+    } catch {
+      continue;
+    }
+    if (path.resolve(at) === path.resolve(dir) || !real.startsWith(rootReal + path.sep)) continue;
+    await git.run(repo, ["worktree", "remove", "--force", at]);
+    dropped = true;
+  }
+  return dropped;
 }
 
 const NAME_RE = /^factory-[a-z0-9-]{1,200}$/;
