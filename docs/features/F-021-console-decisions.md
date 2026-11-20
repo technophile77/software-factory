@@ -6,8 +6,10 @@
   better method of communicating with the factory"; "the console app should
   also say when a decision is pending, not just factory is idle"); v7:
   Alex, 2026-11-15 ("when there is nothing waiting for a decision leave it
-  connected, so I can watch the status of the factory there")
-- **Spec version:** 7
+  connected, so I can watch the status of the factory there"); v8: Alex,
+  2026-11-20 ("try and reconnect to the factory if it restarts instead of
+  giving up ... with an exponential backoff countdown timer")
+- **Spec version:** 8
 - **Depends on:** F-011 (inbox on GitHub issues, ADR 0022), F-016 (answers
   and their effects, Code Review M1 check), F-018 (`factory-engine interview`,
   live status), F-020 (inbox records as JSON, `inbox-record/4.0`)
@@ -86,8 +88,9 @@ answer from either path is the one recorded.
 | FR-11 | **In the interview command.** When `factory-engine interview` has no interview item for the owner and `engine.status` lists inbox items the feature waits on (`waiting_on`), the command prints "The factory needs your decision on <ids>" and shows each item as FR-3 to FR-8, with one more choice, "Not now", which leaves the items open and returns to the live status. After the owner answers, the live status carries on. |
 | FR-12 | **Live status says when the owner is needed (owner, 2026-11-14 10:23Z).** `engine.status` gives a feature the new `activity` code `waiting_for_decision` whenever `waiting_on` is not empty and no agent is running for it. `idle` is reported only when the feature has no open interview item, no open inbox item, and no job running or queued. The interview and inbox commands show `waiting_for_decision` as "Waiting for your decision on <ids>", with the ids from `waiting_on`. A stage the engine is about to start work on (queued) shows as "Working", not idle. **v7:** a feature in a build stage reports what its build is doing, from the build machine's state, never `idle`: `waiting_on_dependency`, `developer_working`, `test_engineer_working`, `merging`, `resolving_conflicts`, `tests_running`, `classifying_failures`, `code_reviewing`, `validating`, `opening_pr`, `waiting_for_ci`, `pr_ready`, `build_stopped`, `merged`, `closed`; `waiting_for_decision` still comes first when no agent runs and an inbox item waits. The commands show each code in their own fixed words, and an unknown code as "Working". |
 | FR-13 | **Sign-in (OQ-2 (a)).** Console answers follow the project's existing sign-in setting, `settings.interview_sign_in` (F-018 FR-15): `inbox.open` opens a console session that needs a GitHub device sign-in exactly when an interview session would (never at `rapid-prototype` by default; once per engine start; every session; or every so many hours). The same sign-in covers both: a sign-in for an interview session counts for a console session under the setting, and the other way round. The record of each console answer says whether its session signed in. |
-| FR-14 | Exit codes as F-018 FR-11: 0 when the owner stopped or nothing was left, 1 when the engine couldn't be reached or refused, 2 on bad arguments. |
+| FR-14 | Exit codes as F-018 FR-11: 0 when the owner stopped or nothing was left, 1 when the engine couldn't be reached at start or refused (after that, FR-16 applies), 2 on bad arguments. |
 | FR-15 | The engine README and the root README describe the command beside `interview`; the engine's `--help` lists it. |
+| FR-16 | **Reconnects after an engine restart (v8).** Once `factory-engine inbox` has connected, a call that finds the engine gone (not running, unreachable, connection dropped, or timed out) doesn't end the command. It prints the time and "Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.", then tries `engine.status` again after 1 s, doubling the wait each time up to 60 s, without limit. While it waits, one line redrawn in place counts down each second: "Reconnecting in <n>s (attempt <k>)". When `engine.status` answers, it prints the time and "Reconnected to the engine.", opens a new console session if the engine no longer knows the old one (the project's sign-in setting applies, FR-13), prints the status lines again and lists any open items. Any other failure ends the command as FR-14. Nothing is resent on its own: an answer that was in flight is handled as F-018 FR-13. |
 
 ## 4. Acceptance criteria
 Run against a test engine with a fake GitHub (as the F-016 inbox tests),
@@ -110,6 +113,7 @@ driving the command through its input and output streams.
 | AC-13 | Given stdin or stdout isn't a terminal, then `factory-engine inbox` refuses with exit code 2 and sends nothing. | SR-3 |
 | AC-14 | On Windows (`windows-latest` CI) the command connects over the named pipe and completes the AC-2 scenario. | FR-2 |
 | AC-15 | Given `factory-engine inbox` with no open items, then the command stays open, prints "F-002: Tests are running" (one line per feature) once and again only when it changes, and when an item opens it lists it and the owner can answer it; Ctrl+C ends it with exit 0. Given a build feature whose tests are running, `engine.status` reports `tests_running`, not `idle`. | FR-2, FR-12 |
+| AC-16 | Given `factory-engine inbox` watching with no open items, when the engine stops, then the command prints "Lost the connection to the engine", counts down "Reconnecting in 1s (attempt 1)", then waits 2 s, 4 s and so on up to 60 s between attempts; when an engine is running again it prints "Reconnected to the engine.", opens a new console session, prints the status lines again and lists an item that opened meanwhile. Ctrl+C during the countdown ends the command with exit 0. | FR-16, FR-14 |
 
 ## 5. Constraints
 - PC terminal only, as F-018. The phone keeps answering through GitHub
@@ -124,7 +128,11 @@ driving the command through its input and output streams.
   record change is on `main`.
 
 ## 6. Edge cases
-- The engine isn't running: the command says so and exits 1.
+- The engine isn't running when the command starts: the command says so
+  and exits 1.
+- The engine stops or restarts after the command connected: it reconnects
+  with a countdown (FR-16); a restart that keeps the old session needs no
+  new console session.
 - An item is withdrawn by the engine while on screen: "Withdrawn by the
   engine: <reason>"; nothing is sent.
 - The issue was never opened (GitHub down when filed): the item is still
@@ -206,6 +214,7 @@ after the owner approves their text:
 | 5 | 2026-11-14 | A-1, A-2, SR-1 to SR-3 and SR-5 to SR-7 approved as written; H-0245 names `inbox.open` and `inbox.close`; exact H-0245 to H-0248 text drafted | Owner, 2026-11-14 10:29Z (decision card) |
 | 6 | 2026-11-14 | H-0245 to H-0248 approved as written; readiness gate passed (all six checks); spec signed off, status Approved | Owner, 2026-11-14 10:30Z and 10:31Z (decision cards) |
 | 7 | 2026-11-15 | From the owner's request 04:37Z: the inbox console stays open with the factory's status when nothing waits (FR-2); build-stage activity codes, so a building feature is never shown as idle (FR-12); AC-15; H-0251, H-0252 | Owner, 2026-11-15 04:46Z (decision card) |
+| 8 | 2026-11-20 | From the owner's request 18:20Z: the inbox console reconnects after an engine restart, with a backoff countdown (FR-16, AC-16; FR-14 and the edge case narrowed to the start) | Pending owner approval |
 
 ## 13. Open questions
 | Id | Question | Category | Status |

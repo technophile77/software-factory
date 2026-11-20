@@ -37,3 +37,10 @@
 - After merging `main` (F-020 #79, #84): the above plus `test/f020-inbox-json.test.ts` and `acceptance/mcp-tools.test.ts` (its operation list now includes the five `inbox_*` operations): 167 pass. The engine-folder reader now checks and reads one open file, not a path twice (CodeQL file-system race alert).
 - `npm run typecheck`, `python3 scripts/check_docs.py`: pass.
 - Not run here: Windows (AC-14). The console methods use the same pipe code the interview already uses on Windows CI (`terminal-pipe.test.ts`); CI runs the platform suite.
+
+## v8: reconnect after an engine restart (FR-16, 2026-11-20)
+
+- `engine/src/terminal/interview.ts`: the inbox watch and item list treat `engine_not_running`, `engine_unreachable`, `connection_lost` and `timeout` as the engine being away. `reconnect()` prints the loss once, counts down to each `engine.status` attempt on one redrawn line (1 s doubling to 60 s, no limit, Ctrl+C stops), and says when it is back. `inboxItems()` opens the console session again, once per call, when the restarted engine no longer knows it (`session_expired`, or `not_open` after the client forgot it). A missing engine at start still exits 1.
+- `engine/src/cli.ts`: the terminal's `redraw` draws that line in place.
+- Interpretation: a `timeout` also starts the countdown. A busy engine answers again at the next attempt, a second later, and keeps its session, so nothing is reopened.
+- Tests run locally: `test/acceptance/terminal-f021.test.ts` (AC-16, two new tests) and `test/acceptance/terminal-f018.test.ts`, 45 passed; `tsc --noEmit` clean.

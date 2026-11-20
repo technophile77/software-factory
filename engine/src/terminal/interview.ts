@@ -24,6 +24,11 @@ export interface TerminalIo {
   busy?(label: string, delayMs: number): () => void;
   /** True once the owner pressed Ctrl+C, so a wait with no prompt can stop too. */
   aborted?(): boolean;
+  /**
+   * Draws `text` on one line redrawn in place, over what it drew last; an
+   * empty string clears it (F-021 FR-16). Absent where nothing is drawn.
+   */
+  redraw?(text: string): void;
 }
 
 export interface Timing {
@@ -95,6 +100,13 @@ const WATCH_MS = 5000;
 const NEXT_EVERY_MS = 15_000;
 const ASK_AFTER_MS = 30 * 60_000;
 const BUSY_DELAY_MS = 1000;
+
+/** Errors that mean the engine went away; the inbox console waits for it to come back (F-021 FR-16). */
+const ENGINE_GONE = new Set(["engine_not_running", "engine_unreachable", "connection_lost", "timeout"]);
+const RECONNECT_FIRST_MS = 1000;
+const RECONNECT_MAX_MS = 60_000;
+
+const errorOf = (r: Obj): Obj => (r.error ?? {}) as Obj;
 
 const BUSY: Partial<Record<Operation, string>> = {
   status: "Connecting to the engine", start: "Sending your request", list: "Getting the feature list",
@@ -570,7 +582,7 @@ export class TerminalInterview {
         return 0;
       }
       for (;;) {
-        const r = await this.run("inbox_list", { feature: CONSOLE_KEY });
+        const r = await this.inboxItems((op, req) => this.run(op, req));
         if (r.ok !== true) {
           this.show(r);
           return 1;
@@ -611,17 +623,23 @@ export class TerminalInterview {
     let shown = "";
     for (;;) {
       if (this.io.aborted?.()) throw new Stop();
-      const st = await this.status();
+      const st = await this.runner("status", {});
       if (st.ok !== true) {
-        this.show(st);
-        return 1;
+        const failed = ENGINE_GONE.has(String(errorOf(st).code)) ? await this.reconnect() : st;
+        if (failed) {
+          this.show(failed);
+          return 1;
+        }
+        // The status is printed again, so the owner sees where the restarted factory stands.
+        shown = "";
+        continue;
       }
       const text = statusLines(st).join("\n");
       if (text !== shown) {
         this.say(`\n[${new Date(this.timing.now()).toTimeString().slice(0, 8)}]\n${text}`);
         shown = text;
       }
-      const r = await this.runner("inbox_list", { feature: CONSOLE_KEY });
+      const r = await this.inboxItems(this.runner);
       if (r.ok !== true) {
         this.show(r);
         return 1;
@@ -632,6 +650,65 @@ export class TerminalInterview {
       }
       await this.timing.sleep(WATCH_MS);
     }
+  }
+
+  /**
+   * The open items. An engine that went away is waited for, and a console
+   * session the restarted engine doesn't know is opened again, once per call
+   * (F-021 FR-16).
+   */
+  private async inboxItems(call: Runner): Promise<Obj> {
+    let reopened = false;
+    for (;;) {
+      const r = await call("inbox_list", { feature: CONSOLE_KEY });
+      if (r.ok === true) return r;
+      const err = errorOf(r);
+      if (ENGINE_GONE.has(String(err.code))) {
+        const failed = await this.reconnect();
+        if (failed) return failed;
+        continue;
+      }
+      if (reopened || (err.name !== "session_expired" && err.code !== "not_open")) return r;
+      reopened = true;
+      this.consoleOpen = false;
+      // openConsole has shown why it failed.
+      if (!(await this.openConsole())) return { ok: false };
+    }
+  }
+
+  /**
+   * F-021 FR-16: waits for the engine to come back, counting down to each
+   * attempt on one redrawn line; the wait doubles from 1 s up to 60 s, with
+   * no limit on attempts. Returns null once `engine.status` answers, or the
+   * failure when it is something other than the engine being away.
+   */
+  private async reconnect(): Promise<Obj | null> {
+    this.say(`\n[${this.clock()}] Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.`);
+    let wait = RECONNECT_FIRST_MS;
+    try {
+      for (let attempt = 1; ; attempt++) {
+        for (let left = wait; left > 0; left -= 1000) {
+          if (this.io.aborted?.()) throw new Stop();
+          const text = `Reconnecting in ${Math.ceil(left / 1000)}s (attempt ${attempt})`;
+          if (this.io.redraw) this.io.redraw(text);
+          else if (left === wait) this.say(text);
+          await this.timing.sleep(Math.min(1000, left));
+        }
+        this.io.redraw?.(`Reconnecting (attempt ${attempt})`);
+        const st = await this.runner("status", {});
+        if (st.ok === true) break;
+        if (!ENGINE_GONE.has(String(errorOf(st).code))) return st;
+        wait = Math.min(wait * 2, RECONNECT_MAX_MS);
+      }
+    } finally {
+      this.io.redraw?.("");
+    }
+    this.say(`[${this.clock()}] Reconnected to the engine.`);
+    return null;
+  }
+
+  private clock(): string {
+    return new Date(this.timing.now()).toTimeString().slice(0, 8);
   }
 
   private async openConsole(): Promise<boolean> {

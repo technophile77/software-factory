@@ -166,6 +166,7 @@ function terminalIo(ascii: boolean): TerminalIo & { close(): void } {
     }),
     close: () => rl.close(),
     busy: (label, delayMs) => spinner(label, delayMs, ascii),
+    redraw: (text) => process.stdout.write(`\r\x1b[2K${text}`),
     aborted: () => ended,
   };
 }
