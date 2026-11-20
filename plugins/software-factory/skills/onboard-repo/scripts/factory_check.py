@@ -1536,6 +1536,22 @@ def _check_role(where, rule, errors):
                     errors.append(f"{where}.tools.allow has unknown tools: {', '.join(unknown)}")
 
 
+def _check_source_globs(where, rule, errors):
+    # Owner, 2026-11-20 (mesbot D-0003): the developer's allow list is file-type
+    # patterns for where code lives, never `**` and never a list of the files that
+    # exist today, which refuses every new module a spec allows.
+    allow = ((rule or {}).get("write") or {}).get("allow") if isinstance(rule, dict) else None
+    if not isinstance(allow, list) or not allow:
+        return
+    if "**" in allow:
+        errors.append(f"{where}.write.allow has `**`; use source globs for where the code lives (e.g. `src/**/*.ts`, `*.py`)")
+        return
+    source = [g for g in allow if isinstance(g, str) and not g.startswith("docs/")]
+    if source and not any("*" in g for g in source):
+        errors.append(f"{where}.write.allow lists files, not source globs, so the developer can't add a module the spec allows; "
+                      "use file-type patterns for where the code lives (e.g. `src/**/*.ts`, `*.py`)")
+
+
 def _check_may_request(where, role, value, errors):
     allowed = MAY_REQUEST.get(role)
     if allowed is None:
@@ -1608,6 +1624,8 @@ def validate_policy(data, agents):
         if role not in known:
             errors.append(f"policy.roles.{role} is not a known agent")
         _check_role(f"policy.roles.{role}", rule, errors)
+        if role == "software-developer":
+            _check_source_globs(f"policy.roles.{role}", rule, errors)
         if isinstance(rule, dict) and "may_request" in rule:
             _check_may_request(f"policy.roles.{role}", role, rule["may_request"], errors)
     for i, repo in enumerate(data.get("repos") or []):
@@ -1630,6 +1648,8 @@ def validate_policy(data, agents):
                 errors.append(f"repos[{i}].policy.roles.{role}.may_request is not allowed; "
                               "who may request a role is set in the project policy only")
             _check_role(f"repos[{i}].policy.roles.{role}", rule, errors)
+            if role == "software-developer":
+                _check_source_globs(f"repos[{i}].policy.roles.{role}", rule, errors)
     if errors:
         return errors
     # Any role that can write outside the factory's own records must be denied change-controlled files.
