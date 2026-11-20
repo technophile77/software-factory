@@ -2090,8 +2090,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         // H-0183 (channel v1.5): the items the feature waits on, only when there are any.
         const stage = f.stage() || INTERVIEW_STAGE;
         const build = isBuildStage(stage) ? buildMachine(f.state.build.actions).machine.state() : undefined;
-        const activity = activityOf({ stage, paused: f.paused, running: jobs.has(f), statuses: f.state.list().map((it) => it.status), decisions: waiting, build });
-        return { id: f.id, project: p.manifest!.name, stage, active_agents: jobs.has(f) ? 1 : 0, activity, ...(waiting.length ? { waiting_on: waiting } : {}) };
+        // Issue #124: an analyst session that finished its turn and waits for the owner's reply isn't working.
+        const working = jobs.has(f) && !jobs.get(f)!.turns?.idle;
+        const activity = activityOf({ stage, paused: f.paused, running: working, statuses: f.state.list().map((it) => it.status), decisions: waiting, build });
+        return { id: f.id, project: p.manifest!.name, stage, active_agents: working ? 1 : 0, activity, ...(waiting.length ? { waiting_on: waiting } : {}) };
       })),
     }),
     pause: (fid) => {

@@ -39,8 +39,20 @@ const turn = (content: string): UserTurn => ({ type: "user", message: { role: "u
 export class TurnQueue implements AsyncIterable<UserTurn> {
   private closed = false;
   private wake: (() => void) | null = null;
+  private given = 0;
+  private ended = 0;
 
   constructor(private readonly f: FeatureInterview, private readonly first: string | null) {}
+
+  /** The session finished a turn (its `result` message). */
+  turnEnded(): void {
+    this.ended++;
+  }
+
+  /** Issue #124: every turn handed to the session has finished, so the analyst is waiting for the owner, not working. */
+  get idle(): boolean {
+    return this.given > 0 && this.ended >= this.given;
+  }
 
   close(): void {
     this.closed = true;
@@ -48,11 +60,15 @@ export class TurnQueue implements AsyncIterable<UserTurn> {
   }
 
   async *[Symbol.asyncIterator](): AsyncIterator<UserTurn> {
-    if (this.first) yield turn(this.first);
+    if (this.first) {
+      this.given++;
+      yield turn(this.first);
+    }
     while (!this.closed) {
       if (!this.f.paused && this.f.state.undelivered.length) {
         const t = await this.f.takeTurn().catch(() => null);
         if (t && !this.closed) {
+          this.given++;
           yield turn(t.message);
           continue;
         }

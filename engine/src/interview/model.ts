@@ -231,10 +231,18 @@ export class InterviewState {
         this.order.push(item.id);
         break;
       }
+      // Before the fix a revision with a question type was written with that type as its event type, so those
+      // events read as revisions too; one without took the event type as its question type (issue #130).
+      case "gap":
+      case "conflict":
+      case "ambiguity":
       case "item_revised": {
         const item = this.items.get(e.item as string);
-        if (!item) break;
-        const next = content(e as unknown as Record<string, unknown>);
+        if (!item || typeof e.revision !== "number") break;
+        const raw = e as unknown as Record<string, unknown>;
+        const qt = raw.question_type ?? (e.type === "item_revised" ? undefined : e.type);
+        const { type: _event, question_type: _qt, ...fields } = raw;
+        const next = content(qt === undefined ? fields : { ...fields, type: qt });
         delete item.suggested;
         delete item.options;
         delete item.findings;

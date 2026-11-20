@@ -398,6 +398,8 @@ export interface SessionEvents {
   onSessionId?(id: string): void;
   /** SR-21: every WebSearch query, from the message stream. */
   onWebSearch?(query: string): void;
+  /** Each finished turn (a `result` message). */
+  onTurnEnd?(): void;
   /** Given, the session's wall-time cap runs on it, so an ask can hold it. */
   wall?(onExpire: () => void): WallTimer;
 }
@@ -432,6 +434,7 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
         out.outputTokens += msg.usage?.output_tokens ?? 0;
         if (caps.maxOutputTokens !== undefined && out.outputTokens > caps.maxOutputTokens) stop("output tokens");
       } else if (m.type === "result") {
+        ev.onTurnEnd?.();
         const r = m as Extract<SdkMessage, { type: "result" }>;
         out.turns = r.num_turns ?? out.turns;
         out.costUsd = r.total_cost_usd ?? out.costUsd;
