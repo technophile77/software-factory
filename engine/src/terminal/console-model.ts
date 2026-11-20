@@ -44,6 +44,19 @@ export interface Key {
   end?: boolean;
 }
 
+/** A running feature as the side pane shows it, in the command's own words (FR-15). */
+export interface FeatureRow {
+  id: string;
+  stage: string;
+  activity: string;
+}
+
+/** The side pane (FR-15): a column on the right of the window, or a strip under it on narrow terminals. */
+export interface Pane {
+  side: boolean;
+  lines: string[];
+}
+
 /** One drawn screen: everything the screen layer needs, already fitted to its size. */
 export interface Frame {
   tooSmall: boolean;
@@ -54,12 +67,16 @@ export interface Frame {
   prompt: string;
   input: string;
   hints: string;
+  pane: Pane;
 }
 
 export const MIN_COLS = 60;
 export const MIN_ROWS = 16;
 /** Title line, tab row, the window's borders and title, the answer bar's two lines and its borders. */
 export const CHROME_ROWS = 9;
+/** From this width the side pane is a column on the right (FR-15). */
+export const SIDE_FROM_COLS = 100;
+export const PANE_COLS = 32;
 const MAX_CONVERSATION = 2000;
 const MAX_LOG = 1000;
 const MAX_PER_AGENT = 2000;
@@ -96,6 +113,7 @@ export class ConsoleModel {
   stale = false;
   busy: string | null = null;
   statusRows: string[] = [];
+  features: FeatureRow[] = [];
   inboxCount = 0;
   transcriptOn: boolean;
   agents: Agent[] = [];
@@ -158,7 +176,8 @@ export class ConsoleModel {
     this.changed();
   }
 
-  setStatus(rows: string[], inboxCount: number | null): void {
+  setStatus(rows: string[], inboxCount: number | null, features: FeatureRow[] = []): void {
+    this.features = features;
     const before = new Map(this.statusRows.map((r) => [r.split(":")[0], r]));
     for (const r of rows) {
       const id = r.split(":")[0];
@@ -353,12 +372,63 @@ export class ConsoleModel {
     }
   }
 
+  private agentLine(a: Agent): string {
+    const mins = Math.max(0, Math.floor((this.now() - Date.parse(a.started_at)) / 60_000));
+    return `${a.feature} ${a.role} ${a.ended ? "ended" : `${mins} min`}`;
+  }
+
+  /** FR-15: what the side pane shows, fitted to `height` lines of `width` characters. */
+  private pane(side: boolean, width: number, height: number): Pane {
+    const feats = this.features;
+    const agents = this.agents;
+    if (side) {
+      // Each section keeps its header; when both overflow, they share the lines.
+      const agentRows = Math.min(agents.length || 1, Math.max(1, Math.floor(height / 2) - 1));
+      const featRows = Math.max(1, height - agentRows - 3);
+      const featLines = feats.length ? feats.flatMap((f) => [`${f.id} ${f.stage}`.trim(), `  ${f.activity}`]) : ["No features running"];
+      const agentLines = agents.length ? agents.map((a) => this.agentLine(a)) : ["No agents running"];
+      const cut = (lines: string[], max: number, per: number) => {
+        if (lines.length <= max) return lines;
+        const keep = Math.max(0, Math.floor((max - 1) / per) * per);
+        return [...lines.slice(0, keep), `+${(lines.length - keep) / per} more`];
+      };
+      const lines = [`Features (${feats.length})`, ...cut(featLines, featRows, feats.length ? 2 : 1), "", `Agents (${agents.filter((a) => !a.ended).length})`, ...cut(agentLines, agentRows, 1)];
+      return { side, lines: lines.slice(0, height) };
+    }
+    // A strip: one line of features, the rest agents, each item cut with "+<n> more" where it doesn't fit.
+    const join = (head: string, items: string[]) => {
+      if (!items.length) return `${head}: none`;
+      let line = `${head}:`;
+      for (let i = 0; i < items.length; i++) {
+        const next = `${line}${i ? "," : ""} ${items[i]}`;
+        const rest = items.length - i - 1;
+        if (Array.from(next).length + (rest ? ` +${rest} more`.length : 0) > width) return `${line} +${items.length - i} more`;
+        line = next;
+      }
+      return line;
+    };
+    const lines = [join("Features", feats.map((f) => `${f.id} ${f.stage}`.trim()))];
+    const room = height - 1;
+    const items = agents.map((a) => this.agentLine(a));
+    if (room <= 1 || items.length <= 1) lines.push(join("Agents", items));
+    else {
+      const shown = items.length > room ? items.slice(0, room - 1) : items;
+      lines.push(...shown.map((t, i) => `${i ? "        " : "Agents: "}${t}`));
+      if (items.length > room) lines.push(`        +${items.length - shown.length} more`);
+    }
+    while (lines.length < height) lines.push("");
+    return { side, lines };
+  }
+
   frame(marker: string): Frame {
     const tooSmall = this.cols < MIN_COLS || this.rows < MIN_ROWS;
     const sel = this.agents.find((a) => a.run === this.selectedRun);
     const windowTitle = this.tab === "transcript" && sel ? `Transcript: ${sel.feature} ${sel.role}${sel.ended ? " (ended)" : ""}` : LABELS[this.tab];
-    const width = Math.max(1, this.cols - 2);
-    const height = Math.max(1, this.rows - CHROME_ROWS);
+    const side = this.cols >= SIDE_FROM_COLS;
+    const stripLines = side ? 0 : this.rows >= 24 ? 4 : 2;
+    const width = Math.max(1, this.cols - 2 - (side ? PANE_COLS : 0));
+    const height = Math.max(1, this.rows - CHROME_ROWS - (side ? 0 : stripLines + 2));
+    const pane = side ? this.pane(true, PANE_COLS - 2, this.rows - CHROME_ROWS + 1) : this.pane(false, this.cols - 2, stripLines);
     const wrapped = this.content(this.tab).flatMap((l) => {
       // A wrapped piece of engine text keeps the marker, so no line of it looks like the command's own (SR-1).
       const marked = marker && l.startsWith(marker);
@@ -381,6 +451,6 @@ export class ConsoleModel {
     const hints = this.prompt !== null
       ? "Enter sends  |  Tab: next window  |  Up/Down scroll  |  Ctrl+C quits"
       : `Tab or 1-${tabs.length}: windows  |  Up/Down ${this.tab === "agents" ? "pick an agent" : "scroll"}  |  v: ${this.transcriptOn ? "hide" : "show"} transcript  |  q: quit`;
-    return { tooSmall, title, tabs, windowTitle, lines, prompt: this.prompt ?? "", input: this.input, hints };
+    return { tooSmall, title, tabs, windowTitle, lines, prompt: this.prompt ?? "", input: this.input, hints, pane };
   }
 }

@@ -455,12 +455,15 @@ describe.runIf(IS_UNIX)("F-024 windowed console", () => {
   test("AC-4: an item opened from the Inbox is shown whole, marked, and its pick recorded; Status shows each feature", async () => {
     const r = await windowedRun({ answers: ["1", "1"], until: () => answers().length > 0 });
     expect(answers()).toEqual([expect.objectContaining({ item: "D-0007", action: "choose:A" })]);
-    expect(r.model.statusRows).toEqual(["F-003: Analyst is researching", "F-007: Developer is working"]);
+    expect(r.model.statusRows).toEqual(["F-003 (Interview): Analyst is researching", "F-007 (Building): Developer is working"]);
+    // FR-15: the side pane's features, with their stage.
+    expect(r.model.frame(MARK).pane.lines.join("\n")).toContain("F-003 Interview, F-007 Building");
     r.model.tab = "inbox";
     const shown = r.frame().lines.join("\n");
     expect(r.model.frame(MARK).windowTitle).toBe("Inbox");
     expect(shown + "").toBeDefined();
     // The conversation keeps the item's text with the engine-text marker.
+    r.model.resize(80, 40);
     r.model.key("", { home: true });
     expect(r.frame().lines.join("\n")).toContain(`${MARK}F-002 has had 3 Security and Testability Review runs.`);
   });
@@ -496,16 +499,26 @@ describe.runIf(IS_UNIX)("F-024 windowed console", () => {
     expect(r.frame().lines.join("\n")).toContain("$0.42");
   });
 
-  test("AC-6: without -v and without the Agents window, the transcript is never read", async () => {
+  test("AC-6: without -v and without the Agents window, the transcript is read only with the status, for the side pane's agents", async () => {
     items = [];
     let looks = 0;
+    let reads = 0;
     const status = engine.hooks["engine.status"]!;
     engine.hooks["engine.status"] = (conn, msg) => {
       looks++;
       return status(conn, msg);
     };
-    await windowedRun({ answers: [], until: () => looks >= 4 });
-    expect(engine.methods()).not.toContain("engine.transcript");
+    const transcript = engine.hooks["engine.transcript"]!;
+    engine.hooks["engine.transcript"] = (conn, msg) => {
+      reads++;
+      return transcript(conn, msg);
+    };
+    const r = await windowedRun({ answers: [], until: (m) => looks >= 6 && m.agents.length === 2 });
+    expect(r.model.tab).not.toBe("transcript");
+    // One read per poller status at most (the watch loop reads the status too), never once a second.
+    expect(reads).toBeGreaterThan(0);
+    expect(reads).toBeLessThanOrEqual(looks);
+    expect(r.model.frame(MARK).pane.lines.join("\n")).toContain("Agents: F-003 requirements-analyst");
   });
 
   test("AC-8: an engine restart marks the windows stale, counts down in the title, and the Log has both events", async () => {
@@ -534,6 +547,9 @@ describe.runIf(IS_UNIX)("F-024 windowed console", () => {
     const log = r.frame().lines.join("\n");
     expect(log).toContain("Lost the connection to the engine");
     expect(log).toContain("Connected to the engine again");
+    // AC-14: once a status read answers after the reconnect, the title is not marked stale.
+    expect(r.frame().title).not.toContain("(stale)");
+    expect(r.frame().title).toContain("engine connected");
   });
 
   test("AC-9: the interview command shows the waiting assumption in the Inbox window and sends the pick", async () => {

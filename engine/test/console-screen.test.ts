@@ -133,4 +133,30 @@ describe("F-024 windowed console drawing", () => {
     await tick();
     expect(model.quit).toBe(true);
   });
+
+  it("AC-13: the side pane lists the features with their stage and the agent, on the right when wide, under the window when narrow", async () => {
+    const { out, model } = draw(120, 30);
+    model.setStatus(["F-001 (Interview): Waiting for your answer", "F-003 (Building): Developer is working"], 0, [
+      { id: "F-001", stage: "Interview", activity: "Waiting for your answer" },
+      { id: "F-003", stage: "Building", activity: "Developer is working" },
+    ]);
+    model.setAgents([{ run: "R-000000000001", feature: "F-003", role: "software-developer", started_at: new Date().toISOString() }]);
+    model.toggleTranscript();
+    await tick();
+    let f = out.last();
+    expect(model.tab).toBe("transcript");
+    expect(f).toContain("Features (2)");
+    expect(f).toContain("F-001 Interview");
+    expect(f).toContain("F-003 Building");
+    expect(f).toContain("F-003 software-developer 0 min");
+    // On the right: the pane's lines share a row with the window's border.
+    expect(f.split("\n").some((l) => /│.*│.*F-003 Building/.test(l))).toBe(true);
+    fits(f, 120, 30);
+    out.resize(80, 24);
+    await tick();
+    f = out.last();
+    expect(f).toContain("Features: F-001 Interview, F-003 Building");
+    expect(f).toContain("Agents: F-003 software-developer 0 min");
+    fits(f, 80, 24);
+  });
 });

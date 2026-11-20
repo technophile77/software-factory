@@ -7,13 +7,18 @@
 import { CONSOLE_KEY } from "../mcp/operations";
 import { clean } from "../mcp/text";
 import { type Agent, ConsoleModel, type TranscriptEntry } from "./console-model";
-import { type Runner, type TerminalIo, type Timing, statusLines } from "./interview";
+import { type Runner, type TerminalIo, type Timing, featureRows, statusLines } from "./interview";
 
 type Obj = Record<string, unknown>;
 
 const STATUS_EVERY_MS = 5000;
 const TICK_MS = 1000;
 const AWAY = new Set(["engine_not_running", "engine_unreachable", "connection_lost", "timeout"]);
+
+/** A status the console read, in the Status window and the side pane (FR-4, FR-15); `count` is null when the inbox wasn't read. */
+function showStatus(model: ConsoleModel, st: Obj, count: number | null): void {
+  model.setStatus(statusLines(st, true), count, featureRows(st));
+}
 
 export function windowedIo(model: ConsoleModel, timing: Timing): TerminalIo {
   return {
@@ -35,13 +40,15 @@ export function windowedIo(model: ConsoleModel, timing: Timing): TerminalIo {
     },
     aborted: () => model.quit,
     redraw: (text) => model.away(text || null),
+    status: (st) => showStatus(model, st, null),
   };
 }
 
 /**
  * Reads the engine for the windows that aren't the command's own flow:
  * status every 5 seconds, and the agents' transcript once a second while the
- * Agents or Transcript window is shown (FR-6, FR-7). Each read is a separate
+ * Agents or Transcript window is shown and with each status otherwise, so the
+ * side pane's agents stay current (FR-6, FR-7, FR-15). Each read is a separate
  * call through the same operations, so it never holds up the command.
  */
 export class Poller {
@@ -68,7 +75,8 @@ export class Poller {
         sinceStatus = 0;
         await this.status();
       }
-      if (this.model.wantsTranscript()) await this.transcript();
+      // FR-7, FR-15: once a second while Agents or Transcript is shown; otherwise with the status, for the side pane's agents.
+      if (this.model.wantsTranscript() || sinceStatus === 0) await this.transcript();
       await this.timing.sleep(TICK_MS);
       sinceStatus += TICK_MS;
     }
@@ -85,7 +93,7 @@ export class Poller {
       const r = await this.runner("inbox_list", { feature: CONSOLE_KEY });
       if (r.ok === true && Array.isArray(r.items)) count = r.items.length;
     }
-    this.model.setStatus(statusLines(st), count);
+    showStatus(this.model, st, count);
   }
 
   async transcript(): Promise<void> {
