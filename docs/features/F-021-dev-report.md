@@ -47,3 +47,8 @@
 - `engine/src/cli.ts`: the terminal's `redraw` draws the countdown line in place.
 - Interpretation: a `timeout` also starts the countdown. A busy engine answers again at the next attempt and keeps its session, so nothing is reopened.
 - Tests run locally: `test/acceptance/terminal-f021.test.ts` and `terminal-f018.test.ts` (48 passed, 6 new or changed: AC-16, AC-17, F-018 AC-10 now waits); `test/terminal-pipe.test.ts` and the MCP suites that drive the same operations (`mcp-f005`, `mcp-f006`, `mcp-e2e`, `mcp-tools`, `mcp-f009`: 228 passed); `tsc --noEmit` clean.
+
+## v9: the inbox answers waiting interview questions (FR-17, 2026-11-20)
+
+- `engine/src/terminal/interview.ts`: `waiting_for_owner` reads "Waiting for your answer"; the inbox watch offers a feature that waits for the owner's answer and runs its interview session in place (`answerOnly`), ending it as soon as nothing more waits; Not now is remembered until the feature stops waiting.
+- Tests: `test/acceptance/terminal-f021.test.ts` AC-18 (answered in place, then back to watching; Not now asks once). `terminal-f018` AC-14 now expects the new wording.

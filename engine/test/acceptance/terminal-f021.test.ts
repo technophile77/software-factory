@@ -216,6 +216,40 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(engine.methods()).toContain("interview.close");
   });
 
+  /** engine.status: F-1 waits for the owner's answer until a reply is recorded, then its analyst works. */
+  function askingStatus(): void {
+    engine.hooks["engine.status"] = (conn, msg) => {
+      const answered = engine.calls("interview.reply").length > 0;
+      conn.respond(msg, ["result", { version: "1.4", capabilities: ["document", "inbox"], uptime_s: 1,
+        features: [{ id: "F-1", stage: "requirements_interview", active_agents: answered ? 1 : 0, activity: answered ? "analyst_writing_spec" : "waiting_for_owner" }] }]);
+      return true;
+    };
+  }
+
+  test("AC-18 (v9 FR-17): a feature's waiting question is offered, answered in place, and the console goes back to watching", async () => {
+    items = [];
+    engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["CSV"] })]);
+    askingStatus();
+    const { code, s } = await inbox(["1", "1"]);
+    expect(code).toBe(0);
+    expect(s.out).toContain("F-1: Waiting for your answer");
+    expect(s.out).toContain("F-1 has a question waiting for you.");
+    expect(engine.calls("interview.reply").map((m) => m.params)).toEqual([expect.objectContaining({ item: "Q1" })]);
+    expect(s.out).toContain("back to watching the factory");
+    expect(s.out).toContain("F-1: Analyst is writing the specification");
+    expect(s.out).not.toContain("Getting your next question");
+  });
+
+  test("AC-18 (v9 FR-17): Not now sends nothing and isn't asked again while the feature keeps waiting", async () => {
+    items = [];
+    engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["CSV"] })]);
+    askingStatus();
+    const { code, s } = await inbox(["2"]);
+    expect(code).toBe(0);
+    expect(s.out.split("has a question waiting for you").length).toBe(2);
+    expect(engine.calls("interview.reply")).toEqual([]);
+  });
+
   const STATUS = { version: "1.4", capabilities: ["document", "inbox"], uptime_s: 1, features: [{ id: "F-002", stage: "orchestrator_review", active_agents: 1, activity: "tests_running" }] };
 
   test("AC-16 (v8 FR-16): an engine restart is waited out with a countdown, the console session opened again, and the watch carries on", async () => {

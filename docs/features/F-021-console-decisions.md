@@ -8,8 +8,10 @@
   Alex, 2026-11-15 ("when there is nothing waiting for a decision leave it
   connected, so I can watch the status of the factory there"); v8: Alex,
   2026-11-20 ("try and reconnect to the factory if it restarts instead of
-  giving up ... with an exponential backoff countdown timer")
-- **Spec version:** 8
+  giving up ... with an exponential backoff countdown timer"); v9: Alex,
+  2026-11-20 (decision card "Yes, answer them in the inbox", after the inbox
+  showed "Getting your next question" while F-003's Q-002 waited unseen)
+- **Spec version:** 9
 - **Depends on:** F-011 (inbox on GitHub issues, ADR 0022), F-016 (answers
   and their effects, Code Review M1 check), F-018 (`factory-engine interview`,
   live status), F-020 (inbox records as JSON, `inbox-record/4.0`)
@@ -91,6 +93,7 @@ answer from either path is the one recorded.
 | FR-14 | Exit codes as F-018 FR-11: 0 when the owner stopped or nothing was left, 1 when the engine refused or failed for a reason other than being away (an engine that is away is waited for, FR-16), 2 on bad arguments. |
 | FR-15 | The engine README and the root README describe the command beside `interview`; the engine's `--help` lists it. |
 | FR-16 | **Waits for the engine and reconnects after a restart (v8).** Both `factory-engine inbox` and `factory-engine interview` treat a call that finds the engine away (not running, unreachable, connection dropped, or timed out) as something to wait out, not a reason to exit. At start the command prints the time and "The engine isn't running. Waiting for it to start; press Ctrl+C to stop."; later it prints the time and "Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.". It then tries `engine.status` again after 1 s, doubling the wait each time up to 60 s, without limit. While it waits, one line redrawn in place counts down each second: "Reconnecting in <n>s (attempt <k>)". When `engine.status` answers, it prints the time and "Connected to the engine." (at start) or "Reconnected to the engine.", and carries on. The inbox opens a new console session if the engine no longer knows the old one, prints the status lines again and lists any open items. The interview opens the feature again without asking if the engine no longer knows its session, and goes on waiting for or showing the next item. The project's sign-in setting applies to a new session (FR-13). Any other failure ends the command as FR-14. Nothing is resent on its own: a reply or answer that was in flight is handled as F-018 FR-13 (the command says it may be recorded and asks). For an engine that is away, this replaces F-018 FR-11's exit code 1 and F-018 AC-10. |
+| FR-17 | **The inbox console answers waiting interview questions too (v9).** The `waiting_for_owner` activity reads "Waiting for your answer" in both commands (it read "Getting your next question"). While `factory-engine inbox` watches (FR-2), a feature whose activity is `waiting_for_owner` is offered once: "<feature> has a question waiting for you." with "Answer it here" and "Not now". Answer it here opens the feature's interview session, as `factory-engine interview <feature>` does (FR-13 sign-in applies), and shows and sends each waiting item as F-018 does; as soon as no item is waiting (the analyst is working, researching, or the interview is done) it closes that session, says "Nothing more is waiting for you on <feature>; back to watching the factory.", and the watch carries on with the status printed again. Not now sends nothing; the feature isn't offered again until its activity has changed and it waits again. |
 
 ## 4. Acceptance criteria
 Run against a test engine with a fake GitHub (as the F-016 inbox tests),
@@ -115,6 +118,7 @@ driving the command through its input and output streams.
 | AC-15 | Given `factory-engine inbox` with no open items, then the command stays open, prints "F-002: Tests are running" (one line per feature) once and again only when it changes, and when an item opens it lists it and the owner can answer it; Ctrl+C ends it with exit 0. Given a build feature whose tests are running, `engine.status` reports `tests_running`, not `idle`. | FR-2, FR-12 |
 | AC-16 | Given `factory-engine inbox` watching with no open items, when the engine stops, then the command prints "Lost the connection to the engine", counts down "Reconnecting in 1s (attempt 1)", then waits 2 s, 4 s and so on up to 60 s between attempts; when an engine is running again it prints "Reconnected to the engine.", opens a new console session, prints the status lines again and lists an item that opened meanwhile. Given no running engine at start, it prints "The engine isn't running. Waiting for it to start" and counts down the same way. Ctrl+C during a countdown ends the command with exit 0. | FR-16, FR-14 |
 | AC-17 | Given `factory-engine interview` waiting for the analyst, when the engine restarts, then the command counts down as AC-16, says "Reconnected to the engine.", opens the feature again without asking, and shows the item the restarted engine has. Given no running engine at start, it waits as AC-16 and, once one starts, says "Connected to the engine." and runs the interview. | FR-16 |
+| AC-18 | Given `factory-engine inbox` watching with no inbox item open and a feature whose analyst waits for the owner's answer, then the status line reads "<feature>: Waiting for your answer" and the console offers the question; Answer it here shows the item, sends the pick, and once the analyst is working again the console says it is back to watching and prints the new status. Not now sends nothing and doesn't offer the same wait again. | FR-17 |
 
 ## 5. Constraints
 - PC terminal only, as F-018. The phone keeps answering through GitHub

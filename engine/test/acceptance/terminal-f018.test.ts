@@ -402,7 +402,7 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
       () => engine.features.get("F-1")!.items.push(assumption("A1")));
     const { s } = await run(["1", "1"], "F-1");
     const out = s.out;
-    const order = ["Analyst is reviewing your answers", "Analyst is writing the specification", "] Working", "Getting your next question", "Assume A1 holds."];
+    const order = ["Analyst is reviewing your answers", "Analyst is writing the specification", "] Working", "Waiting for your answer", "Assume A1 holds."];
     const at = order.map((t) => out.indexOf(t));
     expect(at.every((x) => x >= 0), out).toBe(true);
     expect([...at].sort((x, y) => x - y)).toEqual(at);
