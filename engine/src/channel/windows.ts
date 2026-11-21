@@ -1,5 +1,4 @@
 import * as crypto from "node:crypto";
-import * as net from "node:net";
 import { Logger } from "../log";
 import type { Handle, WindowsApi } from "../os/ffi";
 import { isOwnerOnlyPipe, ownerOnlyPipeSddl } from "../os/sddl";
@@ -22,9 +21,8 @@ export function pipeName(): string {
  * and not be a process the engine started.
  *
  * Node can't put an ACL on a pipe it creates, so the pipe is the engine's own
- * through the FFI module. Reads poll PeekNamedPipe, which never blocks, so no
- * worker thread is held per connection; only the wait for the next client
- * (ConnectNamedPipe) runs on a koffi worker thread.
+ * through the FFI module. Reads poll PeekNamedPipe, and the wait for the next
+ * client polls a nonblocking ConnectNamedPipe, so no thread is ever held.
  */
 export async function listenPipe(o: {
   name?: string;
@@ -55,6 +53,9 @@ export async function listenPipe(o: {
   };
 
   let current = create(true);
+  // The instance waiting for a client. close() closes it itself: nothing else would, since no
+  // client may ever come, and an open first instance keeps the name taken (the factory lock).
+  let waiting: Handle | null = null;
 
   const serveClient = (h: Handle) => {
     let alive = true;
@@ -102,15 +103,20 @@ export async function listenPipe(o: {
   const loop = async () => {
     while (!closed) {
       const h = current;
+      waiting = h;
       try {
-        await o.os.connectPipe(h);
+        await o.os.connectPipe(h, () => closed);
       } catch {
+        if (waiting === h) waiting = null;
         if (closed) return;
         o.log.warn("The channel pipe stopped accepting clients.");
         return;
       }
+      // close() may have run between the connect and here; it then closed h already.
+      const mine = waiting === h;
+      waiting = null;
       if (closed) {
-        o.os.closePipe(h);
+        if (mine) o.os.closePipe(h);
         return;
       }
       // A fresh instance first, so the next client can connect while this one is checked.
@@ -142,13 +148,15 @@ export async function listenPipe(o: {
     close: async () => {
       closed = true;
       for (const shut of [...open]) shut();
-      // ConnectNamedPipe is still waiting on a worker thread; a client of our own wakes it.
-      await new Promise<void>((resolve) => {
-        const s = net.connect(name);
-        s.on("error", () => resolve());
-        s.on("close", () => resolve());
-        s.on("connect", () => s.destroy());
-      });
+      if (waiting !== null) {
+        const h = waiting;
+        waiting = null;
+        try {
+          o.os.closePipe(h);
+        } catch {
+          // already gone
+        }
+      }
     },
   };
 }
