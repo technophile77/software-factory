@@ -46,8 +46,11 @@ export interface WindowsApi {
   handleSddl(h: Handle): string;
   /** Owner and DACL of a file, as SDDL with the current user named by SID. */
   fileSddl(path: string): string;
-  /** Resolves when a client connects (ConnectNamedPipe on a worker thread). */
-  connectPipe(h: Handle): Promise<void>;
+  /**
+   * Resolves when a client connects. Rejects without touching the handle once `cancelled` returns
+   * true, so the caller may close the handle as soon as it has made `cancelled` true.
+   */
+  connectPipe(h: Handle, cancelled?: () => boolean): Promise<void>;
   pipeClientPid(h: Handle): number;
   processUserSid(pid: number): string;
   /** A live process's parent pid from a Toolhelp snapshot, or null if it isn't running. */
@@ -397,7 +400,7 @@ function windowsApi(): WindowsApi {
         return self(sdToSddl(sd[0], "file SDDL"));
       });
     },
-    connectPipe(h) {
+    connectPipe(h, cancelled) {
       // A blocking ConnectNamedPipe would hold one of libuv's few pool threads per listener for as long as
       // it waits, starving the process's file I/O. Instead the instance listens in nonblocking mode and is
       // polled; Peek succeeds only once a client is connected (ERROR_PIPE_CONNECTED, which koffi can't
@@ -408,6 +411,7 @@ function windowsApi(): WindowsApi {
         };
         let deadPid = 0;
         const tick = () => {
+          if (cancelled?.()) return reject(new FfiError("ConnectNamedPipe"));
           try {
             ConnectNamedPipe(h, null);
             const avail = [0];
