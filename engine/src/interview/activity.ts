@@ -40,7 +40,7 @@ export const BUILD_ACTIVITY: Readonly<Record<string, string>> = {
   closed: "closed",
 };
 
-export function activityOf(o: { stage: string; paused: boolean; running: boolean; statuses: ItemStatus[]; decisions?: string[]; build?: string }): string {
+export function activityOf(o: { stage: string; paused: boolean; running: boolean; statuses: ItemStatus[]; decisions?: string[]; build?: string; stalled?: boolean }): string {
   if (o.paused) return "paused";
   const waiting = o.statuses.some((s) => s === "open" || s === "deferred");
   if (!o.running && o.decisions?.length) return "waiting_for_decision";
@@ -50,6 +50,8 @@ export function activityOf(o: { stage: string; paused: boolean; running: boolean
   if (o.stage === ST_REVIEW_STAGE) return "security_reviewing";
   if (o.stage === READINESS_STAGE) return "readiness_check";
   if (o.stage !== INTERVIEW_STAGE) return "idle";
+  // No analyst job and its last run failed: nothing is queued, so nobody is writing the spec.
+  if (o.stalled && !o.running) return "idle";
   if (o.statuses.includes("researching")) return "analyst_researching";
   // With nothing left for the owner, an analyst at work, or about to be, is writing the spec.
   return waiting ? "analyst_reviewing" : "analyst_writing_spec";
