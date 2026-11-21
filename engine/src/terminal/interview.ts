@@ -203,6 +203,9 @@ export function render(display: string, marker: string): string {
   return out.join("\n");
 }
 
+/** An answer option that only makes sense with the owner's own text, such as "Something else", "Other (describe)" or "Another way:". */
+export const OPEN_OPTION_RE = /^(?:something else|other|another|none of (?:these|the above)|i'?ll describe)\b|(?::|\u2026|\.\.\.)$/i;
+
 /** The question's answer choices: the suggested answer, then each option not equal to it (FR-5). */
 export function answerChoices(item: Item): Array<{ text: string; recommended: boolean }> {
   const out: Array<{ text: string; recommended: boolean }> = [];
@@ -600,7 +603,16 @@ export class TerminalInterview {
         this.say("\nYour answer:");
         const c = await this.choose(choices, true);
         if ("text" in c) return { kind: "answer", text: c.text };
-        if (c.key.startsWith("answer:")) return { kind: "answer", text: answers[Number(c.key.slice(7))]!.text };
+        if (c.key.startsWith("answer:")) {
+          const picked = answers[Number(c.key.slice(7))]!.text;
+          if (!OPEN_OPTION_RE.test(picked.trim())) return { kind: "answer", text: picked };
+          // An option like "Something else" means nothing without the owner's own words.
+          this.say("Type what you have in mind.");
+          const t = await this.text();
+          if (t.trim()) return { kind: "answer", text: `${picked.trim()}: ${t}` };
+          this.say("Nothing was typed, so nothing was sent.");
+          continue;
+        }
         if (c.key === "own") {
           this.say("Type your answer.");
           const t = await this.text();

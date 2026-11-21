@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { Interview } from "../../src/mcp/operations";
 import { realOsApi } from "../../src/os/ffi";
-import { TerminalInterview, render, type Timing } from "../../src/terminal/interview";
+import { OPEN_OPTION_RE, TerminalInterview, render, type Timing } from "../../src/terminal/interview";
 import { FakeEngine, assumption, errorHook, proposal, question, recordThenDrop, sourceConfirmation, type Json } from "./support/mcp-fake-engine";
 import { ENGINE_DIR, IS_UNIX, buildEngine, makeRepo, removeTmp, writeEngineJson } from "./support/mcp-harness";
 import { spawnSync } from "node:child_process";
@@ -298,6 +298,17 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
     const { s } = await run(["1", "1", "Export reports", "", "the export issue", "example-org/acme-web#25", "2"]);
     expect(s.out).toContain("That isn't owner/repo#number");
     expect(engine.calls("feature.start")[0]!.params).toEqual({ request: "Export reports", issue: "example-org/acme-web#25" });
+  });
+
+  test("a catch-all option such as \"Something else\" asks for the owner's text and sends both", async () => {
+    engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["CSV", "Something else (describe it)"] })]);
+    // 2 is "Something else"; an empty answer sends nothing and asks again.
+    await run(["2", "", "2", "Excel files", "with one sheet", ""], "F-1");
+    expect(replies()).toEqual([expect.objectContaining({ item: "Q1", kind: "answer", text: "Something else (describe it): Excel files\nwith one sheet" })]);
+    expect(OPEN_OPTION_RE.test("Other")).toBe(true);
+    expect(OPEN_OPTION_RE.test("Another approach:")).toBe(true);
+    expect(OPEN_OPTION_RE.test("Otherwise none")).toBe(false);
+    expect(OPEN_OPTION_RE.test("CSV")).toBe(false);
   });
 
   test("AC-11: an existing feature from the list", async () => {
