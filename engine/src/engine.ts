@@ -1239,10 +1239,19 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           const main = await git.revParse(p.real!, "refs/heads/main");
           if (!main) throw new Error("the config repo has no main branch");
           const stored = doc ? await storeDocument(p, fid, main, doc) : null;
-          await git.run(p.real!, ["update-ref", `refs/heads/${branch}`, stored?.commit ?? main, "0".repeat(40)]);
+          const tip = stored?.commit ?? main;
+          await git.run(p.real!, ["update-ref", `refs/heads/${branch}`, tip, "0".repeat(40)]);
           const f = newFeature(p, fid);
           const document = stored && doc ? documentMeta(fid, doc, stored.blob) : null;
-          await f.exclusive(() => f.append([{ type: "feature_started", feature: fid, title: title(request), branch, request, ...(document ? { document } : {}), ...(source ? { issue: source } : {}) }], "feature requested"));
+          try {
+            await f.exclusive(() => f.append([{ type: "feature_started", feature: fid, title: title(request), branch, request, ...(document ? { document } : {}), ...(source ? { issue: source } : {}) }], "feature requested"));
+          } catch (e) {
+            // No transcript means no feature: undo the branch and the in-memory entry, so a retry starts clean
+            // instead of leaving a feature that vanishes on restart (the secrets scan can time out on a busy PC).
+            p.features.delete(fid);
+            await git.run(p.real!, ["update-ref", "-d", `refs/heads/${branch}`, tip]).catch(() => undefined);
+            throw e;
+          }
           log.info(`${p.name}: ${fid} started on ${branch}`);
           launchAnalyst(p, f);
           return fid;
