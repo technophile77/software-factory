@@ -125,6 +125,27 @@ export interface HostGate {
   ask(command: string, matched: string, signal?: AbortSignal): Promise<boolean>;
   askExtra: string[];
   readOnlyRoot?: string;
+  /** F-015 FR-25: the repo's test command; with `run_tests` in the session, a command that runs tests is refused. */
+  testCommand?: string[];
+}
+
+/**
+ * Common test runners, matched where a command starts (Role policy
+ * v2.12). A full shell can still run a test some other way: this steers an
+ * agent to `run_tests`, it isn't a security boundary.
+ */
+const TEST_RUNNER = new RegExp(
+  String.raw`(?:^|[;&|(\x60\n])\s*(?:(?:sudo|env|time|npx|uvx|pnpx|bunx|poetry\s+run|uv\s+run|pipenv\s+run|hatch\s+run|[A-Za-z_][A-Za-z0-9_]*=\S*)\s+)*(?:"?[^\s"]*[\\/])?` +
+    String.raw`(?:(?:py\.?test|vitest|jest|mocha|ava|rspec|phpunit|tox|nox)(?:\.exe|\.cmd)?(?=$|[\s;&|)"])|python[\d.]*(?:\.exe)?"?\s+(?:\S+\s+)*?-m\s+(?:pytest|unittest|nose2?)\b|(?:npm|pnpm|yarn|bun)(?:\.cmd)?\s+(?:run\s+)?test\b|node(?:\.exe)?\s+(?:\S+\s+)*?--test\b|go\s+test\b|cargo\s+test\b|dotnet\s+test\b|(?:mvnw?|gradlew?)(?:\.cmd|\.bat)?\s+(?:\S+\s+)*?test\b)` +
+    String.raw`|\s-m\s+(?:pytest|unittest)\b`,
+  "i",
+);
+
+/** Whether a shell command runs tests: a common runner, or the repo's own test command's arguments after its program. */
+export function runsTests(cmd: string, testCommand?: string[]): boolean {
+  if (TEST_RUNNER.test(cmd)) return true;
+  const args = (testCommand ?? []).slice(1).join(" ").trim();
+  return args.length >= 4 && cmd.includes(args);
 }
 
 /**
@@ -200,6 +221,7 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
     if (name === "Bash" || name === "Monitor") {
       const cmd = typeof input.command === "string" ? input.command.trim() : "";
       if (!cmd) return deny(name === "Monitor" ? "Monitor may only watch a command" : "no command");
+      if (mcp.has(`mcp__${FACTORY_SERVER}__run_tests`) && runsTests(cmd, host?.testCommand)) return deny("run tests with the run_tests tool, not a shell command");
       const fullShell = host !== undefined && FULL_SHELL_ROLES.includes(policy.role);
       if (!fullShell) {
         const program = cmd.split(/\s+/)[0] ?? "";
@@ -469,7 +491,8 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
             if (c.type === "text") ev.onEntry("text", String((c as { text?: unknown }).text ?? ""));
             else if (c.type === "tool_use") ev.onEntry("tool", toolLine(String(c.name), c.input));
           }
-          if (c.type === "tool_use") open.add(String((c as { id?: unknown }).id));
+          // A factory tool runs in the engine, which keeps its own caps; only the session's own commands are the watchdog's.
+          if (c.type === "tool_use" && !String(c.name).startsWith(`mcp__${FACTORY_SERVER}__`)) open.add(String((c as { id?: unknown }).id));
           if (c.type === "tool_use" && c.name === "WebSearch") {
             const q = (c.input as { query?: unknown } | undefined)?.query;
             ev.onWebSearch?.(typeof q === "string" ? q.slice(0, 2000) : "");

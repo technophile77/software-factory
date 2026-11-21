@@ -241,7 +241,12 @@ item's `history` (`by: owner`) per the Inbox item v1.0 contract.
   `commands.build` install both the product and the test dependency files
   into the test environment, so a change to either takes effect on the
   engine's next test run (F-015 FR-23). The checker reports a test
-  dependency file the build commands name that no role may write. Never widen a role's
+  dependency file the build commands name that no role may write. Beside
+  `commands.test`, write `commands.test_one`: the same command for one
+  test, with exactly one `"{test}"` element where the test id goes (for
+  pytest `[..., "-m", "pytest", "--junitxml=<results>", "{test}"]`), so
+  build agents can run a single test through `run_tests` (F-015 FR-25);
+  leave it out when the runner can't select one test by id. Never widen a role's
   `tools` or `read` rules or drop its secret-file denies; that is a
   Security decision for the owner.
 - Existing project: clone its config repo, add the repo under `repos`, and

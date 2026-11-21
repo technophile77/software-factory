@@ -22,7 +22,8 @@ import { type BuildAction, type BuildState, STAGE_OF, buildMachine, isBuildActio
 import { specDependencies, targetRepo } from "./build/target";
 import type { TestCase } from "./build/junit";
 import { CAUSES, type Cause, afterClassify, afterRun, checkClassification, stage6Counts } from "./build/stage6";
-import { type RunReport, TestRunError, clearResults, readResults, resolveProgram, runCommand, runReport, testEnv } from "./build/test-run";
+import { type RunReport, TestRunError, resolveProgram, runCommand, runReport, runSuite, testEnv } from "./build/test-run";
+import { runTestsTool } from "./build/run-tests-tool";
 import { type BuildRole, type FixFrom, buildPolicy, buildTestResults, buildTurn, runWorkerSessions } from "./build/worker";
 import { HttpPulls, type Pull, type PullsApi } from "./build/pulls";
 import { HttpTokenCheck, type TokenCheckApi, tokenProblems, tokensToCheck } from "./build/token-check";
@@ -2868,10 +2869,21 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         ? "The engine restarted. Continue where you left off."
         : buildTurn(role, { feature: f.id, title: f.state.title, repo: ctx.target.name, branch, worktree: wt.path, spec: folder.spec, folder: folder.root, version: ctx.so.version, commit: base, stage, write: policy.write, ...commandsFact(p, ctx.target.name), background: policy.tools.includes("Monitor") && policy.tools.includes("TaskStop"), ...(fix ? { fix: fix.data, ...(fix.from ? { fixFrom: fix.from } : {}) } : {}) });
       const group = await agents.group(runId);
+      // FR-25: the role's only way to run tests, run as stage 6 runs them, joined to the test engineer's map.
+      const cmds = repoCommands(m, ctx.target.name);
+      const platform = o.agents?.platform ?? process.platform;
+      const testTool = cmds.test && cmds.results
+        ? runTestsTool({
+          git, worktree: wt.path, gitDir: wt.gitDir, commands: { build: cmds.build, test: cmds.test, testOne: cmds.testOne, results: cmds.results },
+          env: testEnv(env, platform), platform, wallMs: caps.testRun.wallTimeMs, maxOutput: caps.testRun.outputBytes, children,
+          criteria: () => latestCriteria(f).criteria, scrub: scrubOutput,
+        })
+        : null;
       const r = await runWorkerSessions({
         sdk, group, policy, worktree: wt.path, instructions: md.text, caps: role === "software-developer" ? caps.developer : caps.tester,
         ...(policy.tools.includes("Skill") ? { skillsPluginDir: agents.skillsDir(role) } : {}),
-        model, host: { ask: askOwner(p, f, runId, role, wt.path), askExtra: denyAsk(m.raw).askExtra, readOnlyRoot: folder.root },
+        model, host: { ask: askOwner(p, f, runId, role, wt.path), askExtra: denyAsk(m.raw).askExtra, readOnlyRoot: folder.root, ...(cmds.test ? { testCommand: cmds.test } : {}) },
+        ...(testTool ? { tools: [testTool] } : {}),
         outputSchema: reportOutputSchema(role), first, ...(resumeId ? { resume: resumeId } : {}),
         ...(known.used ? { used: known.used } : {}),
         onUsed: (used) => void (dead || runs.update(runId, { used })),
@@ -3064,17 +3076,18 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   /** Manifest v1.7 `repos[].commands` for the repo (H-0193). */
-  /** FR-22: the commands the build roles are told to test with, when the repo has a test command. */
-  function commandsFact(p: Project, repo: string): { commands?: { build: string[] | null; test: string[] } } {
+  /** FR-22, FR-25: the build roles are told to test with `run_tests`, when the repo has a test command. */
+  function commandsFact(p: Project, repo: string): { runTests?: { single: boolean } } {
     const c = repoCommands(p.manifest!, repo);
-    return c.test ? { commands: { build: c.build, test: c.test } } : {};
+    return c.test && c.results ? { runTests: { single: c.testOne !== null } } : {};
   }
 
-  function repoCommands(m: Manifest, repo: string): { test: string[] | null; build: string[] | null; results: string | null } {
+  function repoCommands(m: Manifest, repo: string): { test: string[] | null; build: string[] | null; testOne: string[] | null; results: string | null } {
     const r = (Array.isArray((m.raw as { repos?: unknown })?.repos) ? (m.raw as { repos: Array<Record<string, unknown>> }).repos : []).find((x) => x?.name === repo);
-    const c = (r?.commands ?? {}) as { test?: unknown; build?: unknown; test_results?: unknown };
+    const c = (r?.commands ?? {}) as { test?: unknown; build?: unknown; test_one?: unknown; test_results?: unknown };
     const list = (v: unknown) => (Array.isArray(v) && v.length && v.every((x) => typeof x === "string") ? (v as string[]) : null);
-    return { test: list(c.test), build: list(c.build), results: typeof c.test_results === "string" ? c.test_results : null };
+    const one = list(c.test_one);
+    return { test: list(c.test), build: list(c.build), testOne: one && one.filter((x) => x === "{test}").length === 1 ? one : null, results: typeof c.test_results === "string" ? c.test_results : null };
   }
 
   /** SR-9: kept output loses secret lines and the owner's home folder before it is stored or shown to an agent. */
@@ -3105,25 +3118,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const runEnv = testEnv(env, platform);
     const n = (await nextBuildReport(p, f.id, "test-engineer", "test_run"));
     const logPath = `runs/${f.id}/test_run/run-${n}.log`;
-    let problem: string | null = null;
-    let cases: TestCase[] = [];
-    const out: string[] = [];
-    try {
-      await clearResults(git, wt.path, wt.gitDir, cmds.results);
-      for (const [what, argv] of [["build", cmds.build], ["test", cmds.test]] as const) {
-        if (!argv) continue;
-        const program = resolveProgram(argv[0]!, wt.path, runEnv, platform);
-        const r = await runCommand({ program, args: argv.slice(1), cwd: wt.path, env: runEnv, wallMs: caps.testRun.wallTimeMs, maxOutput: caps.testRun.outputBytes, platform, children });
-        out.push(`$ ${what} (exit ${r.code ?? r.signal ?? "none"}${r.timedOut ? ", killed at the time cap" : ""}${r.truncated ? ", output cut at the cap" : ""})`, r.output);
-        if (r.timedOut) problem = `the ${what} command ran past the ${Math.round(caps.testRun.wallTimeMs / 60_000)}-minute cap`;
-        else if (what === "build" && r.code !== 0) problem = `the build command failed (exit ${r.code ?? r.signal})`;
-        if (problem) break;
-      }
-      if (!problem) cases = readResults(wt.path, cmds.results);
-    } catch (e) {
-      if (!(e instanceof TestRunError)) throw e;
-      problem = e.message;
-    }
+    const { cases, problem, out } = await runSuite({ git, worktree: wt.path, gitDir: wt.gitDir, build: cmds.build, test: cmds.test, results: cmds.results, env: runEnv, platform, wallMs: caps.testRun.wallTimeMs, maxOutput: caps.testRun.outputBytes, children });
     const log = await scrubOutput(out.join("\n"));
     const { criteria, tools } = latestCriteria(f);
     const report = runReport(head, cases, criteria, problem, logPath);
