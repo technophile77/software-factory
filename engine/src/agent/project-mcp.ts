@@ -96,7 +96,7 @@ function recordIdentity(r: McpServerRecord): string {
   return `remote:${r.url}`;
 }
 
-async function values(i: ResolveInput, server: string, v: Record<string, McpValue>, masks: string[]): Promise<Record<string, string>> {
+export async function values(i: Pick<ResolveInput, "project" | "secrets">, server: string, v: Record<string, McpValue>, masks: string[]): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const [k, val] of Object.entries(v)) {
     if ("literal" in val) {
@@ -113,7 +113,7 @@ async function values(i: ResolveInput, server: string, v: Record<string, McpValu
 }
 
 /** The program and arguments that start a local server from its approved install, checked against the record. */
-function localCommand(i: ResolveInput, s: Exclude<McpServer, { kind: "remote" }>, r: McpServerRecord): { command: string; args: string[]; dir: string } {
+export function localCommand(i: Pick<ResolveInput, "mcpRoot" | "project">, s: Exclude<McpServer, { kind: "remote" }>, want: string | undefined): { command: string; args: string[]; dir: string } {
   const dir = path.join(i.mcpRoot, i.project, s.name);
   let inst: McpInstall;
   try {
@@ -130,7 +130,6 @@ function localCommand(i: ResolveInput, s: Exclude<McpServer, { kind: "remote" }>
     return p;
   };
   // SR-5, SR-13: what runs is exactly what was approved: the lockfile it was installed from, or the copied executable.
-  const want = s.kind === "package" ? r.lockfile_sha256 : r.sha256;
   if (!want || fileSha(inside(inst.pinned_file)) !== want) throw new McpServerUnavailable(s.name, "its installed files don't match the approved record; approve it again", true);
   const [first, ...rest] = inst.command;
   // `node` means the Node the engine runs on, so no PATH lookup can swap it.
@@ -162,7 +161,7 @@ export async function resolveProjectMcp(i: ResolveInput): Promise<ProjectMcpSess
       target = { kind: "http", url: s.url, headers };
       out.hosts.push(new URL(s.url).hostname);
     } else {
-      const { command, args, dir } = localCommand(i, s, r);
+      const { command, args, dir } = localCommand(i, s, s.kind === "package" ? r.lockfile_sha256 : r.sha256);
       const declared = await values(i, name, s.env, out.masks);
       const home = path.join(dir, "home");
       const tmp = path.join(dir, "tmp");

@@ -18,6 +18,9 @@ export interface McpTool {
   name: string;
   description: string;
   inputSchema: unknown;
+  /** The server's own claim (MCP tool annotations); a hint for the review, never trusted alone (SR-6). */
+  destructiveHint?: boolean;
+  readOnlyHint?: boolean;
 }
 
 export type McpTarget =
@@ -55,7 +58,12 @@ export async function listTools(t: McpTarget, o: ListOptions = {}): Promise<{ to
           dropped.push(isObj(x) && typeof x.name === "string" ? x.name.slice(0, 80) : "(no name)");
           continue;
         }
-        tools.push({ name: x.name, description: typeof x.description === "string" ? x.description : "", inputSchema: x.inputSchema ?? {} });
+        const ann = isObj(x.annotations) ? x.annotations : {};
+        tools.push({
+          name: x.name, description: typeof x.description === "string" ? x.description : "", inputSchema: x.inputSchema ?? {},
+          ...(typeof ann.readOnlyHint === "boolean" ? { readOnlyHint: ann.readOnlyHint } : {}),
+          ...(typeof ann.destructiveHint === "boolean" ? { destructiveHint: ann.destructiveHint } : {}),
+        });
       }
       cursor = typeof r.nextCursor === "string" && r.nextCursor ? r.nextCursor : undefined;
       if (!cursor) return { tools, dropped };

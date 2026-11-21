@@ -36,7 +36,7 @@ describe("F-025 mcp_servers (manifest v1.12, FR-1 to FR-4)", () => {
 
   it("AC-3: refuses an http URL or one with user info", () => {
     expect(() => parseMcpServers([{ name: "d", remote: { url: "http://mcp.example.test/" } }])).toThrow(/must be https/);
-    expect(() => parseMcpServers([{ name: "d", remote: { url: "https://u:p@mcp.example.test/" } }])).toThrow(/user name or password/);
+    expect(() => parseMcpServers([{ name: "d", remote: { url: "https://u:p@mcp.example.com/" } }])).toThrow(/user name or password/);
   });
 
   it("FR-1: refuses the engine's own name, a repeated name, both or neither of local and remote, and unknown keys", () => {

@@ -1,4 +1,8 @@
 import * as fs from "node:fs";
+import { mcpCheck, mcpList } from "./mcp-approval/cli";
+import { findProject } from "./config/confirm";
+import { checkProjectPath } from "./config/paths-file";
+import { readManifest } from "./config/manifest";
 import { spawn } from "node:child_process";
 import { launchSpec } from "./agent/project-mcp";
 import * as path from "node:path";
@@ -43,6 +47,12 @@ const USAGE = `factory-engine <command>
           the project's main token can't reach (F-015 FR-19), and
           mcp-secret/<project>/<server>/<key> for a key a project MCP server's
           env or headers name as { secret: <key> } (F-025).
+  mcp list --project <project name or config repo path> [--master <path>] [--home <path>]
+          Lists the project's MCP servers, whether each is approved, and
+          which roles get which of their tools (F-025).
+  mcp check <server> --project <name> [--master <path>] [--home <path>]
+          Starts an approved server once and prints the tools it reports,
+          marking new or changed ones, which agents don't get.
   interview [<feature id>] [--project <path>] [-v | --verbose] [--plain]
           Answers the requirements analyst's questions in this terminal (F-018).
           --project defaults to the current folder, inside the project's repo.
@@ -301,11 +311,12 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write(`Stored ${name}.\n`);
     return 0;
   }
-  if (cmd !== "start" && cmd !== "confirm") {
+  if (cmd !== "start" && cmd !== "confirm" && cmd !== "mcp") {
     process.stderr.write(USAGE);
     return cmd === "--help" ? 0 : 2;
   }
-  const f = flags(rest);
+  // `mcp list` and `mcp check <server>` put their words before the flags.
+  const f = flags(cmd === "mcp" ? rest.slice(rest[0] === "check" ? 2 : 1) : rest);
   const home = f.home ? path.resolve(f.home) : defaultEngineHome();
   ensureOwnerDir(home);
   let master: string;
@@ -335,6 +346,25 @@ async function main(argv: string[]): Promise<number> {
     } finally {
       rl.close();
     }
+  }
+  // F-025 FR-12: what the project's MCP servers are, who gets them, and what a server reports now.
+  if (cmd === "mcp") {
+    const sub = rest[0];
+    const server = sub === "check" ? rest[1] : undefined;
+    if (!f.project || (sub !== "list" && sub !== "check") || (sub === "check" && (!server || server.startsWith("--")))) {
+      process.stderr.write(USAGE);
+      return 2;
+    }
+    const gitPath = findOnPath("git");
+    if (!gitPath) throw new Error("git isn't on PATH");
+    const git = new Git({ gitPath, homeDir: path.join(home, "git"), children: new Children() });
+    const found = findProject(master, f.project, realOsApi());
+    const configRepo = await checkProjectPath(found.path, master, git);
+    const deps = {
+      git, configRepo, manifest: await readManifest(git, configRepo), secrets: new OsCredentialStore(() => realOsApi().credentials()),
+      mcpRoot: path.join(home, "mcp"), env: process.env, say: (l: string) => process.stdout.write(l + "\n"),
+    };
+    return sub === "list" ? mcpList(deps) : mcpCheck(deps, server!);
   }
   const gitleaks = f.gitleaks ?? readEngineConfig(home).gitleaks;
   if (!gitleaks || !path.isAbsolute(gitleaks)) {
