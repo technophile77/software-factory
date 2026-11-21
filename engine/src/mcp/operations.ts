@@ -9,6 +9,7 @@ import * as crypto from "node:crypto";
 import type { OsApi } from "../os/ffi";
 import { Channel, connect } from "./client";
 import { readDocument, type Document } from "./document";
+import { parseSourceIssue } from "../constants";
 import { ChannelFailure, Refused } from "./errors";
 import { count, engineId, itemDisplay, parseItem, revision, str, type Item } from "./items";
 import {
@@ -35,7 +36,7 @@ export const CONSOLE_KEY = "inbox";
 
 export const FIELDS: Record<Operation, readonly string[]> = {
   status: [],
-  start: ["request", "document"],
+  start: ["request", "document", "issue"],
   list: [],
   open: ["feature", "takeover"],
   approval: ["feature", "wait_s"],
@@ -131,6 +132,7 @@ export function validate(op: Operation, req: Obj): void {
         throw new Refused("bad_request", "`document` must be {\"path\": ..., \"provenance\": ...}.");
       }
     }
+    if (req.issue !== undefined && !parseSourceIssue(req.issue)) throw new Refused("bad_request", "`issue` must be owner/repo#number.");
   }
   if (["open", "approval", "next", "reply", "state", "close", "inbox_list", "inbox_show", "inbox_answer", "inbox_confirm", "transcript"].includes(op)) needId(req, "feature");
   if (op === "transcript" && req.after !== undefined && (!isInt(req.after) || req.after < 0)) throw new Refused("bad_request", "`after` must be the `next` of the last transcript read.");
@@ -222,6 +224,10 @@ export class Interview {
         throw new Refused("document_unsupported", "This engine can't start a feature from a document; it needs an engine whose "
           + "engine.json lists the \"document\" capability (channel v1.4, F-009). Nothing was read or sent.");
       }
+      if (op === "start" && req.issue !== undefined && !where.capabilities.has("issue")) {
+        throw new Refused("issue_unsupported", "This engine can't record the issue a feature came from; it needs an engine whose "
+          + "engine.json lists the \"issue\" capability (channel v1.8, F-015 FR-26). Nothing was started.");
+      }
       // The file is read before connecting, so a refused document sends nothing.
       if (doc) run.document = readDocument(doc.path, doc.provenance, this.env.projectDir);
       if (op === "transcript" && !where.capabilities.has("transcript")) {
@@ -287,7 +293,7 @@ export class Interview {
   }
 
   private async start(req: Obj, run: Run): Promise<Obj> {
-    const params: Obj = { request: req.request };
+    const params: Obj = { request: req.request, ...(req.issue !== undefined ? { issue: String(req.issue).trim() } : {}) };
     const out: Obj = {};
     if (run.document) {
       params.document = run.document;

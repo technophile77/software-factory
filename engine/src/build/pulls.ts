@@ -48,6 +48,8 @@ export interface PullsApi {
   comment(repo: string, n: number, body: string): Promise<number>;
   /** The head's combined commit status (F-015 FR-18); left out by fakes that have none. */
   commitStatus?(repo: string, sha: string): Promise<{ state: string; count: number }>;
+  /** F-015 FR-26: whether `#n` is an open issue (not a pull request) in `repo`; left out by fakes that have none. */
+  issueOpen?(repo: string, n: number): Promise<boolean>;
 }
 
 const SHA_RE = /^[0-9a-f]{40}$/;
@@ -112,6 +114,16 @@ export class HttpPulls extends HttpIssues implements PullsApi {
       }
     }
     return out;
+  }
+
+  async issueOpen(repo: string, n: number): Promise<boolean> {
+    if (!isPosInt(n)) return false;
+    const r = await this.call("GET", `/repos/${checkRepo(repo)}/issues/${n}`);
+    if (r.status === 404 || r.status === 410) return false;
+    if (r.status !== 200) throw new GitHubError(`GitHub refused issue ${n} (HTTP ${r.status})`);
+    const b = (r.body ?? {}) as Record<string, unknown>;
+    // The issues API answers for pull requests too; only a real issue counts.
+    return b.state === "open" && b.pull_request === undefined;
   }
 
   async commitStatus(repo: string, sha: string): Promise<{ state: string; count: number }> {

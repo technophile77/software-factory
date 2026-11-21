@@ -293,7 +293,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
 
 ---
 
-## Engine control channel — v1.7
+## Engine control channel — v1.8
 
 - Status: Approved
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
@@ -305,7 +305,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
   (F-006, the advisor) approved by the owner, 2026-11-10 (H-0063 and
   amendment H-0075: advisor fields stated exactly, call limits, budget flag,
   advice revision and hash; decision card, as drafted; renumbered from v1.2
-  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted); v1.4 capability list approved by the owner, 2026-11-12 (decision card); v1.5 (F-016 H-0183, `waiting_on`) approved by the owner, 2026-11-13 (decision card); v1.6 (F-021 H-0245, inbox answers in the console) approved by the owner, 2026-11-14 (decision card); v1.7 (F-024 H-0265, `engine.transcript`) approved by the owner, 2026-11-20 (decision card, F-024 spec v1)
+  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted); v1.4 capability list approved by the owner, 2026-11-12 (decision card); v1.5 (F-016 H-0183, `waiting_on`) approved by the owner, 2026-11-13 (decision card); v1.6 (F-021 H-0245, inbox answers in the console) approved by the owner, 2026-11-14 (decision card); v1.7 (F-024 H-0265, `engine.transcript`) approved by the owner, 2026-11-20 (decision card, F-024 spec v1); v1.8 (F-015 FR-26, `feature.start` `issue` and the `issue` capability) approved by the owner, 2026-11-21 (decision card, F-015 spec v27)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -345,7 +345,7 @@ it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 | `engine.pause` | `{ feature? }` | `{ paused: [feature ids] }` |
 | `engine.resume` | `{ feature? }` | `{ resumed: [feature ids] }` |
 | `engine.shutdown` | none | `{ ok: true }` after agents reach a safe stop |
-| `feature.start` | `{ request: string, document?: Document }` | `{ feature: id }` (assigns the requirements analyst; `document` from v1.4) |
+| `feature.start` | `{ request: string, document?: Document, issue?: string }` | `{ feature: id }` (assigns the requirements analyst; `document` from v1.4; `issue` from v1.8: `owner/repo#n`, an open issue in one of the project's code repos, else `-32602` and nothing starts; the engine lists the `issue` capability) |
 | `interview.list` | none | `{ features: [{ id, title, open, deferred, pending_assumptions }] }` (v1.1) |
 | `interview.open` | `{ feature, takeover?: bool }` | `{ session, started_at, approval: { user_code, verification_uri, expires_at } }`, takes the feature's session lock; the session is pending until approved (v1.1; `approval` from v1.2); no `approval` when the project's sign-in setting covers the session (F-018 FR-15) |
 | `interview.awaitApproval` | `{ session, wait_s?: int }` | `{ approved: true }` once GitHub confirms the owner; waits up to `wait_s` (at most 900) (v1.2) |

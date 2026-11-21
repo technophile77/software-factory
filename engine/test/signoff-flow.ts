@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { expect } from "vitest";
 import type { AgentRuntime } from "../src/agent/runtime";
 import type { AgentSdk, SdkMessage } from "../src/agent/sdk";
+import type { EngineOptions } from "../src/engine";
 import { FakeDocker } from "./fakes";
 import { World } from "./helpers";
 import { FakeIssues, OWNER } from "./inbox-fake";
@@ -97,8 +98,8 @@ export async function act(w: World, gh: FakeIssues, issue: number, action: strin
 export const items = (w: World) => inboxItems(w.config);
 export const effects = (w: World, id: string) => (items(w).find((i) => i.id === id)?.record.history ?? []).filter((h: any) => h.action === "effect_done");
 
-export async function start(w: World, d: FakeDocker, scripts: Parameters<typeof scriptedSdk>[0], gh = new FakeIssues(), rt: (d: FakeDocker, sdk: AgentSdk) => AgentRuntime = runtime) {
+export async function start(w: World, d: FakeDocker, scripts: Parameters<typeof scriptedSdk>[0], gh = new FakeIssues(), rt: (d: FakeDocker, sdk: AgentSdk) => AgentRuntime = runtime, extra: Partial<EngineOptions> = {}) {
   const s = scriptedSdk(scripts);
-  const { e, c } = await boot(w, rt(d, s.sdk), { issues: () => gh });
+  const { e, c } = await boot(w, rt(d, s.sdk), { issues: () => gh, ...extra });
   return { e, c, s, gh };
 }

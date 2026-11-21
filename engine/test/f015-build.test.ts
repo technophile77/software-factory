@@ -123,7 +123,7 @@ function localClone(home: string): string {
 }
 
 /** A feature through the readiness gate and the owner's sign-off on the engine as F-016 runs it, with that engine stopped. */
-async function signedOff(manifestExtra?: (yaml: string, root: string) => string) {
+async function signedOff(manifestExtra?: (yaml: string, root: string) => string, issue?: string) {
   const w = world({}, { orchestrator: true, build: true });
   if (manifestExtra) {
     fs.writeFileSync(path.join(w.config, "factory-project.yaml"), manifestExtra(fs.readFileSync(path.join(w.config, "factory-project.yaml"), "utf8"), w.root));
@@ -133,8 +133,9 @@ async function signedOff(manifestExtra?: (yaml: string, root: string) => string)
   const d = new FakeDocker();
   const id = { value: "" };
   const gh = new FakeIssues();
-  const first = await start(w, d, { analyst: analyst(w, () => id.value), reviewer: reviewer(d, () => id.value), orchestrator: orchestrator(d, () => id.value) }, gh);
-  await interview(w, first.e, first.c, () => id.value, (f) => (id.value = f));
+  const opened = { issueOpen: async () => true } as unknown as PullsApi;
+  const first = await start(w, d, { analyst: analyst(w, () => id.value), reviewer: reviewer(d, () => id.value), orchestrator: orchestrator(d, () => id.value) }, gh, undefined, issue ? { pulls: () => opened } : {});
+  await interview(w, first.e, first.c, () => id.value, (f) => (id.value = f), issue ? { issue } : {});
   await pollUntil(w, "the sign-off issue", () => items(w).some((i) => i.record.kind === "spec") && gh.issues.size === 1);
   await act(w, gh, 1, "approve");
   await pollUntil(w, "build_and_test_prep", () => stageOf(first.e, id.value) === "build_and_test_prep");
@@ -258,7 +259,7 @@ describe("F-015 M2 to M4: the test run, stage 6, Code Review, the judge and the 
     const { w, d, gh, id } = await signedOff((yaml, root) => {
       const script = runner(root);
       return yaml.replace("    url: https://github.com/example-org/acme-web\n", `    url: https://github.com/example-org/acme-web\n    commands:\n      test: [${JSON.stringify(process.execPath)}, ${JSON.stringify(script)}]\n      test_results: test-results.xml\n`);
-    });
+    }, "example-org/acme-web#7");
     const feature = id.value;
     const turns = { fix: "", classify: "", review: [] as string[], reviewFix: "", judge: "" };
     const seen = { refused: [] as string[], first: "" };
@@ -344,6 +345,8 @@ process.exit(1);
     expect(git(w.root, "--git-dir", pulls.bare, "for-each-ref", "--format=%(refname:short)", "refs/heads/").split("\n").sort()).toEqual([branch, "main"].sort());
     expect(pulls.created).toEqual([{ title: `${feature}: Export orders as CSV`, head: branch, base: "main", draft: true }]);
     expect(pulls.pr!.body).toContain("ready for the owner's review");
+    // FR-26: the feature came from acme-web#7, so merging the PR closes it.
+    expect(pulls.pr!.body).toContain("\n\nCloses #7");
     expect(pulls.readyCalls).toBe(1);
     // SR-2: the token's reach and its workflow write were checked once, before the push.
     expect(probes).toEqual(["example-org/acme-web"]);

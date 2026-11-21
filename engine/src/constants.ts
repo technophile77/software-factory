@@ -17,7 +17,7 @@ export const SERVED_CHANNEL_VERSION = "1.2";
  * reporting 1.2, because it doesn't serve v1.3's advisor yet. `inbox` is v1.6's console answers (F-021,
  * H-0245).
  */
-export const CAPABILITIES: readonly string[] = ["document", "inbox", "transcript"];
+export const CAPABILITIES: readonly string[] = ["document", "inbox", "transcript", "issue"];
 
 export const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 export const FEATURE_ID_RE = /^F-(\d{3,6})$/;
@@ -134,3 +134,17 @@ export const CLAUDE_CODE_SHA256: Readonly<Record<string, string>> = {
   "win32-x64": "966f4b2ce962298f5dee6a942e8c47c8f97392e69e728e622319a98b259c0680",
   "win32-arm64": "951b5d94bf2a5296db2c442784e68d18fa04dec2d7d2e805aa50e75d618aad5e",
 };
+
+/** Channel v1.8 (F-015 FR-26): the code repo issue a feature starts from, `owner/repo#n`. */
+export interface SourceIssue {
+  repo: string;
+  number: number;
+}
+
+const ISSUE_RE = /^([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})#([1-9][0-9]{0,8})$/;
+
+/** `owner/repo#n` as typed by the owner, or null when it isn't one. */
+export function parseSourceIssue(v: unknown): SourceIssue | null {
+  const m = typeof v === "string" ? ISSUE_RE.exec(v.trim()) : null;
+  return m ? { repo: `${m[1]}/${m[2]}`, number: Number(m[3]) } : null;
+}
