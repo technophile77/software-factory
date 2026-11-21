@@ -69,8 +69,8 @@ export const ACTIVITY: Record<string, string> = {
   waiting_for_ci: "Pull request open, waiting for CI",
   pr_ready: "Pull request ready for your review",
   build_stopped: "The build is stopped",
-  merged: "Merged",
-  closed: "Closed",
+  closed: "Closed (pull request merged)",
+  cancelled: "Cancelled",
 };
 
 /**
@@ -162,7 +162,7 @@ const BUSY: Partial<Record<Operation, string>> = {
   open: "Opening the feature", approval: "Waiting for your approval on GitHub", next: "Waiting for the analyst",
   reply: "Sending your reply", state: "Checking the item", close: "Closing the session",
   inbox_open: "Opening the inbox", inbox_list: "Getting the inbox", inbox_show: "Getting the item",
-  inbox_answer: "Sending your answer", inbox_confirm: "Sending the code",
+  inbox_answer: "Sending your answer", inbox_confirm: "Sending the code", cancel: "Cancelling the feature",
 };
 
 const INBOX_ID = /^[DTHSMN]-\d{4,8}$/;
@@ -351,9 +351,14 @@ export class TerminalInterview {
     const c = await this.choose([
       { label: "Request a new feature", key: "new" },
       { label: "Detail an existing feature request", key: "existing" },
+      { label: "Cancel a feature", key: "cancel" },
       { label: "Stop", key: "stop" },
     ]);
     if (!("key" in c) || c.key === "stop") throw new Stop();
+    if (c.key === "cancel") {
+      await this.cancelFeature();
+      return null;
+    }
     return c.key === "new" ? this.newFeature() : this.existing();
   }
 
@@ -405,6 +410,34 @@ export class TerminalInterview {
     }
     this.say(`Started ${String(r.feature)}.`);
     return r.feature as string;
+  }
+
+  /**
+   * F-015 FR-27: the owner picks a feature that isn't finished, gives an
+   * optional reason, and confirms once by typing yes; nothing is sent before.
+   */
+  private async cancelFeature(): Promise<void> {
+    const st = await this.run("status", {});
+    if (st.ok !== true) return this.show(st);
+    const activities = (st.activities ?? {}) as Record<string, string>;
+    const ids = ((st.features ?? []) as string[]).filter((id) => activities[id] !== "closed" && activities[id] !== "cancelled");
+    if (!ids.length) {
+      this.say("No feature can be cancelled: every one is closed or cancelled already.");
+      return;
+    }
+    this.say("\nWhich feature should be cancelled?");
+    const c = await this.choose([...ids.map((id) => ({ label: `${id}: ${ACTIVITY[activities[id] ?? ""] ?? "status unknown"}`, key: id })), { label: "Back", key: "" }]);
+    if (!("key" in c) || !c.key) return;
+    this.say("Why? It goes on the record and, if there is one, on the pull request. Enter on its own gives no reason.");
+    const reason = (await this.text()).trim();
+    const sure = await this.line(`Cancel ${c.key}? Its agents stop, its open items and pull request close, and it can't be resumed. Its branches are kept. Type yes to cancel: `);
+    if (sure?.trim().toLowerCase() !== "yes") {
+      this.say("Not cancelled.");
+      return;
+    }
+    const r = await this.run("cancel", { feature: c.key, ...(reason ? { reason } : {}) });
+    if (r.ok !== true) return this.show(r);
+    this.say(`${c.key} is cancelled.`);
   }
 
   private async existing(): Promise<string | null> {
@@ -675,10 +708,12 @@ export class TerminalInterview {
         this.say("\nOpen items:");
         const c = await this.choose([
           ...items.map((i) => ({ key: i.id, label: `${i.id} ${i.kind}${i.feature ? ` for ${i.feature}` : ""}, ${i.priority}${i.blocking ? ", blocking" : ""}: ${i.title}` })),
+          { label: "Cancel a feature", key: "cancel" },
           { label: "Stop", key: "" },
         ]);
         if (!("key" in c) || !c.key) return 0;
-        await this.answerItem(CONSOLE_KEY, c.key);
+        if (c.key === "cancel") await this.cancelFeature();
+        else await this.answerItem(CONSOLE_KEY, c.key);
       }
     } catch (e) {
       if (e instanceof Stop) return 0;

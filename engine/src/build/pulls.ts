@@ -50,6 +50,8 @@ export interface PullsApi {
   commitStatus?(repo: string, sha: string): Promise<{ state: string; count: number }>;
   /** F-015 FR-26: whether `#n` is an open issue (not a pull request) in `repo`; left out by fakes that have none. */
   issueOpen?(repo: string, n: number): Promise<boolean>;
+  /** F-015 FR-27: closes the PR without merging, when the owner cancels its feature. */
+  closePull(repo: string, n: number): Promise<void>;
 }
 
 const SHA_RE = /^[0-9a-f]{40}$/;
@@ -92,6 +94,12 @@ export class HttpPulls extends HttpIssues implements PullsApi {
     const r = await this.call("PATCH", `/repos/${checkRepo(repo)}/pulls/${n}`, p);
     this.act("github.update_pull_request", `${repo}#${n}`, r.status);
     if (r.status !== 200) throw new GitHubError(`GitHub refused a pull request update (HTTP ${r.status})`);
+  }
+
+  async closePull(repo: string, n: number): Promise<void> {
+    const r = await this.call("PATCH", `/repos/${checkRepo(repo)}/pulls/${n}`, { state: "closed" });
+    this.act("github.close_pull_request", `${repo}#${n}`, r.status);
+    if (r.status !== 200) throw new GitHubError(`GitHub refused to close the pull request (HTTP ${r.status})`);
   }
 
   async markReady(repo: string, pull: Pull): Promise<void> {

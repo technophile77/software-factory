@@ -57,6 +57,8 @@ export interface WorkerRunInput {
   onSessionId(id: string): void;
   /** F-015 FR-25: the factory tools the role gets, such as `run_tests`. */
   tools?: FactoryTool[];
+  /** F-015 FR-27: aborted when the owner cancels the feature; the session stops at once. */
+  signal?: AbortSignal;
   log: Logger;
 }
 
@@ -88,6 +90,7 @@ export async function runWorkerSessions(i: WorkerRunInput): Promise<WorkerResult
   await i.group.open();
   try {
     for (let n = 1; n <= 2; n++) {
+      if (i.signal?.aborted) throw new SessionRefused("the feature was cancelled");
       if (n > 1) {
         const again = i.billingCheck();
         if (again) throw new SessionRefused(again);
@@ -115,6 +118,8 @@ export async function runWorkerSessions(i: WorkerRunInput): Promise<WorkerResult
       const agent = await i.group.startAgent(i.policy, i.worktree, { sessionVolume: "run" });
       try {
         const abort = new AbortController();
+        if (i.signal?.aborted) abort.abort();
+        i.signal?.addEventListener("abort", () => abort.abort(), { once: true });
         const opts = sessionOptions({
           policy: i.policy, cwd: agent.cwd, worktree: i.worktree, workspace: agent.workspace, instructions: i.instructions,
           ...(agent.projectMcp ? { projectMcp: agent.projectMcp } : {}),

@@ -180,7 +180,7 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
     } catch (e) {
       if (e instanceof ToolError) return { ok: false, error: { code: e.code, message: e.message } };
       if (e instanceof SecretFound) return { ok: false, error: { code: "invalid", message: "The secrets scan found a secret in the text; nothing was recorded." } };
-      if (e instanceof InterviewError && e.code === "tampered") return { ok: false, error: { code: "invalid", message: e.message } };
+      if (e instanceof InterviewError && (e.code === "tampered" || e.code === "cancelled")) return { ok: false, error: { code: "invalid", message: e.message } };
       ctx.log.warn(`${f.id}: ${name} failed: ${(e as Error).message}`);
       return { ok: false, error: { code: "invalid", message: "The engine couldn't record that; try again later." } };
     }

@@ -49,7 +49,7 @@ describe("build lifecycle", () => {
     const path: BuildAction[] = ["dependencies_merged", "done", "done", "branches_merged", "passed", "clean", "pass", "opened", "green", "owner_merged"];
     const { machine, refused } = buildMachine(path);
     expect(refused).toBeNull();
-    expect(machine.state()).toBe("merged");
+    expect(machine.state()).toBe("closed");
     expect(machine.isFinal()).toBe(true);
     expect(machine.actor()).toBeNull();
   });

@@ -241,6 +241,8 @@ describe("FR-15: inputs", () => {
       inbox_confirm: ["code", "feature", "item", "rev"],
       // F-024: the windowed console's session transcript.
       transcript: ["after", "feature"],
+      // F-015 FR-27: the console's cancel.
+      cancel: ["feature", "reason"],
     });
   });
 });
