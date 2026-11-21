@@ -2174,7 +2174,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         const build = isBuildStage(stage) ? buildMachine(f.state.build.actions).machine.state() : undefined;
         // Issue #124: an analyst session that finished its turn and waits for the owner's reply isn't working.
         const working = jobs.has(f) && !jobs.get(f)!.turns?.idle;
-        const activity = activityOf({ stage, paused: f.paused, running: working, statuses: f.state.list().map((it) => it.status), decisions: waiting, build });
+        const stalled = stage === INTERVIEW_STAGE && !jobs.has(f) && lastAnalystRun(p, f)?.status === "failed";
+        const activity = activityOf({ stage, paused: f.paused, running: working, statuses: f.state.list().map((it) => it.status), decisions: waiting, build, stalled });
         return { id: f.id, project: p.manifest!.name, stage, active_agents: working ? 1 : 0, activity, ...(waiting.length ? { waiting_on: waiting } : {}) };
       })),
     }),
@@ -3947,6 +3948,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   /** Starts whatever a feature's stage needs, as at engine start (F-016 H-0182 resume effects). */
+  function lastAnalystRun(p: Project, f: FeatureInterview) {
+    return record.runs().filter((r) => r.feature === f.id && r.project === p.name && r.role === "requirements-analyst").sort((a, b) => a.started_at.localeCompare(b.started_at)).at(-1);
+  }
+
   function resumeFeature(p: Project, f: FeatureInterview): void {
     if (f.stage() === INTERVIEW_STAGE) launchAnalyst(p, f);
     else if (f.stage() === ST_REVIEW_STAGE) afterInterview(p, f);
@@ -4524,7 +4529,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       }
       if (f.stage() === INTERVIEW_STAGE && !jobs.has(f)) {
         // FR-13: a feature whose analyst stopped before this engine (or before this rule) would wait forever.
-        const last = record.runs().filter((r) => r.feature === f.id && r.project === p.name && r.role === "requirements-analyst").sort((a, b) => a.started_at.localeCompare(b.started_at)).at(-1);
+        const last = lastAnalystRun(p, f);
         if (last?.status === "failed") {
           // The owner's approved rerun stands when its launch failed before a run began; the answered item would never be asked again.
           const since = last.ended_at ?? last.started_at;
