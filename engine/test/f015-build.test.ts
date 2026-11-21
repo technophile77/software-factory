@@ -717,7 +717,7 @@ require("fs").writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ resul
   it("FR-27, AC-51, AC-53: the owner's cancel closes the waiting PR with the reason and keeps the branch; a merge would have been closed", async () => {
     const { w, e, feature, pulls } = await toReady(true, "rapid-prototype");
     await until("the ready pull request", () => e.feature("acme", feature)?.state.build.actions.includes("green") ?? false, 90_000);
-    const c = await RpcClient.connect(e.projects[0]!.channel);
+    const c = await RpcClient.connect(e.projects[0]!.channel!);
     try {
       expect(await c.ok("feature.cancel", { feature, reason: "not needed any more" })).toEqual({ ok: true });
       expect(pulls.pr!.state).toBe("closed");
