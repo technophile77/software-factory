@@ -15,7 +15,7 @@ import {
 export type Persist = (feature: string, transcript: string, extra: Change[], message: string) => Promise<string>;
 
 export class InterviewError extends Error {
-  constructor(readonly code: "stale" | "unknown" | "kind" | "tampered", message: string) {
+  constructor(readonly code: "stale" | "unknown" | "kind" | "tampered" | "cancelled", message: string) {
     super(message);
     this.name = "InterviewError";
   }
@@ -80,6 +80,8 @@ export class FeatureInterview {
   /** Appends entries; the state changes only once the commit has landed. Call inside exclusive(). */
   async append(bodies: EntryBody[], message: string, extra: Change[] = []): Promise<Entry[]> {
     if (!this.chainIntact) throw new InterviewError("tampered", "This feature's transcript was changed outside the engine; see the Security item.");
+    // F-015 FR-27: a cancelled feature is final, so work still running for it records nothing.
+    if (this.state.cancelled) throw new InterviewError("cancelled", `${this.id} was cancelled.`);
     const at = iso(this.deps.clock.now());
     const added: Entry[] = [];
     let prev = this.entries[this.entries.length - 1] ?? null;

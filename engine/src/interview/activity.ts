@@ -1,4 +1,4 @@
-import { INTERVIEW_STAGE } from "../constants";
+import { CANCELLED_STAGE, INTERVIEW_STAGE } from "../constants";
 import { READINESS_STAGE } from "../st-review/flow";
 import { ST_REVIEW_STAGE } from "../st-review/report";
 import type { ItemStatus } from "./model";
@@ -36,11 +36,12 @@ export const BUILD_ACTIVITY: Readonly<Record<string, string>> = {
   ci_wait: "waiting_for_ci",
   pr_ready: "pr_ready",
   blocked: "build_stopped",
-  merged: "merged",
   closed: "closed",
+  cancelled: "cancelled",
 };
 
 export function activityOf(o: { stage: string; paused: boolean; running: boolean; statuses: ItemStatus[]; decisions?: string[]; build?: string; stalled?: boolean }): string {
+  if (o.stage === CANCELLED_STAGE) return "cancelled";
   if (o.paused) return "paused";
   const waiting = o.statuses.some((s) => s === "open" || s === "deferred");
   if (!o.running && o.decisions?.length) return "waiting_for_decision";

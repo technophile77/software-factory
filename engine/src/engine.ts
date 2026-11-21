@@ -46,7 +46,7 @@ import { type LitellmImage, type LitellmPin, litellmImageId } from "./docker/lit
 import { DocumentRefused, SourceDocument, documentMeta, lineOfByte, sha256 as sha256Of, sourcePath } from "./interview/document";
 import { frameDocument, frameRequest } from "./interview/frame";
 import { Conn, notification, serve } from "./channel/framing";
-import { EngineControl, ProjectChannel, type SourceIssue, SourceIssueRefused, methods } from "./channel/methods";
+import { EngineControl, ProjectChannel, type SourceIssue, SourceIssueRefused, CancelRefused, methods } from "./channel/methods";
 import { FactoryRunning, takeFactoryLock } from "./os/factory-lock";
 import { SessionManager } from "./channel/sessions";
 import { Listener, listenUnix } from "./channel/unix";
@@ -506,6 +506,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   const alert = async (p: Project, key: string, a: SecurityAlert) => {
     if (!p.inbox || dead || p.gone) return;
+    // F-015 FR-27: work that ends because its feature was cancelled asks the owner nothing.
+    if (a.feature && p.features.get(a.feature)?.state.cancelled) return;
     const k = sha256Hex(`${p.name}\0${key}`);
     const onState = await filedOnState(p);
     if (record.alert(k) || onState.alerts[k]) return;
@@ -1232,6 +1234,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           confirm: "It was a real secret: rotate it", hold: "It was a false positive: no action", recommendation: "A",
         });
       },
+      cancelFeature: (f, reason) => cancelFeature(p, f, reason),
       startFeature: (request, doc, issue) => {
         // One at a time across projects, so two requests can't take the same id.
         const run = startLock.then(async () => {
@@ -1286,6 +1289,75 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   function closesIn(f: FeatureInterview, repo: string): number | null {
     const i = f.state.issue;
     return i && i.repo.toLowerCase() === repo.toLowerCase() ? i.number : null;
+  }
+
+  /** F-015 FR-27: why a feature can't be cancelled any more, or null. */
+  function finalWord(f: FeatureInterview): string | null {
+    if (f.state.cancelled) return "cancelled";
+    if (isBuildStage(f.stage()) && machineState(f) === "closed") return "closed";
+    return null;
+  }
+
+  /** Builds of the feature that a cancel stops at once; read-only runs end on their own and record nothing. */
+  const cancels = new Map<FeatureInterview, AbortController>();
+
+  /**
+   * F-015 FR-27: the owner cancels a feature from any state that isn't final.
+   * The open PR is closed first, so a refusal from GitHub leaves the feature
+   * as it was for another try; then the cancellation is recorded, which makes
+   * anything still running for the feature record nothing, and its runs,
+   * items and dependents are dealt with.
+   */
+  async function cancelFeature(p: Project, f: FeatureInterview, reason: string): Promise<void> {
+    const final = finalWord(f);
+    if (final) throw new CancelRefused(`${f.id} is already ${final}.`);
+    if (reason) {
+      const scan = await scanner.scan([{ sha: sha256Hex(reason), content: Buffer.from(reason, "utf8") }]);
+      if (!scan.clean) throw new SecretFound([], scan.rules);
+    }
+    const pr = openPr(f);
+    if (pr) {
+      const api = pullsFor(p, pr.repo);
+      const now = await api.pull(pr.repo, pr.n);
+      if (now.state === "open") {
+        await api.comment(pr.repo, pr.n, `The owner cancelled ${f.id}${reason ? `: ${reason}` : "."} The branch is kept.`);
+        await api.closePull(pr.repo, pr.n);
+      }
+    }
+    const recorded = await f.exclusive(async () => {
+      if (f.state.cancelled) return false;
+      await f.append([{ type: "feature_cancelled", reason, by: "owner", ...(pr ? { pr: pr.n } : {}) }], "cancelled by the owner");
+      return true;
+    });
+    if (!recorded) return;
+    log.info(`${p.name}: ${f.id} cancelled by the owner (from ${f.state.cancelled!.from}).`);
+    if (pr) await writePrRecord(p, pr.repo, pr.n, f.id, (r) => ({ ...r, history: [...r.history, { at: iso(clock.now()), action: "closed_on_github" }] })).catch((e) => log.warn(`${f.id}: the PR record wasn't updated (${(e as Error).message}).`));
+    await afterCancel(p, f, "the owner cancelled the feature.");
+  }
+
+  /** The feature's PR while the engine waits on it, if any. */
+  function openPr(f: FeatureInterview): { repo: string; n: number } | null {
+    if (!isBuildStage(f.stage())) return null;
+    const state = machineState(f);
+    if (state !== "ci_wait" && state !== "pr_ready" && state !== "blocked" && state !== "merging_main" && state !== "classifying" && state !== "fixing_product" && state !== "fixing_tests" && state !== "testing") return null;
+    const opened = [...f.state.build.events].reverse().find((e) => e.action === "opened");
+    return opened ? { repo: String(opened.repo), n: Number(opened.pr) } : null;
+  }
+
+  /** FR-27: stops what runs for a cancelled feature, closes what it waits on, and wakes features that depend on it. */
+  async function afterCancel(p: Project, f: FeatureInterview, why: string): Promise<void> {
+    jobs.get(f)?.turns?.close();
+    cancels.get(f)?.abort();
+    await jobs.get(f)?.done.catch(() => undefined);
+    for (const r of record.runs()) {
+      if (r.project === p.name && r.feature === f.id && (r.status === "running" || r.status === "interrupted")) runs.finish(r.id, "failed", "the feature was cancelled");
+    }
+    for (const id of p.inbox?.waitingOn(f.id) ?? []) {
+      await p.inbox!.withdraw(id, `${f.id} was cancelled: ${why}`).catch((e) => log.warn(`${id}: couldn't withdraw (${(e as Error).message}).`));
+    }
+    for (const other of p.features.values()) {
+      if (other !== f && isBuildStage(other.stage()) && machineState(other) === "waiting_dependency") startBuild(p, other);
+    }
   }
 
   // Keyed by the feature itself: two projects can both have an F-001 (F-023 SR-13).
@@ -2371,6 +2443,23 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       log.info(`${r.id}: ${effect}${stage ? `; ${fid} is at ${stage}` : ""}.`);
     };
     if (keepsWaiting) return done("none");
+    // F-015 FR-27, AC-52: an answer about a cancelled feature changes nothing.
+    const about = f ?? (typeof r.feature === "string" ? p.features.get(r.feature) : undefined);
+    if (about?.state.cancelled) return done("feature_cancelled");
+    if (type === "depcancelled" && f) {
+      await jobs.get(f)?.done;
+      const { machine, refused } = buildMachine(f.state.build.actions);
+      if (refused || jobs.has(f) || machine.state() !== "waiting_dependency") return done("record_only");
+      if (chosen === "A") {
+        await done("cancelled");
+        await cancelFeature(p, f, `its dependency ${String(r.effect?.dependencies ?? "")} was cancelled`).catch((x) => log.warn(`${f.id}: couldn't cancel (${(x as Error).message}).`));
+        return;
+      }
+      if (chosen !== "B" || !machine.act("dependencies_merged")) return done("record_only");
+      await done("built_without_dependency", [{ type: "build", action: "dependencies_merged", item: r.id, without: String(r.effect?.dependencies ?? "") }], STAGE_OF[machine.state()]);
+      startBuild(p, f);
+      return;
+    }
     if ((type.startsWith("st_review_") || type === "spec_signoff") && (!f || !f.chainIntact)) return done("feature_unavailable");
 
     if (type === "st_review_choice" || type === "st_review_risk") {
@@ -2693,8 +2782,27 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   function waitingOn(p: Project, f: FeatureInterview, spec: string): string[] {
     return specDependencies(spec, f.id).filter((id) => {
       const dep = p.features.get(id);
-      return dep !== undefined && buildMachine(dep.state.build.actions).machine.state() !== "merged";
+      return dep !== undefined && !dep.state.cancelled && buildMachine(dep.state.build.actions).machine.state() !== "closed";
     });
+  }
+
+  /** F-015 FR-27: a dependency was cancelled, so the feature would wait for ever; the owner decides, once. */
+  async function dependencyCancelled(p: Project, f: FeatureInterview, gone: string[]): Promise<void> {
+    if (!p.inbox || p.inbox.waitingOn(f.id).length) return;
+    const names = gone.join(" and ");
+    const id = await fileDecisionItem(p.inbox, {
+      title: `${f.id} depends on ${names}, which was cancelled`, feature: f.id,
+      context: [{ engine: `${f.id} waits for ${names} to merge before its build starts (F-015 FR-16), but ${gone.length > 1 ? "they were" : "it was"} cancelled, so it would wait for ever (FR-27).` }],
+      impact: `${f.id} waits until you choose.`,
+      options: [
+        { id: "A", label: "Cancel this feature too", detail: `${f.id} is cancelled; its branches and records are kept.` },
+        { id: "B", label: "Build it without the dependency", detail: "The build starts now with the developer." },
+      ],
+      recommendation: "A",
+      costOfDelay: `${f.id} stays waiting.`,
+      effect: { type: "depcancelled", feature: f.id, dependencies: names },
+    }).catch((e) => (log.warn(`${f.id}: couldn't file the cancelled dependency item (${(e as Error).message}).`), null));
+    if (id) log.warn(`${f.id}: its dependency ${names} was cancelled; filed ${id} (FR-27).`);
   }
 
   /** Role policy v2.7: the held command waits on a Security item, at most 30 minutes; only option A runs it, once. */
@@ -2816,8 +2924,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (!isBuildStage(f.stage()) || !f.state.readiness.signedOff) return;
     const job: Job = { turns: null, done: Promise.resolve() };
     jobs.set(f, job);
+    cancels.set(f, new AbortController());
     job.done = runBuild(p, f)
       .catch(async (e) => {
+        if (f.state.cancelled) return;
         if (e instanceof BuildStop) {
           await alert(p, `buildconfig:${f.id}:${e.message}`, {
             title: `${p.name}: the build can't run with this configuration`, feature: f.id,
@@ -2842,6 +2952,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       })
       .finally(() => {
         jobs.delete(f);
+        cancels.delete(f);
         // FR-21 (b): a build that ends blocked, at engine start too, never waits with nothing open for the owner.
         void whatNext(p, f).catch((e) => log.warn(`${f.id}: couldn't check for a What next item (${(e as Error).message}).`));
       });
@@ -2866,6 +2977,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const state = machine.state();
       if (state === "waiting_dependency") {
         const ctx = await buildContext(p, f);
+        const gone = specDependencies(ctx.spec, f.id).filter((id) => p.features.get(id)?.state.cancelled);
+        if (gone.length) {
+          await dependencyCancelled(p, f, gone);
+          return;
+        }
         const waiting = waitingOn(p, f, ctx.spec);
         if (waiting.length) {
           log.info(`${f.id}: waits for ${waiting.join(", ")} to merge before development (FR-16).`);
@@ -3015,6 +3131,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         ...(policy.tools.includes("Skill") ? { skillsPluginDir: agents.skillsDir(role) } : {}),
         model, host: { ask: askOwner(p, f, runId, role, wt.path), askExtra: denyAsk(m.raw).askExtra, readOnlyRoot: folder.root, ...(cmds.test ? { testCommand: cmds.test } : {}) },
         ...(testTool ? { tools: [testTool] } : {}),
+        ...(cancels.get(f) ? { signal: cancels.get(f)!.signal } : {}),
         outputSchema: reportOutputSchema(role), first, ...(resumeId ? { resume: resumeId } : {}),
         ...(known.used ? { used: known.used } : {}),
         onUsed: (used) => void (dead || runs.update(runId, { used })),
@@ -3608,6 +3725,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (pr.state === "closed") {
       await writePrRecord(p, repo, n, f.id, (r) => ({ ...r, history: [...r.history, { at: new Date(clock.now()).toISOString(), action: "closed_on_github" }] }));
       await recordBuild(f, "owner_closed", { pr: n });
+      // F-015 FR-27: a PR closed without merging cancels the feature.
+      await f.exclusive(() => f.append([{ type: "feature_cancelled", reason: "the pull request was closed without merging", by: "github", pr: n }], "pull request closed"));
+      // Not awaited: this runs inside the feature's own build job, which afterCancel waits for.
+      void afterCancel(p, f, "its pull request was closed without merging.").catch((e) => log.warn(`${f.id}: cleanup after the closed PR failed (${(e as Error).message}).`));
       return;
     }
     const seen = new Set(ev.filter((e) => e.action === "changes").map((e) => e.comment_id));
@@ -4570,6 +4691,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (r.project !== p.name) continue;
       const f = p.features.get(r.feature);
       if (!f) continue;
+      if (f.state.cancelled) {
+        runs.finish(r.id, "failed", "the feature was cancelled");
+        continue;
+      }
       if (r.role === REVIEWER_ROLE) {
         // F-008 FR-10: a Security and Testability Review run resumes as an analyst run does.
         const plan = runs.resume(r.id);
