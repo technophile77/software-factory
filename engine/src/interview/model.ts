@@ -191,6 +191,8 @@ export class InterviewState {
   request = "";
   /** Set when the feature started from a document (channel v1.4); the text is on the feature branch. */
   document: DocumentMeta | null = null;
+  /** F-015 FR-26: the code repo issue the feature was started from, checked open at start. */
+  issue: { repo: string; number: number } | null = null;
   stage = "requirements_interview";
   readonly items = new Map<string, Item>();
   readonly order: string[] = [];
@@ -213,6 +215,7 @@ export class InterviewState {
         this.branch = e.branch as string;
         this.request = e.request as string;
         if (e.document) this.document = { ...(e.document as DocumentMeta) };
+        if (e.issue) this.issue = { ...(e.issue as { repo: string; number: number }) };
         break;
       case "item_created": {
         const src = e.item as Record<string, unknown>;

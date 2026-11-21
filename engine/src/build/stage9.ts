@@ -112,14 +112,18 @@ export function verbatimMatch(text: string, sources: readonly string[]): string 
   return null;
 }
 
-/** The fixed PR title and description (SR-4): the feature id and title, spec version and the approved spec's commit in the config repo. */
-export function prText(f: { id: string; title: string; specVersion: number | null; specCommit: string; configRepo: string; specPath: string }, ready: boolean): { title: string; body: string } {
+/**
+ * The fixed PR title and description (SR-4): the feature id and title, spec version and the approved spec's commit in the config repo;
+ * with `closes`, the source issue the engine checked at start (FR-26), so merging closes it.
+ */
+export function prText(f: { id: string; title: string; specVersion: number | null; specCommit: string; configRepo: string; specPath: string; closes?: number | null }, ready: boolean): { title: string; body: string } {
   const title = `${f.id}: ${f.title.replace(/[\r\n\u0000-\u001f\u007f]+/g, " ").trim()}`.slice(0, 200);
   const body = [
     `Feature ${f.id}, spec version ${f.specVersion ?? "unknown"}.`,
     `Spec: https://github.com/${f.configRepo}/blob/${f.specCommit}/${f.specPath.split("/").map(encodeURIComponent).join("/")}`,
     "",
     ready ? "The factory's checks have passed: this pull request is ready for the owner's review." : "Draft: the factory is waiting for the required checks.",
+    ...(f.closes && Number.isSafeInteger(f.closes) && f.closes > 0 ? ["", `Closes #${f.closes}`] : []),
   ].join("\n");
   return { title, body };
 }
