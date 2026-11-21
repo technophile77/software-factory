@@ -25,6 +25,7 @@ class Api implements MergeApi {
   async findPull(): Promise<Pull | null> { return null; }
   async createPull(): Promise<Pull> { throw new Error("no"); }
   async updatePull(): Promise<void> {}
+  async closePull(): Promise<void> {}
   async markReady(): Promise<void> {}
   async comments(): Promise<IssueComment[]> { return []; }
 }

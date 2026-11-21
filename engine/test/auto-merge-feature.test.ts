@@ -114,9 +114,9 @@ describe("FR-18: the merge itself", () => {
 describe("FR-18 in the build lifecycle", () => {
   const ready = ["dependencies_merged", "done", "done", "branches_merged", "passed", "clean", "pass", "opened", "green"] as const;
   it("an engine merge ends the build; a hold leaves the PR waiting for the owner", () => {
-    expect(buildMachine([...ready, "engine_merged"]).machine.state()).toBe("merged");
+    expect(buildMachine([...ready, "engine_merged"]).machine.state()).toBe("closed");
     expect(buildMachine([...ready, "auto_held"]).machine.state()).toBe("pr_ready");
     expect(buildMachine([...ready, "auto_held", "changes"]).machine.state()).toBe("fixing_product");
-    expect(buildMachine([...ready, "auto_held", "owner_merged"]).machine.state()).toBe("merged");
+    expect(buildMachine([...ready, "auto_held", "owner_merged"]).machine.state()).toBe("closed");
   });
 });

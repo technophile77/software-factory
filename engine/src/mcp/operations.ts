@@ -23,7 +23,7 @@ import { clean, fence, isWellFormed, quotesReply } from "./text";
 type Obj = Record<string, unknown>;
 export type Operation =
   | "status" | "start" | "list" | "open" | "approval" | "next" | "reply" | "state" | "close"
-  | "inbox_open" | "inbox_list" | "inbox_show" | "inbox_answer" | "inbox_confirm" | "transcript";
+  | "inbox_open" | "inbox_list" | "inbox_show" | "inbox_answer" | "inbox_confirm" | "transcript" | "cancel";
 
 /**
  * F-021: the session key a console session is kept under. Feature ids are
@@ -50,6 +50,7 @@ export const FIELDS: Record<Operation, readonly string[]> = {
   inbox_answer: ["feature", "item", "rev", "action", "note", "reply_id"],
   inbox_confirm: ["feature", "item", "rev", "code"],
   transcript: ["feature", "after"],
+  cancel: ["feature", "reason"],
 };
 
 const INBOX_ACTION_RE = /^(?:choose:[A-D]|step:[1-9]\d?|approve|reject|changes|research|defer|restore|dismiss)$/;
@@ -134,7 +135,10 @@ export function validate(op: Operation, req: Obj): void {
     }
     if (req.issue !== undefined && !parseSourceIssue(req.issue)) throw new Refused("bad_request", "`issue` must be owner/repo#number.");
   }
-  if (["open", "approval", "next", "reply", "state", "close", "inbox_list", "inbox_show", "inbox_answer", "inbox_confirm", "transcript"].includes(op)) needId(req, "feature");
+  if (["open", "approval", "next", "reply", "state", "close", "inbox_list", "inbox_show", "inbox_answer", "inbox_confirm", "transcript", "cancel"].includes(op)) needId(req, "feature");
+  if (op === "cancel" && req.reason !== undefined && (typeof req.reason !== "string" || [...req.reason].length > MAX_INBOX_NOTE)) {
+    throw new Refused("bad_request", `\`reason\` must be text up to ${MAX_INBOX_NOTE} characters.`);
+  }
   if (op === "transcript" && req.after !== undefined && (!isInt(req.after) || req.after < 0)) throw new Refused("bad_request", "`after` must be the `next` of the last transcript read.");
   if (op === "inbox_show" || op === "inbox_answer" || op === "inbox_confirm") {
     if (typeof req.item !== "string" || !INBOX_ID_RE.test(req.item)) throw new Refused("bad_request", "`item` must be an inbox item id such as D-0007.");
@@ -208,7 +212,7 @@ export class Interview {
     let replyId: string | undefined;
     try {
       validate(op, req);
-      if (op !== "status" && op !== "start" && op !== "list" && op !== "open" && op !== "state" && op !== "inbox_open") this.session(req.feature as string);
+      if (op !== "status" && op !== "start" && op !== "list" && op !== "open" && op !== "state" && op !== "inbox_open" && op !== "cancel") this.session(req.feature as string);
       if (!this.env.projectDir) {
         throw new Refused("no_project_dir", "Claude Code didn't say which project folder this chat is in, so the engine can't be found.");
       }
@@ -233,6 +237,10 @@ export class Interview {
       if (op === "transcript" && !where.capabilities.has("transcript")) {
         throw new Refused("transcript_unsupported", "This engine can't show the agents' transcript; it needs an engine whose "
           + "engine.json lists the \"transcript\" capability (F-021 FR-18). Nothing was sent.");
+      }
+      if (op === "cancel" && !where.capabilities.has("cancel")) {
+        throw new Refused("cancel_unsupported", "This engine can't cancel a feature; it needs an engine whose "
+          + "engine.json lists the \"cancel\" capability (channel v1.9, F-015 FR-27). Nothing was sent.");
       }
       if (op.startsWith("inbox_") && !where.capabilities.has("inbox")) {
         throw new Refused("inbox_unsupported", "This engine can't take inbox answers in the console; it needs an engine whose "
@@ -270,6 +278,7 @@ export class Interview {
       case "inbox_answer": return this.inboxAnswer(req, run, replyId!);
       case "inbox_confirm": return this.inboxConfirm(req, run);
       case "transcript": return this.transcript(req, run);
+      case "cancel": return this.cancel(req, run);
     }
   }
 
@@ -573,6 +582,13 @@ export class Interview {
       out.display = "An advisor call has started on that question. Its advice will appear with the question when it is done.\n\n" + out.display;
     }
     return out;
+  }
+
+  /** F-015 FR-27: the owner's cancel, after the console's confirmation. */
+  private async cancel(req: Obj, run: Run): Promise<Obj> {
+    const reason = typeof req.reason === "string" ? req.reason.trim() : "";
+    result(await run.call("feature.cancel", { feature: req.feature, ...(reason ? { reason } : {}) }));
+    return { cancelled: true };
   }
 
   private async close(req: Obj, run: Run): Promise<Obj> {

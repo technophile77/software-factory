@@ -194,6 +194,8 @@ export class InterviewState {
   /** F-015 FR-26: the code repo issue the feature was started from, checked open at start. */
   issue: { repo: string; number: number } | null = null;
   stage = "requirements_interview";
+  /** F-015 FR-27: why and from which stage the feature was cancelled; final once set. */
+  cancelled: { reason: string; from: string; at: string } | null = null;
   readonly items = new Map<string, Item>();
   readonly order: string[] = [];
   readonly replies = new Map<string, ReplyRecord>();
@@ -330,6 +332,10 @@ export class InterviewState {
         break;
       case "stage":
         this.stage = e.stage as string;
+        break;
+      case "feature_cancelled":
+        this.cancelled = { reason: String(e.reason ?? ""), from: this.stage, at: e.at };
+        this.stage = "cancelled";
         break;
       case "build": {
         const { type: _t, at: _a, ...data } = e as Record<string, unknown>;

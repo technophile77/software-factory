@@ -7,7 +7,7 @@ import type { AgentSdk, SdkMessage } from "../src/agent/sdk";
 import type { DockerCli } from "../src/docker/cli";
 import { FakeDocker } from "./fakes";
 import { GitHttp } from "./git-http";
-import { FACTORY_TOKEN, OWNER_ID, addProjectFile, git, tmpdir } from "./helpers";
+import { FACTORY_TOKEN, OWNER_ID, RpcClient, addProjectFile, git, tmpdir } from "./helpers";
 import { FakeIssues } from "./inbox-fake";
 import { type Script, boot, entries, interview, runsOf, scriptedSdk, stageOf, until, world } from "./agents-harness";
 import { act, analyst, effects, items, orchestrator, pollUntil, reviewer, start } from "./signoff-flow";
@@ -217,6 +217,9 @@ class FakePulls implements PullsApi {
   }
   async updatePull(_repo: string, _n: number, p: { title: string; body: string }): Promise<void> {
     this.pr = { ...this.pr!, ...p };
+  }
+  async closePull(): Promise<void> {
+    this.pr = { ...this.pr!, state: "closed" };
   }
   async markReady(): Promise<void> {
     this.readyCalls++;
@@ -709,5 +712,39 @@ require("fs").writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ resul
     expect(e.feature("acme", feature)!.state.build.actions.at(-1)).toBe("green");
     expect(pulls.merges).toEqual([]);
     expect(s.count.orchestrator ?? 0).toBe(0);
+  }, 150_000);
+
+  it("FR-27, AC-51, AC-53: the owner's cancel closes the waiting PR with the reason and keeps the branch; a merge would have been closed", async () => {
+    const { w, e, feature, pulls } = await toReady(true, "rapid-prototype");
+    await until("the ready pull request", () => e.feature("acme", feature)?.state.build.actions.includes("green") ?? false, 90_000);
+    const c = await RpcClient.connect(e.projects[0]!.channel);
+    try {
+      expect(await c.ok("feature.cancel", { feature, reason: "not needed any more" })).toEqual({ ok: true });
+      expect(pulls.pr!.state).toBe("closed");
+      expect(pulls.posted.at(-1)!.body).toBe(`The owner cancelled ${feature}: not needed any more The branch is kept.`);
+      const f = e.feature("acme", feature)!;
+      expect(f.state.cancelled).toMatchObject({ reason: "not needed any more", from: "pull_request" });
+      expect(stageOf(e, feature)).toBe("cancelled");
+      expect(((await c.ok("engine.status")).features as Array<{ id: string; activity: string }>).find((x) => x.id === feature)!.activity).toBe("cancelled");
+      expect(git(w.root, "--git-dir", pulls.bare, "rev-parse", "--verify", `refs/heads/${f.state.branch}`)).toMatch(/^[0-9a-f]{40}$/);
+      expect(JSON.parse(git(w.config, "show", "factory/state:prs/example-org/acme-web/1.json")).history.at(-1)).toMatchObject({ action: "closed_on_github" });
+      // Final: a second cancel is refused, and the build looks at the PR no more.
+      expect((await c.call("feature.cancel", { feature })).error).toMatchObject({ message: `${feature} is already cancelled.` });
+      const polls = pulls.commentReads;
+      await new Promise((r) => setTimeout(r, 300));
+      expect(pulls.commentReads).toBe(polls);
+    } finally {
+      c.close();
+    }
+  }, 150_000);
+
+  it("FR-27, AC-53: a PR closed on GitHub without merging ends the feature as cancelled", async () => {
+    const { e, feature, pulls } = await toReady(true, "rapid-prototype");
+    await until("the ready pull request", () => e.feature("acme", feature)?.state.build.actions.includes("green") ?? false, 90_000);
+    pulls.pr = { ...pulls.pr!, state: "closed" };
+    await until("the cancel", () => e.feature("acme", feature)?.state.cancelled !== null, 30_000);
+    expect(e.feature("acme", feature)!.state.build.actions.at(-1)).toBe("owner_closed");
+    expect(e.feature("acme", feature)!.state.cancelled).toMatchObject({ reason: "the pull request was closed without merging" });
+    expect(stageOf(e, feature)).toBe("cancelled");
   }, 150_000);
 });

@@ -293,7 +293,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
 
 ---
 
-## Engine control channel — v1.8
+## Engine control channel — v1.9
 
 - Status: Approved
 - Owner decision: follows ADR 0003; v1.1 by the owner, 2026-11-10 (H-0022, F-005); amendment
@@ -305,7 +305,7 @@ proposing role, and lists the new ids in its own report's `items_filed`.
   (F-006, the advisor) approved by the owner, 2026-11-10 (H-0063 and
   amendment H-0075: advisor fields stated exactly, call limits, budget flag,
   advice revision and hash; decision card, as drafted; renumbered from v1.2
-  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted); v1.4 capability list approved by the owner, 2026-11-12 (decision card); v1.5 (F-016 H-0183, `waiting_on`) approved by the owner, 2026-11-13 (decision card); v1.6 (F-021 H-0245, inbox answers in the console) approved by the owner, 2026-11-14 (decision card); v1.7 (F-024 H-0265, `engine.transcript`) approved by the owner, 2026-11-20 (decision card, F-024 spec v1); v1.8 (F-015 FR-26, `feature.start` `issue` and the `issue` capability) approved by the owner, 2026-11-21 (decision card, F-015 spec v27)
+  when merged with main); v1.4 (F-009, H-0105) approved by the owner, 2026-11-12 (decision card, as drafted); v1.4 capability list approved by the owner, 2026-11-12 (decision card); v1.5 (F-016 H-0183, `waiting_on`) approved by the owner, 2026-11-13 (decision card); v1.6 (F-021 H-0245, inbox answers in the console) approved by the owner, 2026-11-14 (decision card); v1.7 (F-024 H-0265, `engine.transcript`) approved by the owner, 2026-11-20 (decision card, F-024 spec v1); v1.8 (F-015 FR-26, `feature.start` `issue` and the `issue` capability) approved by the owner, 2026-11-21 (decision card, F-015 spec v27); v1.9 (F-015 FR-27, `feature.cancel`, the `cancel` capability and the `cancelled` activity; `closed` now means the PR merged and `merged` is retired) approved by the owner, 2026-11-21 (decision card, F-015 spec v28)
 - Used by: VS Code extension, engine, `spec-interview` skill (F-005)
 - Compatibility: adding a method is non-breaking; changing a method's
   parameters or result is breaking.
@@ -341,11 +341,12 @@ it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 
 | Method | Params | Result |
 |---|---|---|
-| `engine.status` | none | `{ version, capabilities?, uptime_s, features: [{ id, stage, active_agents, waiting_on?, activity? }] }` (`capabilities` from v1.4; `waiting_on` from v1.5: the ids of the inbox items the feature waits on, left out when there are none; `activity` from F-018: one of `analyst_reviewing`, `analyst_researching`, `analyst_writing_spec`, `security_reviewing`, `readiness_check`, `advisor_working`, `waiting_for_owner`, `paused`, `idle`, and from v1.6 `waiting_for_decision` (the feature waits on the inbox items in `waiting_on` and no agent runs for it); from F-021 v7 (H-0251) the build codes `waiting_on_dependency`, `developer_working`, `test_engineer_working`, `merging`, `resolving_conflicts`, `tests_running`, `classifying_failures`, `code_reviewing`, `validating`, `opening_pr`, `waiting_for_ci`, `pr_ready`, `build_stopped`, `merged`, `closed`, so a building feature never reports `idle`; `idle` only when nothing waits on the owner and no job is running or queued; clients ignore codes they don't know and treat a missing one as unknown) |
+| `engine.status` | none | `{ version, capabilities?, uptime_s, features: [{ id, stage, active_agents, waiting_on?, activity? }] }` (`capabilities` from v1.4; `waiting_on` from v1.5: the ids of the inbox items the feature waits on, left out when there are none; `activity` from F-018: one of `analyst_reviewing`, `analyst_researching`, `analyst_writing_spec`, `security_reviewing`, `readiness_check`, `advisor_working`, `waiting_for_owner`, `paused`, `idle`, and from v1.6 `waiting_for_decision` (the feature waits on the inbox items in `waiting_on` and no agent runs for it); from F-021 v7 (H-0251) the build codes `waiting_on_dependency`, `developer_working`, `test_engineer_working`, `merging`, `resolving_conflicts`, `tests_running`, `classifying_failures`, `code_reviewing`, `validating`, `opening_pr`, `waiting_for_ci`, `pr_ready`, `build_stopped`, `merged`, `closed`, so a building feature never reports `idle`; from v1.9 (F-015 FR-27) `closed` means only that the feature's PR merged, `merged` is no longer sent, and `cancelled` marks a feature the owner cancelled or whose PR was closed without merging; `idle` only when nothing waits on the owner and no job is running or queued; clients ignore codes they don't know and treat a missing one as unknown) |
 | `engine.pause` | `{ feature? }` | `{ paused: [feature ids] }` |
 | `engine.resume` | `{ feature? }` | `{ resumed: [feature ids] }` |
 | `engine.shutdown` | none | `{ ok: true }` after agents reach a safe stop |
 | `feature.start` | `{ request: string, document?: Document, issue?: string }` | `{ feature: id }` (assigns the requirements analyst; `document` from v1.4; `issue` from v1.8: `owner/repo#n`, an open issue in one of the project's code repos, else `-32602` and nothing starts; the engine lists the `issue` capability) |
+| `feature.cancel` | `{ feature, reason?: string }` | `{ ok: true }` (v1.9, F-015 FR-27): the feature ends as `cancelled`; its agent runs stop, its open items and PR close with the reason, its branches and records stay. An unknown feature is `-32003`; one already `closed` or `cancelled` is `-32602`. The engine lists the `cancel` capability |
 | `interview.list` | none | `{ features: [{ id, title, open, deferred, pending_assumptions }] }` (v1.1) |
 | `interview.open` | `{ feature, takeover?: bool }` | `{ session, started_at, approval: { user_code, verification_uri, expires_at } }`, takes the feature's session lock; the session is pending until approved (v1.1; `approval` from v1.2); no `approval` when the project's sign-in setting covers the session (F-018 FR-15) |
 | `interview.awaitApproval` | `{ session, wait_s?: int }` | `{ approved: true }` once GitHub confirms the owner; waits up to `wait_s` (at most 900) (v1.2) |
