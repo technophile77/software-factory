@@ -46,6 +46,7 @@ How each box is built is decided in ADRs:
 | Concurrency | ADR 0007: unlimited, with rebase-and-retest after each merge |
 | CI | ADR 0008: GitHub Actions, required merge gate, jobs scaled by maturity |
 | Factory state | ADR 0009: `factory/state` branch, checked out at `.factory/` |
+| Project MCP servers | ADR 0036: declared in the manifest, pinned and reviewed, per-role tool allow list; local servers run as the owner until Beta |
 
 ## Data formats
 

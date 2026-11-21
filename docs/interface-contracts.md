@@ -516,7 +516,7 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
 
 ---
 
-## Role policy — v2.12
+## Role policy — v2.13
 
 - Status: Approved (v2.2); v2.3 draft, awaiting owner approval (H-0040);
   v2.4 approved (H-0061, H-0076); v2.5 approved (H-0083); v2.7 approved
@@ -525,7 +525,8 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   (F-015 H-0192 and SR-7; owner, 2026-11-14, decision cards); v2.10 approved
   (H-0264; owner, 2026-11-19, decision card); v2.11 approved
   (F-015 FR-20; owner, 2026-11-20, decision card and in thread); v2.12
-  approved (F-015 v26 FR-25, test runs go through `run_tests`; owner, 2026-11-21, decision card)
+  approved (F-015 v26 FR-25, test runs go through `run_tests`; owner, 2026-11-21, decision card);
+  v2.13 approved (F-025 H-0271; owner, 2026-11-21, decision card)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
@@ -567,6 +568,15 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   deny; no manifest changes. v2.11 (F-015 FR-20) adds the tools `Monitor`
   and `TaskStop`, for commands run in the background; a manifest needs no
   change, and a role gets them only where its `tools` list names them.
+  v2.13 (F-025) adds the optional section `mcp`: `allow` lists the project MCP
+  servers (`<server>`, every tool in its approved record) or single tools
+  (`<server>/<tool>`) the role may call. Default empty, so no manifest needs a
+  change. A name not in `mcp_servers` is refused. A repo override may narrow
+  `mcp.allow`, never add to it. The gate allows `mcp__<server>__<tool>` only
+  when `mcp.allow` covers it and the tool's description hash matches the
+  record; every other `mcp__` name except the engine's `factory` server is
+  denied. An allowed tool the record marks `acts` runs without asking
+  (ADR 0036) and each call is logged.
 
 **Location:** the `policy:` key of the project manifest (change-controlled),
 with optional per-repo overrides under `repos[].policy`. Effective policy
@@ -871,7 +881,7 @@ section allows nothing); a role missing from the policy may not run.
 
 ---
 
-## Project manifest — v1.11
+## Project manifest — v1.12
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0014);
   v1.3 approved (H-0080); v1.4 approved (H-0087); v1.5 approved (H-0135);
@@ -879,7 +889,7 @@ section allows nothing); a role missing from the policy may not run.
   approved (F-015 H-0193, owner, decision card, 2026-11-14); v1.8 approved
   (F-018 H-0227, owner, decision card, 2026-11-14); v1.9 approved (F-015
   SR-6 H-0249, owner, decision card and thread, 2026-11-14); v1.10 approved
-  (F-015 FR-18 H-0253, owner, decision card, 2026-11-15); v1.11 approved (F-015 v26 FR-25, `commands.test_one`; owner, 2026-11-21, decision card)
+  (F-015 FR-18 H-0253, owner, decision card, 2026-11-15); v1.11 approved (F-015 v26 FR-25, `commands.test_one`; owner, 2026-11-21, decision card); v1.12 approved (F-025 H-0270, project MCP servers; owner, 2026-11-21, decision card)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
   adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
   `complexity` and `settings.agents` (F-002 A-6, A-8); v1.3 adds `enabled`,
@@ -902,7 +912,7 @@ the preset used only for initial calibration) and
 ladder; the engine refuses a rung that doesn't exist in the pinned factory
 version or is below the role's floor). Both change only through hygiene
 items (F-002). The manifest is the only record of repo and project maturity
-levels. `schema` stays `factory-project/1.0`: v1.1 to v1.11 only add optional keys.
+levels. `schema` stays `factory-project/1.0`: v1.1 to v1.12 only add optional keys.
 
 From v1.5, optional `settings.endpoints`: a list of model endpoint names
 (Model endpoints file v1.0) this project's code may be sent to; default
@@ -955,6 +965,39 @@ runs one test, as an argument list in which exactly one element is
 argument, never through a shell; the command writes `test_results` like
 `test`. Example for pytest: `["python", "-m", "pytest", "--junitxml=reports/junit.xml", "{test}"]`.
 Without it, agents can only run the whole suite.
+
+From v1.12 (F-025, ADR 0036), optional `mcp_servers`: the MCP servers this
+project's agents may be given. Each entry has a unique `name`
+(`^[a-z][a-z0-9-]{0,31}$`, never `factory`) and exactly one of `local` or
+`remote`:
+
+```yaml
+mcp_servers:
+  - name: tracker
+    local:
+      package: { ecosystem: npm, name: "@example/tracker-mcp", version: 1.4.2 }   # or pypi
+      args: ["--read-only"]
+      env:
+        TRACKER_URL: https://tracker.example.test
+        TRACKER_TOKEN: { secret: token }       # OS store item mcp-secret/<project>/tracker/token
+  - name: tool
+    local:
+      command: ["/opt/tools/tool-mcp", "--stdio"]
+      sha256: <hex>
+  - name: docs
+    remote:
+      url: https://mcp.example.test/mcp
+      headers:
+        Authorization: { secret: auth }
+```
+
+`version` is exact (no range, tag or `latest`); `command[0]` is an absolute
+path; `url` is https with no user info. A value in `env` or `headers` is a
+literal string or `{ secret: <key> }` (`^[a-z0-9_-]{1,32}$`); a literal that
+matches a gitleaks rule is refused. A server is used only when it matches its
+approved MCP server record (MCP server record v1.0). `mcp_servers` is pinned
+with `owner.*`, `allowed_repo_owners` and `enabled` (F-007 SR-5). The master
+factory ships no entries.
 
 From v1.8 (F-018 FR-15), optional `settings.interview_sign_in`: how often
 the owner signs in to GitHub to open interview sessions. `every` is
@@ -1025,6 +1068,29 @@ validation-judge) may never be excluded; overriding one requires a linked,
 approved Security decision and may only add rules. The two support roles,
 `project-evaluator` and `context-hygiene`, are not protected: a project may
 exclude either with a reason (owner, 2026-11-10).
+
+---
+
+## MCP server record — v1.0
+
+- Status: Approved (F-025 H-0272; owner, 2026-11-21, decision card)
+- Owner decision: ADR 0036
+- Used by: engine (writes at approval, reads at every session start), security reviewer (facts), owner (approves)
+- Compatibility: new format.
+
+**Location:** `.factory/mcp/<server>.json` on the project's `factory/state`.
+Schema `mcp-server-record/1.0` (`docs/schemas/mcp-server-record-1.schema.json`).
+Fields: `schema`, `server`, `kind` (`package` | `command` | `remote`), the
+pinned identity (`ecosystem`, `name`, `version`, `lockfile_sha256` | `sha256`
+| `url`), `install_scripts` (bool), `cve_scan` (`{ tool, ran_at, critical,
+high, medium, low }`), `tools` (`[{ name, class: reads | acts,
+description_sha256 }]`), `data` (`{ receives, sends_to: [host] }`,
+`leaves_pc` bool), `review` (security reviewer report path), `approved`
+(`{ item, at, local_risk_accepted }`). Strict: unknown keys refused, arrays
+capped. Any change to the pinned identity needs a new record.
+
+`factory-project-1.schema.json` gains `mcp_servers` and the role policy's
+`mcp` section.
 
 ---
 

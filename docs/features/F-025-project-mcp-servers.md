@@ -138,6 +138,8 @@ Medium, 3 Low; threat model included).
 
 ## 10. Interface requirements
 
+Applied as drafted, owner approval 2026-11-21 23:22Z (decision card).
+
 - Project manifest v1.11 → v1.12: `mcp_servers` (H-0270, Interfaces).
 - Role policy v2.12 → v2.13: `mcp.allow` (H-0271, Interfaces).
 - New: MCP server record `mcp-server-record/1.0` with JSON Schema (H-0272).
