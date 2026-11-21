@@ -730,7 +730,12 @@ describe("F-016 FR-13, FR-14: an analyst run that stopped (issues #64, #65)", ()
     await until("the analyststop item", () => items(w).some((i) => i.record.effect?.type === "analyststop"));
     expect(items(w)).toHaveLength(1);
     const agents = async () => ((await c.ok("engine.status")).features as Array<{ active_agents: number }>)[0]!.active_agents;
-    for (let i = 0; i < 250 && (await agents()) !== 0; i++) await new Promise((r) => setTimeout(r, 20));
+    // The run's agent count drops before the stop item is listed as waited on, so wait for both.
+    const settled = async () => {
+      const f = ((await c.ok("engine.status")).features as Array<{ active_agents: number; waiting_on?: string[] }>)[0]!;
+      return f.active_agents === 0 && f.waiting_on !== undefined;
+    };
+    for (let i = 0; i < 250 && !(await settled()); i++) await new Promise((r) => setTimeout(r, 20));
     expect((await c.ok("engine.status")).features).toEqual([{ id: feature, project: "acme", stage: "requirements_interview", active_agents: 0, activity: expect.any(String), waiting_on: ["D-0001"] }]);
     await pollUntil(w, "the issue", () => gh.issues.size === 1);
     await act(w, gh, 1, "choose:A");

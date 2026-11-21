@@ -138,10 +138,12 @@ describe("test command (SR-9, AC-26)", () => {
     const bin = tmpdir();
     fs.writeFileSync(path.join(wt, "npm"), "#!/bin/sh\n");
     fs.writeFileSync(path.join(bin, "npm"), "#!/bin/sh\n");
-    expect(resolveProgram("npm", wt, { PATH: `${wt}:.:${bin}` }, "linux")).toBe(path.join(bin, "npm"));
-    expect(() => resolveProgram("./npm", wt, { PATH: bin }, "linux")).toThrow(TestRunError);
-    expect(() => resolveProgram(path.join(wt, "npm"), wt, { PATH: bin }, "linux")).toThrow(/inside the worktree/);
-    expect(() => resolveProgram("npm", wt, { PATH: wt }, "linux")).toThrow(/isn't on PATH/);
+    // The host's own platform and PATH separator: on Windows a "linux" PATH split on ":" cuts the drive letters off.
+    const plat = process.platform;
+    expect(resolveProgram("npm", wt, { PATH: [wt, ".", bin].join(path.delimiter) }, plat)).toBe(path.join(bin, "npm"));
+    expect(() => resolveProgram("./npm", wt, { PATH: bin }, plat)).toThrow(TestRunError);
+    expect(() => resolveProgram(path.join(wt, "npm"), wt, { PATH: bin }, plat)).toThrow(/inside the worktree/);
+    expect(() => resolveProgram("npm", wt, { PATH: wt }, plat)).toThrow(/isn't on PATH/);
   });
   it("passes only the allowlisted environment", () => {
     const env = testEnv({ PATH: "/bin", HOME: "/h", GITHUB_TOKEN: "x", HTTPS_PROXY: "http://p", LC_ALL: "C", ANTHROPIC_API_KEY: "k" }, "linux");

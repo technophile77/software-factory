@@ -1,6 +1,7 @@
 import * as crypto from "node:crypto";
 import * as net from "node:net";
 import * as path from "node:path";
+import type { Conn } from "../channel/framing";
 import { listenPipe } from "../channel/windows";
 import { type Listener, listenUnix } from "../channel/unix";
 import type { Logger } from "../log";
@@ -31,14 +32,22 @@ export function factoryPipeName(sid: string): string {
  * in an owner-only folder elsewhere. Each connection is told the holder's pid.
  */
 export async function takeFactoryLock(o: { os: OsApi; children: Children; log: Logger; dir: string; pipe?: string }): Promise<Listener> {
+  const pidLine = () => Buffer.from(`${JSON.stringify({ pid: process.pid })}\n`);
   const tellPid = (c: { write(b: Buffer): void; close(): void }) => {
-    c.write(Buffer.from(`${JSON.stringify({ pid: process.pid })}\n`));
+    c.write(pidLine());
     c.close();
   };
   if (o.os.platform === "win32") {
+    // DisconnectNamedPipe throws away what the client hasn't read yet, so the pipe stays open until
+    // the client has read the pid and gone, or the probe time is up.
+    const tellPidThenWait = (c: Conn) => {
+      c.write(pidLine());
+      const t = setTimeout(() => c.close(), PROBE_MS);
+      c.onClose(() => clearTimeout(t));
+    };
     const name = o.pipe ?? factoryPipeName(o.os.windows().currentUserSid());
     try {
-      return await listenPipe({ name, os: o.os.windows(), children: o.children, log: o.log, onConnection: tellPid });
+      return await listenPipe({ name, os: o.os.windows(), children: o.children, log: o.log, onConnection: tellPidThenWait });
     } catch {
       throw new FactoryRunning(await pipeHolder(o.os, name));
     }
