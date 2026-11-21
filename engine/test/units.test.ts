@@ -838,6 +838,9 @@ describe("engine.status activity codes (F-018 FR-14, H-0225)", () => {
     expect(a("readiness_gate", true, [])).toBe("readiness_check");
     expect(a("requirements_interview", false, ["open"])).toBe("waiting_for_owner");
     expect(a("build_and_test_prep", false, [])).toBe("idle");
+    // An interview whose analyst run failed, with no job and nothing for the owner, isn't writing the spec.
+    expect(activityOf({ stage: "requirements_interview", paused: false, running: false, statuses: ["answered"], stalled: true })).toBe("idle");
+    expect(activityOf({ stage: "requirements_interview", paused: false, running: false, statuses: ["answered"], stalled: false })).toBe("analyst_writing_spec");
   });
 
   it("says a decision is pending, and idle only with nothing pending and no work queued (F-021 FR-12, AC-11)", async () => {
