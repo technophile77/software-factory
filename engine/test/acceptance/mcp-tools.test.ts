@@ -228,7 +228,7 @@ describe("FR-15: inputs", () => {
     const sorted = Object.fromEntries(Object.entries(FIELDS).map(([op, f]) => [op, [...f].sort()]));
     expect(sorted).toEqual({
       status: [], list: [],
-      start: ["document", "request"],
+      start: ["document", "issue", "request"],
       open: ["feature", "takeover"],
       approval: ["feature", "wait_s"],
       next: ["feature", "wait_s"],
