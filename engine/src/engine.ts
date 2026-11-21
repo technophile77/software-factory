@@ -2388,6 +2388,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return done(chosen === "A" ? "ask_approved" : "ask_denied");
     }
 
+    // FR-21: a step that stopped on an error runs again from where the build is; the record didn't move.
+    if (type === "buildretry" && f) {
+      if (chosen !== "A") return done("record_only");
+      await jobs.get(f)?.done;
+      await done("restarted");
+      startBuild(p, f);
+      return;
+    }
+
     // F-015 FR-21: a stopped build step goes on as chosen, to its own step or to another role with the owner's note; any other answer asks what next.
     if ((type === "buildstop" || type === "whatnext") && f) {
       await jobs.get(f)?.done;
@@ -2707,7 +2716,17 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           stop(p, e.message);
           return;
         }
-        log.warn(`${f.id}: the build stopped: ${await logWords(e)}`);
+        const why = await logWords(e);
+        log.warn(`${f.id}: the build stopped: ${why}`);
+        // FR-21: an error in a step leaves the feature where it was, so the owner gets an item to run it again, never silence.
+        const state = buildMachine(f.state.build.actions).machine.state();
+        if (p.inbox?.waitingOn(f.id).length) return;
+        await alert(p, `buildretry:${f.id}:${state}:${clock.now()}`, {
+          title: `${f.id}'s build stopped on an error`, feature: f.id,
+          context: `The build of ${f.id} stopped at ${state} on an error: ${why}. Nothing about it is recorded as done.`,
+          impact: `${f.id} waits until you choose.`,
+          confirm: "Run that step again", hold: "Keep the feature stopped", recommendation: "A",
+        });
       })
       .finally(() => {
         jobs.delete(f);
@@ -3381,7 +3400,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
     if (!(await leaseFresh(p))) throw new SessionRefused(`${p.name} is served by another factory; the branch wasn't pushed (F-023 FR-7)`);
-    await ctx.repo.pushFeature(ctx.branches.feature, head, codeToken!);
+    try {
+      await ctx.repo.pushFeature(ctx.branches.feature, head, codeToken!);
+    } catch (e) {
+      const said = (e as Error).message;
+      if (!PUSH_REFUSED.test(said)) throw e;
+      // FR-19: a token that can read the repo but not push to it is the owner's to fix, not an internal error.
+      await prRefused(p, f, `push:${head}`, `GitHub refused ${f.id}'s push to ${repo}`, `GitHub refused the push with this project's token for ${ctx.target.owner}: it can read ${repo} but not write to it. Give the fine-grained token Contents: Read and write and Pull requests: Read and write on ${repo}, with ${ctx.target.owner} as its resource owner; where ${ctx.target.owner} requires approval for fine-grained tokens, an owner of it must approve the token (F-015 FR-19)`);
+      return;
+    }
     log.action({ agent: "engine", action: "git.push", target: `${repo} ${ctx.branches.feature} ${head}`, outcome: "ok" });
     const api = pullsFor(p, repo);
     let pr = await api.findPull(repo, ctx.branches.feature);
@@ -3398,6 +3425,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     await p.state_repo!.commit([{ path: rel, content: JSON.stringify(edit(cur), null, 2) + "\n" }], `${feature}: PR ${repo}#${n}`);
     await pushState(p);
   }
+
+  /** What git prints when the remote refuses the token, as opposed to a network or local failure. */
+  const PUSH_REFUSED = /Permission to \S+ denied|The requested URL returned error: 403|remote: Write access to repository not granted|Authentication failed|Resource not accessible by personal access token/i;
 
   /** FR-10, SR-3, SR-11: the required checks on the pushed head decide; green makes the PR ready, red goes to stage 6. */
   async function waitForCi(p: Project, f: FeatureInterview): Promise<void> {

@@ -12,6 +12,8 @@ export class GitHttp {
   fetches = 0;
   /** Runs just before a push reaches the repo, so a test can make another factory win a race. */
   beforePush: (() => void) | null = null;
+  /** Pushes to a repo path containing this get 403, as GitHub answers a token that may read but not write. */
+  refusePushTo: string | null = null;
   private server!: http.Server;
   base = "";
 
@@ -37,6 +39,11 @@ export class GitHttp {
     if (push && password !== this.token) {
       res.writeHead(401, { "WWW-Authenticate": 'Basic realm="git"' });
       res.end();
+      return;
+    }
+    if (push && this.refusePushTo && url.pathname.includes(this.refusePushTo)) {
+      res.writeHead(403);
+      res.end("remote: Permission to example-org/acme-web.git denied to acme-owner.\n");
       return;
     }
     if (push && url.pathname.endsWith("/git-receive-pack")) {

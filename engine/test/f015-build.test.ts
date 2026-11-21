@@ -615,7 +615,7 @@ class MergingPulls extends FakePulls {
 }
 
 describe("F-015 FR-18: auto-merge up to a maturity level", () => {
-  async function toReady(approve: boolean, upTo = "alpha") {
+  async function toReady(approve: boolean, upTo = "alpha", beforeBoot?: () => void) {
     const { w, d, gh, id } = await signedOff((yaml, root) => {
       const script = path.join(root, "pass.js");
       fs.writeFileSync(script, `require("fs").writeFileSync("test-results.xml", '<?xml version="1.0"?><testsuites><testsuite name="export"><testcase classname="test/export.test.js" name="May"/></testsuite></testsuites>');\n`);
@@ -645,6 +645,7 @@ require("fs").writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ resul
     });
     const pulls = new MergingPulls(path.join(w.root, "remote", "example-org", "acme-web.git"));
     const tokenApi = { reachableRepos: async () => [{ name: "example-org/acme-web", private: true }, { name: "example-org/acme-config", private: true }], workflowWriteRefused: async () => true };
+    beforeBoot?.();
     const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, semgrep: { program: semgrep }, pulls: () => pulls, merge: () => pulls, prPollMs: 50, tokenCheck: () => tokenApi });
     return { w, gh, e, s, feature, pulls, turns };
   }
@@ -683,6 +684,18 @@ require("fs").writeFileSync(a[a.indexOf("--output") + 1], JSON.stringify({ resul
     await act(w, gh, issue, "choose:B", false);
     await pollUntil(w, "the owner's B", () => e.feature("acme", feature)?.state.build.actions.includes("changes") ?? false);
     expect(e.feature("acme", feature)!.state.build.events.find((x) => x.action === "changes")).toMatchObject({ note: "Docs: The README doesn't mention the export." });
+  }, 150_000);
+
+  it("FR-19, FR-21: a push GitHub refuses names the token problem in an item, not an internal error", async () => {
+    const { w, e, feature } = await toReady(true, "alpha", () => {
+      servers.at(-1)!.refusePushTo = "acme-web";
+    });
+    await until("the refusal", () => e.feature("acme", feature)?.state.build.actions.includes("refused") ?? false, 90_000);
+    await until("the refusal's item", () => items(w).some((i) => String(i.record.title).includes("GitHub refused")));
+    const item = items(w).find((i) => String(i.record.title).includes("GitHub refused"))!;
+    expect(item.record).toMatchObject({ title: `GitHub refused ${feature}'s push to example-org/acme-web`, feature, effect: { action: "to_pull_request" } });
+    expect(JSON.stringify(item.record)).not.toMatch(/internal error/);
+    expect(items(w).filter((i) => i.record.effect?.type === "buildretry")).toHaveLength(0);
   }, 150_000);
 
   it("AC-32: a repo above the setting is never auto-merged and no model sees it", async () => {
