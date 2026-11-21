@@ -31,6 +31,8 @@ export interface ProjectChannel {
   feature(id: string): FeatureInterview | null;
   /** Channel v1.4: `document` has passed validateDocument; the engine scans and stores it (F-009). v1.8: `issue` is the source issue (F-015 FR-26). */
   startFeature(request: string, document?: SourceDocument, issue?: SourceIssue): Promise<string>;
+  /** Channel v1.9 (F-015 FR-27): the owner cancels the feature; the reason has passed the length check. */
+  cancelFeature(f: FeatureInterview, reason: string): Promise<void>;
   /** F-021: the project's inbox for console answers, or null while it has none. */
   inbox(): ConsoleInbox | null;
   /** F-021 FR-18 (channel v1.7, H-0265): the project's live agent transcript after `after`. */
@@ -50,6 +52,9 @@ const MAX_REQUEST_CHARS = 4000;
 
 /** The engine refused a source issue before anything was started: not a project repo, not found, or not open. */
 export class SourceIssueRefused extends Error {}
+
+/** F-015 FR-27: the feature is already final, so there is nothing to cancel. */
+export class CancelRefused extends Error {}
 
 const INBOX_ITEM_RE = /^[DTHSMN]-\d{4,8}$/;
 const ACTION_RE = /^(?:choose:[A-D]|step:[1-9]\d?|approve|reject|changes|research|defer|restore|dismiss)$/;
@@ -159,6 +164,24 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
           throw e;
         }
       }
+      case "feature.cancel": {
+        only(p, ["feature", "reason"]);
+        const f = feature(p.feature);
+        if (p.reason !== undefined && (typeof p.reason !== "string" || [...p.reason].length > MAX_NOTE_CHARS)) {
+          throw new RpcError(RPC.invalidParams, `reason must be text up to ${MAX_NOTE_CHARS} characters.`);
+        }
+        try {
+          await project.cancelFeature(f, (p.reason ?? "").trim());
+          return { ok: true };
+        } catch (e) {
+          if (e instanceof CancelRefused) throw new RpcError(RPC.invalidParams, e.message);
+          if (e instanceof SecretFound) {
+            await project.secretRefused("feature.cancel", e, f.id);
+            throw new RpcError(RPC.refused, REFUSED_MESSAGE);
+          }
+          throw e;
+        }
+      }
       case "interview.list":
         only(p, []);
         return {
@@ -199,7 +222,7 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
         } catch (e) {
           if (e instanceof InterviewError) {
             if (e.code === "tampered") throw new RpcError(RPC.refused, REFUSED_MESSAGE);
-            const code = { stale: RPC.stale, unknown: RPC.unknown, kind: RPC.kindNotAllowed }[e.code];
+            const code = { stale: RPC.stale, unknown: RPC.unknown, kind: RPC.kindNotAllowed, cancelled: RPC.invalidParams }[e.code];
             throw new RpcError(code, e.message);
           }
           if (e instanceof SecretFound) {

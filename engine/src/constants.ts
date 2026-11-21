@@ -17,7 +17,7 @@ export const SERVED_CHANNEL_VERSION = "1.2";
  * reporting 1.2, because it doesn't serve v1.3's advisor yet. `inbox` is v1.6's console answers (F-021,
  * H-0245).
  */
-export const CAPABILITIES: readonly string[] = ["document", "inbox", "transcript", "issue"];
+export const CAPABILITIES: readonly string[] = ["document", "inbox", "transcript", "issue", "cancel"];
 
 export const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 export const FEATURE_ID_RE = /^F-(\d{3,6})$/;
@@ -112,6 +112,8 @@ export const MANIFEST_FILE = "factory-project.yaml";
 export const ENGINE_JSON = "engine.json";
 export const CREDENTIAL_SERVICE = "software-factory-engine";
 export const INTERVIEW_STAGE = "requirements_interview";
+/** F-015 FR-27: a feature the owner cancelled, or whose PR was closed without merging; final. */
+export const CANCELLED_STAGE = "cancelled";
 export const AFTER_INTERVIEW_STAGE = "security_testability_review";
 export const BUILD_STAGE = "build_and_test_prep";
 

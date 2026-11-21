@@ -22,8 +22,8 @@ export const BUILD_STATES = [
   "ci_wait",
   "pr_ready",
   "blocked",
-  "merged",
   "closed",
+  "cancelled",
 ] as const;
 export type BuildState = (typeof BUILD_STATES)[number];
 
@@ -69,7 +69,8 @@ export const BUILD_ACTIONS = [
 ] as const;
 export type BuildAction = (typeof BUILD_ACTIONS)[number];
 
-export type BuildFinal = "merged" | "closed";
+/** F-015 FR-27: `closed` means the PR merged; `cancelled`, that it was closed without merging. */
+export type BuildFinal = "closed" | "cancelled";
 
 const TEXT = `
 waiting_dependency 'dependencies_merged' -> developer;
@@ -130,10 +131,10 @@ ci_wait 'refused' -> blocked;
 ci_wait 'main_moved' -> merging_main;
 
 pr_ready 'changes' -> fixing_product;
-pr_ready 'owner_merged' -> merged;
-pr_ready 'engine_merged' -> merged;
+pr_ready 'owner_merged' -> closed;
+pr_ready 'engine_merged' -> closed;
 pr_ready 'auto_held' -> pr_ready;
-pr_ready 'owner_closed' -> closed;
+pr_ready 'owner_closed' -> cancelled;
 pr_ready 'main_moved' -> merging_main;
 
 blocked 'rerun_developer' -> developer;
@@ -147,7 +148,7 @@ blocked 'to_test_engineer' -> fixing_tests;
 blocked 'to_code_review' -> code_review;
 blocked 'to_validation' -> validation;
 blocked 'to_pull_request' -> opening_pr;
-blocked 'owner_closed' -> closed;
+blocked 'owner_closed' -> cancelled;
 `;
 
 const role = (r: string): Actor => ({ kind: "role", role: r });
@@ -159,7 +160,7 @@ export const BUILD_MACHINE: MachineSpec<BuildState, BuildAction, BuildFinal> = {
   start: "waiting_dependency",
   states: BUILD_STATES,
   actions: BUILD_ACTIONS,
-  final: ["merged", "closed"],
+  final: ["closed", "cancelled"],
   actors: {
     waiting_dependency: engine("checks each same-project dependency's PR until it merges (FR-16)"),
     developer: role("software-developer"),
@@ -198,8 +199,8 @@ export const STAGE_OF: Readonly<Record<BuildState, string>> = {
   ci_wait: "pull_request",
   pr_ready: "pull_request",
   blocked: "blocked",
-  merged: "pull_request",
   closed: "pull_request",
+  cancelled: "pull_request",
 };
 
 const STAGES = new Set(Object.values(STAGE_OF));

@@ -300,6 +300,17 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
     expect(engine.calls("feature.start")[0]!.params).toEqual({ request: "Export reports", issue: "example-org/acme-web#25" });
   });
 
+  test("F-015 FR-27: cancelling a feature takes a typed yes; anything else sends nothing", async () => {
+    writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document", "cancel"] });
+    engine.addFeature("F-1", "Export", []);
+    engine.hooks["feature.cancel"] = (conn, msg) => (conn.respond(msg, ["result", { ok: true }]), true);
+    // Cancel, F-1, no reason, "no": nothing sent. Again with a reason and "yes": sent.
+    const { s } = await run(["3", "1", "", "no", "3", "1", "Not needed", "", "yes"]);
+    expect(s.out).toContain("Not cancelled.");
+    expect(engine.calls("feature.cancel").map((c) => c.params)).toEqual([{ feature: "F-1", reason: "Not needed" }]);
+    expect(s.out).toContain("F-1 is cancelled.");
+  });
+
   test("a catch-all option such as \"Something else\" asks for the owner's text and sends both", async () => {
     engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["CSV", "Something else (describe it)"] })]);
     // 2 is "Something else"; an empty answer sends nothing and asks again.
