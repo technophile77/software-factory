@@ -14,6 +14,20 @@ import type { ModelCredential } from "./proxy/server";
 import { type AgentGroup, SessionGroup, runVolume } from "./agent/sandbox";
 import { LiveTranscript } from "./agent/live-transcript";
 import { HostError, HostGroup, runHome, sweepHomes } from "./agent/host";
+import { McpServerUnavailable, localCommand, resolveProjectMcp, values as mcpValues } from "./agent/project-mcp";
+import { mcpBaseEnv } from "./agent/host";
+import { PENDING_SCHEMA, approvalItem, approvedRecord, mcpPending, mcpReview, pendingRecord, reviewOutputSchema, reviewTurn } from "./mcp-approval/approve";
+import type { McpPending, McpReview } from "./mcp-approval/approve";
+import { installForApproval } from "./mcp-approval/install";
+import { osvScan } from "./mcp-approval/osv";
+import type { CveCounts } from "./mcp-approval/osv";
+import { listTools } from "./mcp-client/client";
+import type { McpTarget, McpTool } from "./mcp-client/client";
+import type { McpServer } from "./config/mcp-servers";
+import type { ProjectMcpSession } from "./agent/project-mcp";
+import { MCP_SERVER_RECORD_SCHEMA, mcpServerRecord } from "./schemas/mcp-server-record";
+import type { McpServerRecord } from "./schemas/mcp-server-record";
+import { mcpIdentity } from "./config/mcp-servers";
 import { ASK_WAIT_MS, type HostGate, WORKSPACE, type SessionCaps, type SessionOutcome, denyAsk } from "./agent/session";
 import { CODE_DIR, type CodeFiles, placeCodeCopies, removeCodeCopies } from "./agent/code-copies";
 import { commitWorktree } from "./agent/worktree-commit";
@@ -931,7 +945,17 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         confirm: "Investigate and restore factory/state on the remote", hold: "Leave it as it is", recommendation: "A",
       });
     }
-    if (touched.size || inboxChanged) return;
+    // F-025 FR-6: an approval record decides what runs on the owner's PC, so only this engine writes one, from the owner's answer.
+    const mcpChanged = (await p.state_repo.remoteChanges(local, remote)).some((c) => c.startsWith("mcp/"));
+    if (mcpChanged) {
+      await alert(p, `fetch:mcp:${remote}`, {
+        title: "Remote factory/state holds MCP server records the engine didn't write",
+        context: `The remote factory/state at ${remote.slice(0, 12)} adds or changes files under mcp/ that this engine has no record of writing (F-025 FR-6). None of it was adopted, so no server is approved by it.`,
+        impact: "The engine's pushes of factory/state fail while the remote holds these commits.",
+        confirm: "Investigate and restore factory/state on the remote", hold: "Leave it as it is", recommendation: "A",
+      });
+    }
+    if (touched.size || inboxChanged || mcpChanged) return;
     if (await p.state_repo.isAncestor(local, remote)) {
       await p.state_repo.fastForward(local, remote);
       log.info(`${p.name}: factory/state moved forward to the remote ${remote.slice(0, 12)}`);
@@ -1423,6 +1447,174 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   /** Each run's session homes on the owner's PC, kept while the run can resume. */
   const sessionsRoot = path.join(home, "sessions");
+  /** F-025: each project's installed MCP servers (SR-5, SR-13). */
+  const mcpRoot = path.join(home, "mcp");
+  /** F-025 FR-10: `<project>\0<server>` the owner chose to leave out of the next session once. */
+  const mcpSkipOnce = new Set<string>();
+  const toldAgentMcp = new Set<string>();
+  /** F-025 SR-10: secret values given to MCP servers; masked in what the console shows of a session. */
+  const mcpMasks = new Set<string>();
+  const maskMcp = (text: string) => {
+    let t = text;
+    for (const v of mcpMasks) if (v.length >= 8 && t.includes(v)) t = t.split(v).join("[MCP secret]");
+    return t;
+  };
+
+  /** The approved record of one project MCP server, from factory/state; null when there is none or it doesn't parse. */
+  async function mcpRecord(p: Project, server: string): Promise<McpServerRecord | null> {
+    const raw = await p.state_repo?.read(`mcp/${server}.json`).catch(() => null);
+    if (!raw) return null;
+    try {
+      const r = mcpServerRecord.parse(JSON.parse(raw.toString("utf8")));
+      return r.schema === MCP_SERVER_RECORD_SCHEMA ? r : null;
+    } catch {
+      log.warn(`${p.name}: mcp/${server}.json on factory/state is unreadable; the server isn't used until it is approved again.`);
+      return null;
+    }
+  }
+
+  /** F-025: the project MCP servers a session gets, after the record and tool hash checks; changed or new tools go to the owner (SR-7). */
+  async function projectMcpFor(p: Project, rt: AgentRuntime, policy: RolePolicy, at: { cwd: string; baseEnv: Record<string, string>; proxyEnv: Record<string, string> }): Promise<ProjectMcpSession> {
+    const m = p.manifest!;
+    const skip = new Set<string>();
+    for (const s of m.mcpServers) if (mcpSkipOnce.delete(`${m.name}\0${s.name}`)) skip.add(s.name);
+    try {
+      const r = await resolveProjectMcp({
+        project: m.name, policy, servers: m.mcpServers, record: (s) => mcpRecord(p, s), secrets: credentials, mcpRoot,
+        launcher: { command: rt.host!.node, args: [path.join(path.dirname(rt.proxyScript), "engine.js"), "mcp-launch"] },
+        skip, ...at,
+      });
+      for (const v of r.masks) mcpMasks.add(v);
+      const byServer = new Map<string, string[]>();
+      for (const x of r.leftOut) byServer.set(x.server, [...(byServer.get(x.server) ?? []), `${x.tool} (${x.why})`]);
+      for (const [server, tools] of byServer) {
+        log.warn(`${m.name}: MCP server ${server}: left out ${tools.length} tool(s) that weren't approved or changed since (F-025 SR-7).`);
+        await alert(p, `mcptools:${server}:${sha256Hex(tools.sort().join("\n")).slice(0, 16)}`, {
+          title: `MCP server ${server} reports new or changed tools`,
+          context: `The server lists tools that differ from what you approved: ${tools.join(", ").slice(0, 1500)}. Agents don't get them; the approved, unchanged tools still work (F-025 SR-7).`,
+          impact: "Agents can't use these tools until the server is reviewed and approved again.",
+          confirm: "Review the server again", hold: "Leave these tools out", recommendation: "B",
+        });
+      }
+      return r;
+    } catch (e) {
+      // FR-6: the approval starts on its own; the session that needed the server waits for the owner's answer.
+      if (e instanceof McpServerUnavailable && e.needsApproval) void startMcpApproval(p, rt, e.server);
+      throw e;
+    }
+  }
+
+  /** `<project>\0<server>` whose approval is being prepared, so one runs at a time. */
+  const mcpApprovals = new Set<string>();
+
+  /**
+   * F-025 FR-6, S9.8: installs a server from its pin, checks its dependency
+   * tree for CVEs, lists its tools, has the security reviewer report on it,
+   * and files the owner's Security item. Nothing runs for agents until the
+   * owner approves; the record is written from the answer (onAnswer).
+   */
+  async function startMcpApproval(p: Project, rt: AgentRuntime, server: string): Promise<void> {
+    const m = p.manifest!;
+    const key = `${m.name}\0${server}`;
+    if (mcpApprovals.has(key) || dead || !rt.host) return;
+    mcpApprovals.add(key);
+    const s = m.mcpServers.find((x) => x.name === server);
+    try {
+      if (!s) return;
+      const identity = mcpIdentity(s);
+      const old = await p.state_repo?.read(`mcp/${server}.pending.json`).catch(() => null);
+      if (old) {
+        const was = mcpPending.safeParse(JSON.parse(old.toString("utf8")));
+        if (was.success && was.data.identity === identity) return;
+      }
+      log.info(`${m.name}: preparing MCP server ${server} for approval (${identity}).`);
+      let cve: CveCounts | undefined;
+      let pinned: string | undefined;
+      let folder: string | null = null;
+      let target: McpTarget;
+      if (s.kind === "remote") {
+        target = { kind: "http", url: s.url, headers: await mcpValues({ project: m.name, secrets: credentials }, server, s.headers, []) };
+      } else {
+        const inst = await installForApproval(s, { mcpRoot, project: m.name, env, children, ...(rt.platform ? { platform: rt.platform } : {}) });
+        pinned = inst.pinnedSha256;
+        folder = inst.dir;
+        if (s.kind === "package") cve = await osvScan(inst.packages, () => iso(clock.now()));
+        const { command, args } = localCommand({ mcpRoot, project: m.name }, s, pinned);
+        const home = path.join(inst.dir, "home");
+        target = { kind: "stdio", command, args, cwd: inst.dir, env: { ...mcpBaseEnv(env, rt.platform ?? process.platform), HOME: home, USERPROFILE: home, ...(await mcpValues({ project: m.name, secrets: credentials }, server, s.env, [])) } };
+      }
+      const { tools } = await listTools(target);
+      const review = await runMcpReview(p, rt, s, tools, cve, folder);
+      const reviewPath = `mcp/${server}.review.json`;
+      const record = pendingRecord(s, { tools, review, ...(cve ? { cve } : {}), ...(pinned ? { pinnedSha256: pinned } : {}), reviewPath });
+      const pending: McpPending = { schema: PENDING_SCHEMA, identity, record: record as unknown as Record<string, unknown>, review, cve_ids: cve?.ids ?? [] };
+      await p.state_repo!.commit([
+        { path: `mcp/${server}.pending.json`, content: JSON.stringify(pending, null, 2) + "\n" },
+        { path: reviewPath, content: JSON.stringify(review, null, 2) + "\n" },
+      ], `MCP server ${server}: ready for the owner's approval`);
+      await pushState(p);
+      await alert(p, `mcpapprove:${server}:${sha256Hex(identity).slice(0, 16)}`, { ...approvalItem(s, record, review, cve?.ids ?? []), effectData: { server, identity } });
+    } catch (e) {
+      const why = e instanceof Error ? e.message.slice(0, 300) : "an internal error";
+      log.warn(`${m.name}: MCP server ${server} couldn't be prepared for approval: ${why}`);
+      await alert(p, `mcpprep:${server}:${s ? sha256Hex(mcpIdentity(s)).slice(0, 16) : "none"}:${sha256Hex(why).slice(0, 8)}`, {
+        title: `MCP server ${server} couldn't be prepared for your approval`,
+        context: `The engine couldn't install, scan, list or review ${server}: ${why} (F-025 FR-6).`,
+        impact: "Sessions of roles whose mcp.allow names this server don't start.",
+        confirm: "Fix the manifest entry or the PC, then it is prepared again at the next session", hold: "Remove it from the roles' mcp.allow", recommendation: "A",
+      }).catch(() => undefined);
+    } finally {
+      mcpApprovals.delete(key);
+    }
+  }
+
+  /** The security reviewer's session on one server: read-only, no network, its files only; the report is its structured result. */
+  async function runMcpReview(p: Project, rt: AgentRuntime, s: McpServer, tools: McpTool[], cve: CveCounts | undefined, folder: string | null): Promise<McpReview> {
+    const m = p.manifest!;
+    const role = "security-reviewer";
+    const lim = stReviewLimits(p.limits!, m.billingMode);
+    const model = p.models![role];
+    const instructions = p.sources!.instructions.get(role);
+    if (!lim || !model || !instructions) throw new SessionRefused("this factory version has no security reviewer to review MCP servers");
+    const credential = modelCredentialFor(env, modelCredential);
+    if (!credential) throw new SessionRefused("no model credential is stored or set");
+    const base = effectiveRole(m.raw, role);
+    const policy: RolePolicy = { ...base, tools: base.tools.filter((t) => t === "Read" || t === "Grep" || t === "Glob"), write: { allow: [], deny: [] }, commands: [], network: [], mayRequest: [] };
+    delete policy.mcp;
+    if (!policy.tools.length) policy.tools = ["Read"];
+    const worktree = folder ?? fs.mkdtempSync(path.join(mcpRoot, "review-"));
+    const files = () => (fs.readdirSync(worktree, { recursive: true }) as string[]).filter((f) => fs.lstatSync(path.join(worktree, f)).isFile()).sort();
+    const digest = () => sha256Hex(files().map((f) => `${f}\0${sha256Hex(fs.readFileSync(path.join(worktree, f)))}`).join("\n"));
+    const before = digest();
+    const runId = `mcp-${s.name}-${crypto.randomBytes(4).toString("hex")}`;
+    let got: McpReview | null = null;
+    try {
+      const group = await (await agentsFor(rt, p, credential)).group(runId);
+      const r = await runReviewerSessions({
+        sdk: await rt.sdk(), docker: rt.docker, group, policy, worktree, outputSchema: reviewOutputSchema(),
+        instructions: instructions.text, caps: lim.caps, model, first: reviewTurn(s, tools, cve, folder),
+        onUsed: () => undefined,
+        billingCheck: () => billingMismatch(m.billingMode, m.name, env, modelCredential),
+        check: async (structured) => {
+          const v = mcpReview.safeParse(structured);
+          if (v.success) got = v.data;
+          return v.success ? null : `Your report doesn't match the schema: ${v.error.issues.slice(0, 5).map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}. Send it again as one JSON object.`;
+        },
+        verify: async () => (digest() === before ? { status: "unchanged" as const } : { status: "rejected" as const, breaches: [{ path: "(the server's files)", reason: "not_allowed" as const }] }),
+        onBreach: async () => {
+          log.warn(`${m.name}: the MCP review of ${s.name} changed the server's files; its report isn't used.`);
+        },
+        onSessionId: () => undefined,
+        host: denyAsk(m.raw),
+        log,
+      });
+      if (r.invalid || !got) throw new Error(`the security review didn't give a usable report (${r.invalid ?? "no report"})`);
+      return got;
+    } finally {
+      await dropSession(runId);
+      if (!folder) fs.rmSync(worktree, { recursive: true, force: true });
+    }
+  }
   const skillDirs = new Map<string, Promise<string>>();
 
   interface RunAgents {
@@ -1459,7 +1651,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     };
     g.transcript = (kind, text) => {
       const w = who();
-      if (w) live.add(runId, w, kind, text);
+      if (w) live.add(runId, w, kind, maskMcp(text));
     };
     g.close = async () => {
       try {
@@ -1474,6 +1666,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   async function agentsForRun(rt: AgentRuntime, p: Project, credential: ModelCredential): Promise<RunAgents> {
     const m = p.manifest!;
     const sources = p.sources!;
+    // F-025 FR-14: an AGENT.md's own mcpServers would bypass the manifest and its approval; sessions never read it.
+    for (const [role, ins] of sources.instructions) {
+      const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(ins.text)?.[1] ?? "";
+      const key = `${m.name}\0${role}\0${ins.path}`;
+      if (/^mcpServers\s*:/m.test(front) && !toldAgentMcp.has(key)) {
+        toldAgentMcp.add(key);
+        log.info(`${m.name}: ${ins.path} lists mcpServers; sessions never read it. Project MCP servers go in the manifest's mcp_servers (F-025).`);
+      }
+    }
     const limits = p.limits!;
     const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
     const container = async (id: string, router?: RouterConfig): Promise<SessionGroup> => {
@@ -1518,6 +1719,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       group: async (id, router) => router ? container(id, router) : new HostGroup({
         host, children, runId: id, project: m.name, proxyScript: rt.proxyScript, homeRoot: sessionsRoot, credential, maxPageBytes: maxPageBytes(limits), env, log,
         ...(rt.platform ? { platform: rt.platform } : {}),
+        ...(m.mcpServers.length ? { mcp: (policy: RolePolicy, at: { cwd: string; baseEnv: Record<string, string>; proxyEnv: Record<string, string> }) => projectMcpFor(p, rt, policy, at) } : {}),
       }),
     };
   }
@@ -2522,9 +2724,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if ((type === "buildstop" || type === "whatnext") && f) {
       await jobs.get(f)?.done;
       const routes: Record<string, string | undefined> = type === "buildstop"
-        ? { A: String(r.effect?.action ?? ""), C: "to_developer", D: "to_test_engineer" }
+        ? { A: String(r.effect?.action ?? ""), C: typeof r.effect?.mcp_skip === "string" ? String(r.effect?.action ?? "") : "to_developer", D: "to_test_engineer" }
         : { A: "to_developer", B: "to_test_engineer", C: "retest" };
       const action = chosen ? routes[chosen] : undefined;
+      if (chosen === "C" && typeof r.effect?.mcp_skip === "string") mcpSkipOnce.add(`${p.name}\0${r.effect.mcp_skip}`);
       const { machine, refused } = buildMachine(f.state.build.actions);
       // SR-13 as for the analyst: one step per approval, and only a step the item offered from where the build is now.
       if (!action || refused || jobs.has(f) || !isBuildAction(action) || !machine.act(action)) {
@@ -2543,6 +2746,21 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if (chosen !== "A") {
       await done("record_only");
       if (f) await whatNext(p, f);
+      return;
+    }
+    // F-025 FR-6: the owner approved a server; the record is written only if the manifest still names what was reviewed.
+    if (type === "mcpapprove") {
+      const server = String(r.effect?.server ?? "");
+      const identity = String(r.effect?.identity ?? "");
+      const s = p.manifest?.mcpServers.find((x) => x.name === server);
+      const raw = /^[a-z][a-z0-9-]{0,31}$/.test(server) ? await p.state_repo?.read(`mcp/${server}.pending.json`).catch(() => null) : null;
+      const pending = raw ? mcpPending.safeParse(JSON.parse(raw.toString("utf8"))) : null;
+      if (!s || mcpIdentity(s) !== identity || !pending?.success || pending.data.identity !== identity) return done("mcp_stale");
+      const rec = approvedRecord(pending.data, r.id, iso(clock.now()));
+      await p.state_repo!.commit([{ path: `mcp/${server}.json`, content: JSON.stringify(rec, null, 2) + "\n" }], `${r.id}: MCP server ${server} approved`);
+      await done("mcp_approved");
+      await pushState(p);
+      log.info(`${p.name}: MCP server ${server} approved (${identity}); sessions that list it start now.`);
       return;
     }
     if (type === "pins") {
@@ -2765,15 +2983,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   ];
 
   /** A failed build step waits on the owner: option A takes the step again (the blocked state's actor). */
-  async function buildStopped(p: Project, f: FeatureInterview, key: string, what: string, why: string, rerun: BuildAction, agentSaid?: string): Promise<void> {
+  async function buildStopped(p: Project, f: FeatureInterview, key: string, what: string, why: string, rerun: BuildAction, agentSaid?: string, mcpSkip?: string): Promise<void> {
     await alert(p, `buildstop:${f.id}:${key}`, {
       title: `The ${what} for ${f.id} stopped`, feature: f.id,
       context: `The build of ${f.id} stopped at the ${what}: ${why}.${agentSaid ? ` What the ${what} said is in the console's private detail and in its report on factory/state.` : ""}`,
       ...(agentSaid ? { private: [{ name: `What the ${what} said`, text: agentSaid }] } : {}),
       impact: `${f.id} waits in the build until this is decided.`,
       confirm: `Run the ${what} again`, hold: "Keep the feature stopped", recommendation: "A",
-      effectData: { action: rerun },
-      more: SEND_TO_ROLE,
+      effectData: { action: rerun, ...(mcpSkip ? { mcp_skip: mcpSkip } : {}) },
+      // F-025 FR-10: a server that couldn't start can be left out once, by the owner only (SR-12).
+      more: mcpSkip ? [{ id: "C" as const, label: `Run it once without MCP server ${mcpSkip}`, detail: "The step runs again now without that server; the agent is told it's missing." }, SEND_TO_ROLE[1]!] : SEND_TO_ROLE,
     });
   }
 
@@ -3135,6 +3354,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const why = engineWords(e);
       if (record.run(runId)?.status === "running") runs.interrupt(runId, why);
       log.warn(`${f.id}: no ${w.what} session started: ${e instanceof SessionRefused || e instanceof HostError ? (e as Error).message : why}`);
+      // F-025 FR-10: an MCP server that can't be given to the session waits on the owner, who may retry or leave it out once.
+      if (e instanceof McpServerUnavailable && !e.needsApproval) await buildStopped(p, f, `mcp:${runId}:${e.server}`, w.what, e.message, w.rerun, undefined, e.server).catch(() => undefined);
       return false;
     }
   }

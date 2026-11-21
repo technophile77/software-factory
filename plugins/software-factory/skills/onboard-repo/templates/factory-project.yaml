@@ -207,5 +207,23 @@ policy:
       network:
         allow: []
 
+# F-025 (ADR 0036): the project's own MCP servers. None by default. A server
+# runs for agents only after the engine installs it from this exact pin,
+# checks it for CVEs, has the security reviewer report on it, and you approve
+# it in the inbox. Keys and tokens go in the OS store, never here:
+#   factory-engine secret set mcp-secret/<project-name>/<server>/<key>
+# Then list the server, or single tools, under a role: mcp: { allow: [<server>, <server>/<tool>] }
+# mcp_servers:
+#   - name: <server>
+#     local:
+#       package: { ecosystem: npm, name: <package>, version: <exact version> }   # or pypi
+#       env:
+#         <VARIABLE>: { secret: <key> }
+#   - name: <other-server>
+#     remote:
+#       url: https://<host>/<path>
+#       headers:
+#         Authorization: { secret: <key> }
+
 notes: |
   <project-specific context every agent reads>

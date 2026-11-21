@@ -122,6 +122,7 @@ export async function runWorkerSessions(i: WorkerRunInput): Promise<WorkerResult
         i.signal?.addEventListener("abort", () => abort.abort(), { once: true });
         const opts = sessionOptions({
           policy: i.policy, cwd: agent.cwd, worktree: i.worktree, workspace: agent.workspace, instructions: i.instructions,
+          ...(agent.projectMcp ? { projectMcp: agent.projectMcp } : {}),
           factoryServer: i.sdk.createFactoryServer(i.tools ?? []), factoryTools: (i.tools ?? []).map((t) => t.name), caps,
           ...(i.skillsPluginDir ? { skillsPluginDir: i.skillsPluginDir } : {}),
           model: i.model, ...(resume ? { resume } : {}), outputSchema: i.outputSchema,

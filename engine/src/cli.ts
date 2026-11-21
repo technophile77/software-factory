@@ -1,4 +1,10 @@
 import * as fs from "node:fs";
+import { mcpCheck, mcpList } from "./mcp-approval/cli";
+import { findProject } from "./config/confirm";
+import { checkProjectPath } from "./config/paths-file";
+import { readManifest } from "./config/manifest";
+import { spawn } from "node:child_process";
+import { launchSpec } from "./agent/project-mcp";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import { systemClock } from "./clock";
@@ -38,7 +44,15 @@ const USAGE = `factory-engine <command>
           Stores a secret in the OS credential store, read from stdin.
           Names: model-credential, factory-token/<project name>, and
           factory-token/<project name>/<GitHub owner> for repos of an owner
-          the project's main token can't reach (F-015 FR-19).
+          the project's main token can't reach (F-015 FR-19), and
+          mcp-secret/<project>/<server>/<key> for a key a project MCP server's
+          env or headers name as { secret: <key> } (F-025).
+  mcp list --project <project name or config repo path> [--master <path>] [--home <path>]
+          Lists the project's MCP servers, whether each is approved, and
+          which roles get which of their tools (F-025).
+  mcp check <server> --project <name> [--master <path>] [--home <path>]
+          Starts an approved server once and prints the tools it reports,
+          marking new or changed ones, which agents don't get.
   interview [<feature id>] [--project <path>] [-v | --verbose] [--plain]
           Answers the requirements analyst's questions in this terminal (F-018).
           --project defaults to the current folder, inside the project's repo.
@@ -264,6 +278,22 @@ async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   if (cmd === "interview") return interview(rest);
   if (cmd === "inbox") return interview(rest, "inbox");
+  // F-025 FR-8: Claude Code starts a local MCP server through this, so the server gets only the env the engine chose.
+  if (cmd === "mcp-launch") {
+    let spec: ReturnType<typeof launchSpec>;
+    try {
+      spec = launchSpec(rest, process.env);
+    } catch (e) {
+      process.stderr.write(`${(e as Error).message}\n`);
+      return 2;
+    }
+    const child = spawn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env, shell: false, windowsHide: true, stdio: "inherit" });
+    for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.on(sig, () => child.kill(sig));
+    return new Promise<number>((resolve) => {
+      child.on("error", () => resolve(127));
+      child.on("exit", (code, signal) => resolve(code ?? (signal ? 128 : 1)));
+    });
+  }
   if (cmd === "secret") {
     const [sub, given] = rest;
     if (sub !== "set" || !given || !isSecretName(given)) {
@@ -281,11 +311,12 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write(`Stored ${name}.\n`);
     return 0;
   }
-  if (cmd !== "start" && cmd !== "confirm") {
+  if (cmd !== "start" && cmd !== "confirm" && cmd !== "mcp") {
     process.stderr.write(USAGE);
     return cmd === "--help" ? 0 : 2;
   }
-  const f = flags(rest);
+  // `mcp list` and `mcp check <server>` put their words before the flags.
+  const f = flags(cmd === "mcp" ? rest.slice(rest[0] === "check" ? 2 : 1) : rest);
   const home = f.home ? path.resolve(f.home) : defaultEngineHome();
   ensureOwnerDir(home);
   let master: string;
@@ -315,6 +346,25 @@ async function main(argv: string[]): Promise<number> {
     } finally {
       rl.close();
     }
+  }
+  // F-025 FR-12: what the project's MCP servers are, who gets them, and what a server reports now.
+  if (cmd === "mcp") {
+    const sub = rest[0];
+    const server = sub === "check" ? rest[1] : undefined;
+    if (!f.project || (sub !== "list" && sub !== "check") || (sub === "check" && (!server || server.startsWith("--")))) {
+      process.stderr.write(USAGE);
+      return 2;
+    }
+    const gitPath = findOnPath("git");
+    if (!gitPath) throw new Error("git isn't on PATH");
+    const git = new Git({ gitPath, homeDir: path.join(home, "git"), children: new Children() });
+    const found = findProject(master, f.project, realOsApi());
+    const configRepo = await checkProjectPath(found.path, master, git);
+    const deps = {
+      git, configRepo, manifest: await readManifest(git, configRepo), secrets: new OsCredentialStore(() => realOsApi().credentials()),
+      mcpRoot: path.join(home, "mcp"), env: process.env, say: (l: string) => process.stdout.write(l + "\n"),
+    };
+    return sub === "list" ? mcpList(deps) : mcpCheck(deps, server!);
   }
   const gitleaks = f.gitleaks ?? readEngineConfig(home).gitleaks;
   if (!gitleaks || !path.isAbsolute(gitleaks)) {

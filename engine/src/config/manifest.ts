@@ -4,6 +4,7 @@ import { Git } from "../git";
 import { RoleAssignmentError, parseRoleAssignments } from "./endpoint-roles";
 import { ENDPOINT_NAME_RE } from "./models";
 import { ConfigError } from "./paths-file";
+import { McpConfigError, McpServer, parseMcpServers } from "./mcp-servers";
 import { checkConfig, manifestFile } from "../schemas/config";
 
 /**
@@ -53,6 +54,8 @@ export interface Manifest {
   interviewSignIn: InterviewSignIn | null;
   /** `settings.auto_merge_up_to` (v1.10, F-015 FR-18): the highest level whose feature PRs the engine may merge; null for none. */
   autoMergeUpTo: string | null;
+  /** Manifest v1.12 `mcp_servers` (F-025); empty when absent. */
+  mcpServers: McpServer[];
   /** The parsed document, from which a session's Role policy is resolved when it starts. */
   raw?: unknown;
 }
@@ -177,6 +180,13 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
     if (e instanceof RoleAssignmentError) bad(e.message);
     throw e;
   }
+  let mcpServers: McpServer[] = [];
+  try {
+    mcpServers = parseMcpServers(doc.mcp_servers);
+  } catch (e) {
+    if (e instanceof McpConfigError) bad(e.message);
+    throw e;
+  }
   return {
     name: doc.name as string,
     commit,
@@ -191,6 +201,7 @@ export function validateManifest(doc: unknown, commit: string): Manifest {
     maturity: doc.maturity as string,
     interviewSignIn: signIn,
     autoMergeUpTo: typeof upTo === "string" && upTo !== "none" ? upTo : null,
+    mcpServers,
     raw: doc,
   };
 }

@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import type { ProjectMcpSession } from "./project-mcp";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -96,6 +97,17 @@ export function hostEnv(o: { from: NodeJS.ProcessEnv; platform: NodeJS.Platform;
   return env;
 }
 
+/** What a local MCP server starts from (F-025 FR-8): PATH, the Windows basics and locale, nothing else of the engine's. */
+export function mcpBaseEnv(from: NodeJS.ProcessEnv, platform: NodeJS.Platform): Record<string, string> {
+  const env: Record<string, string> = {};
+  const take = (k: string) => {
+    if (typeof from[k] === "string") env[k] = from[k]!;
+  };
+  for (const k of ["PATH", "Path", ...SHELL_PASS]) take(k);
+  if (platform === "win32") for (const k of WINDOWS_BASE) take(k);
+  return env;
+}
+
 /**
  * Starts Claude Code on the owner's PC for one session (ADR 0026): the
  * pinned binary by absolute path, no shell, the session's own environment,
@@ -150,6 +162,8 @@ export interface HostGroupConfig {
   spawner?: typeof spawn;
   /** F-015 FR-20: how a session's commands are found and killed; tests replace it. */
   processes?: ProcessOps;
+  /** F-025: the project MCP servers a role's session gets; absent when the project declares none. */
+  mcp?(policy: RolePolicy, at: { cwd: string; baseEnv: Record<string, string>; proxyEnv: Record<string, string> }): Promise<ProjectMcpSession>;
 }
 
 const RUN_ID_RE = /^[A-Za-z0-9-]{1,100}$/;
@@ -174,6 +188,7 @@ export class HostGroup implements AgentGroup {
   private port = 0;
   private seq = 0;
   private readonly agents = new Map<string, AgentContainer & { home: string; temp: boolean; pids: number[] }>();
+  private toldMcpJson = false;
 
   constructor(private readonly c: HostGroupConfig) {
     if (!RUN_ID_RE.test(c.runId)) throw new HostError("bad run id");
@@ -228,11 +243,22 @@ export class HostGroup implements AgentGroup {
     const fullShell = FULL_SHELL_ROLES.includes(policy.role);
     const env = hostEnv({ from: this.c.env, platform, home, port: this.port, cred, fullShell });
     const cwd = worktree ?? path.join(home, "tmp");
-    this.proxy.send({ t: "grant", cred, session: name, role: policy.role, allow: policy.network, webSearch: policy.role === "web-reader" && policy.tools.includes("WebSearch") });
+    // F-025 FR-14: --strict-mcp-config already ignores it; the owner hears once that it has no effect.
+    if (worktree && !this.toldMcpJson && fs.existsSync(path.join(worktree, ".mcp.json"))) {
+      this.toldMcpJson = true;
+      this.c.log.info(`${this.c.project}: the worktree has a .mcp.json; sessions never read it. Project MCP servers go in the manifest's mcp_servers (F-025).`);
+    }
+    const proxyEnv: Record<string, string> = {};
+    for (const k of ["HTTPS_PROXY", "NO_PROXY"]) if (env[k] !== undefined) proxyEnv[k] = env[k]!;
+    // Before the grant: a server that can't be given to the session stops it here, with nothing to revoke (FR-10).
+    const projectMcp = policy.mcp?.length && this.c.mcp ? await this.c.mcp(policy, { cwd, baseEnv: mcpBaseEnv(this.c.env, platform), proxyEnv }) : undefined;
+    // FR-9: an allowed remote server's host, for this session only; the grant goes with the session's credential.
+    const allow = policy.network.includes("*") ? policy.network : [...new Set([...policy.network, ...(projectMcp?.hosts ?? [])])];
+    this.proxy.send({ t: "grant", cred, session: name, role: policy.role, allow, webSearch: policy.role === "web-reader" && policy.tools.includes("WebSearch") });
     const pids: number[] = [];
     const ops = this.c.processes ?? realProcessOps(platform);
     const a = {
-      name, role: policy.role, cred, cwd, workspace: worktree ?? cwd, host: true, home, temp: !keep, pids,
+      name, role: policy.role, cred, cwd, workspace: worktree ?? cwd, host: true, home, temp: !keep, pids, ...(projectMcp ? { projectMcp } : {}),
       spawn: hostSpawn({ bin, cwd, env, children: this.c.children, platform, onPid: (pid) => pids.push(pid), ...(this.c.spawner ? { spawner: this.c.spawner } : {}) }),
       killCommands: async () => {
         let n = 0;

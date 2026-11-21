@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import type { ProjectMcpSession } from "./project-mcp";
 import type { EntryKind } from "./live-transcript";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
@@ -90,6 +91,8 @@ export interface AgentContainer {
   host: boolean;
   /** F-015 FR-20, on the owner's PC: kills every process the session's Claude Code started, not Claude Code; how many were found. */
   killCommands?(): Promise<number>;
+  /** F-025: the project MCP servers this session gets; only on the owner's PC. */
+  projectMcp?: ProjectMcpSession;
 }
 
 export interface StartAgentOptions {

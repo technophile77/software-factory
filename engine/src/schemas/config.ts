@@ -93,7 +93,21 @@ const repo = z.strictObject({
   }).optional(),
 });
 
-/** `factory-project.yaml` (Project manifest v1.9) in the project's config repo. */
+// Manifest v1.12 (F-025): the outline only; config/mcp-servers.ts checks names, versions, paths and URLs.
+const mcpValues = z.record(z.string().max(64), z.union([text(500), z.strictObject({ secret: text(32) })]));
+const mcpServer = z.strictObject({
+  name: text(32),
+  local: z.strictObject({
+    package: z.strictObject({ ecosystem: z.enum(["npm", "pypi"]), name: text(214), version: z.union([text(100), z.number()]) }).optional(),
+    command: z.array(text(500)).min(1).max(50).optional(),
+    sha256: text(64).optional(),
+    args: z.array(text(500)).max(50).optional(),
+    env: mcpValues.optional(),
+  }).optional(),
+  remote: z.strictObject({ url: text(500), headers: mcpValues.optional() }).optional(),
+});
+
+/** `factory-project.yaml` (Project manifest v1.12) in the project's config repo. */
 export const manifestFile = z.strictObject({
   schema: z.literal("factory-project/1.0"),
   name: text(100),
@@ -125,6 +139,7 @@ export const manifestFile = z.strictObject({
   }).optional(),
   notes: text(20000).optional(),
   policy: open.optional(),
+  mcp_servers: z.array(mcpServer).max(32).optional(),
   limits: limits(false).optional(),
   github: open.optional(),
 });

@@ -62,7 +62,8 @@ export interface SessionOptions {
   cwd: string;
   settingSources: [];
   strictMcpConfig: true;
-  mcpServers: Record<"factory", unknown>;
+  /** The engine's `factory` server, and the project MCP servers the role allows (F-025). */
+  mcpServers: Record<string, unknown>;
   tools: string[];
   allowedTools: string[];
   disallowedTools: string[];

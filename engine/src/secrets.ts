@@ -12,6 +12,8 @@ const FACTORY_TOKEN_RE = /^factory-token\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
 const OWNER_TOKEN_RE = /^factory-token\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
 // F-013 FR-3: the same shape as an endpoint name, so an `api_key_ref` can't reach any other item.
 const ENDPOINT_KEY_RE = /^endpoint-key\/[a-z0-9-]{1,32}$/;
+// F-025 FR-4: one key of one project MCP server, named so it can reach no other server's or project's item.
+const MCP_SECRET_RE = /^mcp-secret\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[a-z][a-z0-9-]{0,31}\/[a-z0-9_-]{1,32}$/;
 const MAX_SECRET_BYTES = 2048;
 
 export function factoryTokenName(project: string): string {
@@ -52,8 +54,15 @@ export function endpointKeyName(ref: string): string {
   return name;
 }
 
+/** The credential store name of one MCP server secret (F-025 FR-4, SR-1). */
+export function mcpSecretItem(project: string, server: string, key: string): string {
+  const name = `mcp-secret/${project}/${server}/${key}`;
+  if (!MCP_SECRET_RE.test(name)) throw new SecretError("That project, server and key can't name an MCP secret.");
+  return name;
+}
+
 export function isSecretName(name: string): boolean {
-  return name === MODEL_CREDENTIAL || FACTORY_TOKEN_RE.test(name) || OWNER_TOKEN_RE.test(name) || ENDPOINT_KEY_RE.test(name);
+  return name === MODEL_CREDENTIAL || FACTORY_TOKEN_RE.test(name) || OWNER_TOKEN_RE.test(name) || ENDPOINT_KEY_RE.test(name) || MCP_SECRET_RE.test(name);
 }
 
 export class SecretError extends Error {

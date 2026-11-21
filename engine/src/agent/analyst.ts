@@ -93,6 +93,7 @@ export async function runAnalystSession(i: AnalystRunInput): Promise<{ outcome: 
         policy: analyst,
         cwd: agent.cwd,
         worktree: i.worktree,
+        ...(agent.projectMcp ? { projectMcp: agent.projectMcp } : {}),
         instructions: i.instructions.analyst,
         factoryServer: i.sdk.createFactoryServer(tools),
         factoryTools: tools.map((t) => t.name),
