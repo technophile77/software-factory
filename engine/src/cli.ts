@@ -38,7 +38,9 @@ const USAGE = `factory-engine <command>
           Stores a secret in the OS credential store, read from stdin.
           Names: model-credential, factory-token/<project name>, and
           factory-token/<project name>/<GitHub owner> for repos of an owner
-          the project's main token can't reach (F-015 FR-19).
+          the project's main token can't reach (F-015 FR-19), and
+          mcp-secret/<project>/<server>/<key> for a key a project MCP server's
+          env or headers name as { secret: <key> } (F-025).
   interview [<feature id>] [--project <path>] [-v | --verbose] [--plain]
           Answers the requirements analyst's questions in this terminal (F-018).
           --project defaults to the current folder, inside the project's repo.

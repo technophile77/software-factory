@@ -4,6 +4,34 @@ import { canonical } from "../state/transcript";
 import { ensureOwnerDir, writeFileAtomic } from "../fsutil";
 import type { InterviewSignIn, Manifest, RepoOwner, RepoVisibility } from "./manifest";
 
+export interface McpPin {
+  servers: unknown[];
+  allow: Record<string, string[]>;
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * What agents can reach through project MCP servers (F-025 FR-13): the
+ * servers as written and every role's `mcp.allow`, project and repo
+ * overrides, so an agent with write access to the config repo can't add a
+ * server or a tool unseen.
+ */
+export function mcpPin(raw: unknown): McpPin {
+  const doc = isObj(raw) ? raw : {};
+  const allowOf = (policy: unknown, prefix: string, out: Record<string, string[]>) => {
+    const roles = isObj(policy) && isObj(policy.roles) ? policy.roles : {};
+    for (const [role, r] of Object.entries(roles)) {
+      const allow = isObj(r) && isObj(r.mcp) && Array.isArray(r.mcp.allow) ? r.mcp.allow.filter((x): x is string => typeof x === "string") : [];
+      if (allow.length) out[`${prefix}${role}`] = [...allow].sort();
+    }
+  };
+  const allow: Record<string, string[]> = {};
+  allowOf(doc.policy, "", allow);
+  for (const repo of Array.isArray(doc.repos) ? doc.repos : []) if (isObj(repo) && typeof repo.name === "string") allowOf(repo.policy, `repos[${repo.name}].`, allow);
+  return { servers: Array.isArray(doc.mcp_servers) ? doc.mcp_servers : [], allow };
+}
+
 /**
  * The pinned security keys of each project (SR-5): `owner.*`,
  * `allowed_repo_owners`, `enabled`, `settings.interview_sign_in` (F-018
@@ -23,6 +51,8 @@ export interface Pin {
   interview_sign_in?: InterviewSignIn | null;
   /** H-0249: repo name to recorded visibility; absent in older pins, which matches a manifest with none recorded. */
   repo_visibility?: Record<string, RepoVisibility>;
+  /** F-025 FR-13: `mcp_servers` and each role's `mcp.allow`; absent in older pins, which matches a manifest with neither. */
+  mcp?: McpPin;
   pinned_at: string;
   /** The manifest commit the owner confirmed. */
   commit: string;
@@ -42,9 +72,9 @@ export type PinCheck =
   | { status: "new_path" }
   | { status: "changed"; keys: string[] };
 
-export function pinnedKeys(m: Pick<Manifest, "owner" | "allowed_repo_owners" | "enabled" | "name" | "interviewSignIn" | "repos">) {
+export function pinnedKeys(m: Pick<Manifest, "owner" | "allowed_repo_owners" | "enabled" | "name" | "interviewSignIn" | "repos" | "raw">) {
   const repoVisibility = Object.fromEntries(m.repos.filter((r) => r.visibility).map((r) => [r.name, r.visibility!]).sort(([a], [b]) => (a! < b! ? -1 : 1)));
-  return { name: m.name, owner: m.owner, allowed_repo_owners: m.allowed_repo_owners, enabled: m.enabled, interview_sign_in: m.interviewSignIn, repo_visibility: repoVisibility };
+  return { name: m.name, owner: m.owner, allowed_repo_owners: m.allowed_repo_owners, enabled: m.enabled, interview_sign_in: m.interviewSignIn, repo_visibility: repoVisibility, mcp: mcpPin(m.raw) };
 }
 
 export function comparePin(pin: Pin | null, m: Manifest): PinCheck {
@@ -58,6 +88,7 @@ export function comparePin(pin: Pin | null, m: Manifest): PinCheck {
   if (canonical(pin.interview_sign_in ?? null) !== canonical(now.interview_sign_in)) keys.push("settings.interview_sign_in");
   // Publishing code to a public repo is the owner's own confirmation (SR-6), so an agent can't add it.
   if (canonical(pin.repo_visibility ?? {}) !== canonical(now.repo_visibility)) keys.push("repos[].visibility");
+  if (canonical(pin.mcp ?? { servers: [], allow: {} }) !== canonical(now.mcp)) keys.push("mcp_servers");
   return keys.length ? { status: "changed", keys } : { status: "match" };
 }
 

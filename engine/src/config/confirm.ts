@@ -135,6 +135,11 @@ export async function confirmProject(o: {
   const signIn = (v: InterviewSignIn | null | undefined) => (v ? JSON.stringify(v) : "level default");
   if (pin) o.io.say(`  pinned:  owner ${JSON.stringify(pin.owner)}, allowed_repo_owners ${JSON.stringify(pin.allowed_repo_owners)}, enabled ${pin.enabled}, interview sign-in ${signIn(pin.interview_sign_in)}, repo visibility ${JSON.stringify(pin.repo_visibility ?? {})}`);
   o.io.say(`  on main: owner ${JSON.stringify(now.owner)}, allowed_repo_owners ${JSON.stringify(now.allowed_repo_owners)}, enabled ${now.enabled}, interview sign-in ${signIn(now.interview_sign_in)}, repo visibility ${JSON.stringify(now.repo_visibility)}`);
+  // F-025 FR-13: what agents could reach through MCP servers, so the owner sees an added server or tool before confirming.
+  if (cmp.status === "changed" && cmp.keys.includes("mcp_servers")) {
+    o.io.say(`  MCP pinned:  ${JSON.stringify(pin?.mcp ?? { servers: [], allow: {} })}`);
+    o.io.say(`  MCP on main: ${JSON.stringify(now.mcp)}`);
+  }
   if (!pin) {
     const head = await factoryStateHead(o.git, real);
     o.io.say(head

@@ -36,6 +36,15 @@ export interface RolePolicy {
   /** Host names, or exactly ["*"] for an open-web role. */
   network: string[];
   mayRequest: string[];
+  /** Role policy v2.13 (F-025): project MCP servers (`<server>`) or single tools (`<server>/<tool>`) the role may call. */
+  mcp?: string[];
+}
+
+const MCP_ENTRY_RE = /^[a-z][a-z0-9-]{0,31}(?:\/[A-Za-z0-9_-]{1,64})?$/;
+
+/** Whether `allow` covers one entry: the same entry, or the whole server it names. */
+export function mcpCovers(allow: readonly string[], entry: string): boolean {
+  return allow.includes(entry) || allow.includes(entry.split("/")[0]!);
 }
 
 export class PolicyError extends Error {
@@ -67,7 +76,7 @@ function globs(v: unknown, where: string): string[] {
 }
 
 function parseRole(role: string, v: unknown, where: string): RolePolicy {
-  const r = section(v, where, ["tools", "read", "write", "commands", "network", "may_request"]);
+  const r = section(v, where, ["tools", "read", "write", "commands", "network", "may_request", "mcp"]);
   const tools = strList(section(r.tools, `${where}.tools`, ["allow"]).allow, `${where}.tools.allow`);
   for (const t of tools) if (!(KNOWN_TOOLS as readonly string[]).includes(t)) throw new PolicyError(`${where}.tools: unknown tool ${JSON.stringify(t).slice(0, 40)}`);
   const read = section(r.read, `${where}.read`, ["allow", "deny"]);
@@ -76,6 +85,8 @@ function parseRole(role: string, v: unknown, where: string): RolePolicy {
   for (const h of network) if (h !== "*" && !HOST_RE.test(h)) throw new PolicyError(`${where}.network: ${JSON.stringify(h).slice(0, 80)} is not a host name`);
   const commands = strList(section(r.commands, `${where}.commands`, ["allow"]).allow, `${where}.commands.allow`);
   for (const c of commands) if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/.test(c)) throw new PolicyError(`${where}.commands: ${JSON.stringify(c).slice(0, 40)} is not a program name`);
+  const mcp = strList(section(r.mcp, `${where}.mcp`, ["allow"]).allow, `${where}.mcp.allow`);
+  for (const m of mcp) if (!MCP_ENTRY_RE.test(m)) throw new PolicyError(`${where}.mcp: ${JSON.stringify(m).slice(0, 100)} is not <server> or <server>/<tool>`);
   return {
     role,
     tools: [...new Set(tools)] as ToolName[],
@@ -84,7 +95,19 @@ function parseRole(role: string, v: unknown, where: string): RolePolicy {
     commands,
     network,
     mayRequest: strList(r.may_request, `${where}.may_request`),
+    ...(mcp.length ? { mcp: [...new Set(mcp)] } : {}),
   };
+}
+
+/** F-025 FR-5: every server a role names must be one the manifest declares. */
+function checkMcpNames(manifestDoc: Record<string, unknown>, p: RolePolicy, where: string): void {
+  if (!p.mcp?.length) return;
+  const list = Array.isArray(manifestDoc.mcp_servers) ? manifestDoc.mcp_servers : [];
+  const declared = new Set(list.map((s) => (isObj(s) && typeof s.name === "string" ? s.name : "")));
+  for (const m of p.mcp) {
+    const server = m.split("/")[0]!;
+    if (!declared.has(server)) throw new PolicyError(`${where}.mcp: ${JSON.stringify(server)} is not in mcp_servers`);
+  }
 }
 
 /** The checks every effective role must pass (Role policy v2.6). */
@@ -125,6 +148,7 @@ export function effectiveRole(manifestDoc: unknown, role: string, repoName?: str
   if (!Object.prototype.hasOwnProperty.call(roles, role)) throw new PolicyError(`the policy has no role ${role}; it may not run`);
   const base = parseRole(role, roles[role], `policy.roles.${role}`);
   checkRole(base, `policy.roles.${role}`);
+  checkMcpNames(manifestDoc, base, `policy.roles.${role}`);
   if (repoName === undefined) return base;
   const repos = Array.isArray(manifestDoc.repos) ? manifestDoc.repos : [];
   const repo = repos.find((r) => isObj(r) && r.name === repoName) as Record<string, unknown> | undefined;
@@ -135,6 +159,9 @@ export function effectiveRole(manifestDoc: unknown, role: string, repoName?: str
   if (isObj(ov) && ov.may_request !== undefined) throw new PolicyError(`${where}: may_request is set in the project policy only`);
   const has = (k: string, sub: string) => isObj(ov) && isObj(ov[k]) && (ov[k] as Record<string, unknown>)[sub] !== undefined;
   if (has("tools", "allow") && o.tools.some((t) => !base.tools.includes(t))) throw new PolicyError(`${where}: a repo override may not add tools`);
+  // F-025 FR-5: an override may narrow what a role gets from a server, never widen it.
+  if (has("mcp", "allow") && (o.mcp ?? []).some((m) => !mcpCovers(base.mcp ?? [], m))) throw new PolicyError(`${where}: a repo override may not add MCP servers or tools`);
+  const mcp = has("mcp", "allow") ? o.mcp ?? [] : base.mcp ?? [];
   const eff: RolePolicy = {
     role,
     tools: has("tools", "allow") ? o.tools : base.tools,
@@ -143,6 +170,7 @@ export function effectiveRole(manifestDoc: unknown, role: string, repoName?: str
     commands: has("commands", "allow") ? o.commands : base.commands,
     network: has("network", "allow") ? o.network : base.network,
     mayRequest: base.mayRequest,
+    ...(mcp.length ? { mcp } : {}),
   };
   checkRole(eff, where);
   return eff;

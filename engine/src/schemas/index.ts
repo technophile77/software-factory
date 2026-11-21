@@ -5,6 +5,7 @@ import { advisorAnswer } from "./advisor-answer";
 import { factoryLease } from "./factory-lease";
 import { filedAlerts } from "./filed-alerts";
 import { inboxRecord } from "./inbox-record";
+import { mcpServerRecord } from "./mcp-server-record";
 import { consoleAnswer, inboxPrivate } from "./inbox-local";
 import { prRecord } from "./pr-record";
 import { calibrationResult, runReview, tuningMetrics } from "./tuning";
@@ -30,6 +31,7 @@ export const SCHEMAS: Record<string, z.ZodType> = {
   "calibration-result-1": calibrationResult,
   "advisor-answer-1": advisorAnswer,
   "web-reader-answer-1": webReaderAnswer,
+  "mcp-server-record-1": mcpServerRecord,
   // Hand-edited YAML (FR-11): checked by the engine, published for reference.
   "factory-project-1": manifestFile,
   "factory-endpoints-1": endpointsFile,
