@@ -281,11 +281,23 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
       if (f && f.items.length === 0) f.items.push(question("Q1", "open", { options: ["a", "b"] }));
       return false;
     };
-    const { s } = await run(["1", "1", "Export reports", "as CSV", "", "2"]);
+    const { s } = await run(["1", "1", "Export reports", "as CSV", "", "", "2"]);
     expect(engine.calls("feature.start")[0]!.params).toEqual({ request: "Export reports\nas CSV" });
     expect(s.out).toMatch(/Started F-\d+/);
     expect(s.out).toContain("What should Q1 be?");
     expect(replies()).toEqual([expect.objectContaining({ item: "Q1", kind: "answer", text: "b" })]);
+  });
+
+  test("F-015 FR-26: the issue a new feature comes from is checked for its form and sent with the request", async () => {
+    writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document", "issue"] });
+    engine.hooks["interview.open"] = (_conn, msg) => {
+      const f = engine.features.get(msg.params.feature);
+      if (f && f.items.length === 0) f.items.push(question("Q1", "open", { options: ["a", "b"] }));
+      return false;
+    };
+    const { s } = await run(["1", "1", "Export reports", "", "the export issue", "example-org/acme-web#25", "2"]);
+    expect(s.out).toContain("That isn't owner/repo#number");
+    expect(engine.calls("feature.start")[0]!.params).toEqual({ request: "Export reports", issue: "example-org/acme-web#25" });
   });
 
   test("AC-11: an existing feature from the list", async () => {
@@ -347,7 +359,7 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
 
   test("AC-11: a document start sends the path's text and the provenance picked", async () => {
     fs.writeFileSync(`${repo}/req.md`, "# Export\n\nA button downloads a CSV file.\n");
-    await run(["1", "2", "req.md", "Export from my doc", "", "1"]);
+    await run(["1", "2", "req.md", "Export from my doc", "", "1", ""]);
     expect(engine.startedRequests).toEqual(["Export from my doc"]);
     expect(engine.documents[0]).toMatchObject({ provenance: "owner", text: expect.stringContaining("downloads a CSV") });
   });

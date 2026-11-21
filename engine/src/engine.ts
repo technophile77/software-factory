@@ -41,7 +41,7 @@ import { type LitellmImage, type LitellmPin, litellmImageId } from "./docker/lit
 import { DocumentRefused, SourceDocument, documentMeta, lineOfByte, sha256 as sha256Of, sourcePath } from "./interview/document";
 import { frameDocument, frameRequest } from "./interview/frame";
 import { Conn, notification, serve } from "./channel/framing";
-import { EngineControl, ProjectChannel, methods } from "./channel/methods";
+import { EngineControl, ProjectChannel, type SourceIssue, SourceIssueRefused, methods } from "./channel/methods";
 import { FactoryRunning, takeFactoryLock } from "./os/factory-lock";
 import { SessionManager } from "./channel/sessions";
 import { Listener, listenUnix } from "./channel/unix";
@@ -1227,11 +1227,12 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           confirm: "It was a real secret: rotate it", hold: "It was a false positive: no action", recommendation: "A",
         });
       },
-      startFeature: (request, doc) => {
+      startFeature: (request, doc, issue) => {
         // One at a time across projects, so two requests can't take the same id.
         const run = startLock.then(async () => {
           // The document is scanned before anything else happens: a refusal leaves no id, branch, commit or transcript (F-009 AC-3).
           if (doc) await scanDocument(doc);
+          const source = issue ? await sourceIssue(p, issue) : null;
           const n = (await knownFeatureIds(p)) + 1;
           const fid = `F-${String(n).padStart(3, "0")}`;
           const branch = `feature/${fid}-${slug(request)}`;
@@ -1241,7 +1242,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           await git.run(p.real!, ["update-ref", `refs/heads/${branch}`, stored?.commit ?? main, "0".repeat(40)]);
           const f = newFeature(p, fid);
           const document = stored && doc ? documentMeta(fid, doc, stored.blob) : null;
-          await f.exclusive(() => f.append([{ type: "feature_started", feature: fid, title: title(request), branch, request, ...(document ? { document } : {}) }], "feature requested"));
+          await f.exclusive(() => f.append([{ type: "feature_started", feature: fid, title: title(request), branch, request, ...(document ? { document } : {}), ...(source ? { issue: source } : {}) }], "feature requested"));
           log.info(`${p.name}: ${fid} started on ${branch}`);
           launchAnalyst(p, f);
           return fid;
@@ -1250,6 +1251,27 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         return run;
       },
     };
+  }
+
+  /** F-015 FR-26: the source issue, in one of the project's code repos and open on GitHub, or a refusal that starts nothing. */
+  async function sourceIssue(p: Project, issue: SourceIssue): Promise<SourceIssue> {
+    const repo = p.manifest?.repos.map((x) => `${x.owner}/${x.repo}`).find((r) => r.toLowerCase() === issue.repo.toLowerCase());
+    if (!repo) throw new SourceIssueRefused(`${issue.repo} isn't one of ${p.name}'s code repos, so nothing was started.`);
+    let open: boolean;
+    try {
+      const api = pullsFor(p, repo);
+      open = api.issueOpen ? await api.issueOpen(repo, issue.number) : true;
+    } catch (e) {
+      throw new SourceIssueRefused(`The engine couldn't check ${repo}#${issue.number} on GitHub (${(e as Error).message}), so nothing was started.`);
+    }
+    if (!open) throw new SourceIssueRefused(`${repo}#${issue.number} isn't an open issue, so nothing was started.`);
+    return { repo, number: issue.number };
+  }
+
+  /** FR-26: the issue number for a PR in `repo`, when the feature's source issue is there. */
+  function closesIn(f: FeatureInterview, repo: string): number | null {
+    const i = f.state.issue;
+    return i && i.repo.toLowerCase() === repo.toLowerCase() ? i.number : null;
   }
 
   // Keyed by the feature itself: two projects can both have an F-001 (F-023 SR-13).
@@ -3386,7 +3408,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return;
     }
     const base = await git.out(ctx.repo.localDir, ["merge-base", main, head]);
-    const text = prText({ id: f.id, title: f.state.title, specVersion: ctx.so.version ?? null, specCommit: ctx.so.commit, configRepo, specPath: ctx.specPath }, false);
+    const text = prText({ id: f.id, title: f.state.title, specVersion: ctx.so.version ?? null, specCommit: ctx.so.commit, configRepo, specPath: ctx.specPath, closes: closesIn(f, repo) }, false);
     // SR-4: the diff, the commit messages and the PR text against the spec, transcript and findings, and the owner's home folder.
     const outgoing = [await git.out(ctx.repo.localDir, ["diff", "--no-color", "--no-ext-diff", base, head]), await git.out(ctx.repo.localDir, ["log", "--format=%B", `${base}..${head}`]), text.title, text.body].join("\n");
     if (verbatimMatch(outgoing, privateSources(f, ctx.spec)) || outgoing.includes(os.homedir())) {
@@ -3464,7 +3486,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     }
     const ctx = await buildContext(p, f);
     const configRepo = await configSlug(p);
-    await api.updatePull(repo, n, prText({ id: f.id, title: f.state.title, specVersion: ctx.so.version ?? null, specCommit: ctx.so.commit, configRepo, specPath: ctx.specPath }, true));
+    await api.updatePull(repo, n, prText({ id: f.id, title: f.state.title, specVersion: ctx.so.version ?? null, specCommit: ctx.so.commit, configRepo, specPath: ctx.specPath, closes: closesIn(f, repo) }, true));
     if (pr.draft) await api.markReady(repo, pr);
     const body = doneComment({ feature: f.id, specVersion: ctx.so.version ?? null, head, configRepo, items: doneItems(p, f, head), fork: false });
     const scan = await scanner.scan([{ sha: sha256Hex(body), content: Buffer.from(body) }]);

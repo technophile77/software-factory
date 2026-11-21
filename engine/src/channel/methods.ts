@@ -1,5 +1,7 @@
 import { Clock } from "../clock";
-import { ID_RE, MAX_NEXT_WAIT_S, REFUSED_MESSAGE, RPC } from "../constants";
+import { ID_RE, MAX_NEXT_WAIT_S, REFUSED_MESSAGE, RPC, type SourceIssue, parseSourceIssue } from "../constants";
+
+export type { SourceIssue };
 import { DocumentRefused, SourceDocument, validateDocument } from "../interview/document";
 import { FeatureInterview, InterviewError } from "../interview/feature";
 import { wire } from "../interview/model";
@@ -27,8 +29,8 @@ export interface ProjectChannel {
   features(): FeatureInterview[];
   /** One of this project's features, or null. Ids are per project (F-023 FR-9). */
   feature(id: string): FeatureInterview | null;
-  /** Channel v1.4: `document` has passed validateDocument; the engine scans and stores it (F-009). */
-  startFeature(request: string, document?: SourceDocument): Promise<string>;
+  /** Channel v1.4: `document` has passed validateDocument; the engine scans and stores it (F-009). v1.8: `issue` is the source issue (F-015 FR-26). */
+  startFeature(request: string, document?: SourceDocument, issue?: SourceIssue): Promise<string>;
   /** F-021: the project's inbox for console answers, or null while it has none. */
   inbox(): ConsoleInbox | null;
   /** F-021 FR-18 (channel v1.7, H-0265): the project's live agent transcript after `after`. */
@@ -45,6 +47,10 @@ export interface EngineControl {
 }
 
 const MAX_REQUEST_CHARS = 4000;
+
+/** The engine refused a source issue before anything was started: not a project repo, not found, or not open. */
+export class SourceIssueRefused extends Error {}
+
 const INBOX_ITEM_RE = /^[DTHSMN]-\d{4,8}$/;
 const ACTION_RE = /^(?:choose:[A-D]|step:[1-9]\d?|approve|reject|changes|research|defer|restore|dismiss)$/;
 const CODE_RE = /^[A-Z0-9]{4}$/;
@@ -133,14 +139,17 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
         setImmediate(() => engine.shutdown());
         return { ok: true };
       case "feature.start": {
-        only(p, ["request", "document"]);
+        only(p, ["request", "document", "issue"]);
         if (typeof p.request !== "string" || !p.request.trim() || [...p.request].length > MAX_REQUEST_CHARS) {
           throw new RpcError(RPC.invalidParams, `request must be non-empty text up to ${MAX_REQUEST_CHARS} characters.`);
         }
+        const issue = p.issue === undefined ? undefined : parseSourceIssue(p.issue);
+        if (issue === null) throw new RpcError(RPC.invalidParams, "issue must be owner/repo#number.");
         try {
           const doc = p.document === undefined ? undefined : validateDocument(p.document);
-          return { feature: await project.startFeature(p.request, doc) };
+          return { feature: await project.startFeature(p.request, doc, issue) };
         } catch (e) {
+          if (e instanceof SourceIssueRefused) throw new RpcError(RPC.invalidParams, e.message);
           // The owner's own document, refused before anything is stored: the client may show lines and rule ids (H-0105).
           if (e instanceof DocumentRefused) throw new RpcError(RPC.documentRefused, e.message, e.data());
           if (e instanceof SecretFound) {

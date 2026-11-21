@@ -260,8 +260,8 @@ export function analyst(w: World, feature: () => string, onStReview?: (s: Script
   };
 }
 
-export async function interview(w: World, e: EngineHandle, c: RpcClient, feature: () => string, set: (f: string) => void): Promise<string> {
-  set((await c.ok("feature.start", { request: "Export orders as CSV" })).feature as string);
+export async function interview(w: World, e: EngineHandle, c: RpcClient, feature: () => string, set: (f: string) => void, startExtra: Record<string, unknown> = {}): Promise<string> {
+  set((await c.ok("feature.start", { request: "Export orders as CSV", ...startExtra })).feature as string);
   await until("the question", () => (e.feature("acme", feature())?.state.items.size ?? 0) > 0);
   const session = await approvedSession(w, c, feature());
   await c.ok("interview.reply", { session, item: "Q-001", revision: 0, reply_id: "r1", kind: "answer", text: "Order id and total." });

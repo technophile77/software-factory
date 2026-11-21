@@ -4,6 +4,7 @@
  * `display`, right before its numbered choices (FR-4), and only the owner's
  * keystrokes are sent (FR-7). There is no model anywhere in this path.
  */
+import { parseSourceIssue } from "../constants";
 import type { Item } from "../mcp/items";
 import { CONSOLE_KEY, type Operation } from "../mcp/operations";
 import { clean } from "../mcp/text";
@@ -383,6 +384,16 @@ export class TerminalInterview {
     if (!(req.request as string).trim()) {
       this.say("Nothing was typed, so nothing was sent.");
       return null;
+    }
+    // F-015 FR-26: the feature's PR then closes the issue when it merges.
+    for (;;) {
+      const issue = (await this.line("The issue it comes from, as owner/repo#number (Enter if none): ")).trim();
+      if (!issue) break;
+      if (parseSourceIssue(issue)) {
+        req.issue = issue;
+        break;
+      }
+      this.say("That isn't owner/repo#number, for example example-org/acme-web#25.");
     }
     const r = await this.run("start", req);
     if (r.ok !== true) {
