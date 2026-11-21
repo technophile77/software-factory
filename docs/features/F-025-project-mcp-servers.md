@@ -1,7 +1,7 @@
 # Feature: Projects add their own MCP servers
 
 - **Id:** F-025
-- **Status:** Draft
+- **Status:** Approved (owner sign-off 2026-11-21 23:19Z, decision card); readiness gate passed on v1
 - **Requested by / date:** Alex, 2026-11-21 ("I want to allow users to add
   their own MCP servers into their project and agents.")
 - **Spec version:** 1
@@ -104,28 +104,28 @@ F-007, F-015, F-019, F-020, F-021 (all merged).
 
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | A local server runs as the owner on the owner's PC: it can read the owner's files, use the owner's signed-in tools, and reach the network as the owner would; the engine can't limit it (SR-8). Accepted until Beta like full-shell roles (ADR 0026). | Owner card 2026-11-21 23:06Z (local and remote) | Pending owner approval of the stated risk |
+| A-1 | A local server runs as the owner on the owner's PC: it can read the owner's files, use the owner's signed-in tools, and reach the network as the owner would; the engine can't limit it (SR-8). Accepted until Beta like full-shell roles (ADR 0026). | Owner card 2026-11-21 23:06Z (local and remote) | Approved (owner, 2026-11-21 23:19Z); accepted again on each local server's approval (SR-8) |
 | A-3 | An allowed `acts` tool runs without the owner's approval per call. Content an agent read (a web page, issue text, another tool's output) could steer it into posting, changing or deleting something outside the factory. Accepted by the owner; review finding 2 (High) stays open until Beta, which needs no open High. | Owner card 2026-11-21 23:16Z | Accepted |
-| A-2 | Exact-version npm and PyPI packages, plus a hashed executable, cover the local servers projects need now. | | Pending |
+| A-2 | Exact-version npm and PyPI packages, plus a hashed executable, cover the local servers projects need now. | Owner sign-off 2026-11-21 23:19Z | Approved |
 
 ## 9. Security considerations
 
 | Id | Requirement | Source | Status |
 |---|---|---|---|
-| SR-1 | Secrets for servers only in the OS credential store under `mcp-secret/<project>/<server>/<key>`; never in YAML, logs, transcripts, items, records or another server's env. | Analyst | Proposed |
-| SR-2 | Deny by default: a role gets no server and no tool it does not list; the gate, not the model, enforces it. | Analyst | Proposed |
-| SR-3 | Local servers pinned by exact version or SHA-256; remote by exact URL; any change needs a new approval. | Analyst | Proposed |
-| SR-4 | MCP tool descriptions and results are untrusted input. | Analyst | Proposed |
+| SR-1 | Secrets for servers only in the OS credential store under `mcp-secret/<project>/<server>/<key>`; never in YAML, logs, transcripts, items, records or another server's env. | Analyst | Approved (owner, 2026-11-21 23:19Z) |
+| SR-2 | Deny by default: a role gets no server and no tool it does not list; the gate, not the model, enforces it. | Analyst | Approved (owner, 2026-11-21 23:19Z) |
+| SR-3 | Local servers pinned by exact version or SHA-256; remote by exact URL; any change needs a new approval. | Analyst | Approved (owner, 2026-11-21 23:19Z) |
+| SR-4 | MCP tool descriptions and results are untrusted input. | Analyst | Approved (owner, 2026-11-21 23:19Z) |
 
-| SR-5 | Package servers are installed at approval into their own folder per project and server; the lockfile (with hashes) and its SHA-256 go in the record; the CVE scan runs on it; every start uses that install only (`npm ci --ignore-scripts`, `uv --require-hashes`), never a fresh `npx`/`uvx` resolve. Install scripts off unless the review allowed them. | Security and Testability Review #1 | Proposed |
-| SR-6 | Each approved tool is classified `reads` or `acts` in the record; the reviewer reports facts, the owner confirms; an unlisted tool counts as `acts`. The approval item lists the `acts` tools, so the owner sees what a role can do outside the factory before allowing it. An allowed `acts` tool runs without asking (OQ-1, owner, 2026-11-21 23:16Z); ADR 0036 grants this as an S9.2 exemption, like ADR 0017, and the engine logs each `acts` call with role, server, tool, time and the approval id (S9.6). | Security and Testability Review #2 | Proposed |
-| SR-7 | The record holds a SHA-256 of each approved tool's name, description and input schema. At start, only approved tools whose hash matches are offered; a changed or new tool is left out and a Security item asks for re-review. "Whole server" means every tool in the record. | Security and Testability Review #3 | Proposed |
-| SR-8 | A local server runs as the owner and can reach the owner's files, signed-in tools and network. The owner accepts this per local server on its approval, until Beta (ADR 0026). It gets its own home and temp folder and only its declared env. | Security and Testability Review #4 | Proposed |
-| SR-9 | Each record states what data the server receives and where it sends it; the approval item shows it, and flags servers that send project data off the PC. | Security and Testability Review #5 | Proposed |
-| SR-10 | A secret is sent only to its own server entry's exact origin; a redirect to another origin is refused. Secret values are masked in logs, transcripts, items and `mcp check` output. Static header or env secrets only; OAuth sign-in for remote servers is out of scope for v1. | Security and Testability Review #6 | Proposed |
-| SR-11 | `mcp check` on a server with no approved record asks the owner first and runs only after the CVE scan found nothing Critical or High; its output is printed escaped. | Security and Testability Review #7 | Proposed |
-| SR-12 | "Run without that server" (FR-10) is an owner option only; the agent is told which servers are missing. | Security and Testability Review #8 | Proposed |
-| SR-13 | A `command` executable is copied into the server's folder at approval and the copy is started after its hash check, with no shell. | Security and Testability Review #9 | Proposed |
+| SR-5 | Package servers are installed at approval into their own folder per project and server; the lockfile (with hashes) and its SHA-256 go in the record; the CVE scan runs on it; every start uses that install only (`npm ci --ignore-scripts`, `uv --require-hashes`), never a fresh `npx`/`uvx` resolve. Install scripts off unless the review allowed them. | Security and Testability Review #1 | Approved (owner, 2026-11-21 23:19Z) |
+| SR-6 | Each approved tool is classified `reads` or `acts` in the record; the reviewer reports facts, the owner confirms; an unlisted tool counts as `acts`. The approval item lists the `acts` tools, so the owner sees what a role can do outside the factory before allowing it. An allowed `acts` tool runs without asking (OQ-1, owner, 2026-11-21 23:16Z); ADR 0036 grants this as an S9.2 exemption, like ADR 0017, and the engine logs each `acts` call with role, server, tool, time and the approval id (S9.6). | Security and Testability Review #2 | Approved (owner, 2026-11-21 23:19Z) |
+| SR-7 | The record holds a SHA-256 of each approved tool's name, description and input schema. At start, only approved tools whose hash matches are offered; a changed or new tool is left out and a Security item asks for re-review. "Whole server" means every tool in the record. | Security and Testability Review #3 | Approved (owner, 2026-11-21 23:19Z) |
+| SR-8 | A local server runs as the owner and can reach the owner's files, signed-in tools and network. The owner accepts this per local server on its approval, until Beta (ADR 0026). It gets its own home and temp folder and only its declared env. | Security and Testability Review #4 | Approved (owner, 2026-11-21 23:19Z) |
+| SR-9 | Each record states what data the server receives and where it sends it; the approval item shows it, and flags servers that send project data off the PC. | Security and Testability Review #5 | Approved (owner, 2026-11-21 23:19Z) |
+| SR-10 | A secret is sent only to its own server entry's exact origin; a redirect to another origin is refused. Secret values are masked in logs, transcripts, items and `mcp check` output. Static header or env secrets only; OAuth sign-in for remote servers is out of scope for v1. | Security and Testability Review #6 | Approved (owner, 2026-11-21 23:19Z) |
+| SR-11 | `mcp check` on a server with no approved record asks the owner first and runs only after the CVE scan found nothing Critical or High; its output is printed escaped. | Security and Testability Review #7 | Approved (owner, 2026-11-21 23:19Z) |
+| SR-12 | "Run without that server" (FR-10) is an owner option only; the agent is told which servers are missing. | Security and Testability Review #8 | Approved (owner, 2026-11-21 23:19Z) |
+| SR-13 | A `command` executable is copied into the server's folder at approval and the copy is started after its hash check, with no shell. | Security and Testability Review #9 | Approved (owner, 2026-11-21 23:19Z) |
 
 Review: `F-025-security-testability-review.md` (0 Critical, 2 High, 4
 Medium, 3 Low; threat model included).
@@ -150,15 +150,15 @@ Medium, 3 Low; threat model included).
 
 ## 11. Readiness gate
 
-- [ ] Clear objective
-- [ ] Expected behavior defined
-- [ ] Acceptance criteria testable
-- [ ] Constraints documented
-- [ ] Assumptions explicit
-- [ ] Blocking decisions resolved (approved, not deferred)
+- [x] Clear objective
+- [x] Expected behavior defined
+- [x] Acceptance criteria testable
+- [x] Constraints documented
+- [x] Assumptions explicit
+- [x] Blocking decisions resolved (approved, not deferred)
 
 ## 12. Change log
 
 | Version | Date | Change | Approved by |
 |---|---|---|---|
-| 1 | 2026-11-21 | First draft | |
+| 1 | 2026-11-21 | First draft, with the owner's four answers and SR-5 to SR-13 | Owner, decision card, 2026-11-21 23:19Z |
