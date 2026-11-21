@@ -105,6 +105,7 @@ F-007, F-015, F-019, F-020, F-021 (all merged).
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
 | A-1 | A local server runs as the owner on the owner's PC: it can read the owner's files, use the owner's signed-in tools, and reach the network as the owner would; the engine can't limit it (SR-8). Accepted until Beta like full-shell roles (ADR 0026). | Owner card 2026-11-21 23:06Z (local and remote) | Pending owner approval of the stated risk |
+| A-3 | An allowed `acts` tool runs without the owner's approval per call. Content an agent read (a web page, issue text, another tool's output) could steer it into posting, changing or deleting something outside the factory. Accepted by the owner; review finding 2 (High) stays open until Beta, which needs no open High. | Owner card 2026-11-21 23:16Z | Accepted |
 | A-2 | Exact-version npm and PyPI packages, plus a hashed executable, cover the local servers projects need now. | | Pending |
 
 ## 9. Security considerations
@@ -117,7 +118,7 @@ F-007, F-015, F-019, F-020, F-021 (all merged).
 | SR-4 | MCP tool descriptions and results are untrusted input. | Analyst | Proposed |
 
 | SR-5 | Package servers are installed at approval into their own folder per project and server; the lockfile (with hashes) and its SHA-256 go in the record; the CVE scan runs on it; every start uses that install only (`npm ci --ignore-scripts`, `uv --require-hashes`), never a fresh `npx`/`uvx` resolve. Install scripts off unless the review allowed them. | Security and Testability Review #1 | Proposed |
-| SR-6 | Each approved tool is classified `reads` or `acts` in the record; the reviewer reports facts, the owner confirms; an unlisted tool counts as `acts`. What an `acts` call does is OQ-1. | Security and Testability Review #2 | Proposed |
+| SR-6 | Each approved tool is classified `reads` or `acts` in the record; the reviewer reports facts, the owner confirms; an unlisted tool counts as `acts`. The approval item lists the `acts` tools, so the owner sees what a role can do outside the factory before allowing it. An allowed `acts` tool runs without asking (OQ-1, owner, 2026-11-21 23:16Z); ADR 0036 grants this as an S9.2 exemption, like ADR 0017, and the engine logs each `acts` call with role, server, tool, time and the approval id (S9.6). | Security and Testability Review #2 | Proposed |
 | SR-7 | The record holds a SHA-256 of each approved tool's name, description and input schema. At start, only approved tools whose hash matches are offered; a changed or new tool is left out and a Security item asks for re-review. "Whole server" means every tool in the record. | Security and Testability Review #3 | Proposed |
 | SR-8 | A local server runs as the owner and can reach the owner's files, signed-in tools and network. The owner accepts this per local server on its approval, until Beta (ADR 0026). It gets its own home and temp folder and only its declared env. | Security and Testability Review #4 | Proposed |
 | SR-9 | Each record states what data the server receives and where it sends it; the approval item shows it, and flags servers that send project data off the PC. | Security and Testability Review #5 | Proposed |
@@ -133,7 +134,7 @@ Medium, 3 Low; threat model included).
 
 | Id | Question | Status |
 |---|---|---|
-| OQ-1 | When an agent calls a tool classified `acts` (SR-6), what happens? | Open, on a decision card |
+| OQ-1 | When an agent calls a tool classified `acts` (SR-6), what happens? | Answered: allowed tools run freely (owner, decision card, 2026-11-21 23:16Z) |
 
 ## 10. Interface requirements
 
