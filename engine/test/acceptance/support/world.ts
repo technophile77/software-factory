@@ -430,7 +430,8 @@ export class World {
   manifestText(p: Project, s: ProjectSpec = {}): string {
     // A Windows checkout may have CRLF line endings.
     const template = readFileSync(TEMPLATE, "utf8").replace(/\r\n/g, "\n");
-    const policy = template.slice(template.indexOf("\npolicy:\n") + 1, template.indexOf("\nnotes:"));
+    // Top-level comments after the policy (the commented mcp_servers example) hold placeholders, not policy.
+    const policy = template.slice(template.indexOf("\npolicy:\n") + 1, template.indexOf("\nnotes:")).replace(/^#.*\n/gm, "");
     const allowed = s.allowed ?? [{ login: p.repoOwner, id: p.repoOwnerId }];
     let text =
       `schema: factory-project/1.0\n` +
