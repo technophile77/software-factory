@@ -525,7 +525,7 @@ for long-lived clients; a per-call client uses `interview.next` with `wait_s`.
   (F-015 H-0192 and SR-7; owner, 2026-11-14, decision cards); v2.10 approved
   (H-0264; owner, 2026-11-19, decision card); v2.11 approved
   (F-015 FR-20; owner, 2026-11-20, decision card and in thread); v2.12
-  draft (F-015 v26 FR-25, test runs go through `run_tests`)
+  approved (F-015 v26 FR-25, test runs go through `run_tests`; owner, 2026-11-21, decision card)
 - Owner decision: follows ADR 0004; v2.0 and v2.1 by the owner, 2026-11-10
   (H-0008); the widenings in v2.2 approved in substance by the owner,
   2026-11-10 (F-005 OQ-2, OQ-4) and as drafted (H-0023, decision card);
@@ -879,7 +879,7 @@ section allows nothing); a role missing from the policy may not run.
   approved (F-015 H-0193, owner, decision card, 2026-11-14); v1.8 approved
   (F-018 H-0227, owner, decision card, 2026-11-14); v1.9 approved (F-015
   SR-6 H-0249, owner, decision card and thread, 2026-11-14); v1.10 approved
-  (F-015 FR-18 H-0253, owner, decision card, 2026-11-15); v1.11 draft (F-015 v26 FR-25, `commands.test_one`)
+  (F-015 FR-18 H-0253, owner, decision card, 2026-11-15); v1.11 approved (F-015 v26 FR-25, `commands.test_one`; owner, 2026-11-21, decision card)
 - Owner decision: ADR 0010; requirements from the owner (2026-11-09); v1.1
   adds `policy` and `repos[].policy` (owner, 2026-11-10, H-0008); v1.2 adds
   `complexity` and `settings.agents` (F-002 A-6, A-8); v1.3 adds `enabled`,
@@ -1247,7 +1247,7 @@ the reader.
 
 ## Build tools — v1.0
 
-- Status: draft (F-015 v26 FR-25)
+- Status: Approved (F-015 v26 FR-25; owner, 2026-11-21, decision card)
 - Used by: engine (serves them), software developer and test engineer (call them)
 - Compatibility: adding a tool or an optional parameter is non-breaking;
   changing a parameter, a result or a limit is breaking.
