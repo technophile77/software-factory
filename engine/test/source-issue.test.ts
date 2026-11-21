@@ -1,9 +1,10 @@
-// F-015 FR-26: a feature started from a code repo issue records it, and its PR closes it.
+// F-015 FR-26: a feature started from a code repo issue records it, and its PR closes it; and feature.start leaves nothing behind when it fails.
 import { afterEach, describe, expect, it } from "vitest";
 import type { PullsApi } from "../src/build/pulls";
 import { prText } from "../src/build/stage9";
 import { RPC, parseSourceIssue } from "../src/constants";
 import { EngineHandle } from "../src/engine";
+import { ScanError } from "../src/gitleaks";
 import { parseTranscript } from "../src/state/transcript";
 import { RpcClient, git, engineJson, makeWorld, start } from "./helpers";
 
@@ -58,5 +59,24 @@ describe("source issues (F-015 FR-26, channel v1.8)", () => {
     const feature = (await c.ok("feature.start", { request: "Export orders", issue: "Example-Org/ACME-web#7" })).feature as string;
     const started = parseTranscript(git(w.config, "show", `factory/state:interviews/${feature}/transcript.jsonl`) + "\n")[0]!;
     expect(started).toMatchObject({ type: "feature_started", issue: { repo: "example-org/acme-web", number: 7 } });
+  });
+});
+
+describe("feature.start is all or nothing", () => {
+  it("a secrets scan that doesn't finish leaves no branch and no feature, and the retry takes the same id", async () => {
+    const w = makeWorld();
+    let failing = true;
+    const scanner = { scan: async () => { if (failing) throw new ScanError("The secrets scan didn't finish."); return { clean: true as const }; } };
+    const e = await start(w, { scanner });
+    engines.push(e);
+    const c = await RpcClient.connect(engineJson(w).path);
+    clients.push(c);
+
+    expect((await c.call("feature.start", { request: "Deploy main" })).error).toBeTruthy();
+    expect(git(w.config, "branch", "--list", "feature/*")).toBe("");
+    expect((await c.ok("engine.status")).features).toEqual([]);
+
+    failing = false;
+    expect((await c.ok("feature.start", { request: "Deploy main" })).feature).toBe("F-001");
   });
 });
