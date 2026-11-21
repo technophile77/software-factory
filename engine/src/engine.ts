@@ -14,6 +14,11 @@ import type { ModelCredential } from "./proxy/server";
 import { type AgentGroup, SessionGroup, runVolume } from "./agent/sandbox";
 import { LiveTranscript } from "./agent/live-transcript";
 import { HostError, HostGroup, runHome, sweepHomes } from "./agent/host";
+import { McpServerUnavailable, resolveProjectMcp } from "./agent/project-mcp";
+import type { ProjectMcpSession } from "./agent/project-mcp";
+import { MCP_SERVER_RECORD_SCHEMA, mcpServerRecord } from "./schemas/mcp-server-record";
+import type { McpServerRecord } from "./schemas/mcp-server-record";
+import { mcpIdentity } from "./config/mcp-servers";
 import { ASK_WAIT_MS, type HostGate, WORKSPACE, type SessionCaps, type SessionOutcome, denyAsk } from "./agent/session";
 import { CODE_DIR, type CodeFiles, placeCodeCopies, removeCodeCopies } from "./agent/code-copies";
 import { commitWorktree } from "./agent/worktree-commit";
@@ -1351,6 +1356,69 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   /** Each run's session homes on the owner's PC, kept while the run can resume. */
   const sessionsRoot = path.join(home, "sessions");
+  /** F-025: each project's installed MCP servers (SR-5, SR-13). */
+  const mcpRoot = path.join(home, "mcp");
+  /** F-025 FR-10: `<project>\0<server>` the owner chose to leave out of the next session once. */
+  const mcpSkipOnce = new Set<string>();
+  const toldAgentMcp = new Set<string>();
+  /** F-025 SR-10: secret values given to MCP servers; masked in what the console shows of a session. */
+  const mcpMasks = new Set<string>();
+  const maskMcp = (text: string) => {
+    let t = text;
+    for (const v of mcpMasks) if (v.length >= 8 && t.includes(v)) t = t.split(v).join("[MCP secret]");
+    return t;
+  };
+
+  /** The approved record of one project MCP server, from factory/state; null when there is none or it doesn't parse. */
+  async function mcpRecord(p: Project, server: string): Promise<McpServerRecord | null> {
+    const raw = await p.state_repo?.read(`mcp/${server}.json`).catch(() => null);
+    if (!raw) return null;
+    try {
+      const r = mcpServerRecord.parse(JSON.parse(raw.toString("utf8")));
+      return r.schema === MCP_SERVER_RECORD_SCHEMA ? r : null;
+    } catch {
+      log.warn(`${p.name}: mcp/${server}.json on factory/state is unreadable; the server isn't used until it is approved again.`);
+      return null;
+    }
+  }
+
+  /** F-025: the project MCP servers a session gets, after the record and tool hash checks; changed or new tools go to the owner (SR-7). */
+  async function projectMcpFor(p: Project, rt: AgentRuntime, policy: RolePolicy, at: { cwd: string; baseEnv: Record<string, string>; proxyEnv: Record<string, string> }): Promise<ProjectMcpSession> {
+    const m = p.manifest!;
+    const skip = new Set<string>();
+    for (const s of m.mcpServers) if (mcpSkipOnce.delete(`${m.name}\0${s.name}`)) skip.add(s.name);
+    try {
+      const r = await resolveProjectMcp({
+        project: m.name, policy, servers: m.mcpServers, record: (s) => mcpRecord(p, s), secrets: credentials, mcpRoot,
+        launcher: { command: rt.host!.node, args: [path.join(path.dirname(rt.proxyScript), "engine.js"), "mcp-launch"] },
+        skip, ...at,
+      });
+      for (const v of r.masks) mcpMasks.add(v);
+      const byServer = new Map<string, string[]>();
+      for (const x of r.leftOut) byServer.set(x.server, [...(byServer.get(x.server) ?? []), `${x.tool} (${x.why})`]);
+      for (const [server, tools] of byServer) {
+        log.warn(`${m.name}: MCP server ${server}: left out ${tools.length} tool(s) that weren't approved or changed since (F-025 SR-7).`);
+        await alert(p, `mcptools:${server}:${sha256Hex(tools.sort().join("\n")).slice(0, 16)}`, {
+          title: `MCP server ${server} reports new or changed tools`,
+          context: `The server lists tools that differ from what you approved: ${tools.join(", ").slice(0, 1500)}. Agents don't get them; the approved, unchanged tools still work (F-025 SR-7).`,
+          impact: "Agents can't use these tools until the server is reviewed and approved again.",
+          confirm: "Review the server again", hold: "Leave these tools out", recommendation: "B",
+        });
+      }
+      return r;
+    } catch (e) {
+      if (e instanceof McpServerUnavailable && e.needsApproval) {
+        // Build 3 replaces this with the approval request itself (FR-6).
+        await alert(p, `mcpapprove:${e.server}:${sha256Hex(mcpIdentity(m.mcpServers.find((s) => s.name === e.server)!) ).slice(0, 16)}`, {
+          title: `MCP server ${e.server} needs your approval`,
+          context: `A role's mcp.allow names ${e.server}, but ${e.reason} (F-025 FR-6). No session that needs it starts until it is approved.`,
+          impact: "Sessions of roles that list this server don't start.",
+          confirm: "Approve the server (security review, CVE scan, pinned version)", hold: "Remove it from the roles' mcp.allow", recommendation: "A",
+        }).catch(() => undefined);
+      }
+      throw e;
+    }
+  }
   const skillDirs = new Map<string, Promise<string>>();
 
   interface RunAgents {
@@ -1387,7 +1455,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     };
     g.transcript = (kind, text) => {
       const w = who();
-      if (w) live.add(runId, w, kind, text);
+      if (w) live.add(runId, w, kind, maskMcp(text));
     };
     g.close = async () => {
       try {
@@ -1402,6 +1470,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   async function agentsForRun(rt: AgentRuntime, p: Project, credential: ModelCredential): Promise<RunAgents> {
     const m = p.manifest!;
     const sources = p.sources!;
+    // F-025 FR-14: an AGENT.md's own mcpServers would bypass the manifest and its approval; sessions never read it.
+    for (const [role, ins] of sources.instructions) {
+      const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(ins.text)?.[1] ?? "";
+      const key = `${m.name}\0${role}\0${ins.path}`;
+      if (/^mcpServers\s*:/m.test(front) && !toldAgentMcp.has(key)) {
+        toldAgentMcp.add(key);
+        log.info(`${m.name}: ${ins.path} lists mcpServers; sessions never read it. Project MCP servers go in the manifest's mcp_servers (F-025).`);
+      }
+    }
     const limits = p.limits!;
     const ident = { project: m.name, masterCommit: sources.masterCommit, skillsDigest: sources.skillsDigest };
     const container = async (id: string, router?: RouterConfig): Promise<SessionGroup> => {
@@ -1446,6 +1523,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       group: async (id, router) => router ? container(id, router) : new HostGroup({
         host, children, runId: id, project: m.name, proxyScript: rt.proxyScript, homeRoot: sessionsRoot, credential, maxPageBytes: maxPageBytes(limits), env, log,
         ...(rt.platform ? { platform: rt.platform } : {}),
+        ...(m.mcpServers.length ? { mcp: (policy: RolePolicy, at: { cwd: string; baseEnv: Record<string, string>; proxyEnv: Record<string, string> }) => projectMcpFor(p, rt, policy, at) } : {}),
       }),
     };
   }
@@ -2433,9 +2511,10 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     if ((type === "buildstop" || type === "whatnext") && f) {
       await jobs.get(f)?.done;
       const routes: Record<string, string | undefined> = type === "buildstop"
-        ? { A: String(r.effect?.action ?? ""), C: "to_developer", D: "to_test_engineer" }
+        ? { A: String(r.effect?.action ?? ""), C: typeof r.effect?.mcp_skip === "string" ? String(r.effect?.action ?? "") : "to_developer", D: "to_test_engineer" }
         : { A: "to_developer", B: "to_test_engineer", C: "retest" };
       const action = chosen ? routes[chosen] : undefined;
+      if (chosen === "C" && typeof r.effect?.mcp_skip === "string") mcpSkipOnce.add(`${p.name}\0${r.effect.mcp_skip}`);
       const { machine, refused } = buildMachine(f.state.build.actions);
       // SR-13 as for the analyst: one step per approval, and only a step the item offered from where the build is now.
       if (!action || refused || jobs.has(f) || !isBuildAction(action) || !machine.act(action)) {
@@ -2657,15 +2736,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   ];
 
   /** A failed build step waits on the owner: option A takes the step again (the blocked state's actor). */
-  async function buildStopped(p: Project, f: FeatureInterview, key: string, what: string, why: string, rerun: BuildAction, agentSaid?: string): Promise<void> {
+  async function buildStopped(p: Project, f: FeatureInterview, key: string, what: string, why: string, rerun: BuildAction, agentSaid?: string, mcpSkip?: string): Promise<void> {
     await alert(p, `buildstop:${f.id}:${key}`, {
       title: `The ${what} for ${f.id} stopped`, feature: f.id,
       context: `The build of ${f.id} stopped at the ${what}: ${why}.${agentSaid ? ` What the ${what} said is in the console's private detail and in its report on factory/state.` : ""}`,
       ...(agentSaid ? { private: [{ name: `What the ${what} said`, text: agentSaid }] } : {}),
       impact: `${f.id} waits in the build until this is decided.`,
       confirm: `Run the ${what} again`, hold: "Keep the feature stopped", recommendation: "A",
-      effectData: { action: rerun },
-      more: SEND_TO_ROLE,
+      effectData: { action: rerun, ...(mcpSkip ? { mcp_skip: mcpSkip } : {}) },
+      // F-025 FR-10: a server that couldn't start can be left out once, by the owner only (SR-12).
+      more: mcpSkip ? [{ id: "C" as const, label: `Run it once without MCP server ${mcpSkip}`, detail: "The step runs again now without that server; the agent is told it's missing." }, SEND_TO_ROLE[1]!] : SEND_TO_ROLE,
     });
   }
 
@@ -3018,6 +3098,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const why = engineWords(e);
       if (record.run(runId)?.status === "running") runs.interrupt(runId, why);
       log.warn(`${f.id}: no ${w.what} session started: ${e instanceof SessionRefused || e instanceof HostError ? (e as Error).message : why}`);
+      // F-025 FR-10: an MCP server that can't be given to the session waits on the owner, who may retry or leave it out once.
+      if (e instanceof McpServerUnavailable && !e.needsApproval) await buildStopped(p, f, `mcp:${runId}:${e.server}`, w.what, e.message, w.rerun, undefined, e.server).catch(() => undefined);
       return false;
     }
   }

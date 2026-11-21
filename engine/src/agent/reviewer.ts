@@ -145,6 +145,7 @@ export async function runReviewerSessions(i: ReviewerRunInput): Promise<Reviewer
         const abort = new AbortController();
         const opts = sessionOptions({
           policy: i.policy, cwd: agent.cwd, worktree: i.worktree, instructions: i.instructions,
+          ...(agent.projectMcp ? { projectMcp: agent.projectMcp } : {}),
           factoryServer: i.sdk.createFactoryServer([]), factoryTools: [], caps,
           ...(i.skillsPluginDir ? { skillsPluginDir: i.skillsPluginDir } : {}),
           model: i.model, ...(resume ? { resume } : {}), ...(i.outputSchema ? { outputSchema: i.outputSchema } : {}),

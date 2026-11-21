@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import type { ProjectMcpSession } from "./project-mcp";
 import * as path from "node:path";
 import type { DockerCli } from "../docker/cli";
 import type { Logger } from "../log";
@@ -175,9 +176,12 @@ function underRoot(root: string, p: unknown): string | null {
   }
 }
 
-export function toolGate(policy: RolePolicy, worktree: string | null, factoryTools: string[], log: Logger, workspace: string = WORKSPACE, structured = false, host?: HostGate): CanUseTool {
+export function toolGate(policy: RolePolicy, worktree: string | null, factoryTools: string[], log: Logger, workspace: string = WORKSPACE, structured = false, host?: HostGate, projectMcp?: ProjectMcpSession): CanUseTool {
   const builtins = new Set<string>(policy.tools.filter((t) => t !== "fetch_page"));
   const mcp = new Set(factoryTools.map((t) => `mcp__${FACTORY_SERVER}__${t}`));
+  // F-025 FR-7: only the approved, unchanged tools the role's mcp.allow names; every other mcp__ name falls through to a deny.
+  const project = new Set(projectMcp?.tools ?? []);
+  const acts = new Set(projectMcp?.acts ?? []);
   // The gate runs twice for one call (hook, then canUseTool), so the owner's answer is kept briefly and used once more.
   const answered = new Map<string, { ok: boolean; at: number }>();
   return async (name, input, o) => {
@@ -186,6 +190,11 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
       return { behavior: "deny" as const, message: `Refused by the factory engine: ${why}.` };
     };
     if (mcp.has(name)) return { behavior: "allow", updatedInput: input };
+    if (project.has(name)) {
+      // ADR 0036: an allowed acting tool runs without asking, and each call is on the action log (S9.6).
+      if (acts.has(name)) log.action({ agent: policy.role, action: "mcp.acts", target: name, outcome: "allowed" });
+      return { behavior: "allow", updatedInput: input };
+    }
     // F-020 FR-9: the CLI's own tool for returning the report; it touches nothing, and exists only when the engine asked for a schema.
     if (structured && name === STRUCTURED_OUTPUT_TOOL) return { behavior: "allow", updatedInput: input };
     if (!builtins.has(name)) return deny("not one of this role's tools");
@@ -293,6 +302,8 @@ export interface SessionInput {
   outputSchema?: Record<string, unknown>;
   /** A session on the owner's PC (ADR 0026): the ask rule and the read-only spec folder. */
   host?: HostGate;
+  /** F-025: the project MCP servers and tools this session gets. */
+  projectMcp?: ProjectMcpSession;
   spawn(o: SpawnOptions): SpawnedProcess;
   log: Logger;
 }
@@ -303,19 +314,21 @@ export function sessionOptions(s: SessionInput, abort: AbortController): Session
   const builtins: string[] = s.policy.tools.filter((t) => t !== "fetch_page");
   if (builtins.includes("Skill") && !s.skillsPluginDir) throw new Error("the role uses Skill, but the image has no baked skills");
   if (!s.instructions.trim()) throw new Error("no instructions for the role");
-  const gate = toolGate(s.policy, s.worktree, s.factoryTools, s.log, s.workspace, s.outputSchema !== undefined, s.host);
+  const gate = toolGate(s.policy, s.worktree, s.factoryTools, s.log, s.workspace, s.outputSchema !== undefined, s.host, s.projectMcp);
   return {
     cwd: s.cwd ?? WORKSPACE,
     settingSources: [],
     strictMcpConfig: true,
-    mcpServers: { [FACTORY_SERVER]: s.factoryServer } as Record<"factory", unknown>,
+    mcpServers: { ...(s.projectMcp?.servers ?? {}), [FACTORY_SERVER]: s.factoryServer },
     tools: builtins,
-    allowedTools: s.factoryTools.map((t) => `mcp__${FACTORY_SERVER}__${t}`),
+    allowedTools: [...s.factoryTools.map((t) => `mcp__${FACTORY_SERVER}__${t}`), ...(s.projectMcp?.tools ?? [])],
     disallowedTools: ["WebFetch"].filter((t) => !builtins.includes(t)),
     permissionMode: "default",
     canUseTool: gate,
     hooks: { PreToolUse: [{ hooks: [preToolUseGate(gate)], timeout: GATE_HOOK_TIMEOUT_S }] },
-    systemPrompt: s.instructions,
+    systemPrompt: s.projectMcp?.missing.length
+      ? `${s.instructions}\n\nThe owner chose to run this session without these MCP servers, which your role normally has: ${s.projectMcp.missing.join(", ")}. Don't try to reach what they do by other means; say in your report what you couldn't do without them.`
+      : s.instructions,
     plugins: builtins.includes("Skill") ? [{ type: "local", path: s.skillsPluginDir! }] : [],
     maxTurns: s.caps.maxTurns,
     ...(s.caps.maxBudgetUsd !== undefined ? { maxBudgetUsd: s.caps.maxBudgetUsd } : {}),

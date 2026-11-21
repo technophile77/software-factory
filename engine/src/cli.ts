@@ -1,4 +1,6 @@
 import * as fs from "node:fs";
+import { spawn } from "node:child_process";
+import { launchSpec } from "./agent/project-mcp";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import { systemClock } from "./clock";
@@ -266,6 +268,22 @@ async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   if (cmd === "interview") return interview(rest);
   if (cmd === "inbox") return interview(rest, "inbox");
+  // F-025 FR-8: Claude Code starts a local MCP server through this, so the server gets only the env the engine chose.
+  if (cmd === "mcp-launch") {
+    let spec: ReturnType<typeof launchSpec>;
+    try {
+      spec = launchSpec(rest, process.env);
+    } catch (e) {
+      process.stderr.write(`${(e as Error).message}\n`);
+      return 2;
+    }
+    const child = spawn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env, shell: false, windowsHide: true, stdio: "inherit" });
+    for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.on(sig, () => child.kill(sig));
+    return new Promise<number>((resolve) => {
+      child.on("error", () => resolve(127));
+      child.on("exit", (code, signal) => resolve(code ?? (signal ? 128 : 1)));
+    });
+  }
   if (cmd === "secret") {
     const [sub, given] = rest;
     if (sub !== "set" || !given || !isSecretName(given)) {

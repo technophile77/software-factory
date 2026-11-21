@@ -54,6 +54,7 @@ export async function research(c: WebReaderConfig, query: string): Promise<Resea
       policy: c.policy,
       cwd: agent.cwd,
       worktree: null,
+      ...(agent.projectMcp ? { projectMcp: agent.projectMcp } : {}),
       instructions: c.instructions,
       factoryServer: c.sdk.createFactoryServer([tool]),
       factoryTools: ["fetch_page"],
