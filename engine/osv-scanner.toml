@@ -43,3 +43,11 @@ reason = "opentelemetry-api 1.37.0 tracestate ReDoS: parses inbound HTTP headers
 id = "GHSA-mf5v-w3w3-f6cg"
 ignoreUntil = 2027-02-12
 reason = "opentelemetry-api 1.37.0 traceparent ReDoS: parses inbound HTTP headers; a command-line scan receives none, and the engine never passes --trace."
+
+# Semgrep requires wcmatch~=8.3 in every release up to 1.186.0, so the fix in
+# 11.2 can't be installed with it (owner accepted 2026-11-21, decision card:
+# 30 days, then check again).
+[[IgnoredVulns]]
+id = "GHSA-53pm-wgxf-c6qf"
+ignoreUntil = 2026-12-21
+reason = "wcmatch 8.5.2 multi-star pattern ReDoS: a crafted file name in a scanned repo can only slow `semgrep scan`, which the engine runs under its wall-time cap. Semgrep pins wcmatch~=8.3, so 11.2 can't be installed with it (owner, 2026-11-21: 30 days, then check again)."
