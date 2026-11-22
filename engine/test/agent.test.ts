@@ -556,6 +556,27 @@ describe("running a session under SR-18 caps", () => {
     expect(await runSession(sdk, opts(), oneTurn(), CAPS, {})).toMatchObject({ status: "error", reason: "error_during_execution", detail: "No tool result for tool_use toolu_1", outputTokens: 0 });
   });
 
+  it("doesn't count the wait for the owner's next turn against the wall-time cap or the duration", async () => {
+    const sdk = {
+      createFactoryServer: () => ({}),
+      query: ({ prompt }: { prompt: AsyncIterable<unknown> }) => (async function* () {
+        for await (const _t of prompt) {
+          yield { type: "assistant", session_id: "s", message: { usage: { output_tokens: 1 } } };
+          yield { type: "result", subtype: "success", session_id: "s" };
+        }
+      })(),
+    } as unknown as Parameters<typeof runSession>[0];
+    const turns = async function* () {
+      yield { type: "user" as const, message: { role: "user" as const, content: "go" }, parent_tool_use_id: null, session_id: "" };
+      // The owner takes far longer than the cap to answer.
+      await new Promise((r) => setTimeout(r, 150));
+      yield { type: "user" as const, message: { role: "user" as const, content: "the answer" }, parent_tool_use_id: null, session_id: "" };
+    };
+    const out = await runSession(sdk, opts(), turns(), { ...CAPS, wallTimeMs: 60 }, {});
+    expect(out).toMatchObject({ status: "complete" });
+    expect(out.durationMs).toBeLessThan(100);
+  });
+
   it("stops at the wall-time cap", async () => {
     const sdk = fakeSdk([{ type: "system", subtype: "init", session_id: "s" }], true);
     const out = await runSession(sdk, opts(), oneTurn(), { ...CAPS, wallTimeMs: 20 }, {});

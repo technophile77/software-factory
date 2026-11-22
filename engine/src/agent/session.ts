@@ -470,6 +470,24 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
   };
   const wall = ev.wall ? ev.wall(() => stop("wall time")) : new WallTimer(caps.wallTimeMs, () => stop("wall time"), now);
   wall.start();
+  // Between the end of one turn and the next, the session waits on the owner (an interview's next answer):
+  // that time is off the wall-time cap and out of the run's duration (mesbot F-005's analyst ran out of
+  // time while only waiting for an answer).
+  let release: (() => void) | null = null;
+  let waitedSince = 0;
+  let waited = 0;
+  const resume = () => {
+    if (!release) return;
+    release();
+    release = null;
+    waited += now() - waitedSince;
+  };
+  const fed = (async function* () {
+    for await (const t of turns) {
+      resume();
+      yield t;
+    }
+  })();
   // FR-20: tool calls the session has made and not had answered, and when the session last said anything.
   const open = new Set<string>();
   let heard = now();
@@ -486,7 +504,7 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
     }, Math.max(10, Math.min(30_000, Math.floor(silence / 4))))
     : null;
   try {
-    for await (const m of sdk.query({ prompt: turns, options: opts }) as AsyncIterable<SdkMessage>) {
+    for await (const m of sdk.query({ prompt: fed, options: opts }) as AsyncIterable<SdkMessage>) {
       heard = now();
       if (m.type === "user") {
         const content = (m as { message?: { content?: unknown } }).message?.content;
@@ -497,6 +515,7 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
         ev.onSessionId?.(m.session_id);
       }
       if (m.type === "assistant") {
+        resume();
         ev.onWorking?.();
         const msg = (m as Extract<SdkMessage, { type: "assistant" }>).message;
         for (const c of msg.content ?? []) {
@@ -515,6 +534,10 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
         if (caps.maxOutputTokens !== undefined && out.outputTokens > caps.maxOutputTokens) stop("output tokens");
       } else if (m.type === "result") {
         open.clear();
+        if (!release) {
+          release = wall.hold();
+          waitedSince = now();
+        }
         ev.onTurnEnd?.();
         const r = m as Extract<SdkMessage, { type: "result" }>;
         out.turns = r.num_turns ?? out.turns;
@@ -535,9 +558,10 @@ export async function runSession(sdk: AgentSdk, opts: SessionOptions, turns: Asy
   } catch (e) {
     if (out.status === "complete") Object.assign(out, { status: "error", reason: (e as Error).message.slice(0, 300) });
   } finally {
+    resume();
     wall.stop();
     if (watchdog) clearInterval(watchdog);
-    out.durationMs = now() - started;
+    out.durationMs = now() - started - waited;
   }
   return out;
 }
