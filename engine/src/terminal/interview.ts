@@ -705,15 +705,26 @@ export class TerminalInterview {
           if (code !== null) return code;
           continue;
         }
+        // F-021 FR-17: a feature waiting for the owner's answer is offered beside open items too, or it could wait unseen behind them.
+        const st = await this.run("status", {});
+        const asking = st.ok === true ? waitingForAnswer(st) : [];
         this.say("\nOpen items:");
         const c = await this.choose([
           ...items.map((i) => ({ key: i.id, label: `${i.id} ${i.kind}${i.feature ? ` for ${i.feature}` : ""}, ${i.priority}${i.blocking ? ", blocking" : ""}: ${i.title}` })),
+          ...asking.map((id) => ({ key: `ask:${id}`, label: `${id}: a question is waiting for you` })),
           { label: "Cancel a feature", key: "cancel" },
           { label: "Stop", key: "" },
         ]);
         if (!("key" in c) || !c.key) return 0;
         if (c.key === "cancel") await this.cancelFeature();
-        else await this.answerItem(CONSOLE_KEY, c.key);
+        else if (c.key.startsWith("ask:")) {
+          this.answerOnly = true;
+          try {
+            await this.session(c.key.slice(4));
+          } finally {
+            this.answerOnly = false;
+          }
+        } else await this.answerItem(CONSOLE_KEY, c.key);
       }
     } catch (e) {
       if (e instanceof Stop) return 0;

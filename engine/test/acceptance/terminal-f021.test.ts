@@ -252,6 +252,18 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(engine.calls("interview.reply")).toEqual([]);
   });
 
+  test("FR-17: a waiting question is offered beside open items, answered in place, and the items menu comes back", async () => {
+    engine.addFeature("F-1", "Export", [question("Q1", "open", { options: ["CSV"] })]);
+    askingStatus();
+    const { code, s } = await inbox(["2", "1", "3"]);
+    expect(code).toBe(0);
+    expect(s.out).toContain("F-1: a question is waiting for you");
+    expect(engine.calls("interview.reply").map((m) => m.params)).toEqual([expect.objectContaining({ item: "Q1" })]);
+    expect(answers()).toEqual([]);
+    // Once answered, the feature isn't offered again.
+    expect(s.out.split("F-1: a question is waiting for you").length).toBe(2);
+  });
+
   const STATUS = { version: "1.4", capabilities: ["document", "inbox"], uptime_s: 1, features: [{ id: "F-002", stage: "orchestrator_review", active_agents: 1, activity: "tests_running" }] };
 
   test("AC-16 (v8 FR-16): an engine restart is waited out with a countdown, the console session opened again, and the watch carries on", async () => {
