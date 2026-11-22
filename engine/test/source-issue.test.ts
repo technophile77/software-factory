@@ -4,7 +4,7 @@ import type { PullsApi } from "../src/build/pulls";
 import { prText } from "../src/build/stage9";
 import { RPC, parseSourceIssue } from "../src/constants";
 import { EngineHandle } from "../src/engine";
-import { ScanError } from "../src/gitleaks";
+import { ScanError, retryingScanner } from "../src/gitleaks";
 import { parseTranscript } from "../src/state/transcript";
 import { RpcClient, git, engineJson, makeWorld, start } from "./helpers";
 
@@ -67,7 +67,7 @@ describe("feature.start is all or nothing", () => {
     const w = makeWorld();
     let failing = true;
     const scanner = { scan: async () => { if (failing) throw new ScanError("The secrets scan didn't finish."); return { clean: true as const }; } };
-    const e = await start(w, { scanner });
+    const e = await start(w, { scanner, scanRetryMs: [] });
     engines.push(e);
     const c = await RpcClient.connect(engineJson(w).path);
     clients.push(c);
@@ -78,5 +78,24 @@ describe("feature.start is all or nothing", () => {
 
     failing = false;
     expect((await c.ok("feature.start", { request: "Deploy main" })).feature).toBe("F-001");
+  });
+});
+
+describe("a secrets scan that doesn't finish on a busy PC", () => {
+  it("is tried again after each delay; a finding or another failure counts at once", async () => {
+    let calls = 0;
+    const slow = { scan: async () => { if (++calls < 3) throw new ScanError("The secrets scan didn't finish."); return { clean: true as const }; } };
+    const retries: number[] = [];
+    expect(await retryingScanner(slow, [1, 1], (n) => retries.push(n)).scan([])).toEqual({ clean: true });
+    expect(retries).toEqual([1, 2]);
+
+    calls = 0;
+    await expect(retryingScanner(slow, [1]).scan([])).rejects.toThrow("didn't finish");
+    expect(calls).toBe(2);
+
+    let other = 0;
+    const broken = { scan: async () => { other++; throw new ScanError("The secrets scan failed (exit 2)."); } };
+    await expect(retryingScanner(broken, [1, 1]).scan([])).rejects.toThrow("exit 2");
+    expect(other).toBe(1);
   });
 });
