@@ -34,6 +34,18 @@ Other features, services, libraries, data. A feature of the same project
 listed here by id (F-<nnn>) must have its pull request merged before this
 one starts development (F-015 FR-16, H-0198).
 
+### Configuration changes needed before implementation
+Every change this feature needs to factory configuration, a role policy or a
+CI file, one row each (F-015 FR-28, H-0275). Status is `Pending` or
+`Applied`. Check is `<role> may write <path>` or `<role> may not write <path>`
+for a write rule, naming one file, and `—` for a change code can't test. The
+readiness gate fails while a row isn't Applied, and the engine tests every
+Check against the manifest before the build starts. Leave the table empty if
+there are none.
+
+| Id | Change | Check | Status |
+|---|---|---|---|
+
 ## 8. Assumptions
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|

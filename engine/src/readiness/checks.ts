@@ -1,4 +1,5 @@
 import type { Check } from "../interview/readiness";
+import { allowedBy, type Rules } from "../policy/glob";
 
 /**
  * F-016 FR-7 and OQ-1: the structural code checks for readiness checks 1 to
@@ -86,3 +87,72 @@ export function structuralChecks(spec: string): Check[] {
 
 /** The four checks the orchestrator judges after the code checks pass (OQ-1 (c)). */
 export const JUDGED_CHECKS = ["clear_objective", "expected_behavior_defined", "acceptance_criteria_testable", "constraints_documented"] as const;
+
+/** F-015 FR-28: one row of section 7's "Configuration changes needed before implementation" table. */
+export interface ConfigChange {
+  id: string;
+  change: string;
+  /** The code-testable form, or null for a change code can't test. */
+  check: { role: string; may: boolean; path: string } | null;
+  status: string;
+  /** Why the Check cell can't be read, if it can't. */
+  bad?: string;
+}
+
+const CONFIG_HEADING = /^###\s+Configuration changes needed before implementation\s*$/i;
+const CHECK_RE = /^`?([a-z][a-z0-9-]{0,40}) may (not )?write ([^\s`]{1,300})`?$/;
+
+/** The table's rows, or none when the spec has no such table (specs from before H-0275). */
+export function configChanges(spec: string): ConfigChange[] {
+  const body = section(spec, 7) ?? [];
+  const start = body.findIndex((l) => CONFIG_HEADING.test(l.trim()));
+  if (start < 0) return [];
+  const lines: string[] = [];
+  for (const l of body.slice(start + 1)) {
+    if (/^#{1,3}\s/.test(l.trim())) break;
+    lines.push(l);
+  }
+  return tableRows(lines).filter((c) => /^C-\d+$/.test(c[0]!)).map((c) => {
+    const [id, change = "", raw = "", status = ""] = c as [string, string?, string?, string?];
+    const cell = raw.trim();
+    if (!cell || /^(?:—|-|–|n\/a)$/i.test(cell)) return { id, change, check: null, status };
+    const m = CHECK_RE.exec(cell);
+    if (!m) return { id, change, check: null, status, bad: `${id}'s Check isn't "<role> may write <path>" or "<role> may not write <path>"` };
+    return { id, change, check: { role: m[1]!, may: !m[2], path: m[3]! }, status };
+  });
+}
+
+/** F-015 FR-28 (1), FR-28 (3): every row applied, every Check readable. */
+export function configChangesCheck(spec: string): Check {
+  const why: string[] = [];
+  for (const r of configChanges(spec)) {
+    if (r.bad) why.push(r.bad);
+    if (r.status.toLowerCase() !== "applied") why.push(`${r.id} is not Applied`);
+  }
+  return { name: "config_changes_applied", passed: !why.length, evidence: why.length ? `${why.join("; ")}.` : "Every configuration change the spec needs is applied." };
+}
+
+/**
+ * F-015 FR-28 (2): each row's Check tested against the roles' write rules as
+ * the engine loaded them. `rulesOf` throws when a role's policy can't be read.
+ */
+export function failedConfigChecks(spec: string, rulesOf: (role: string) => Rules): Array<{ id: string; why: string }> {
+  const out: Array<{ id: string; why: string }> = [];
+  for (const r of configChanges(spec)) {
+    if (r.bad) {
+      out.push({ id: r.id, why: r.bad });
+      continue;
+    }
+    if (!r.check) continue;
+    const { role, may, path: file } = r.check;
+    let rules: Rules;
+    try {
+      rules = rulesOf(role);
+    } catch (e) {
+      out.push({ id: r.id, why: `the ${role} role's policy can't be read (${(e as Error).message.slice(0, 200)})` });
+      continue;
+    }
+    if (allowedBy(rules, file) !== may) out.push({ id: r.id, why: `the manifest says ${role} may${may ? " not" : ""} write ${file}` });
+  }
+  return out;
+}
