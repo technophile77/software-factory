@@ -28,7 +28,7 @@ import type { ProjectMcpSession } from "./agent/project-mcp";
 import { MCP_SERVER_RECORD_SCHEMA, mcpServerRecord } from "./schemas/mcp-server-record";
 import type { McpServerRecord } from "./schemas/mcp-server-record";
 import { mcpIdentity } from "./config/mcp-servers";
-import { ASK_WAIT_MS, type HostGate, WORKSPACE, type SessionCaps, type SessionOutcome, denyAsk } from "./agent/session";
+import { ASK_WAIT_MS, type HostGate, WORKSPACE, type SessionCaps, type SessionOutcome, denyAsk, FULL_SHELL_ROLES } from "./agent/session";
 import { CODE_DIR, type CodeFiles, placeCodeCopies, removeCodeCopies } from "./agent/code-copies";
 import { commitWorktree } from "./agent/worktree-commit";
 import { CodeRepo, CodeRepoError, type Identity, codeRepoUrl, commitIdentity, featureBranches } from "./build/code-repo";
@@ -106,7 +106,7 @@ import { modelReport, reportOutputSchema } from "./schemas/agent-report";
 import { schemaErrors } from "./schemas/json-file";
 import { StandardsError, loadStandards } from "./st-review/standards";
 import { type Check, readinessChecks, specPathPattern } from "./interview/readiness";
-import { structuralChecks } from "./readiness/checks";
+import { configChanges, configChangesCheck, failedConfigChecks, structuralChecks } from "./readiness/checks";
 import { structureText } from "./interview/structure";
 import { READINESS_ROLE, type ReadinessReport, orchestratorTurn, readinessCorrection, validateReadinessReport } from "./readiness/report";
 import { PolicyError, type RolePolicy, effectiveRole } from "./policy/role-policy";
@@ -2714,6 +2714,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       return done(chosen === "A" ? "ask_approved" : "ask_denied");
     }
 
+    // F-015 FR-28 (2): "Check again" tests the manifest again by starting the build, which checks before anything runs.
+    if (type === "configcheck" && f) {
+      if (chosen !== "A") return done("record_only");
+      await jobs.get(f)?.done;
+      await done("checked_again");
+      startBuild(p, f);
+      return;
+    }
+
     // FR-21: a step that stopped on an error runs again from where the build is; the record didn't move.
     if (type === "buildretry" && f) {
       if (chosen !== "A") return done("record_only");
@@ -3119,6 +3128,20 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const state = machine.state();
       if (state === "waiting_dependency") {
         const ctx = await buildContext(p, f);
+        // F-015 FR-28 (2): a configuration change the spec needs, tested against the manifest, before any agent runs.
+        const failed = failedConfigChecks(ctx.spec, writeRulesOf(p, ctx.target.name));
+        if (failed.length) {
+          log.warn(`${f.id}: not built: ${failed.map((x) => `${x.id}: ${x.why}`).join("; ")} (FR-28).`);
+          // One open item at a time; after "Check again" fails, a new one is filed, so it never waits with nothing asked.
+          if (p.inbox?.waitingOn(f.id).length) return;
+          await alert(p, `configcheck:${f.id}:${clock.now()}`, {
+            title: `${f.id} can't be built: a configuration change it needs isn't in the manifest`, feature: f.id,
+            context: `Before building, the engine tested the Checks in ${f.id}'s section 7 table against the manifest it loaded, and ${failed.map((x) => `${x.id} failed (${x.why})`).join("; ")} (F-015 FR-28). No agent has run.`,
+            impact: `${f.id} waits until the manifest has the change and the engine has restarted.`,
+            confirm: "Check again", hold: "Keep the feature waiting", recommendation: "A",
+          });
+          return;
+        }
         const gone = specDependencies(ctx.spec, f.id).filter((id) => p.features.get(id)?.state.cancelled);
         if (gone.length) {
           await dependencyCancelled(p, f, gone);
@@ -4323,6 +4346,25 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       });
   }
 
+  /** F-015 FR-28 (1): one Security item per configuration change the spec needs that isn't applied yet. */
+  async function pendingConfigItems(p: Project, f: FeatureInterview, spec: string): Promise<void> {
+    for (const r of configChanges(spec)) {
+      if (r.status.toLowerCase() === "applied" && !r.bad) continue;
+      await alert(p, `configchange:${f.id}:${r.id}`, {
+        title: `${f.id} needs configuration change ${r.id} before it is built`, feature: f.id,
+        context: `${f.id}'s spec lists ${r.id} in section 7, "Configuration changes needed before implementation", and it isn't applied${r.bad ? ` (${r.bad})` : ""}. The spec can't pass the readiness gate until it is (F-015 FR-28). The change itself is in the spec; applying it is your step, as for any configuration change. Then tell the analyst in the interview, so the row is marked Applied.`,
+        impact: `${f.id} stays in the interview until the change is applied.`,
+        confirm: "Apply the change, then tell the analyst", hold: "Leave it unapplied for now", recommendation: "A",
+      });
+    }
+  }
+
+  /** F-015 FR-28 (2): a role's write rules as its sessions in `repoName` would get them. */
+  function writeRulesOf(p: Project, repoName: string) {
+    const m = p.manifest!;
+    return (role: string) => (FULL_SHELL_ROLES.includes(role) ? buildPolicy(m.raw, role as BuildRole, repoName, buildTestResults(m.raw, repoName)).write : effectiveRole(m.raw, role, repoName).write);
+  }
+
   /** The gate failed: back to the interview with each failed check's evidence as data (FR-8). */
   async function readinessFailed(f: FeatureInterview, commit: string, checks: Check[], extra: Change[] = []): Promise<void> {
     const failed = checks.filter((c) => !c.passed).map((c) => ({ name: c.name, evidence: c.evidence }));
@@ -4353,9 +4395,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       ...readinessChecks({ spec, specVersion: version ?? 0, state: f.state, chainIntact: f.chainIntact && !f.remoteRefused }),
       stReviewResolution(spec, f.state, maturityOf(p.manifest!)).check,
       ...structuralChecks(spec),
+      configChangesCheck(spec),
     ];
     if (code.some((c) => !c.passed)) {
       await readinessFailed(f, commit, code);
+      await pendingConfigItems(p, f, spec);
       return;
     }
     const m = p.manifest!;
