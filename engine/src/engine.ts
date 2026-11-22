@@ -88,7 +88,7 @@ import { ConsoleResult, Inbox, Recorded } from "./inbox/store";
 import { InboxLocal } from "./inbox/local";
 import type { ItemInput } from "./inbox/model";
 import { type OsNotify, osNotifier } from "./os/notify";
-import { Gitleaks, SecretsScanner } from "./gitleaks";
+import { Gitleaks, SecretsScanner, retryingScanner } from "./gitleaks";
 import { activityOf } from "./interview/activity";
 import { FeatureInterview } from "./interview/feature";
 import { InterviewTools, ResearchConfig, createInterviewTools } from "./interview/tools";
@@ -140,6 +140,8 @@ export interface EngineOptions {
   gitleaks: { path: string; timeoutS?: number; expectSha256?: string };
   /** A pre-built scanner, instead of gitleaks (tests only). */
   scanner?: SecretsScanner;
+  /** Waits before a secrets scan that didn't finish is tried again; the default is 30 s, then 90 s. */
+  scanRetryMs?: number[];
   /** F-015 FR-10: the code repo's pull request calls (tests only). */
   pulls?: (token: string) => PullsApi;
   /** F-015 SR-2: the token scope checks' calls (tests only). */
@@ -338,11 +340,12 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   const gitPath = o.gitPath ?? findOnPath("git");
   if (!gitPath) throw new StartError("git isn't on PATH.");
   const git = new Git({ gitPath, homeDir: path.join(home, "git"), children, env });
-  const scanner = o.scanner ?? new Gitleaks({ binary: o.gitleaks.path, workDir: path.join(home, "gitleaks"), children, timeoutS: o.gitleaks.timeoutS, expectSha256: o.gitleaks.expectSha256 });
-  if (scanner instanceof Gitleaks) {
+  const gitleaks = o.scanner ?? new Gitleaks({ binary: o.gitleaks.path, workDir: path.join(home, "gitleaks"), children, timeoutS: o.gitleaks.timeoutS, expectSha256: o.gitleaks.expectSha256 });
+  const scanner = retryingScanner(gitleaks, o.scanRetryMs ?? [30_000, 90_000], (n) => log.warn(`The secrets scan didn't finish (the PC may be busy); trying again (${n}).`));
+  if (gitleaks instanceof Gitleaks) {
     // Without a working scanner nothing may be committed, so the engine doesn't start (SR-2).
     try {
-      await scanner.verify();
+      await gitleaks.verify();
     } catch (e) {
       throw new StartError((e as Error).message);
     }
@@ -4719,6 +4722,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           // The analyst's session ends with its turn; its changes are then committed and checked.
           if (passed) jobs.get(f)?.turns?.close();
         },
+        // One item an hour at most: the analyst's own retries land here too.
+        onScanUnfinished: () => void alert(p, `scanbusy:${fid}:${iso(clock.now()).slice(0, 13)}`, {
+          title: `The secrets scan can't finish on your PC, so ${fid}'s interview is held up`, feature: fid,
+          context: `The analyst for ${fid} tried to record something, and gitleaks didn't finish scanning it, even after the engine's retries. That usually means the PC is too busy (CPU or memory). Nothing was recorded; the analyst was told to try again.`,
+          impact: `${fid}'s next question waits until a scan finishes.`,
+          confirm: "Free up the PC (close programs or stop leftover processes)", hold: "Leave it as it is", recommendation: "A",
+        }),
         reportFor: async (r): Promise<Change[]> => {
           const n = await nextReport(p, fid);
           // Never the worktree's own .git link, which the agent can rewrite (Code Review, L2): the git dir

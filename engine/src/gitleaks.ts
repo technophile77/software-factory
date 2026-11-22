@@ -25,6 +25,31 @@ export interface SecretsScanner {
   scan(blobs: Blob[]): Promise<ScanResult>;
 }
 
+export const SCAN_UNFINISHED = "The secrets scan didn't finish.";
+
+/**
+ * On a PC whose CPU is pinned, gitleaks can run past its time limit; the
+ * same scan usually finishes a little later. A scan that didn't finish is
+ * tried again after each delay before the failure counts (mesbot F-004 lost
+ * two interview questions this way). A finding or any other failure counts
+ * at once.
+ */
+export function retryingScanner(inner: SecretsScanner, delaysMs: readonly number[], onRetry?: (attempt: number) => void): SecretsScanner {
+  return {
+    async scan(blobs) {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await inner.scan(blobs);
+        } catch (e) {
+          if (!(e instanceof ScanError) || e.message !== SCAN_UNFINISHED || attempt >= delaysMs.length) throw e;
+          onRetry?.(attempt + 1);
+          await new Promise((r) => setTimeout(r, delaysMs[attempt]));
+        }
+      }
+    },
+  };
+}
+
 export interface GitleaksOptions {
   binary: string;
   /** Engine-owned folder for the rules file, the empty ignore dir, the working dir and staging. */
@@ -127,7 +152,7 @@ export class Gitleaks implements SecretsScanner {
         env: this.env(),
         timeoutMs: ((this.o.timeoutS ?? GITLEAKS_TIMEOUT_S) + 30) * 1000,
       }, this.o.children).catch(() => null);
-      if (!r || r.timedOut) throw new ScanError("The secrets scan didn't finish.");
+      if (!r || r.timedOut) throw new ScanError(SCAN_UNFINISHED);
       if (r.code === 0) return { clean: true };
       if (r.code === 99) return { clean: false, ...this.findings(r.stdout, blobs) };
       throw new ScanError(`The secrets scan failed (exit ${r.code ?? r.signal}).`);

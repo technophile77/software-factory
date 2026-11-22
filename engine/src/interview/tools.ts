@@ -10,6 +10,7 @@ import { DocumentMeta, SourceRow, sha256, sourcesTable, specLine, tableHash, tab
 import { Finding, ItemContent, QUESTION_TYPES, QuestionType, WireItem } from "./model";
 import { Check, SpecPathRefused, readSpec, readinessChecks } from "./readiness";
 import { stReviewQuestionProblem } from "../st-review/flow";
+import { SCAN_UNFINISHED, ScanError } from "../gitleaks";
 
 export type ToolErrorCode = "one_at_a_time" | "invalid" | "limit" | "unknown_item" | "wrong_status" | "unavailable";
 export type ToolResult<T = unknown> = { ok: true; result: T } | { ok: false; error: { code: ToolErrorCode; message: string } };
@@ -122,6 +123,8 @@ export interface ToolContext {
   reportFor(result: { specPath: string; specVersion: number; checks: Check[]; passed: boolean }): Promise<Change[]>;
   /** Told once the result is committed; a pass ends the analyst's run. */
   onSpecReady?(passed: boolean): void;
+  /** Told when the secrets scan didn't finish even after its retries, so the owner hears of it. */
+  onScanUnfinished?(): void;
   /** The web reader (milestone 2). Without it, research_web answers `unavailable`. */
   research?: ResearchConfig;
   /**
@@ -181,6 +184,11 @@ export function createInterviewTools(ctx: ToolContext): InterviewTools {
       if (e instanceof ToolError) return { ok: false, error: { code: e.code, message: e.message } };
       if (e instanceof SecretFound) return { ok: false, error: { code: "invalid", message: "The secrets scan found a secret in the text; nothing was recorded." } };
       if (e instanceof InterviewError && (e.code === "tampered" || e.code === "cancelled")) return { ok: false, error: { code: "invalid", message: e.message } };
+      if (e instanceof ScanError && e.message === SCAN_UNFINISHED) {
+        ctx.log.warn(`${f.id}: ${name} failed: ${e.message}`);
+        ctx.onScanUnfinished?.();
+        return { ok: false, error: { code: "invalid", message: "The secrets scan didn't finish because the owner's PC is busy, so nothing was recorded. Wait a few minutes, then call the tool again with the same content." } };
+      }
       ctx.log.warn(`${f.id}: ${name} failed: ${(e as Error).message}`);
       return { ok: false, error: { code: "invalid", message: "The engine couldn't record that; try again later." } };
     }
