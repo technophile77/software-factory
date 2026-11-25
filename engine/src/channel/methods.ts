@@ -37,6 +37,11 @@ export interface ProjectChannel {
   inbox(): ConsoleInbox | null;
   /** F-021 FR-18 (channel v1.7, H-0265): the project's live agent transcript after `after`. */
   transcript(after: number | undefined): { agents: Array<LiveAgent & { cost_usd?: number }>; entries: LiveEntry[]; next: number; skipped: number };
+  /**
+   * F-021 FR-18 (channel v1.10): while the project is held for a pinned-key
+   * change, the hold's words and which inbox records the console may see.
+   */
+  held?(): { reason: string; shows(r: InboxRecord): boolean } | null;
   /** Files the Security item behind a -32008 for a secret the scan found (H-0084). */
   secretRefused(where: string, found: SecretFound, feature?: string): Promise<void>;
 }
@@ -125,9 +130,24 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
     }
   }
 
+  const HELD_METHODS = new Set(["engine.status", "inbox.open", "inbox.close", "inbox.list", "inbox.show", "inbox.answer", "inbox.confirm"]);
+  /** FR-18: a held project's console reaches only the hold item; any other id reads as unknown. */
+  const heldShows = async (item: string): Promise<void> => {
+    const h = project.held?.();
+    if (!h) return;
+    const r = (await inbox().list()).find((x) => x.id === item);
+    if (!r || !h.shows(r)) throw new RpcError(RPC.unknown, "Unknown item.");
+  };
+
   return async (method, p) => {
+    const held = project.held?.() ?? null;
+    if (held && !HELD_METHODS.has(method)) throw new RpcError(RPC.projectHeld, `${project.name} is on hold: ${held.reason}.`);
     switch (method) {
       case "engine.status":
+        if (held) {
+          const st = engine.status();
+          return { version: st.version, capabilities: st.capabilities, uptime_s: st.uptime_s, features: [], held: { reason: held.reason } };
+        }
         only(p, []);
         return engine.status();
       case "engine.pause":
@@ -264,7 +284,7 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
         only(p, ["session"]);
         project.sessions.approved(p.session);
         return {
-          items: (await inbox().list()).map((r) => ({
+          items: (await inbox().list()).filter((r) => !held || held.shows(r)).map((r) => ({
             id: r.id, kind: r.kind, title: r.title, ...(r.feature ? { feature: r.feature } : {}),
             priority: r.effective_priority, blocking: r.blocking, rev: r.revisions[r.revisions.length - 1]!.rev,
           })),
@@ -273,6 +293,7 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
       case "inbox.show": {
         only(p, ["session", "item"]);
         project.sessions.approved(p.session);
+        await heldShows(inboxItem(p.item));
         const shown = await inbox().show(inboxItem(p.item));
         if (!shown) throw new RpcError(RPC.unknown, "Unknown item.");
         const r = shown.record;
@@ -286,6 +307,7 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
         const s = project.sessions.approved(p.session);
         const replyId = id(p.reply_id, "reply_id");
         const item = inboxItem(p.item);
+        await heldShows(item);
         const rev = revision(p.rev);
         if (typeof p.action !== "string" || !ACTION_RE.test(p.action)) throw new RpcError(RPC.invalidParams, "action must be an inbox action.");
         if (p.note !== undefined && (typeof p.note !== "string" || p.note.length > MAX_NOTE_CHARS)) throw new RpcError(RPC.invalidParams, `note must be text up to ${MAX_NOTE_CHARS} characters.`);
@@ -310,6 +332,7 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
         const s = project.sessions.approved(p.session);
         // A malformed code is a wrong code: it still ends the attempt (F-021 SR-2).
         const code = typeof p.code === "string" && CODE_RE.test(p.code) ? p.code : "-";
+        await heldShows(inboxItem(p.item));
         try {
           return consoleWire(await inbox().confirm({ id: inboxItem(p.item), rev: revision(p.rev), code, session: s.no, signedIn: s.signedIn }));
         } catch (e) {

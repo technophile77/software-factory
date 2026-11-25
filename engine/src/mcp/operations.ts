@@ -297,6 +297,8 @@ export class Interview {
     };
     // Only a plain version number gets through.
     if (typeof r.version === "string" && VERSION_RE.test(r.version)) out.version = r.version;
+    // F-021 FR-18: the hold's own words, cleaned, for the console's one line.
+    if (isObj(r.held) && typeof r.held.reason === "string") out.held = clean(r.held.reason, true).slice(0, 200);
     out.advisor = run.advisor;
     return out;
   }

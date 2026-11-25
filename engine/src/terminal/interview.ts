@@ -247,6 +247,8 @@ export class TerminalInterview {
    * wait says that instead of "isn't running".
    */
   factoryRunning?: () => Promise<number | null | undefined>;
+  /** F-021 FR-18: the hold reason last printed, so it is said once per hold. */
+  private heldShown = "";
   /** The project argument this console was started with, for the confirm command it names. */
   projectArg = "<this project>";
 
@@ -718,6 +720,12 @@ export class TerminalInterview {
         // F-021 FR-17: a feature waiting for the owner's answer is offered beside open items too, or it could wait unseen behind them.
         const st = await this.run("status", {});
         const asking = st.ok === true ? waitingForAnswer(st) : [];
+        // F-021 FR-18: a held project's console lists only the hold item; say why, once per hold.
+        const held = typeof st.held === "string" ? st.held : "";
+        if (held && held !== this.heldShown) {
+          this.say(`\n[${this.clock()}] This project is on hold: ${held}. Answer ${items.map((i) => i.id).join(", ")} to confirm the change, or press Ctrl+C and run \`factory-engine confirm --project ${this.projectArg}\`.`);
+        }
+        this.heldShown = held;
         this.say("\nOpen items:");
         const c = await this.choose([
           ...items.map((i) => ({ key: i.id, label: `${i.id} ${i.kind}${i.feature ? ` for ${i.feature}` : ""}, ${i.priority}${i.blocking ? ", blocking" : ""}: ${i.title}` })),

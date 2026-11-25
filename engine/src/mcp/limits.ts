@@ -28,7 +28,7 @@ export const MAX_APPROVAL_WAIT_S = 900;
 export const ERROR_NAMES: Record<number, string> = {
   [-32001]: "busy", [-32002]: "stale", [-32003]: "unknown", [-32004]: "session_expired",
   [-32005]: "kind_not_allowed", [-32006]: "approval_pending", [-32007]: "approval_failed",
-  [-32008]: "refused", [-32009]: "document_refused",
+  [-32008]: "refused", [-32009]: "document_refused", [-32010]: "project_held",
 };
 export const ERROR_TEXT: Record<string, string> = {
   busy: "Another session holds this feature.",
@@ -40,6 +40,7 @@ export const ERROR_TEXT: Record<string, string> = {
   approval_failed: "GitHub approval failed or expired, so the session was closed.",
   refused: "The engine refused this for a security reason; see the Security inbox.",
   document_refused: "The engine refused the document; nothing was stored.",
+  project_held: "This project is on hold until you confirm a change to its pinned keys. Run factory-engine inbox to answer the hold item, or factory-engine confirm.",
 };
 
 export const USER_CODE_RE = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/;

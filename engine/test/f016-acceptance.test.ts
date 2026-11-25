@@ -11,7 +11,7 @@ import { structuralChecks } from "../src/readiness/checks";
 import { validateReadinessReport } from "../src/readiness/report";
 import type { Entry } from "../src/state/transcript";
 import { FakeDocker } from "./fakes";
-import { GIT_ENV, OWNER_ID, RpcClient, World, git, manifestYaml, start as startEngine, tmpdir } from "./helpers";
+import { GIT_ENV, OWNER_ID, RpcClient, World, engineJson, git, manifestYaml, start as startEngine, tmpdir } from "./helpers";
 import { FakeIssues, OTHER, OWNER } from "./inbox-fake";
 import { inboxItems, securityItemsIn } from "./inbox-items";
 import { ORCHESTRATOR, ORCHESTRATOR_MD, POLICY, REVIEWER, Script, boot, entries, interview, orchestratorDir, report, reportDir, runtime, runsOf, scriptedSdk, spec, stageOf, until, world } from "./agents-harness";
@@ -487,6 +487,46 @@ describe("F-016 acceptance SR-7: an effect that fails", () => {
       await e.stop();
     }
   }, 60_000);
+});
+
+describe("F-021 FR-18: a project held for a pinned-key change answers its hold item in the console", () => {
+  it("AC-19, SR-8: status says why, only the hold item is served, other calls are refused, and a signed-in console confirm pins the change", async () => {
+    const w = world();
+    const d = new FakeDocker();
+    const gh = new FakeIssues();
+    fs.writeFileSync(path.join(w.config, "factory-project.yaml"), manifestYaml({ ownerId: 1000077, extra: POLICY }));
+    git(w.config, "commit", "-qam", "owner 1000077");
+    const rt = runtime(d, scriptedSdk({ analyst: analyst(w, () => ""), reviewer: reviewer(d, () => "") }).sdk);
+    const e = await startEngine(w, { agents: rt, issues: () => gh });
+    const c = await RpcClient.connect(engineJson(w).path);
+    try {
+      expect(e.projects[0]!.state).toBe("stopped");
+      await pollUntil(w, "the pins issue", () => gh.issues.size === 1);
+      const st = await c.ok("engine.status");
+      expect(st.features).toEqual([]);
+      expect(st.held).toEqual({ reason: expect.stringMatching(/^a change to .*owner/) });
+      expect(st.capabilities).toContain("held");
+      for (const [method, params] of [["interview.list", {}], ["feature.start", { request: "Export orders" }], ["engine.pause", {}]] as const) {
+        expect(((await c.call(method, params)).error as { code: number }).code).toBe(-32010);
+      }
+      // SR-8: the session asks for a sign-in although the test project needs none.
+      const pending = await c.ok("inbox.open");
+      expect(pending.approval).toBeDefined();
+      await c.ok("inbox.close", { session: pending.session });
+      const session = await consoleSession(w, c);
+      const listed = await c.ok("inbox.list", { session });
+      expect((listed.items as Array<{ id: string; title: string }>).map((i) => [i.id, i.title])).toEqual([["D-0001", "Pinned owner keys changed"]]);
+      const a = await c.ok("inbox.answer", { session, item: "D-0001", rev: 1, action: "choose:A", reply_id: "r1" });
+      const confirm = a.confirm as { code: string };
+      expect(await c.ok("inbox.confirm", { session, item: "D-0001", rev: 1, code: confirm.code })).toEqual({ recorded: true });
+      expect(ownerEntries(w, "D-0001")).toEqual([expect.objectContaining({ option: "A", source: "console", signed_in: true })]);
+      expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "pinned" });
+      expect(new PinStore(w.home).get("acme")!.owner.github_id).toBe(1000077);
+    } finally {
+      c.close();
+      await e.stop();
+    }
+  }, 90_000);
 });
 
 // ---------- Readiness gate and spec sign-off ----------
