@@ -362,6 +362,18 @@ it through GitHub (ADR 0014), and the residual risk is recorded in F-005 SR-5.
 | `inbox.close` | `{ session }` | `{ ok: true }` (v1.6) |
 | `engine.transcript` | `{ session, after?: int }` | `{ agents: [{ run, feature, role, started_at, ended?: true, cost_usd? }], entries: [{ seq, at, run, feature, role, kind: "text" \| "tool", text }], next, skipped }`. Needs an approved console session (`inbox.open`) and returns only that project's runs. The engine keeps each assistant message's text and each tool call's name and target, never tool output, in memory only: the last 500 entries per run, dropped 60 s after the run ends. `after` is the last call's `next` (absent: the newest 50 entries); `skipped` counts entries dropped before this client read them; `text` is at most 8000 characters. `engine.json` capabilities list `"transcript"` (v1.7, F-024 FR-13) |
 
+**Held projects (v1.10, F-021 FR-18, H-0277).** A project the engine holds
+for a change to its pinned keys keeps its channel and `engine.json`.
+`engine.status` returns `{ version, capabilities, uptime_s, features: [],
+held: { reason } }`, where `reason` is the engine's own words for the hold
+(for example "a change to mcp_servers"). The `inbox.*` methods work as in
+v1.6, except that `inbox.list`, `inbox.show`, `inbox.answer` and
+`inbox.confirm` see only the hold item, and `inbox.open` always asks for a
+GitHub device sign-in as the owner pinned before the change. Every other
+method returns -32010 `project_held`. An engine that does this lists the
+capability `held`. Non-breaking: older clients see an engine with no
+features.
+
 `Item` (v1.1) is `{ id, revision, kind: "question" | "assumption", text, why,
 suggested?, options?: [string], findings?: [{ text, source }], status }`.
 From v1.3, `kind` may also be `"advisor_proposal"` (the analyst proposes an

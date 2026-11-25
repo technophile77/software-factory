@@ -70,7 +70,7 @@ import { RoleAssignmentError, manifestAssignments, planAdvisory, planRole } from
 import { type Endpoint, EndpointsError, readEndpointsFile } from "./config/endpoints";
 import { Models, MODELS_FILE, readDefaultModels } from "./config/models";
 import { LIMITS_FILE, Limits, LimitsError, agentLimits, stReviewLimits, containerLimits, manifestLimits, maxPageBytes, mergeLimits, readDefaultLimits, readinessLimits, roleContainerLimits, worktreeLimits, buildLimits } from "./config/limits";
-import { Manifest, interviewSignIn, manifestName, readManifest } from "./config/manifest";
+import { Manifest, interviewSignIn, type InterviewSignIn, manifestName, readManifest } from "./config/manifest";
 import { ConfigError, checkProjectClone } from "./config/paths-file";
 import { LEASE_CHECK_MS, LEASE_PATH, LEASE_RENEW_MS, LEASE_STALE_MS, LeaseSightings, factoryId, leaseText, parseLease } from "./state/lease";
 import type { FactoryLease } from "./schemas/factory-lease";
@@ -254,6 +254,8 @@ interface Project extends ProjectStatus {
   inbox: Inbox | null;
   /** Stopped only because pinned keys changed: the inbox still runs, so the owner can approve the change there (F-016 OQ-3). */
   pinsWaiting: boolean;
+  /** F-021 FR-18: the hold's own words ("a change to mcp_servers"), shown by the held console. */
+  heldFor?: string;
 }
 
 export interface EngineHandle {
@@ -760,6 +762,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       const what = `a change to ${cmp.keys.join(", ")}`;
       stop(p, `${what}; run \`factory-engine confirm --project ${p.file ? p.manifest.name : p.real}\` or approve the inbox item`);
       p.pinsWaiting = true;
+      p.heldFor = what;
       p.waitKey = pinKey;
       await alert(p, `pins:${p.manifest.commit}:${cmp.status}`, {
         title: "Pinned owner keys changed",
@@ -1256,6 +1259,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
           confirm: "It was a real secret: rotate it", hold: "It was a false positive: no action", recommendation: "A",
         });
       },
+      held: () => (p.state !== "running" && p.pinsWaiting
+        ? { reason: p.heldFor ?? "a change to its pinned keys", shows: (r) => r.effect?.type === "pins" }
+        : null),
       cancelFeature: (f, reason) => cancelFeature(p, f, reason),
       startFeature: (request, doc, issue) => {
         // One at a time across projects, so two requests can't take the same id.
@@ -2495,10 +2501,13 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
 
   /** Phase 3 for one project: its sessions, channel and engine.json (FR-4). Throws when the channel can't be served. */
   async function serveProject(p: Project): Promise<void> {
-    if (p.state !== "running" || !p.manifest || !p.state_repo) return;
+    // F-021 FR-18: a project held for a pinned-key change keeps a channel for its hold item only.
+    const held = p.state !== "running" && p.pinsWaiting && !!p.inbox && !!p.name && !!pins.get(p.name);
+    if ((p.state !== "running" && !held) || !p.manifest || !p.state_repo) return;
     const pin = pins.get(p.name!)!;
-    const signInSetting = interviewSignIn(p.manifest);
-    p.sessions = new SessionManager(p.manifest.name, { githubId: pin.owner.github_id, oauthClientId: pin.owner.oauth_client_id }, github, clock, log, async (fid, no, signIn) => {
+    // SR-8: a held project's console always signs in as the owner pinned before the change, whatever the changed manifest says.
+    const signInSetting: InterviewSignIn = held ? { every: "session" } : interviewSignIn(p.manifest);
+    p.sessions = new SessionManager(held ? pin.name : p.manifest.name, { githubId: pin.owner.github_id, oauthClientId: pin.owner.oauth_client_id }, github, clock, log, async (fid, no, signIn) => {
       const f = p.features.get(fid);
       if (f?.chainIntact) {
         // Without sign-in nothing proves who is answering, so the record doesn't claim the owner approved.
@@ -2519,7 +2528,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       : await listenUnix({ dir: runtimeDir, name: `${folderKey(p)}.sock`, os: osApi.unix(), children, log, onConnection });
     p.channel = p.listener.path;
     writeFileAtomic(path.join(p.state_repo.factoryDir, ENGINE_JSON), JSON.stringify({ version: SERVED_CHANNEL_VERSION, capabilities: CAPABILITIES, path: p.listener.path, pid: process.pid }) + "\n");
-    log.info(`${p.manifest.name}: serving channel v${SERVED_CHANNEL_VERSION}`);
+    log.info(`${p.manifest.name}: serving channel v${SERVED_CHANNEL_VERSION}${held ? " for its hold item only" : ""}`);
   }
 
   // Phase 3 for every project: a channel that can't be served stops the engine.
@@ -2779,7 +2788,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       // OQ-3: the inbox proves the previously pinned owner (the inbox reads only that id), so the change is pinned as `factory-engine confirm` pins it.
       const m = p.manifest;
       const pin = p.name ? pins.get(p.name) : null;
-      if (!m || !pin || e.actor_id !== pin.owner.github_id) return done("record_only");
+      // F-021 SR-8: a console confirm counts only from a session signed in on GitHub as the pinned owner (the held channel always asks).
+      const owner = e.source === "console" ? e.signed_in === true : e.actor_id === pin?.owner.github_id;
+      if (!m || !pin || !owner) return done("record_only");
       // Code Review M2: the approval covers the manifest commit the item named, never a later change on main.
       if (r.effect?.commit !== m.commit) {
         notify(`Factory: ${m.name} not confirmed`, `${r.id} named another manifest commit. Restart the engine for a new item.`);

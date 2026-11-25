@@ -17,7 +17,7 @@ export const SERVED_CHANNEL_VERSION = "1.2";
  * reporting 1.2, because it doesn't serve v1.3's advisor yet. `inbox` is v1.6's console answers (F-021,
  * H-0245).
  */
-export const CAPABILITIES: readonly string[] = ["document", "inbox", "transcript", "issue", "cancel"];
+export const CAPABILITIES: readonly string[] = ["document", "inbox", "transcript", "issue", "cancel", "held"];
 
 export const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 export const FEATURE_ID_RE = /^F-(\d{3,6})$/;
@@ -41,6 +41,8 @@ export const RPC = {
   approvalFailed: -32007,
   /** A security refusal (H-0084). The message is always REFUSED_MESSAGE; the reason goes in a Security item. */
   refused: -32008,
+  /** Channel v1.10 (F-021 FR-18): the project is held for a pinned-key change, so only its hold item is served. */
+  projectHeld: -32010,
   /** Channel v1.4 (H-0105): a feature.start document the engine won't store; `data` names lines and rules only. */
   documentRefused: -32009,
 } as const;

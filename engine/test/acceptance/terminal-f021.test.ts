@@ -264,6 +264,19 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(s.out.split("F-1: a question is waiting for you").length).toBe(2);
   });
 
+  test("FR-18: a held project's console says why it is on hold, once, and lists the hold item", async () => {
+    items = [DECISION({ id: "D-0018", title: "Pinned owner keys changed", feature: undefined })];
+    engine.hooks["engine.status"] = (conn, msg) => {
+      conn.respond(msg, ["result", { version: "1.10", capabilities: ["document", "inbox", "held"], uptime_s: 1, features: [], held: { reason: "a change to mcp_servers\u001b[2J" } }]);
+      return true;
+    };
+    const { code, s } = await inbox(["", "3"]);
+    expect(code).toBe(0);
+    expect(s.out).toContain("This project is on hold: a change to mcp_servers. Answer D-0018 to confirm the change, or press Ctrl+C and run `factory-engine confirm --project <this project>`.");
+    expect(s.out).not.toContain("\u001b[2J");
+    expect(s.out.split("This project is on hold").length).toBe(2);
+  });
+
   const STATUS = { version: "1.4", capabilities: ["document", "inbox"], uptime_s: 1, features: [{ id: "F-002", stage: "orchestrator_review", active_agents: 1, activity: "tests_running" }] };
 
   test("AC-16 (v8 FR-16): an engine restart is waited out with a countdown, the console session opened again, and the watch carries on", async () => {
