@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Listener } from "../src/channel/unix";
 import { MemoryLogger } from "../src/log";
-import { FactoryRunning, takeFactoryLock } from "../src/os/factory-lock";
+import { FactoryRunning, factoryHolder, takeFactoryLock } from "../src/os/factory-lock";
 import { realOsApi } from "../src/os/ffi";
 import { Children } from "../src/proc";
 
@@ -39,6 +39,17 @@ describe("F-023 FR-1, SR-12: one factory per PC", () => {
     await first.close();
     held.splice(held.indexOf(first), 1);
     await expect(take(dir, pipe)).resolves.toBeDefined();
+  });
+
+  it("the console's probe finds the running factory's pid without taking the lock, and nothing once it stops", async () => {
+    const dir = lockDir();
+    const pipe = `\\\\.\\pipe\\sf-lock-test-${crypto.randomBytes(8).toString("hex")}`;
+    expect(await factoryHolder({ os: realOsApi(), dir, pipe })).toBeUndefined();
+    const first = await take(dir, pipe);
+    expect(await factoryHolder({ os: realOsApi(), dir, pipe })).toBe(process.pid);
+    await first.close();
+    held.splice(held.indexOf(first), 1);
+    expect(await factoryHolder({ os: realOsApi(), dir, pipe })).toBeUndefined();
   });
 
   it.skipIf(process.platform === "win32")("SR-12: a lock left by an engine that died is cleared", async () => {

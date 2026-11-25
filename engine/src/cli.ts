@@ -16,6 +16,7 @@ import { DockerCli, DockerError, pickEndpoint } from "./docker/cli";
 import { type HostRuntime, resolveClaudeBinary } from "./agent/host";
 import { PinStore } from "./config/pins";
 import { type ProjectStatus, defaultEngineHome, startEngine } from "./engine";
+import { factoryHolder } from "./os/factory-lock";
 import { factoryId } from "./state/lease";
 import { ensureOwnerDir, findOnPath } from "./fsutil";
 import { Git } from "./git";
@@ -222,7 +223,12 @@ async function interview(args: string[], command: "interview" | "inbox" = "inter
   // Windows consoles without Windows Terminal may not draw box characters.
   const ascii = process.platform === "win32" && !process.env.WT_SESSION;
   const marker = ascii ? "| " : "\u2502 ";
-  const go = (t: TerminalInterview) => (command === "inbox" ? t.inboxMain(feature) : t.main(feature));
+  const lockDir = path.join(defaultEngineHome(), "run");
+  const go = (t: TerminalInterview) => {
+    t.factoryRunning = () => factoryHolder({ os: realOsApi(), dir: lockDir });
+    t.projectArg = /\s/.test(projectDir) ? `"${projectDir}"` : projectDir;
+    return command === "inbox" ? t.inboxMain(feature) : t.main(feature);
+  };
   if (plain) {
     const io = terminalIo(ascii);
     try {

@@ -350,6 +350,31 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(engine.connections).toBe(0);
   });
 
+  test("a factory that runs but doesn't serve this project is reported as a stopped project, with the confirm command", async () => {
+    await engine.stop();
+    const s = new Script([]);
+    s.aborted = () => s.drawn.includes("Reconnecting in 1s (attempt 2)");
+    const ops = new Interview({ os: realOsApi(), projectDir: repo });
+    const t = new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming());
+    t.factoryRunning = async () => 21112;
+    t.projectArg = "/work/mesbot-factory";
+    expect(await t.inboxMain()).toBe(0);
+    expect(s.out).toContain("The factory is running (pid 21112) but isn't serving this project, so the project is stopped.");
+    expect(s.out).toContain("`factory-engine confirm --project /work/mesbot-factory`");
+    expect(s.out).not.toContain("The engine isn't running");
+  });
+
+  test("with no factory running at all, the wait still says the engine isn't running", async () => {
+    await engine.stop();
+    const s = new Script([]);
+    s.aborted = () => s.drawn.includes("Reconnecting in 1s (attempt 2)");
+    const ops = new Interview({ os: realOsApi(), projectDir: repo });
+    const t = new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming());
+    t.factoryRunning = async () => undefined;
+    expect(await t.inboxMain()).toBe(0);
+    expect(s.out).toContain("The engine isn't running. Waiting for it to start");
+  });
+
   test("an engine without the inbox capability is refused before anything is sent", async () => {
     writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document"] });
     const { code, s } = await inbox([]);
