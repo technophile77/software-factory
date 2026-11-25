@@ -1432,7 +1432,9 @@ CHANGE_CONTROLLED = ["CLAUDE.md", "**/CLAUDE.md", "CLAUDE.local.md", "**/CLAUDE.
                      # Role policy v2.6 (H-0107): the engine's stored source documents (F-009).
                      "docs/features/*-source.md", "docs/features/*-source.txt"]
 POLICY_KEYS = {"tools": {"allow"}, "read": {"allow", "deny"}, "write": {"allow", "deny"},
-               "commands": {"allow"}, "network": {"allow"}}
+               "commands": {"allow"}, "network": {"allow"}, "mcp": {"allow"}}
+# Role policy v2.13 (F-025): a project MCP server, or one of its tools.
+_MCP_ENTRY_RE = re.compile(r"[a-z][a-z0-9-]{0,31}(?:/[A-Za-z0-9_-]{1,64})?")
 # fetch_page is the engine's own page fetch, which strips hidden content (Role policy v2.5).
 AGENT_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill", "fetch_page", "Monitor", "TaskStop"}
 FILE_TOOLS = AGENT_TOOLS - {"WebFetch", "WebSearch", "fetch_page"}
@@ -1502,7 +1504,7 @@ def _check_role(where, rule, errors):
         if key == "may_request":
             continue
         if key not in POLICY_KEYS:
-            errors.append(f"{where}.{key} is not a policy key (tools, read, write, commands, network, may_request)")
+            errors.append(f"{where}.{key} is not a policy key (tools, read, write, commands, network, mcp, may_request)")
             continue
         if not isinstance(value, dict):
             errors.append(f"{where}.{key} must be a mapping")
@@ -1523,6 +1525,11 @@ def _check_role(where, rule, errors):
                                 or SHELL_SUFFIXES.search(base(n)))
                 if shells:
                     errors.append(f"{where}.commands.allow has shells or interpreters, which bypass the policy: {', '.join(shells)}")
+            elif key == "mcp":
+                bad = sorted(i for i in items if not _MCP_ENTRY_RE.fullmatch(i))
+                if bad:
+                    errors.append(f"{where}.mcp.{sub} entries must be <server> or <server>/<tool>: "
+                                  + ", ".join(repr(i) for i in bad))
             elif key == "network":
                 bad = sorted(i for i in items if i != "*" and not _HOST_RE.fullmatch(i))
                 if bad:
@@ -1579,6 +1586,16 @@ def _check_test_dependencies(data, errors):
             if not any(_writable(f, roles.get(r)) for r in ("test-engineer", "software-developer")):
                 errors.append(f"repo {repo.get('name')}: its commands install the test dependency file {f}, which no role may write; "
                               "add it to the test engineer's write allow list")
+
+
+def _check_mcp_names(where, rule, declared, errors):
+    """F-025 FR-5: a role may name only servers the manifest declares, as the engine requires."""
+    allow = ((rule or {}).get("mcp") or {}).get("allow") if isinstance(rule, dict) and isinstance(rule.get("mcp"), dict) else None
+    if not isinstance(allow, list):
+        return
+    missing = sorted({i.split("/")[0] for i in allow if isinstance(i, str)} - declared)
+    if missing:
+        errors.append(f"{where}.mcp.allow names servers not in mcp_servers: {', '.join(missing)}")
 
 
 def _check_may_request(where, role, value, errors):
@@ -1649,10 +1666,12 @@ def validate_policy(data, agents):
     for role in CORE_AGENTS:
         if role not in policy["roles"]:
             errors.append(f"policy.roles.{role} is missing, so that agent could not run")
+    declared = {s.get("name") for s in (data.get("mcp_servers") or []) if isinstance(s, dict)}
     for role, rule in policy["roles"].items():
         if role not in known:
             errors.append(f"policy.roles.{role} is not a known agent")
         _check_role(f"policy.roles.{role}", rule, errors)
+        _check_mcp_names(f"policy.roles.{role}", rule, declared, errors)
         if role == "software-developer":
             _check_source_globs(f"policy.roles.{role}", rule, errors)
         if isinstance(rule, dict) and "may_request" in rule:
@@ -1677,6 +1696,7 @@ def validate_policy(data, agents):
                 errors.append(f"repos[{i}].policy.roles.{role}.may_request is not allowed; "
                               "who may request a role is set in the project policy only")
             _check_role(f"repos[{i}].policy.roles.{role}", rule, errors)
+            _check_mcp_names(f"repos[{i}].policy.roles.{role}", rule, declared, errors)
             if role == "software-developer":
                 _check_source_globs(f"repos[{i}].policy.roles.{role}", rule, errors)
     if errors:

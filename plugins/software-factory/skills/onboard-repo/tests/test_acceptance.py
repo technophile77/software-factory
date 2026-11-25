@@ -1492,6 +1492,24 @@ class RolePolicyV22(Base):
                                                                        "registry.npmjs.org", "localhost"]
         self.assertAccepted(data, "plain host names")
 
+    def test_mcp_allow_names_declared_servers_or_their_tools(self):
+        # Role policy v2.13 (F-025): the engine accepts `mcp.allow`, so the checker must too.
+        data = self.manifest()
+        data["mcp_servers"] = [{"name": "ssh-discord", "command": "npx", "args": ["mcp-ssh-manager@4.3.5"]}]
+        data["policy"]["roles"]["requirements-analyst"]["mcp"] = {"allow": ["ssh-discord/ssh_tail"]}
+        data["policy"]["roles"]["software-developer"]["mcp"] = {"allow": ["ssh-discord"]}
+        self.assertAccepted(data, "mcp.allow naming a declared server and one of its tools")
+        for entry in ["other-server", "SSH/x", "ssh-discord/", "ssh-discord/a b"]:
+            with self.subTest(entry=entry):
+                bad = self.manifest()
+                bad["mcp_servers"] = data["mcp_servers"]
+                bad["policy"]["roles"]["software-developer"]["mcp"] = {"allow": [entry]}
+                self.assertRejected(bad, f"mcp entry {entry!r}")
+        bad = self.manifest()
+        bad["mcp_servers"] = data["mcp_servers"]
+        bad["policy"]["roles"]["software-developer"]["mcp"] = {"deny": ["ssh-discord"]}
+        self.assertRejected(bad, "mcp.deny")
+
     def test_any_host_must_be_the_only_entry(self):
         # Contract: the single entry "*" means any host.
         data = self.manifest()
