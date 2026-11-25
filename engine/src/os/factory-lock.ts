@@ -65,6 +65,16 @@ export async function takeFactoryLock(o: { os: OsApi; children: Children; log: L
   return l;
 }
 
+/**
+ * Whether a factory holds the lock, without taking it: its pid, null when one
+ * holds it but gave no pid, undefined when none does.
+ */
+export async function factoryHolder(o: { os: OsApi; dir: string; pipe?: string }): Promise<number | null | undefined> {
+  if (o.os.platform !== "win32") return socketHolder(path.join(o.dir, SOCKET));
+  const name = o.pipe ?? factoryPipeName(o.os.windows().currentUserSid());
+  return pipeHolder(o.os, name, true);
+}
+
 /** undefined: nobody is listening; null: someone is, but gave no pid. */
 function socketHolder(sock: string): Promise<number | null | undefined> {
   return new Promise((resolve) => {
@@ -89,10 +99,18 @@ function socketHolder(sock: string): Promise<number | null | undefined> {
   });
 }
 
-async function pipeHolder(os: OsApi, name: string): Promise<number | null> {
+async function pipeHolder(os: OsApi, name: string): Promise<number | null>;
+async function pipeHolder(os: OsApi, name: string, probe: true): Promise<number | null | undefined>;
+async function pipeHolder(os: OsApi, name: string, probe = false): Promise<number | null | undefined> {
+  const w = os.windows();
+  let h: ReturnType<typeof w.openPipeClient>;
   try {
-    const w = os.windows();
-    const h = w.openPipeClient(name);
+    h = w.openPipeClient(name);
+  } catch {
+    // Taking the lock failed, so someone holds it; a probe can't tell a missing pipe from a busy one.
+    return probe ? undefined : null;
+  }
+  try {
     try {
       let buf = "";
       for (let waited = 0; waited < PROBE_MS && buf.length <= 64; waited += 50) {

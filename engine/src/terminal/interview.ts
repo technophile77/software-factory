@@ -240,6 +240,16 @@ export class TerminalInterview {
   /** FR-17: features whose waiting question the owner put off, until they stop waiting. */
   private putOff = new Set<string>();
 
+  /**
+   * Whether a factory runs on this PC (its pid, null without one, undefined
+   * when none does). A factory that runs but doesn't answer for this project
+   * has stopped the project, often until the owner confirms a change, so the
+   * wait says that instead of "isn't running".
+   */
+  factoryRunning?: () => Promise<number | null | undefined>;
+  /** The project argument this console was started with, for the confirm command it names. */
+  projectArg = "<this project>";
+
   constructor(
     private readonly runner: Runner,
     private readonly io: TerminalIo,
@@ -836,9 +846,14 @@ export class TerminalInterview {
    * or the failure when it is something other than the engine being away.
    */
   private async reconnect(starting = false): Promise<Obj> {
-    this.say(starting
-      ? `\n[${this.clock()}] The engine isn't running. Waiting for it to start; press Ctrl+C to stop.`
-      : `\n[${this.clock()}] Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.`);
+    const pid = await this.factoryRunning?.().catch(() => undefined);
+    this.say(pid !== undefined
+      ? `\n[${this.clock()}] The factory is running${pid !== null ? ` (pid ${pid})` : ""} but isn't serving this project, so the project is stopped. The factory's window says why. ` +
+        "If it found a change to the project's pinned keys (such as mcp_servers), answer its Security item on GitHub, or press Ctrl+C and run " +
+        `\`factory-engine confirm --project ${this.projectArg}\`. Waiting for the project to come back; press Ctrl+C to stop.`
+      : starting
+        ? `\n[${this.clock()}] The engine isn't running. Waiting for it to start; press Ctrl+C to stop.`
+        : `\n[${this.clock()}] Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.`);
     let wait = RECONNECT_FIRST_MS;
     let st: Obj;
     try {
