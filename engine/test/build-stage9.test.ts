@@ -117,3 +117,32 @@ describe("HttpPulls.checkRuns with a fine-grained token (no Checks permission)",
     }
   });
 });
+
+describe("HttpPulls.requiredChecks (F-015 FR-31)", () => {
+  it("reads required checks from rulesets and from classic branch protection, once each", async () => {
+    const http = await import("node:http");
+    const { HttpPulls } = await import("../src/build/pulls");
+    const { MemoryLogger } = await import("../src/log");
+    let rules: unknown = [];
+    const srv = http.createServer((req, res) => {
+      const send = (status: number, body: unknown) => {
+        res.writeHead(status, { "content-type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (req.url!.includes("/rules/branches/main")) return send(200, rules);
+      if (req.url!.endsWith("/branches/main")) {
+        return send(200, { name: "main", protected: true, protection: { enabled: true, required_status_checks: { checks: [{ context: "unit-tests", app_id: 15368 }, { context: "build", app_id: null }] } } });
+      }
+      send(404, {});
+    });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    try {
+      const api = new HttpPulls("t", new MemoryLogger(), `http://127.0.0.1:${(srv.address() as { port: number }).port}`);
+      expect(await api.requiredChecks("o/r", "main")).toEqual([{ context: "unit-tests", integrationId: 15368 }, { context: "build", integrationId: null }]);
+      rules = [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "unit-tests", integration_id: 15368 }] } }];
+      expect(await api.requiredChecks("o/r", "main")).toEqual([{ context: "unit-tests", integrationId: 15368 }, { context: "build", integrationId: null }]);
+    } finally {
+      srv.close();
+    }
+  });
+});

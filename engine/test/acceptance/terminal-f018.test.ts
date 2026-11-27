@@ -266,7 +266,7 @@ describe.runIf(IS_UNIX)("F-018 terminal interview", () => {
     await old.cleanup();
     expect(code).toBe(0);
     expect(restarted).toBe(true);
-    expect(s.out).toContain("Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.");
+    expect(s.out).toContain("Lost the connection to the engine (it closed the connection). Reconnecting until it is back; press Ctrl+C to stop.");
     expect(s.out).toContain("Reconnected to the engine.");
     expect(s.out).not.toContain("Open the feature again");
     expect(old.calls("interview.reply").map((m) => m.params.kind)).toEqual(["answer"]);
