@@ -91,6 +91,28 @@
             ],
             "additionalProperties": false
           }
+        },
+        "ci_only": {
+          "maxItems": 2000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "test": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "test",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

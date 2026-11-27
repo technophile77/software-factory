@@ -18,6 +18,8 @@ export interface RunTestsDeps {
   children: Children;
   /** The test engineer's newest reported criteria map, for a call that passes none. */
   criteria(): Record<string, string[]>;
+  /** FR-29: the test engineer's newest CI-only list, so the call reports them as pending on CI. */
+  ciOnly?(): ReadonlyArray<{ test: string; reason: string }>;
   /** SR-9: failure text passes the secrets scan before an agent sees it. */
   scrub(text: string): Promise<string>;
 }
@@ -79,11 +81,11 @@ export function runTestsTool(d: RunTestsDeps): FactoryTool {
       busy = true;
       try {
         const run = await runSuite({ git: d.git, worktree: d.worktree, gitDir: d.gitDir, build: d.commands.build, test, results: d.commands.results, env: d.env, platform: d.platform, wallMs: d.wallMs, maxOutput: d.maxOutput, children: d.children });
-        const report = runReport("", run.cases, joined, run.problem);
+        const report = runReport("", run.cases, joined, run.problem, "", d.ciOnly?.() ?? []);
         const failures = await Promise.all(report.failures.map(async (f) => ({ test: f.test, message: (await d.scrub(f.actual)).slice(0, MAX_MESSAGE) })));
         const body = {
           complete: report.complete, incomplete: report.incomplete, tests_run: report.tests_run, passed: report.passed, failed: report.failed, skipped: report.skipped,
-          failures, not_run: report.not_run, criteria: report.criteria,
+          failures, not_run: report.not_run, ...(report.ci_pending.length ? { ci_pending: report.ci_pending } : {}), criteria: report.criteria,
           ...(run.problem ? { output: (await d.scrub(run.out.join("\n"))).slice(-MAX_MESSAGE * 4) } : {}),
         };
         return { content: [{ type: "text", text: JSON.stringify(body) }] };
