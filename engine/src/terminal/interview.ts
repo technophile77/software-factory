@@ -861,14 +861,19 @@ export class TerminalInterview {
    * or the failure when it is something other than the engine being away.
    */
   private async reconnect(starting = false): Promise<Obj> {
-    const pid = await this.factoryRunning?.().catch(() => undefined);
-    this.say(pid !== undefined
-      ? `\n[${this.clock()}] The factory is running${pid !== null ? ` (pid ${pid})` : ""} but isn't serving this project, so the project is stopped. The factory's window says why. ` +
+    this.say(starting
+      ? `\n[${this.clock()}] The engine isn't running. Waiting for it to start; press Ctrl+C to stop.`
+      : `\n[${this.clock()}] Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.`);
+    // A project restarting inside the factory is back within a second or two, so only one that stays away is called stopped.
+    let toldStopped = false;
+    const tellStopped = async () => {
+      const pid = await this.factoryRunning?.().catch(() => undefined);
+      if (pid === undefined) return;
+      toldStopped = true;
+      this.say(`[${this.clock()}] The factory is running${pid !== null ? ` (pid ${pid})` : ""} but isn't serving this project, so the project is stopped. The factory's window says why. ` +
         "If it found a change to the project's pinned keys (such as mcp_servers), answer its Security item on GitHub, or press Ctrl+C and run " +
-        `\`factory-engine confirm --project ${this.projectArg}\`. Waiting for the project to come back; press Ctrl+C to stop.`
-      : starting
-        ? `\n[${this.clock()}] The engine isn't running. Waiting for it to start; press Ctrl+C to stop.`
-        : `\n[${this.clock()}] Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.`);
+        `\`factory-engine confirm --project ${this.projectArg}\`. Waiting for the project to come back; press Ctrl+C to stop.`);
+    };
     let wait = RECONNECT_FIRST_MS;
     let st: Obj;
     try {
@@ -883,6 +888,7 @@ export class TerminalInterview {
         this.io.redraw?.(`Reconnecting (attempt ${attempt})`);
         st = await this.runner("status", {});
         if (!engineAway(st)) break;
+        if (attempt >= 2 && !toldStopped) await tellStopped();
         wait = Math.min(wait * 2, RECONNECT_MAX_MS);
       }
     } finally {
