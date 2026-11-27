@@ -756,7 +756,8 @@ export class Inbox {
       if (!this.o.local) return { refused: "no console" };
       if (!actionsFor(shape(r!)).includes(a.action)) return { refused: "not allowed" };
       const needsNote = a.action === "changes" || a.action === "research";
-      const note = needsNote ? (a.note ?? "").trim() : undefined;
+      // F-015 FR-21: an option that sends work to a role carries the owner's note, when they add one.
+      const note = needsNote ? (a.note ?? "").trim() : a.action.startsWith("choose:") && a.note?.trim() ? a.note.trim() : undefined;
       if (needsNote && !note) return { refused: "not allowed" };
       if (note !== undefined && note.length > MAX_NOTE_CHARS) return { refused: "note too long" };
       if (isRisky(r!, a.action)) {

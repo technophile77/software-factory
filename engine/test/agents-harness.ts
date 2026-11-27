@@ -89,7 +89,9 @@ export function scriptedSdk(scripts: { analyst: RoleScript; reviewer: RoleScript
     query: ({ prompt, options }) => {
       seen.push(options);
       const byPrompt: Record<string, keyof typeof count> = { [REVIEWER_MD]: "reviewer", [ORCHESTRATOR_MD]: "orchestrator", [DEVELOPER_MD]: "developer", [TESTER_MD]: "tester", [JUDGE_MD]: "judge" };
-      const role = byPrompt[String(options.systemPrompt)] ?? "analyst";
+      // The engine adds its own guidance after a role's instructions, so a role is known by how its prompt starts.
+      const sp = String(options.systemPrompt);
+      const role = Object.entries(byPrompt).find(([md]) => sp === md || sp.startsWith(`${md}\n\n`))?.[1] ?? "analyst";
       const it = prompt[Symbol.asyncIterator]();
       const own = tools;
       const n = ++count[role];

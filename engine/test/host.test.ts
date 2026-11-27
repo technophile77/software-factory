@@ -122,6 +122,16 @@ describe("the tool gate for sessions on the owner's PC", () => {
     expect((await gate("Bash", { command: "ls src" }, sig)).behavior).toBe("allow");
   });
 
+  it("a refused shell edit the engine can't split tells the agent to use Edit or Write", async () => {
+    const wt = tmpdir();
+    const { gate } = gateOf("test-engineer", wt);
+    const r = await gate("Bash", { command: "cd fix && python - <<'E'\n# the harness's parser\nE" }, sig);
+    expect(r.behavior).toBe("deny");
+    expect((r as { message: string }).message).toMatch(/not done\. Change files with the Edit or Write tool/);
+    const plain = await gate("Bash", { command: "gh pr create" }, sig);
+    expect((plain as { message: string }).message).not.toMatch(/Edit or Write/);
+  });
+
   it("holds a listed command for the owner once, though Claude Code checks it twice, and runs it only on approval", async () => {
     const wt = tmpdir();
     const denied = gateOf("software-developer", wt);

@@ -101,6 +101,12 @@ describe("F-021 console answers in the inbox store", () => {
     expect(w.local.readAnswer(id, rec.history.indexOf(entry))!.entry_sha256).toBe(entry.console_answer);
   });
 
+  it("F-015 FR-21: a console choice keeps the owner's note, which goes to the role the option names", async () => {
+    const { id } = await filed(w, decision());
+    await w.inbox.consoleAnswer({ id, rev: 1, action: "choose:B", note: "  Skip the flock tests off Linux.  ", session: 7, signedIn: false });
+    expect((await w.inbox.read(id))!.history.find((h) => h.by === "owner")).toMatchObject({ action: "chosen", option: "B", note: "Skip the flock tests off Linux." });
+  });
+
   it("AC-3, FR-6, SR-2: a Security choice needs the engine's code, once, within 15 minutes", async () => {
     const { id } = await filed(w, decision({ category: "Security" }));
     const c1 = await w.inbox.consoleAnswer({ id, rev: 1, action: "choose:A", session: 1, signedIn: false });
