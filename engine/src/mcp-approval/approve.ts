@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { outputSchemaOf } from "../schemas/json-file";
 import type { McpServer } from "../config/mcp-servers";
 import type { McpTool } from "../mcp-client/client";
 import { toolHash } from "../agent/project-mcp";
@@ -28,7 +29,8 @@ export type McpReview = z.infer<typeof mcpReview>;
 
 /** The JSON Schema the reviewer's structured result must match. */
 export function reviewOutputSchema(): Record<string, unknown> {
-  return z.toJSONSchema(mcpReview, { target: "draft-2020-12" }) as Record<string, unknown>;
+  // Built as every other session's schema is (F-020 FR-9), without `$schema`; this one alone kept it, and its sessions exit at once.
+  return outputSchemaOf(mcpReview);
 }
 
 /** Waits on factory/state at `mcp/<server>.pending.json` until the owner answers; never used to run anything. */
