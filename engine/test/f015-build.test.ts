@@ -161,7 +161,7 @@ describe("F-015 M1: stage 5 on the engine", () => {
     expect(stageOf(e, feature)).toBe("orchestrator_review");
     expect(s.count.developer).toBe(1);
     expect(s.count.tester).toBe(1);
-    const devOpts = s.seen.find((o) => o.systemPrompt === "# Software developer (master)\n")!;
+    const devOpts = s.seen.find((o) => String(o.systemPrompt).startsWith("# Software developer (master)\n"))!;
     expect(devOpts.model).toBe("claude-opus-5-5");
     expect(devOpts.maxTurns).toBe(300);
     expect(seen.refused).toEqual(expect.arrayContaining(["sneaky.test.js", "ci.yml", expect.stringMatching(/export\.md$/)]));

@@ -250,7 +250,7 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
             log.info(`${policy.role}: the held command was ${ok ? "approved and runs once" : "denied"}`);
             answered.set(cmd, { ok, at: Date.now() });
           }
-          if (!ok) return deny(`the owner didn't approve ${matched} (ask rule); treat this step as not done`);
+          if (!ok) return deny(`the owner didn't approve ${matched} (ask rule); treat this step as not done${matched === UNSPLIT ? `. ${EDIT_NOT_SHELL}` : ""}`);
         }
       }
       return { behavior: "allow", updatedInput: input };
@@ -309,6 +309,9 @@ export interface SessionInput {
 }
 
 /** SR-10's fixed options; nothing from the repo or the owner's settings can change them. */
+const UNSPLIT = "a command the engine can't split into words";
+const EDIT_NOT_SHELL = "Change files with the Edit or Write tool, never with a shell command (a heredoc, `python -c`, `sed -i`, `echo >`): the engine can't read such a command, so it holds it for the owner, and it usually doesn't run. Keep each Bash command to one plain program call without heredocs.";
+
 export function sessionOptions(s: SessionInput, abort: AbortController): SessionOptions {
   checkCaps(s.caps);
   const builtins: string[] = s.policy.tools.filter((t) => t !== "fetch_page");
@@ -328,6 +331,8 @@ export function sessionOptions(s: SessionInput, abort: AbortController): Session
     hooks: { PreToolUse: [{ hooks: [preToolUseGate(gate)], timeout: GATE_HOOK_TIMEOUT_S }] },
     systemPrompt: [
       s.instructions,
+      // A shell edit can't be split into words, so the ask rule holds it for the owner and it usually doesn't run.
+      s.host && s.policy.tools.includes("Bash") && (s.policy.tools.includes("Edit") || s.policy.tools.includes("Write")) ? EDIT_NOT_SHELL : "",
       s.projectMcp?.missing.length ? `The owner chose to run this session without these MCP servers, which your role normally has: ${s.projectMcp.missing.join(", ")}. Don't try to reach what they do by other means; say in your report what you couldn't do without them.` : "",
       // F-025 FR-18: tools the role allows that aren't approved (yet) are left out, and the agent hears which.
       s.projectMcp?.missingTools.length ? `These MCP tools, which your role is allowed, aren't approved for use and aren't available in this session: ${s.projectMcp.missingTools.join(", ")}. Don't try to reach what they do by other means; say in your report what you couldn't do without them.` : "",
