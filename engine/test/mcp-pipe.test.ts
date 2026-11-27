@@ -119,6 +119,23 @@ describe("SR-7: Windows pipe client", () => {
     expect(f.opened.length).toBe(4);
   });
 
+  test("a pipe still busy after 2 s is waited for while the engine's process is alive, and given up on once it isn't", async () => {
+    const f = fake();
+    const until = Date.now() + 2300;
+    const open = f.api.openPipeClient;
+    f.api.openPipeClient = (name) => {
+      if (Date.now() < until) throw new Error("ERROR_PIPE_BUSY");
+      return open(name);
+    };
+    const ch = new Channel(await connect(NAME, 4242, os(f.api), 5000, () => true));
+    expect(await ch.call("engine.status", undefined, 5)).toEqual({ echo: "engine.status" });
+    ch.close();
+    const gone = fake({ openFails: true });
+    const t0 = Date.now();
+    expect((await refusal(connect(NAME, 4242, os(gone.api), 5000, () => false))).code).toBe("engine_unreachable");
+    expect(Date.now() - t0).toBeLessThan(3000);
+  }, 10_000);
+
   test("a broken pipe ends the call as connection_lost", async () => {
     const f = fake({ answer: false });
     const ch = new Channel(await connect(NAME, 4242, os(f.api), 5000));
