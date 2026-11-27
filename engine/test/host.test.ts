@@ -127,9 +127,20 @@ describe("the tool gate for sessions on the owner's PC", () => {
     const { gate } = gateOf("test-engineer", wt);
     const r = await gate("Bash", { command: "cd fix && python - <<'E'\n# the harness's parser\nE" }, sig);
     expect(r.behavior).toBe("deny");
-    expect((r as { message: string }).message).toMatch(/not done\. Change files with the Edit or Write tool/);
+    expect((r as { message: string }).message).toMatch(/not done\. Read files with Read, search them with Grep, and change them with Edit or Write/);
     const plain = await gate("Bash", { command: "gh pr create" }, sig);
     expect((plain as { message: string }).message).not.toMatch(/Edit or Write/);
+  });
+
+  it("a file tool refused outside the worktree says where to work instead of a shell command", async () => {
+    const wt = tmpdir();
+    const { gate } = gateOf("software-developer", wt);
+    // F-005's developer tried to Read the CLI's saved copy of a long command output, then fell back to `cat`.
+    const r = await gate("Read", { file_path: path.join(path.dirname(wt), "tool-results", "b1.txt") }, sig);
+    expect(r.behavior).toBe("deny");
+    expect((r as { message: string }).message).toMatch(/outside the worktree\. Work on files in your worktree.*don't reach such paths with a shell command.*Read the file it came from with offset and limit/);
+    const w = await gate("Write", { file_path: "/tmp/msa/sc" }, sig);
+    expect((w as { message: string }).message).toMatch(/don't keep scratch files anywhere else/);
   });
 
   it("holds a listed command for the owner once, though Claude Code checks it twice, and runs it only on approval", async () => {

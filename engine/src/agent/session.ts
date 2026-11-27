@@ -212,7 +212,7 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
         return { behavior: "allow", updatedInput: input };
       }
       const rel = hostRelative(worktree, input[key], workspace);
-      if (rel === null) return deny("the path is outside the worktree");
+      if (rel === null) return deny(`the path is outside the worktree. ${OUTSIDE_HINT}`);
       if (!(writeKey ? allowedBy(policy.write, rel) : readableBy(policy.read, rel))) return deny(`the role's ${writeKey ? "write" : "read"} rules don't allow ${rel || "the worktree root"}`);
       if (name === "Grep") {
         let isDir = false;
@@ -310,7 +310,40 @@ export interface SessionInput {
 
 /** SR-10's fixed options; nothing from the repo or the owner's settings can change them. */
 const UNSPLIT = "a command the engine can't split into words";
-const EDIT_NOT_SHELL = "Change files with the Edit or Write tool, never with a shell command (a heredoc, `python -c`, `sed -i`, `echo >`): the engine can't read such a command, so it holds it for the owner, and it usually doesn't run. Keep each Bash command to one plain program call without heredocs.";
+const EDIT_NOT_SHELL = "Read files with Read, search them with Grep, and change them with Edit or Write, never with a shell command (`cat`, `sed -n`, a heredoc, `python -`, `python -c`, `sed -i`, `echo >`): the engine can't read such a command, so it holds it for the owner, and it usually doesn't run. Keep each Bash command to one plain program call without heredocs or inline scripts.";
+const OUTSIDE_HINT = "Work on files in your worktree (and read the spec folder, if you have one); don't keep scratch files anywhere else, and don't reach such paths with a shell command instead. For a command's long output, run it again with less output, or Read the file it came from with offset and limit.";
+
+/**
+ * The engine's own section of the system prompt on how a session touches files.
+ *
+ * A custom system prompt replaces Claude Code's default one, and with it the
+ * default's advice to use the file tools rather than the shell; without that
+ * advice F-004's and F-005's agents read with `cat` and edited with `python -`
+ * heredocs, which the ask rule holds for the owner. Returns "" for a role
+ * with no shell, which can't shell out.
+ *
+ * @param tools The role's built-in tools.
+ * @param readOnlyRoot The read-only spec folder outside the worktree, when the session has one.
+ * @example fileToolsPrompt(["Read", "Edit", "Bash"]) // "Use your file tools for files..."
+ */
+export function fileToolsPrompt(tools: readonly string[], readOnlyRoot?: string): string {
+  if (!tools.includes("Bash")) return "";
+  const has = (t: string) => tools.includes(t);
+  const lines = [
+    has("Read") ? "- Read a file with Read, using offset and limit for part of a long one; not with `cat`, `head`, `tail`, `sed -n`, `type` or `Get-Content`." : "",
+    has("Grep") ? "- Search file contents with Grep; not with `grep`, `rg`, `findstr` or `Select-String`." : "",
+    has("Glob") ? "- Find files by name with Glob; not with `find`, `ls -R` or `dir /s`." : "",
+    has("Edit") ? "- Change a file with Edit, one Edit call per change (or `replace_all` for a repeated one); not with `python -`, `python -c`, `sed -i`, `perl -i` or a script you write for the purpose." : "",
+    has("Write") ? "- Create a file, or replace all of one, with Write, which also makes any missing folders; not with a heredoc, `tee`, or `echo`/`printf` and `>`." : "",
+  ].filter(Boolean);
+  if (lines.length === 0) return "";
+  return [
+    "Use your file tools for files, and Bash only to run programs (git, the project's own scripts and tools):",
+    ...lines,
+    "- Keep each Bash command to one program call: no heredocs, inline scripts, or several file reads chained together.",
+    `The engine checks each file tool call against your paths and runs it at once. It can't read a shell script, so a command that reads or writes files through one is held for the owner and usually refused, and the step is lost.${readOnlyRoot ? " Read, Grep and Glob work on the read-only spec folder too." : ""} Keep files you make inside your worktree: the file tools refuse paths elsewhere, and so does the owner.`,
+  ].join("\n");
+}
 
 export function sessionOptions(s: SessionInput, abort: AbortController): SessionOptions {
   checkCaps(s.caps);
@@ -331,8 +364,7 @@ export function sessionOptions(s: SessionInput, abort: AbortController): Session
     hooks: { PreToolUse: [{ hooks: [preToolUseGate(gate)], timeout: GATE_HOOK_TIMEOUT_S }] },
     systemPrompt: [
       s.instructions,
-      // A shell edit can't be split into words, so the ask rule holds it for the owner and it usually doesn't run.
-      s.host && s.policy.tools.includes("Bash") && (s.policy.tools.includes("Edit") || s.policy.tools.includes("Write")) ? EDIT_NOT_SHELL : "",
+      fileToolsPrompt(builtins, s.host?.readOnlyRoot),
       s.projectMcp?.missing.length ? `The owner chose to run this session without these MCP servers, which your role normally has: ${s.projectMcp.missing.join(", ")}. Don't try to reach what they do by other means; say in your report what you couldn't do without them.` : "",
       // F-025 FR-18: tools the role allows that aren't approved (yet) are left out, and the agent hears which.
       s.projectMcp?.missingTools.length ? `These MCP tools, which your role is allowed, aren't approved for use and aren't available in this session: ${s.projectMcp.missingTools.join(", ")}. Don't try to reach what they do by other means; say in your report what you couldn't do without them.` : "",
