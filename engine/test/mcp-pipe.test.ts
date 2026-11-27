@@ -20,7 +20,7 @@ interface Fake {
   broken: boolean;
 }
 
-function fake(opts: { serverPid?: number; serverSid?: string; openFails?: boolean; answer?: boolean } = {}): Fake {
+function fake(opts: { serverPid?: number; serverSid?: string; openFails?: boolean; busyFor?: number; answer?: boolean } = {}): Fake {
   const h = {} as Handle;
   const f: Fake = { api: {} as WindowsApi, opened: [], closed: 0, written: [], inbox: [], broken: false };
   const unused = () => { throw new Error("not used by the client"); };
@@ -30,6 +30,7 @@ function fake(opts: { serverPid?: number; serverSid?: string; openFails?: boolea
     openPipeClient: (name) => {
       f.opened.push(name);
       if (opts.openFails) throw new Error("ERROR_FILE_NOT_FOUND");
+      if (f.opened.length <= (opts.busyFor ?? 0)) throw new Error("ERROR_PIPE_BUSY");
       return h;
     },
     pipeServerPid: () => opts.serverPid ?? 4242,
@@ -108,6 +109,14 @@ describe("SR-7: Windows pipe client", () => {
   test("a pipe that can't be opened reads as an unreachable engine", async () => {
     const f = fake({ openFails: true });
     expect((await refusal(connect(NAME, 4242, os(f.api), 5000))).code).toBe("engine_unreachable");
+  });
+
+  test("a pipe busy for a moment, as when another window polls at once, is opened once it frees", async () => {
+    const f = fake({ busyFor: 3 });
+    const ch = new Channel(await connect(NAME, 4242, os(f.api), 5000));
+    expect(await ch.call("engine.status", undefined, 5)).toEqual({ echo: "engine.status" });
+    ch.close();
+    expect(f.opened.length).toBe(4);
   });
 
   test("a broken pipe ends the call as connection_lost", async () => {

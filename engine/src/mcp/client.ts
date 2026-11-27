@@ -99,6 +99,27 @@ async function connectUnix(address: string, pid: number, os: OsApi, timeoutMs: n
 
 const POLL_MS = 20;
 const READ_CHUNK = 64 * 1024;
+/**
+ * The engine makes the pipe's next instance only after its poll notices the
+ * last client, so a client that opens in that gap (another console window
+ * polling at the same moment, or an engine busy for a few hundred ms) gets
+ * ERROR_PIPE_BUSY. koffi can't say which error it was, so every open failure
+ * is tried again for this long before the engine counts as unreachable.
+ */
+const PIPE_OPEN_WAIT_MS = 2000;
+const PIPE_OPEN_RETRY_MS = 25;
+
+async function openPipe(w: ReturnType<OsApi["windows"]>, address: string, waitMs: number): Promise<Handle> {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    try {
+      return w.openPipeClient(address);
+    } catch {
+      if (Date.now() >= deadline) throw new ChannelFailure("engine_unreachable", "The engine isn't running or can't be reached.");
+    }
+    await new Promise((r) => setTimeout(r, PIPE_OPEN_RETRY_MS));
+  }
+}
 
 /**
  * Windows named pipe (SR-7): a local `\\.\pipe\` name only, opened at
@@ -106,15 +127,10 @@ const READ_CHUNK = 64 * 1024;
  * and served by a process running as the owner under engine.json's pid.
  * Reads poll PeekNamedPipe, which never blocks, as the engine's own side does.
  */
-function connectPipe(address: string, pid: number, os: OsApi): Transport {
+async function connectPipe(address: string, pid: number, os: OsApi, timeoutMs: number): Promise<Transport> {
   if (!PIPE_RE.test(address)) throw new Refused("unsafe_pipe", "The engine address is not a local \\\\.\\pipe\\ name.");
   const w = os.windows();
-  let h: Handle;
-  try {
-    h = w.openPipeClient(address);
-  } catch {
-    throw new ChannelFailure("engine_unreachable", "The engine isn't running or can't be reached.");
-  }
+  const h = await openPipe(w, address, Math.min(PIPE_OPEN_WAIT_MS, Math.max(0, timeoutMs)));
   let ok = false;
   let serverPid = -1;
   try {
@@ -172,7 +188,7 @@ function connectPipe(address: string, pid: number, os: OsApi): Transport {
 }
 
 export async function connect(address: string, pid: number, os: OsApi, timeoutMs: number): Promise<Transport> {
-  if (os.platform === "win32") return connectPipe(address, pid, os);
+  if (os.platform === "win32") return connectPipe(address, pid, os, timeoutMs);
   if (address.startsWith("\\\\")) throw new Refused("unsafe_socket", "The engine address is a Windows pipe; this machine is not Windows.");
   return connectUnix(address, pid, os, timeoutMs);
 }
