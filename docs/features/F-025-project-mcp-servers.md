@@ -1,10 +1,10 @@
 # Feature: Projects add their own MCP servers
 
 - **Id:** F-025
-- **Status:** Approved (owner sign-off 2026-11-21 23:19Z, decision card); readiness gate passed on v1
+- **Status:** v1 Approved (owner sign-off 2026-11-21 23:19Z, decision card); v2 Draft, waiting on the owner
 - **Requested by / date:** Alex, 2026-11-21 ("I want to allow users to add
   their own MCP servers into their project and agents.")
-- **Spec version:** 1
+- **Spec version:** 2 (draft)
 - **Depends on:** F-007 (engine, manifest pinning SR-5), F-015 (agents on the
   host, ADR 0026), F-020 (JSON Schemas for hand-edited YAML), F-021 (console
   items)
@@ -31,6 +31,12 @@ FR-6. The owner then lists the server, or some of its tools, under a role's
 policy. `factory-engine mcp check <server>` starts the server once and
 prints its tools, so the owner can pick them.
 
+v2 (owner, 2026-11-27, D-0020: "each allowed method must be reviewed"):
+the review gives a verdict on each tool a role is allowed, not one verdict
+on the whole server. The owner approves all of those tools or only the
+lower-risk ones, and "Request changes" sends the owner's note back to the
+reviewer for a new review instead of only recording it.
+
 When the engine starts a session for that role, it adds the allowed
 servers to the session next to `factory`. The agent sees only the tools its
 role allows; a call to any other tool is refused by the engine's tool gate.
@@ -54,6 +60,11 @@ role allows; a call to any other tool is refused by the engine's tool gate.
 | FR-13 | `mcp_servers` and every role's `mcp.allow` are pinned with `owner.*` and `enabled` (F-007 SR-5): a change on the config repo's `main` is not used until the owner confirms it in the console. |
 | FR-14 | A project `AGENT.md` with `mcpServers` in its frontmatter, or a `.mcp.json` in a worktree, is never read for a session. The engine says so in the log when it sees one, once per start. |
 | FR-15 | The master factory repo ships no servers. `templates/` gets a commented example with placeholders only. |
+| FR-16 | v2. The review covers the server's **allowed tools**: every tool named by some role's `mcp.allow`, plus every listed tool for a whole-server entry. The reviewer sees the full tool list for context and reports, for each allowed tool: `class` (`reads` or `acts`), `risk` (`none`, `low`, `medium`, `high`, `critical`, on the `security-standards.md` severity scale), and why, with any finding tied to the tool it is about. Tools no role allows are neither reviewed nor put in the record. |
+| FR-17 | v2. The approval item lists each allowed tool on its own line with its class, risk and one-line reason, then the server-level facts (pin, CVE check, data, findings). Options: **A** approve all the listed tools; **B** don't approve; **C**, only when some but not all tools are rated `high` or `critical`, approve only the tools rated `medium` or lower. Code picks the recommendation: B when the CVE check has a Critical or High, a server-level finding is Critical or High, or every tool is rated `high` or above; C when some are; otherwise A. |
+| FR-18 | v2. The record holds only the tools the owner approved, each with its class, risk and description hash. At session start a role gets the tools that are both in its `mcp.allow` and in the record; a tool it allows that isn't in the record is left out, the session still starts, the agent is told which tools are missing, and the log says why. |
+| FR-19 | v2. "Request changes" or "Ask for more research" with a note on the approval item runs the review again with the owner's note given to the reviewer as the owner's words, and files a new item that replaces the old one. No dead end (F-019 FR-21): an answer that isn't A, B or C never only records. |
+| FR-20 | v2. When `mcp.allow` later names a tool the record lacks, the engine reviews only the new tools and files an item for them; the tools already approved keep working meanwhile. After B, the server is not reviewed again until its manifest entry or the roles' `mcp.allow` for it changes; a session that needs it says it was declined and names the item. |
 
 ## 4. Acceptance criteria
 
@@ -72,6 +83,10 @@ role allows; a call to any other tool is refused by the engine's tool gate.
 | AC-11 | Given a changed `mcp_servers` on `main`, when the engine reads it, then the pinned version stays in use until the owner confirms. | FR-13 |
 | AC-12 | Given a worktree `.mcp.json` and an `AGENT.md` with `mcpServers`, when a session starts, then neither server is started. | FR-14 |
 | AC-13 | `mcp list` and `mcp check` print what FR-12 says, for an approved server and a fake stdio server in the tests. | FR-12 |
+| AC-14 | Given a server with 30 tools and roles allowing 6 of them, when the review runs, then the reviewer's turn asks for a verdict on those 6 only, and the record and item list only those 6. | FR-16, FR-18 |
+| AC-15 | Given a review rating one of six allowed tools `high` and a clean CVE check, then the item offers A, B and C, recommends C, and answering C writes a record with the other five; a role allowing all six then gets five, and its session starts. | FR-17, FR-18 |
+| AC-16 | Given "Request changes" with a note on the approval item, then a new review runs whose turn holds the note as the owner's words, and a new item replaces the old one. | FR-19 |
+| AC-17 | Given an approved record and a role newly allowing one more tool, then only that tool is reviewed, and the approved tools keep working until the owner answers. Given B, then no new review starts until the entry or the allow list changes. | FR-20 |
 
 ## 5. Constraints
 
@@ -87,9 +102,12 @@ role allows; a call to any other tool is refused by the engine's tool gate.
 
 - Two servers expose a tool with the same name: names are per server
   (`mcp__<server>__<tool>`), so no clash.
-- A server adds a tool after approval: a whole-server entry gets it; a
-  named-tool entry does not. A whole-server entry's tool list at approval
-  is in the record; a new tool shows in `mcp list` as new.
+- A server adds a tool after approval: a whole-server entry gets it only
+  after it is reviewed and approved (FR-20, SR-7); a named-tool entry does
+  not. A new tool shows in `mcp list` as new.
+- The owner wants a different subset from A or C: they narrow the roles'
+  `mcp.allow` in the manifest (a pinned key, confirmed in the console), and
+  only the remaining tools are reviewed (FR-16).
 - A server's tool descriptions or results try to steer the agent (prompt
   injection): FR-11; the gate still limits what the agent can call.
 - A secret item is missing: the server does not start; FR-10 item names the
@@ -147,6 +165,11 @@ Applied as drafted, owner approval 2026-11-21 23:22Z (decision card).
   keys (H-0272).
 - `security-standards.md`: what an MCP server review checks (H-0273,
   Security).
+- v2: MCP server record v1.0 → v1.1: `tools[]` holds only the approved
+  tools and gains `risk`; `approved` gains `choice` (`A` | `C`) (H-0278,
+  Interfaces).
+- v2: `security-standards.md` S9.8: the review gives a class and risk for
+  each allowed tool, and the owner may approve a subset (H-0279, Security).
 - ADR 0036: project MCP servers run on the host, declared in the manifest,
   pinned and reviewed (H-0274, Architecture).
 
@@ -164,3 +187,4 @@ Applied as drafted, owner approval 2026-11-21 23:22Z (decision card).
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-21 | First draft, with the owner's four answers and SR-5 to SR-13 | Owner, decision card, 2026-11-21 23:19Z |
+| 2 | 2026-11-27 | FR-16 to FR-20, AC-14 to AC-17: per-tool review of the allowed tools, approve all or only the lower-risk ones, "Request changes" goes back to the reviewer, incremental review of newly allowed tools. From the owner's D-0020 answer and decision card 2026-11-27 05:12Z | Pending |
