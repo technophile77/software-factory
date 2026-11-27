@@ -58,6 +58,13 @@ criteria-to-test map, failures with expected vs actual and logs, and anything
 that did not run and why. A run with unexplained skips is incomplete, and an
 incomplete run is not a pass.
 
+A test that only CI can run, such as a Linux-only test on a Windows PC, is
+listed by the test engineer as CI-only with a reason and skips locally with
+that reason. The run report shows it as pending on CI, not as not run. The
+pull request isn't ready until the code repo's required CI passes on its
+head, and a repo with no required check can't have CI-only tests (F-015
+FR-29).
+
 It also has a **tool choice** table: for each test type required at the
 repo's level, the best-fit tool and why, the tool used, and the link to the
 owner's decision for any substitute (see Test tools).

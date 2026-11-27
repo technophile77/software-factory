@@ -36,6 +36,10 @@ export const ROLE_BODIES = {
     not_run: list(z.strictObject({ test: text(300), reason: text(1000) }), 1000),
     /** v1.6: the tool for each required test type, and why (testing-strategy.md § Test tools). */
     tool_choices: list(z.strictObject({ test_type: text(100), tool: text(200), reason: text(1000), approval_ref: text(500).nullable() }), 50),
+    /** v1.7 (F-015 FR-29): tests only the code repo's CI can run, which skip on the owner's PC; the agent lists them. */
+    ci_only: list(z.strictObject({ test: text(300), reason: text(1000) }), 2000).optional(),
+    /** v1.7: the CI-only tests that skipped in the engine's run; engine-filled. */
+    ci_pending: list(z.strictObject({ test: text(300), reason: text(1000) }), 2000).optional(),
   }),
   "security-reviewer": z.strictObject({
     gate: z.union([z.literal(1), z.literal(2)]),
@@ -83,7 +87,7 @@ export type ReportRole = keyof typeof ROLE_BODIES;
  */
 const MODEL_BODIES = {
   ...ROLE_BODIES,
-  "test-engineer": ROLE_BODIES["test-engineer"].pick({ criteria_map: true, tool_choices: true }),
+  "test-engineer": ROLE_BODIES["test-engineer"].pick({ criteria_map: true, tool_choices: true, ci_only: true }),
 } as const;
 
 /** The report an agent returns: no engine-filled field is allowed (SR-7). */

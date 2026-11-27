@@ -210,7 +210,16 @@ export interface TurnFacts {
   write?: { allow: string[]; deny: string[] };
   /** F-015 FR-22, FR-25: the role has `run_tests`; `single` when the repo can run one test on its own. */
   runTests?: { single: boolean };
+  /** F-015 FR-29: how many tests the test engineer listed as CI-only. */
+  ciOnly?: number;
 }
+
+/** F-015 FR-29: what the build, Code Review and judge sessions are told about tests only CI can run. */
+export function ciPendingText(n: number): string {
+  return `Some tests are pending on CI: the test engineer listed ${n} test${n === 1 ? "" : "s or test files"} as CI-only, because they can't run on the owner's PC. The pull request's required CI runs them before the PR is marked ready, and a CI failure comes back to the developer or test engineer. Don't report them as untested, don't block on them, and don't ask for a run on another platform.`;
+}
+
+const CI_ONLY_HOW = "A test that can't run on this PC, for example one that needs Linux, may skip here only with a reason: list it in your report's `ci_only` (a test id, or a whole Python test file, with the reason). The pull request's required CI runs it, and the PR isn't ready until it passes there. Don't list a test that can run here.";
 
 /**
  * The first turn of a developer or test engineer run: engine text only, with
@@ -232,6 +241,8 @@ export function buildTurn(role: BuildRole, t: TurnFacts): string {
     ...(t.runTests
       ? [`Run tests only with the factory tool \`run_tests\`, which runs them exactly as the engine's own test run does and returns the results as JSON. With no arguments it runs the whole suite${t.runTests.single ? "; with `test` set to a test id from the criteria map it runs that one test" : ""}.${role === "test-engineer" ? " Pass your criteria map as `criteria_map` so the results are joined to it, as the engine will join them." : ""} A shell command that runs tests is refused. Don't build a test environment of your own or install packages anywhere else.`]
       : []),
+    ...(role === "test-engineer" ? [CI_ONLY_HOW] : []),
+    ...(t.ciOnly ? [ciPendingText(t.ciOnly)] : []),
     ...(t.write
       ? [`You may create or change only paths, relative to the worktree, that match one of ${JSON.stringify(t.write.allow)} and none of ${JSON.stringify(t.write.deny)}. Anything else, a new file included, is refused, and a change outside them made any other way rejects your whole session. If the spec needs a path outside them, don't work around it: say so in your report.`]
       : []),
