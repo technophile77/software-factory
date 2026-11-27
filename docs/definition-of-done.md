@@ -9,7 +9,7 @@ request only when every box below is checked, each with the evidence named.
 | 2 | Assumptions approved | Every assumption in the spec has an approved decision |
 | 3 | Security requirements addressed | Security and Testability Review report; each security requirement traced to code or test |
 | 4 | Implementation complete | Developer completion report |
-| 5 | Independent tests passed | Test engineer's run report against the final commit |
+| 5 | Independent tests passed | Test engineer's run report against the final commit; for tests it lists as pending on CI (only CI can run them), the required CI checks green on the PR head, at every level |
 | 6 | Orchestrator review complete | Orchestrator review note |
 | 7 | Final security review passed | Code Review report with no blocking findings |
 | 8 | Validation judge issued PASS | Judge report |
