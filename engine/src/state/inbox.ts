@@ -10,7 +10,7 @@ export interface SecurityAlert {
   /** Option A is what the owner does if the change is theirs; B keeps things stopped. */
   confirm: string;
   hold: string;
-  recommendation: "A" | "B";
+  recommendation: "A" | "B" | "C" | "D";
   /** Engine values the item's effect needs, such as the manifest commit a pins item names (Code Review M2). */
   effectData?: Record<string, string | number>;
   /** F-021 FR-4: detail shown only in the console, never on GitHub. */

@@ -1,10 +1,10 @@
 # Feature: Projects add their own MCP servers
 
 - **Id:** F-025
-- **Status:** v1 Approved (owner sign-off 2026-11-21 23:19Z, decision card); v2 Draft, waiting on the owner
+- **Status:** v1 Approved (owner sign-off 2026-11-21 23:19Z, decision card); v2 Approved (owner, decision card, 2026-11-27 05:17Z)
 - **Requested by / date:** Alex, 2026-11-21 ("I want to allow users to add
   their own MCP servers into their project and agents.")
-- **Spec version:** 2 (draft)
+- **Spec version:** 2
 - **Depends on:** F-007 (engine, manifest pinning SR-5), F-015 (agents on the
   host, ADR 0026), F-020 (JSON Schemas for hand-edited YAML), F-021 (console
   items)
@@ -187,4 +187,4 @@ Applied as drafted, owner approval 2026-11-21 23:22Z (decision card).
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-21 | First draft, with the owner's four answers and SR-5 to SR-13 | Owner, decision card, 2026-11-21 23:19Z |
-| 2 | 2026-11-27 | FR-16 to FR-20, AC-14 to AC-17: per-tool review of the allowed tools, approve all or only the lower-risk ones, "Request changes" goes back to the reviewer, incremental review of newly allowed tools. From the owner's D-0020 answer and decision card 2026-11-27 05:12Z | Pending |
+| 2 | 2026-11-27 | FR-16 to FR-20, AC-14 to AC-17: per-tool review of the allowed tools, approve all or only the lower-risk ones, "Request changes" goes back to the reviewer, incremental review of newly allowed tools. From the owner's D-0020 answer and decision card 2026-11-27 05:12Z | Owner, decision card, 2026-11-27 05:17Z (with H-0278, H-0279) |

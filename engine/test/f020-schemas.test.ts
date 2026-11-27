@@ -39,8 +39,10 @@ describe("F-020 format inventory (FR-1, AC-1)", () => {
       const [name, version] = id.split("/") as [string, string];
       const key = `${name}-${version.split(".")[0]}`;
       expect(SCHEMAS[key], `no schema for ${id}`).toBeDefined();
-      const json = JSON.parse(jsonSchemaText(key)) as { properties?: { schema?: { const?: string } } };
-      expect(json.properties?.schema?.const, id).toBe(id);
+      const json = JSON.parse(jsonSchemaText(key)) as { properties?: { schema?: { const?: string; enum?: string[] } } };
+      // A minor version that still reads its older records lists both (F-025 v2, mcp-server-record 1.0 and 1.1).
+      const field = json.properties?.schema;
+      expect(field?.const === id || !!field?.enum?.includes(id), id).toBe(true);
     }
   });
 });

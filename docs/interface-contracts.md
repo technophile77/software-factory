@@ -1105,7 +1105,7 @@ capped. Any change to the pinned identity needs a new record.
 `factory-project-1.schema.json` gains `mcp_servers` and the role policy's
 `mcp` section.
 
-**v1.1 (F-025 v2, H-0278):** `tools` holds only the tools the owner
+**v1.1 (F-025 v2, H-0278; owner, 2026-11-27 05:17Z):** `tools` holds only the tools the owner
 approved, each gaining `risk` (`none` | `low` | `medium` | `high` |
 `critical`); `approved` gains `choice` (`A`, all allowed tools, or `C`, only
 those rated `medium` or lower). A v1.0 record still reads as approving every
