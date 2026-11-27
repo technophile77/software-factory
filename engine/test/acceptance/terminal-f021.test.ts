@@ -429,7 +429,7 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
   test("owner's rule 2026-11-27: a refused sign-in wait doesn't end the inbox; it opens the console again once the engine lets it", async () => {
     let refuse = 1;
     engine.hooks["interview.awaitApproval"] = (conn, msg) => {
-      if (refuse-- > 0) conn.respond(msg, ["error", { code: -32010, message: "acme is on hold: a change to mcp_servers." }]);
+      if (refuse-- > 0) conn.respond(msg, ["error", -32010, "acme is on hold: a change to mcp_servers."]);
       else conn.respond(msg, ["result", { approved: true }]);
       return true;
     };
