@@ -156,6 +156,15 @@ const RECONNECT_MAX_MS = 60_000;
 
 const errorOf = (r: Obj): Obj => (r.error ?? {}) as Obj;
 const engineAway = (r: Obj): boolean => r.ok !== true && ENGINE_GONE.has(String(errorOf(r).code));
+/** Which way the connection failed, so a drop that keeps coming back can be told apart. */
+const AWAY_WORDS: Record<string, string> = {
+  timeout: "it didn't answer in time", connection_lost: "it closed the connection",
+  engine_unreachable: "the connection couldn't be opened", engine_not_running: "it isn't running",
+};
+const awayReason = (r?: Obj): string => {
+  const w = r ? AWAY_WORDS[String(errorOf(r).code)] : undefined;
+  return w ? ` (${w})` : "";
+};
 
 const BUSY: Partial<Record<Operation, string>> = {
   status: "Connecting to the engine", start: "Sending your request", list: "Getting the feature list",
@@ -567,7 +576,7 @@ export class TerminalInterview {
         if (engineAway(st)) {
           clear();
           shown = null;
-          st = await this.reconnect();
+          st = await this.reconnect(false, st);
         }
         if (st.ok !== true) {
           clear();
@@ -775,7 +784,7 @@ export class TerminalInterview {
       if (this.io.aborted?.()) throw new Stop();
       let st = await this.runner("status", {});
       if (engineAway(st)) {
-        st = await this.reconnect();
+        st = await this.reconnect(false, st);
         // The status is printed again, so the owner sees where the restarted factory stands.
         shown = "";
       }
@@ -833,7 +842,7 @@ export class TerminalInterview {
       if (r.ok === true) return r;
       const err = errorOf(r);
       if (engineAway(r)) {
-        const st = await this.reconnect();
+        const st = await this.reconnect(false, r);
         if (st.ok !== true) return st;
         continue;
       }
@@ -860,10 +869,10 @@ export class TerminalInterview {
    * no limit on attempts. Returns the status once `engine.status` answers,
    * or the failure when it is something other than the engine being away.
    */
-  private async reconnect(starting = false): Promise<Obj> {
+  private async reconnect(starting = false, failure?: Obj): Promise<Obj> {
     this.say(starting
       ? `\n[${this.clock()}] The engine isn't running. Waiting for it to start; press Ctrl+C to stop.`
-      : `\n[${this.clock()}] Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.`);
+      : `\n[${this.clock()}] Lost the connection to the engine${awayReason(failure)}. Reconnecting until it is back; press Ctrl+C to stop.`);
     // A project restarting inside the factory is back within a second or two, so only one that stays away is called stopped.
     let toldStopped = false;
     const tellStopped = async () => {
@@ -1035,7 +1044,7 @@ export class TerminalInterview {
     const err = (r.error ?? {}) as Obj;
     if (engineAway(r)) {
       // F-021 FR-16: wait for the engine, then carry on; a reply that may be lost is still the owner's to resend.
-      const st = await this.reconnect();
+      const st = await this.reconnect(false, r);
       if (st.ok !== true) {
         this.show(st);
         return null;

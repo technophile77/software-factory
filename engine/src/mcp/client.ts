@@ -104,18 +104,32 @@ const READ_CHUNK = 64 * 1024;
  * last client, so a client that opens in that gap (another console window
  * polling at the same moment, or an engine busy for a few hundred ms) gets
  * ERROR_PIPE_BUSY. koffi can't say which error it was, so every open failure
- * is tried again for this long before the engine counts as unreachable.
+ * is tried again for this long before the engine counts as unreachable, and
+ * for as long as the call allows while engine.json's process is still alive:
+ * an engine busy for seconds (installing or reviewing an MCP server) still
+ * owes an answer, and the console showed that as a lost connection.
  */
 const PIPE_OPEN_WAIT_MS = 2000;
 const PIPE_OPEN_RETRY_MS = 25;
 
-async function openPipe(w: ReturnType<OsApi["windows"]>, address: string, waitMs: number): Promise<Handle> {
-  const deadline = Date.now() + waitMs;
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // EPERM: it exists but belongs to someone else, which the server checks below refuse anyway.
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+async function openPipe(w: ReturnType<OsApi["windows"]>, address: string, pid: number, waitMs: number, aliveWaitMs: number, isAlive: (pid: number) => boolean): Promise<Handle> {
+  const start = Date.now();
   for (;;) {
     try {
       return w.openPipeClient(address);
     } catch {
-      if (Date.now() >= deadline) throw new ChannelFailure("engine_unreachable", "The engine isn't running or can't be reached.");
+      const waited = Date.now() - start;
+      if (waited >= waitMs && (waited >= aliveWaitMs || !isAlive(pid))) throw new ChannelFailure("engine_unreachable", "The engine isn't running or can't be reached.");
     }
     await new Promise((r) => setTimeout(r, PIPE_OPEN_RETRY_MS));
   }
@@ -127,10 +141,11 @@ async function openPipe(w: ReturnType<OsApi["windows"]>, address: string, waitMs
  * and served by a process running as the owner under engine.json's pid.
  * Reads poll PeekNamedPipe, which never blocks, as the engine's own side does.
  */
-async function connectPipe(address: string, pid: number, os: OsApi, timeoutMs: number): Promise<Transport> {
+async function connectPipe(address: string, pid: number, os: OsApi, timeoutMs: number, isAlive: (pid: number) => boolean): Promise<Transport> {
   if (!PIPE_RE.test(address)) throw new Refused("unsafe_pipe", "The engine address is not a local \\\\.\\pipe\\ name.");
   const w = os.windows();
-  const h = await openPipe(w, address, Math.min(PIPE_OPEN_WAIT_MS, Math.max(0, timeoutMs)));
+  const budget = Math.max(0, timeoutMs);
+  const h = await openPipe(w, address, pid, Math.min(PIPE_OPEN_WAIT_MS, budget), budget, isAlive);
   let ok = false;
   let serverPid = -1;
   try {
@@ -187,8 +202,8 @@ async function connectPipe(address: string, pid: number, os: OsApi, timeoutMs: n
   };
 }
 
-export async function connect(address: string, pid: number, os: OsApi, timeoutMs: number): Promise<Transport> {
-  if (os.platform === "win32") return connectPipe(address, pid, os, timeoutMs);
+export async function connect(address: string, pid: number, os: OsApi, timeoutMs: number, isAlive: (pid: number) => boolean = alive): Promise<Transport> {
+  if (os.platform === "win32") return connectPipe(address, pid, os, timeoutMs, isAlive);
   if (address.startsWith("\\\\")) throw new Refused("unsafe_socket", "The engine address is a Windows pipe; this machine is not Windows.");
   return connectUnix(address, pid, os, timeoutMs);
 }

@@ -317,7 +317,7 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     };
     const { code, s } = await inbox(["1", "1"]);
     expect(code).toBe(0);
-    expect(s.out).toContain("Lost the connection to the engine. Reconnecting until it is back; press Ctrl+C to stop.");
+    expect(s.out).toMatch(/Lost the connection to the engine \((it closed the connection|the connection couldn't be opened|it didn't answer in time)\)\. Reconnecting until it is back; press Ctrl\+C to stop\./);
     expect(s.drawn).toContain("Reconnecting in 1s (attempt 1)");
     expect(s.drawn).toContain("Reconnecting in 2s (attempt 2)");
     expect(s.drawn).toContain("Reconnecting in 1s (attempt 2)");
@@ -398,7 +398,7 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     const t = new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming());
     t.factoryRunning = async () => 21112;
     expect(await t.inboxMain()).toBe(0);
-    expect(s.out).toContain("Lost the connection to the engine.");
+    expect(s.out).toContain("Lost the connection to the engine (");
     expect(s.out).toContain("Reconnected to the engine.");
     expect(s.out).not.toContain("isn't serving this project");
   });
