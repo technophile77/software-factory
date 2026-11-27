@@ -264,6 +264,30 @@ describe("worktree commit (FR-11 with the FR-9 check)", () => {
     expect(await commitWorktree({ ...input, base: (r as { commit: string }).commit })).toMatchObject({ status: "rejected", breaches: [{ path: "tools/run.log" }] });
   });
 
+  it("F-015 FR-30 (AC-62): test tools' caches aren't writes, even unignored; a tracked file in one still is", async () => {
+    const main = tmpdir();
+    initRepo(main, { "docs/features/F-001-x.md": "spec\n", "pkg/.mypy_cache/kept.json": "{}\n" });
+    const wt = path.join(tmpdir(), "wt");
+    git(main, "worktree", "add", "-q", "-b", "feature/F-001-x", wt);
+    const input = {
+      git: testGit(), gitDir: git(wt, "rev-parse", "--absolute-git-dir"), worktree: wt, branch: "feature/F-001-x", base: git(wt, "rev-parse", "HEAD"),
+      policy: effectiveRole(policyDoc(), "requirements-analyst"), scanner: cleanScanner, tmpDir: path.join(tmpdir(), "t"), message: "s",
+      limits: { maxFiles: 1000, maxTotalBytes: 1 << 20, maxFileBytes: 1 << 20 },
+    };
+    for (const f of [".hypothesis/.gitignore", ".hypothesis/constants/abc", "tests/.pytest_cache/v/cache/nodeids", "src/__pycache__/m.pyc", ".ruff_cache/x", "pkg/.mypy_cache/new.json"]) {
+      fs.mkdirSync(path.dirname(path.join(wt, f)), { recursive: true });
+      fs.writeFileSync(path.join(wt, f), "x");
+    }
+    expect(await commitWorktree(input)).toEqual({ status: "unchanged" });
+    fs.writeFileSync(path.join(wt, "pkg/.mypy_cache/kept.json"), "changed\n");
+    expect(await commitWorktree(input)).toMatchObject({ status: "rejected", breaches: [{ path: "pkg/.mypy_cache/kept.json" }] });
+    // A file merely named like a cache folder is still the agent's write.
+    fs.writeFileSync(path.join(wt, "pkg/.mypy_cache/kept.json"), "{}\n");
+    fs.mkdirSync(path.join(wt, "notes"));
+    fs.writeFileSync(path.join(wt, "notes", ".hypothesis"), "x");
+    expect(await commitWorktree(input)).toMatchObject({ status: "rejected" });
+  });
+
   it("F-015 FR-22: the repo's test results file is engine output, not a write, unless the base tracks it", async () => {
     const { wt, input } = setup();
     fs.mkdirSync(path.join(wt, "test-results"));

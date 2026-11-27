@@ -1,0 +1,4 @@
+{
+  "schema": "tool-caches/1.0",
+  "folders": [".hypothesis", ".pytest_cache", "__pycache__", ".mypy_cache", ".ruff_cache"]
+}

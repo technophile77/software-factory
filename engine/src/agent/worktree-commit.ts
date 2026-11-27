@@ -7,6 +7,7 @@ import type { SecretsScanner } from "../gitleaks";
 import type { RolePolicy } from "../policy/role-policy";
 import { SecretFound } from "../state/state-repo";
 import { type CodeFiles, underCodeDir } from "./code-copies";
+import toolCaches from "./tool-caches.json";
 import { Breach, pathBreach, writeBreaches } from "./write-check";
 
 /** H-0087: caps on what one session may change. */
@@ -194,6 +195,13 @@ async function ignoredByBase(i: WorktreeCommitInput, base: Map<string, BaseEntry
   }
 }
 
+const CACHE_FOLDERS = new Set(toolCaches.folders);
+
+/** F-015 FR-30: test tools write caches the repo may not ignore; they are byproducts, never the agent's writes. */
+export function inToolCache(p: string): boolean {
+  return p.split("/").slice(0, -1).some((seg) => CACHE_FOLDERS.has(seg));
+}
+
 /**
  * FR-11 with the FR-9 check in front: the agent's changes become one commit
  * on its branch only if every changed path is within the role's write rules,
@@ -225,7 +233,7 @@ export async function commitWorktree(i: WorktreeCommitInput): Promise<WorktreeCo
   const untracked = walked.touched.filter((t) => !base.has(t.path) && t.mode !== "120000").map((t) => t.path);
   const skip = await ignoredByBase(i, base, untracked);
   const outputs = new Set((i.outputs ?? []).map((o) => o.split("\\").join("/").replace(/^(\.\/)+/, "")));
-  for (const t of untracked) if (outputs.has(t)) skip.add(t);
+  for (const t of untracked) if (outputs.has(t) || inToolCache(t)) skip.add(t);
   if (skip.size) {
     first.length = 0;
     walked = walk(i.worktree, base, format, i.limits, first, i.frozen, i.platform, skip);
