@@ -204,7 +204,7 @@ The engine never reads its own comments as commands (F-011 SR-17).
   v1.5 location and build-stage bodies approved (F-015 H-0194, owner,
   decision card, 2026-11-14); v1.6 report fields and schemas approved
   (F-020 H-0242, owner, decision card, 2026-11-14); v1.7 CI-only tests
-  (F-015 FR-29, H-0280) draft, awaiting owner approval
+  (F-015 FR-29, H-0280) approved (owner, decision card, 2026-11-27)
 - Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8);
   v1.2 adds the context-hygiene body and `proposed_items`, requested by the
   owner 2026-11-10 (PR #17)

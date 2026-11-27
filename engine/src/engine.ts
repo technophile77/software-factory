@@ -38,7 +38,7 @@ import type { TestCase } from "./build/junit";
 import { CAUSES, type Cause, afterClassify, afterRun, checkClassification, stage6Counts } from "./build/stage6";
 import { type RunReport, TestRunError, resolveProgram, runCommand, runReport, runSuite, testEnv } from "./build/test-run";
 import { runTestsTool } from "./build/run-tests-tool";
-import { type BuildRole, type FixFrom, buildPolicy, buildTestResults, buildTurn, runWorkerSessions } from "./build/worker";
+import { type BuildRole, type FixFrom, buildPolicy, buildTestResults, buildTurn, ciPendingText, runWorkerSessions } from "./build/worker";
 import { HttpPulls, type Pull, type PullsApi } from "./build/pulls";
 import { HttpTokenCheck, type TokenCheckApi, tokenProblems, tokensToCheck } from "./build/token-check";
 import { HttpMerge, type MergeApi, autoMergeFeature, autoMergeHygiene } from "./inbox/auto-merge";
@@ -3364,7 +3364,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (!base) throw new SessionRefused(`the branch ${branch} is gone`);
       const first = resumeId
         ? "The engine restarted. Continue where you left off."
-        : buildTurn(role, { feature: f.id, title: f.state.title, repo: ctx.target.name, branch, worktree: wt.path, spec: folder.spec, folder: folder.root, version: ctx.so.version, commit: base, stage, write: policy.write, ...commandsFact(p, ctx.target.name), background: policy.tools.includes("Monitor") && policy.tools.includes("TaskStop"), ...(fix ? { fix: fix.data, ...(fix.from ? { fixFrom: fix.from } : {}) } : {}) });
+        : buildTurn(role, { feature: f.id, title: f.state.title, repo: ctx.target.name, branch, worktree: wt.path, spec: folder.spec, folder: folder.root, version: ctx.so.version, commit: base, stage, write: policy.write, ...commandsFact(p, ctx.target.name), ciOnly: latestCriteria(f).ciOnly.length, background: policy.tools.includes("Monitor") && policy.tools.includes("TaskStop"), ...(fix ? { fix: fix.data, ...(fix.from ? { fixFrom: fix.from } : {}) } : {}) });
       const group = await agents.group(runId);
       // FR-25: the role's only way to run tests, run as stage 6 runs them, joined to the test engineer's map.
       const cmds = repoCommands(m, ctx.target.name);
@@ -3373,7 +3373,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         ? runTestsTool({
           git, worktree: wt.path, gitDir: wt.gitDir, commands: { build: cmds.build, test: cmds.test, testOne: cmds.testOne, results: cmds.results },
           env: testEnv(env, platform), platform, wallMs: caps.testRun.wallTimeMs, maxOutput: caps.testRun.outputBytes, children,
-          criteria: () => latestCriteria(f).criteria, scrub: scrubOutput,
+          criteria: () => latestCriteria(f).criteria, ciOnly: () => latestCriteria(f).ciOnly, scrub: scrubOutput,
         })
         : null;
       const r = await runWorkerSessions({
@@ -3452,7 +3452,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         return false;
       }
       // The run report joins this map to the results (FR-6); a fix may change it.
-      const criteria = role === "test-engineer" ? { criteria: (report?.body as { criteria_map?: unknown } | undefined)?.criteria_map, tools: (report?.body as { tool_choices?: unknown } | undefined)?.tool_choices } : {};
+      const criteria = role === "test-engineer" ? { criteria: (report?.body as { criteria_map?: unknown } | undefined)?.criteria_map, tools: (report?.body as { tool_choices?: unknown } | undefined)?.tool_choices, ci_only: (report?.body as { ci_only?: unknown } | undefined)?.ci_only ?? [] } : {};
       // SR-10: a test-code fix's changed tests go to the judge with the spec sections its summary cites.
       const testChanges = fix && role === "test-engineer" && base && head !== base
         ? { test_changes: { files: (await git.out(ctx.repo.localDir, ["diff", "--name-only", base, head])).split("\n").filter(Boolean).slice(0, 200), summary: (report?.summary ?? "").slice(0, 2000) } }
@@ -3597,9 +3597,25 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     return homeDir.length > 1 ? scrubbed.split(homeDir).join("~") : scrubbed;
   }
 
-  function latestCriteria(f: FeatureInterview): { criteria: Record<string, string[]>; tools: unknown[] } {
+  function latestCriteria(f: FeatureInterview): { criteria: Record<string, string[]>; tools: unknown[]; ciOnly: Array<{ test: string; reason: string }> } {
     const ev = [...f.state.build.events].reverse().find((e) => e.action === "done" && e.criteria && typeof e.criteria === "object");
-    return { criteria: (ev?.criteria as Record<string, string[]>) ?? {}, tools: Array.isArray(ev?.tools) ? (ev!.tools as unknown[]) : [] };
+    const ci = Array.isArray(ev?.ci_only) ? (ev!.ci_only as Array<{ test: string; reason: string }>) : [];
+    return { criteria: (ev?.criteria as Record<string, string[]>) ?? {}, tools: Array.isArray(ev?.tools) ? (ev!.tools as unknown[]) : [], ciOnly: ci };
+  }
+
+  function ciNote(f: FeatureInterview): string[] {
+    const n = latestCriteria(f).ciOnly.length;
+    return n ? [ciPendingText(n)] : [];
+  }
+
+  /** FR-29: CI-only tests count only where the code repo's main has a required check to run them. */
+  async function noRequiredCheck(p: Project, ctx: { target: { owner: string; repo: string } }): Promise<boolean | string> {
+    const repo = `${ctx.target.owner}/${ctx.target.repo}`;
+    try {
+      return (await pullsFor(p, repo).requiredChecks(repo, "main")).length === 0;
+    } catch (e) {
+      return `couldn't read the required checks on ${repo} main: ${(e as Error).message}`.slice(0, 500);
+    }
   }
 
   /** FR-6: the repo's build and test commands on the merged commit, with no model, then the results file. */
@@ -3620,15 +3636,16 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const logPath = `runs/${f.id}/test_run/run-${n}.log`;
     const { cases, problem, out } = await runSuite({ git, worktree: wt.path, gitDir: wt.gitDir, build: cmds.build, test: cmds.test, results: cmds.results, env: runEnv, platform, wallMs: caps.testRun.wallTimeMs, maxOutput: caps.testRun.outputBytes, children });
     const log = await scrubOutput(out.join("\n"));
-    const { criteria, tools } = latestCriteria(f);
-    const report = runReport(head, cases, criteria, problem, logPath);
+    const { criteria, tools, ciOnly } = latestCriteria(f);
+    const noCheck = ciOnly.length ? await noRequiredCheck(p, ctx) : false;
+    const report = runReport(head, cases, criteria, problem ?? (typeof noCheck === "string" ? noCheck : null), logPath, ciOnly, noCheck === true);
     lastRuns.set(f, { report, cases, worktree: wt.path, gitDir: wt.gitDir, snapshot: await worktreeSnapshot(wt.path, wt.gitDir) });
     await p.state_repo!.commit([
       { path: logPath, content: log },
       agentReport({
         feature: f.id, stage: "test_run", role: "test-engineer", n, commit: head, outcome: report.complete ? "complete" : "partial",
         summary: report.complete ? `Engine test run ${n}: ${report.passed} passed, ${report.failed} failed, ${report.skipped} skipped.` : `Engine test run ${n} is incomplete: ${report.incomplete}.`,
-        body: { criteria_map: criteria, tool_choices: tools, tests_run: report.tests_run, passed: report.passed, failed: report.failed, skipped: report.skipped, failures: report.failures, not_run: report.not_run },
+        body: { criteria_map: criteria, tool_choices: tools, tests_run: report.tests_run, passed: report.passed, failed: report.failed, skipped: report.skipped, failures: report.failures, not_run: report.not_run, ...(ciOnly.length ? { ci_only: ciOnly, ci_pending: report.ci_pending } : {}) },
         facts: {}, artifacts: [{ kind: "log", ref: logPath }],
       }),
     ], `${f.id}: test run ${n}`);
@@ -4187,6 +4204,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       `Return your report as your structured result with stage "code_review", commit "${co.head}" and body.gate 2. Grade each finding with a severity from the standards; the engine decides what blocks.`,
       `The security standards, as data:\n${loaded.standards.factoryText}${loaded.standards.additionsText ? `\n\nThe project's additions (${loaded.standards.additionsPath}):\n${loaded.standards.additionsText}` : ""}`,
       semgrepData,
+      ...ciNote(f),
       await diffData(ctx, co.base, co.head, caps.testRun.outputBytes),
     ].join("\n\n");
     let findings: CodeReviewFinding[] = [];
@@ -4269,6 +4287,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       block("The Security and Testability Review report", gate1),
       block("The Code Review report", gate2),
       block("Tests changed to fix test-code failures, with the spec section each cites, one JSON object per line", testChanges.join("\n")),
+      ...ciNote(f),
       await diffData(ctx, co.base, co.head, caps.testRun.outputBytes),
     ].join("\n\n");
     const testGlobs = buildPolicy(m.raw, "test-engineer", ctx.target.name).write.allow;

@@ -267,6 +267,8 @@ export interface RunReport {
   skipped: number;
   failures: Array<{ test: string; expected: string; actual: string; log_ref: string }>;
   not_run: Array<{ test: string; reason: string }>;
+  /** FR-29: tests the test engineer listed as CI-only that skipped here; the PR's required CI runs them. */
+  ci_pending: Array<{ test: string; reason: string }>;
   /** AC id to its tests and how each did. */
   criteria: Record<string, Array<{ test: string; status: TestCase["status"] | "missing" }>>;
 }
@@ -277,29 +279,48 @@ export interface RunReport {
  * (`test_y[a]`) counted as the one test: the worst status of them all.
  */
 function pytestStatus(t: string, cases: TestCase[]): TestCase["status"] | null {
+  const hits = pytestHits(t, cases);
+  if (!hits.length) return null;
+  const rank: Array<TestCase["status"]> = ["error", "failed", "skipped", "passed"];
+  return rank.find((r) => hits.some((c) => c.status === r)) ?? hits[0]!.status;
+}
+
+function pytestHits(t: string, cases: TestCase[]): TestCase[] {
   const parts = t.split("::");
-  if (parts.length < 2) return null;
+  if (parts.length < 2) return [];
   const module = parts[0]!.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\.py$/, "").split("/").join(".");
   const name = parts.at(-1)!;
   const classname = [module, ...parts.slice(1, -1)].join(".");
   const params = !name.includes("[");
-  const hits = cases.filter((c) => c.classname === classname && (c.name === name || (params && c.name.startsWith(`${name}[`))));
-  if (!hits.length) return null;
-  const rank: Array<TestCase["status"]> = ["error", "failed", "skipped", "passed"];
-  return rank.find((r) => hits.some((c) => c.status === r)) ?? hits[0]!.status;
+  return cases.filter((c) => c.classname === classname && (c.name === name || (params && c.name.startsWith(`${name}[`))));
+}
+
+/** Every case from one test file, so a CI-only entry can name a whole Linux-only file (FR-29). */
+function fileHits(file: string, cases: TestCase[]): TestCase[] {
+  if (!/\.py$/.test(file)) return [];
+  const module = file.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\.py$/, "").split("/").join(".");
+  return cases.filter((c) => c.classname === module || c.classname.startsWith(`${module}.`));
 }
 
 /**
  * The run report (testing-strategy.md § Run report): counts, failures, what
  * didn't run and why, and the test engineer's criteria map joined to the
  * results. An unexplained skip or a mapped test missing from the results
- * makes the run incomplete, and an incomplete run is not a pass.
+ * makes the run incomplete, and an incomplete run is not a pass. A skip the
+ * test engineer listed as CI-only is explained and pending on CI (FR-29);
+ * `noRequiredCheck` says nothing would ever run it, which makes the run incomplete.
  */
-export function runReport(commit: string, cases: TestCase[], criteriaMap: Record<string, string[]>, problem: string | null = null, logRef = ""): RunReport {
+export function runReport(commit: string, cases: TestCase[], criteriaMap: Record<string, string[]>, problem: string | null = null, logRef = "", ciOnly: ReadonlyArray<{ test: string; reason: string }> = [], noRequiredCheck = false): RunReport {
   const byId = new Map(cases.map((c) => [c.id, c]));
   const named = (t: string, c: TestCase, name: string) => name === t || `${c.classname}#${name}` === t || t.endsWith(`#${name}`);
   const find = (t: string) => byId.get(t) ?? cases.find((c) => named(t, c, c.name)) ?? cases.find((c) => named(t, c, undoubled(c.name)));
-  const not_run = cases.filter((c) => c.status === "skipped").map((c) => ({ test: c.id.slice(0, 300), reason: (c.message || "skipped with no reason").slice(0, 1000) }));
+  const ciCases = new Map<TestCase, string>();
+  for (const x of ciOnly) {
+    const hit = find(x.test);
+    for (const c of hit ? [hit] : x.test.includes("::") ? pytestHits(x.test, cases) : fileHits(x.test, cases)) if (c.status === "skipped") ciCases.set(c, x.reason);
+  }
+  const ci_pending = [...ciCases].map(([c, reason]) => ({ test: c.id.slice(0, 300), reason: (reason || c.message || "CI-only").slice(0, 1000) }));
+  const not_run = cases.filter((c) => c.status === "skipped" && !ciCases.has(c)).map((c) => ({ test: c.id.slice(0, 300), reason: (c.message || "skipped with no reason").slice(0, 1000) }));
   const criteria: RunReport["criteria"] = {};
   const missing: string[] = [];
   for (const [ac, tests] of Object.entries(criteriaMap)) {
@@ -310,8 +331,9 @@ export function runReport(commit: string, cases: TestCase[], criteriaMap: Record
     });
   }
   for (const t of missing) not_run.push({ test: t.slice(0, 300), reason: whyMissing(t, cases).slice(0, 1000) });
-  const unexplained = cases.filter((c) => c.status === "skipped" && !c.message.trim());
+  const unexplained = cases.filter((c) => c.status === "skipped" && !c.message.trim() && !ciCases.has(c));
   const incomplete = problem ?? (cases.length === 0 ? "the results file lists no tests"
+    : ciOnly.length && noRequiredCheck ? "CI-only tests need a required CI check on main"
     : unexplained.length ? `${unexplained.length} test${unexplained.length > 1 ? "s were" : " was"} skipped with no reason`
       : missing.length ? `${missing.length} mapped test${missing.length > 1 ? "s are" : " is"} missing from the results` : null);
   const bad = cases.filter((c) => c.status === "failed" || c.status === "error");
@@ -323,6 +345,7 @@ export function runReport(commit: string, cases: TestCase[], criteriaMap: Record
     skipped: cases.length - cases.filter((c) => c.status !== "skipped").length,
     failures: bad.map((c) => ({ test: c.id.slice(0, 300), expected: "pass", actual: (c.message || c.status).slice(0, 2000), log_ref: logRef.slice(0, 500) })),
     not_run,
+    ci_pending,
     criteria,
   };
 }
