@@ -363,10 +363,10 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(engine.connections).toBe(0);
   });
 
-  test("a factory that runs but doesn't serve this project is reported as a stopped project, with the confirm command", async () => {
+  test("a factory that runs but doesn't serve this project is reported as a stopped project, with the confirm command, once it stays away", async () => {
     await engine.stop();
     const s = new Script([]);
-    s.aborted = () => s.drawn.includes("Reconnecting in 1s (attempt 2)");
+    s.aborted = () => s.drawn.includes("Reconnecting in 1s (attempt 3)");
     const ops = new Interview({ os: realOsApi(), projectDir: repo });
     const t = new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming());
     t.factoryRunning = async () => 21112;
@@ -374,7 +374,33 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(await t.inboxMain()).toBe(0);
     expect(s.out).toContain("The factory is running (pid 21112) but isn't serving this project, so the project is stopped.");
     expect(s.out).toContain("`factory-engine confirm --project /work/mesbot-factory`");
-    expect(s.out).not.toContain("The engine isn't running");
+    // The first message is the plain wait; the project is called stopped only after it stays away.
+    expect(s.out.indexOf("The engine isn't running")).toBeLessThan(s.out.indexOf("isn't serving this project"));
+    expect(s.out.split("isn't serving this project").length).toBe(2);
+  });
+
+  test("a project that restarts within a second is never called stopped", async () => {
+    items = [];
+    let calls = 0;
+    engine.hooks["engine.status"] = (conn, msg) => {
+      calls++;
+      // The second look finds the project restarting; the third finds it back.
+      if (calls === 2) {
+        conn.close();
+        return true;
+      }
+      conn.respond(msg, ["result", { version: "1.4", capabilities: ["document", "inbox"], uptime_s: 1, features: [] }]);
+      return true;
+    };
+    const s = new Script([]);
+    s.aborted = () => s.out.includes("Reconnected to the engine.") && s.out.split("Watching the factory").length > 1;
+    const ops = new Interview({ os: realOsApi(), projectDir: repo });
+    const t = new TerminalInterview((op, req) => ops.run(op, req), s, MARK, fastTiming());
+    t.factoryRunning = async () => 21112;
+    expect(await t.inboxMain()).toBe(0);
+    expect(s.out).toContain("Lost the connection to the engine.");
+    expect(s.out).toContain("Reconnected to the engine.");
+    expect(s.out).not.toContain("isn't serving this project");
   });
 
   test("with no factory running at all, the wait still says the engine isn't running", async () => {
