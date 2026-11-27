@@ -50,7 +50,9 @@ describe("F-015 FR-29: tests only CI can run", () => {
     expect(dev).not.toContain("`ci_only`");
     expect(buildTurn("software-developer", facts)).not.toContain("pending on CI");
     expect(buildTurn("test-engineer", facts)).toContain("`ci_only`");
-    expect(ciPendingText(3)).toMatch(/don't block on them, and don't ask for a run on another platform/);
+    expect(ciPendingText(3)).toMatch(/don.t block on them, and don.t ask for a run on another platform/);
+    expect(ciPendingText(3)).toMatch(/no reason to report your work as partial/);
+    expect(buildTurn("test-engineer", facts)).toMatch(/no reason to report partial/);
   });
 
   it("the test engineer's report may carry ci_only, but not the engine's ci_pending", () => {

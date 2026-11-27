@@ -216,10 +216,10 @@ export interface TurnFacts {
 
 /** F-015 FR-29: what the build, Code Review and judge sessions are told about tests only CI can run. */
 export function ciPendingText(n: number): string {
-  return `Some tests are pending on CI: the test engineer listed ${n} test${n === 1 ? "" : "s or test files"} as CI-only, because they can't run on the owner's PC. The pull request's required CI runs them before the PR is marked ready, and a CI failure comes back to the developer or test engineer. Don't report them as untested, don't block on them, and don't ask for a run on another platform.`;
+  return `Some tests are pending on CI: the test engineer listed ${n} test${n === 1 ? "" : "s or test files"} as CI-only, because they can't run on the owner's PC. The pull request's required CI runs them before the PR is marked ready, and a CI failure comes back to the developer or test engineer. Don't report them as untested, don't block on them, and don't ask for a run on another platform. Tests pending on CI, or test changes that only CI can run, are no reason to report your work as partial: when the rest is done, your outcome is complete.`;
 }
 
-const CI_ONLY_HOW = "A test that can't run on this PC, for example one that needs Linux, may skip here only with a reason: list it in your report's `ci_only` (a test id, or a whole Python test file, with the reason). The pull request's required CI runs it, and the PR isn't ready until it passes there. Don't list a test that can run here.";
+const CI_ONLY_HOW = "A test that can't run on this PC, for example one that needs Linux, may skip here only with a reason: list it in your report's `ci_only` (a test id, or a whole Python test file, with the reason). The pull request's required CI runs it, and the PR isn't ready until it passes there. Don't list a test that can run here. Tests pending on CI are no reason to report partial: when the rest is done, your outcome is complete.";
 
 /**
  * The first turn of a developer or test engineer run: engine text only, with
