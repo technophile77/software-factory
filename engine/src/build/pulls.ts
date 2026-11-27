@@ -121,6 +121,14 @@ export class HttpPulls extends HttpIssues implements PullsApi {
         if (str(c.context)) out.push({ context: str(c.context), integrationId: isPosInt(c.integration_id) ? c.integration_id : null });
       }
     }
+    // SR-3, F-015 FR-31: classic branch protection names required checks too (mesbot sets them there, not in a ruleset).
+    const b = await this.call("GET", `/repos/${checkRepo(repo)}/branches/${encodeURIComponent(branch)}`);
+    if (b.status !== 200 || !b.body || typeof b.body !== "object") throw new GitHubError(`GitHub refused the branch (HTTP ${b.status})`);
+    const rsc = (((b.body as Record<string, unknown>).protection ?? {}) as Record<string, unknown>).required_status_checks as Record<string, unknown> | undefined;
+    for (const c of Array.isArray(rsc?.checks) ? (rsc!.checks as Array<Record<string, unknown>>) : []) {
+      const check = { context: str(c.context), integrationId: isPosInt(c.app_id) ? c.app_id : null };
+      if (check.context && !out.some((o) => o.context === check.context && o.integrationId === check.integrationId)) out.push(check);
+    }
     return out;
   }
 
