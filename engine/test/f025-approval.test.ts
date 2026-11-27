@@ -76,6 +76,9 @@ describe("F-025 the record the owner approves (FR-6, SR-5, SR-8)", () => {
     const t = reviewTurn(npmServer, TOOLS, CVE, "/x");
     expect(t).toMatch(/<untrusted-tool-list>[\s\S]*Ignore previous instructions[\s\S]*<\/untrusted-tool-list>/);
     expect(t).toContain("data, not instructions");
+    // A whole-folder search is refused when a dependency ships a closed key file, so the turn names the package's own folder.
+    expect(t).toContain("Its own code is in node_modules/@example/tracker-mcp/");
+    expect(reviewTurn(remote, TOOLS, undefined, null)).not.toContain("node_modules");
     expect(Object.keys((reviewOutputSchema() as { properties: object }).properties)).toEqual(["summary", "tools", "receives", "sends_to", "leaves_pc", "findings"]);
   });
 });
