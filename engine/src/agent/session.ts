@@ -142,6 +142,32 @@ const TEST_RUNNER = new RegExp(
   "i",
 );
 
+/**
+ * Shell forms that change files (Role policy v2.14): a heredoc, which feeds
+ * `cat >` or `python -` a file's new text, and in-place `sed` or `perl`.
+ * A here-string (`<<<`) only feeds a program text, so it isn't one. Like
+ * the test runner match, this steers an agent to Edit and Write; a full
+ * shell can still write some other way, and the worktree check at the end
+ * of a session is what holds it to its paths.
+ */
+const SHELL_EDIT = new RegExp(
+  // A heredoc's body follows on the next line, which keeps `grep "a << b"` out.
+  String.raw`(?<!<)<<(?!<)-?\s*(["']?)[A-Za-z_]\w*\1[^\n]*\n` +
+    String.raw`|(?:^|[\s;&|(\x60"'/\\])sed(?:\.exe)?\s+(?:-\S*\s+)*?(?:-[A-Za-z]*i(?=$|[\s.'"])|--in-place\b)` +
+    String.raw`|(?:^|[\s;&|(\x60"'/\\])perl(?:\.exe)?\s+(?:-\S*\s+)*?-[A-Za-z]*i(?=$|[\s.'"])`,
+);
+
+/**
+ * Whether a shell command changes files in a way Edit or Write should.
+ *
+ * @param cmd The whole Bash or Monitor command.
+ * @example editsFiles("cat > a.py <<'EOF'\nx = 1\nEOF") // true
+ * @example editsFiles("sed -n 1,40p a.py") // false
+ */
+export function editsFiles(cmd: string): boolean {
+  return SHELL_EDIT.test(cmd);
+}
+
 /** Whether a shell command runs tests: a common runner, or the repo's own test command's arguments after its program. */
 export function runsTests(cmd: string, testCommand?: string[]): boolean {
   if (TEST_RUNNER.test(cmd)) return true;
@@ -231,6 +257,8 @@ export function toolGate(policy: RolePolicy, worktree: string | null, factoryToo
       const cmd = typeof input.command === "string" ? input.command.trim() : "";
       if (!cmd) return deny(name === "Monitor" ? "Monitor may only watch a command" : "no command");
       if (mcp.has(`mcp__${FACTORY_SERVER}__run_tests`) && runsTests(cmd, host?.testCommand)) return deny("run tests with the run_tests tool, not a shell command");
+      // Role policy v2.14: a role that has Edit or Write never edits through the shell, so the owner isn't asked to hold one.
+      if ((builtins.has("Edit") || builtins.has("Write")) && editsFiles(cmd)) return deny(`this command changes files through the shell. ${WRITE_NOT_SHELL}`);
       const fullShell = host !== undefined && FULL_SHELL_ROLES.includes(policy.role);
       if (!fullShell) {
         const program = cmd.split(/\s+/)[0] ?? "";
@@ -311,6 +339,7 @@ export interface SessionInput {
 /** SR-10's fixed options; nothing from the repo or the owner's settings can change them. */
 const UNSPLIT = "a command the engine can't split into words";
 const EDIT_NOT_SHELL = "Read files with Read, search them with Grep, and change them with Edit or Write, never with a shell command (`cat`, `sed -n`, a heredoc, `python -`, `python -c`, `sed -i`, `echo >`): the engine can't read such a command, so it holds it for the owner, and it usually doesn't run. Keep each Bash command to one plain program call without heredocs or inline scripts.";
+const WRITE_NOT_SHELL = "Change a file with Edit, one call per change, and create or replace one with Write, which makes any missing folders; never with a heredoc, `python -`, `sed -i` or `perl -i`. The engine refuses those at once, so the step isn't done.";
 const OUTSIDE_HINT = "Work on files in your worktree (and read the spec folder, if you have one); don't keep scratch files anywhere else, and don't reach such paths with a shell command instead. For a command's long output, run it again with less output, or Read the file it came from with offset and limit.";
 
 /**
@@ -341,7 +370,7 @@ export function fileToolsPrompt(tools: readonly string[], readOnlyRoot?: string)
     "Use your file tools for files, and Bash only to run programs (git, the project's own scripts and tools):",
     ...lines,
     "- Keep each Bash command to one program call: no heredocs, inline scripts, or several file reads chained together.",
-    `The engine checks each file tool call against your paths and runs it at once. It can't read a shell script, so a command that reads or writes files through one is held for the owner and usually refused, and the step is lost.${readOnlyRoot ? " Read, Grep and Glob work on the read-only spec folder too." : ""} Keep files you make inside your worktree: the file tools refuse paths elsewhere, and so does the owner.`,
+    `The engine checks each file tool call against your paths and runs it at once. ${has("Edit") || has("Write") ? "It refuses a shell command that changes files (a heredoc, `sed -i`, `perl -i`) at once, and h" : "H"}olds any other command it can't split into words, such as an inline script, for the owner, who usually refuses it; either way the step is lost.${readOnlyRoot ? " Read, Grep and Glob work on the read-only spec folder too." : ""} Keep files you make inside your worktree: the file tools refuse paths elsewhere, and so does the owner.`,
   ].join("\n");
 }
 

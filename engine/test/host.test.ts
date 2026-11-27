@@ -9,7 +9,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { HostError, HostGroup, hostEnv, hostSpawn, platformKey, resolveClaudeBinary, runHome, sweepHomes } from "../src/agent/host";
 import type { AgentRuntime } from "../src/agent/runtime";
 import type { SdkMessage } from "../src/agent/sdk";
-import { FULL_SHELL_ROLES, type HostGate, WallTimer, toolGate } from "../src/agent/session";
+import { FULL_SHELL_ROLES, type HostGate, editsFiles, WallTimer, toolGate } from "../src/agent/session";
 import { CLAUDE_CODE_SHA256 } from "../src/constants";
 import type { DockerCli } from "../src/docker/cli";
 import { MemoryLogger } from "../src/log";
@@ -122,14 +122,56 @@ describe("the tool gate for sessions on the owner's PC", () => {
     expect((await gate("Bash", { command: "ls src" }, sig)).behavior).toBe("allow");
   });
 
-  it("a refused shell edit the engine can't split tells the agent to use Edit or Write", async () => {
+  it("a refused command the engine can't split tells the agent to use the file tools", async () => {
     const wt = tmpdir();
     const { gate } = gateOf("test-engineer", wt);
-    const r = await gate("Bash", { command: "cd fix && python - <<'E'\n# the harness's parser\nE" }, sig);
+    const r = await gate("Bash", { command: "cd fix && cat $(ls tests/*.py | head -1)" }, sig);
     expect(r.behavior).toBe("deny");
     expect((r as { message: string }).message).toMatch(/not done\. Read files with Read, search them with Grep, and change them with Edit or Write/);
     const plain = await gate("Bash", { command: "gh pr create" }, sig);
     expect((plain as { message: string }).message).not.toMatch(/Edit or Write/);
+  });
+
+  // Role policy v2.14: the shell edits F-004's and F-005's agents tried on 2026-11-27, and commands that only look alike.
+  const SHELL_EDITS = [
+    "cd \"C:/b/F-004/fix\" && python - <<'E'\np='tests/f004_harness.py'\ns=open(p,encoding='utf-8').read()\nE",
+    "mkdir -p tests/contract && cat > tests/contract/portal_schema.json <<'EOF'\n{}\nEOF",
+    "cat > test/f002.acceptance.test.js <<EOF\n'use strict';\nEOF",
+    "cat <<-\"END\" > a.txt\n\tx\nEND",
+    "sed -i -E '/^def test_.*\\(sandbox/ s/^/@needs_flock\\n/' test_f004_job.py",
+    "sed -i.bak 's/a/b/' x.py",
+    "sed -E -i 's/a/b/' x.py",
+    "sed --in-place 's/a/b/' x.py",
+    "git status; /usr/bin/sed -i 's/a/b/' x.py",
+    "perl -pi -e 's/a/b/' x.py",
+    "perl -i.orig -pe 's/a/b/' x.py",
+  ];
+  const NOT_EDITS = [
+    "sed -n 1,120p tests/f004_harness.py",
+    "sed -E 's/i/I/' x.py | head",
+    "perl -Mstrict -ne 'print if /x/' x.py",
+    "python -I -c \"import json;json.load(open('a.json'))\"",
+    "grep -n \"a << b\" main.py",
+    "python3 - <<< 'print(1)'",
+    "git log --oneline -5",
+  ];
+
+  it("refuses a shell edit at once, without asking the owner, from a role that has Edit or Write (Role policy v2.14)", async () => {
+    const wt = tmpdir();
+    const { gate, asked } = gateOf("test-engineer", wt);
+    for (const command of SHELL_EDITS) {
+      expect(editsFiles(command), command).toBe(true);
+      const r = await gate("Bash", { command }, sig);
+      expect(r.behavior, command).toBe("deny");
+      expect((r as { message: string }).message).toMatch(/changes files through the shell\. Change a file with Edit.*refuses those at once/);
+      expect((await gate("Monitor", { command }, sig)).behavior).toBe("deny");
+    }
+    expect(asked).toEqual([]);
+    for (const command of NOT_EDITS) expect(editsFiles(command), command).toBe(false);
+    expect((await gate("Bash", { command: "sed -n 1,40p tests/x.py" }, sig)).behavior).toBe("allow");
+    // A role with no Edit or Write has no file tool to point to, so the rule leaves it to the ask rule as before.
+    const reader = gateOf("software-developer", wt, {}, { tools: ["Read", "Grep", "Bash"] });
+    for (const command of SHELL_EDITS) expect(JSON.stringify(await reader.gate("Bash", { command }, sig))).not.toMatch(/changes files through the shell/);
   });
 
   it("a file tool refused outside the worktree says where to work instead of a shell command", async () => {
