@@ -184,6 +184,13 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(answers()).toEqual([expect.objectContaining({ action: "changes", note: "Make it shorter." })]);
   });
 
+  test("F-015 FR-21 (owner, 2026-11-27): sending work to a role asks for an optional note and sends it with the choice", async () => {
+    items = [DECISION({ actions: [{ action: "choose:C", label: "Option C: Send it to the developer" }, { action: "choose:D", label: "Option D: Send it to the test engineer" }, { action: "choose:B", label: "Option B: Keep F-004 stopped" }] })];
+    const { s } = await inbox(["2", "Skip the flock tests off Linux.", ""], "D-0007");
+    expect(s.out).toContain("Add a note for the test engineer (press Enter for none):");
+    expect(answers()).toEqual([expect.objectContaining({ action: "choose:D", note: "Skip the flock tests off Linux." })]);
+  });
+
   test("AC-13, SR-3: without a terminal, or with a bad item id or extra argument, the command exits 2 and sends nothing", async () => {
     const bundle = await buildEngine();
     const piped = spawnSync(process.execPath, [bundle, "inbox", "D-0007", "--project", repo], { input: "1\n", encoding: "utf8", env: ENV });

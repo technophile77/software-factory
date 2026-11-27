@@ -990,6 +990,12 @@ export class TerminalInterview {
           continue;
         }
         req.note = note;
+      } else if (c.key.startsWith("choose:") && /\bsend it to (the [a-z ]+)/i.test(actions.find((a) => a.action === c.key)?.label ?? "")) {
+        // F-015 FR-21: the role works from the owner's note when there is one.
+        const role = /\bsend it to (the [a-z]+(?: [a-z]+)?)/i.exec(actions.find((a) => a.action === c.key)!.label)![1]!.replace(/ to$/, "");
+        this.say(`Add a note for ${role} (press Enter for none):`);
+        const note = (await this.text()).trim();
+        if (note) req.note = note;
       }
       let r = await this.run("inbox_answer", req);
       while (r.ok !== true && typeof r.reply_id === "string") {
