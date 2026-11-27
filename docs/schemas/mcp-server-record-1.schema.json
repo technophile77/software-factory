@@ -4,7 +4,10 @@
   "properties": {
     "schema": {
       "type": "string",
-      "const": "mcp-server-record/1.0"
+      "enum": [
+        "mcp-server-record/1.1",
+        "mcp-server-record/1.0"
+      ]
     },
     "server": {
       "type": "string",
@@ -110,6 +113,16 @@
           "description_sha256": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"
+          },
+          "risk": {
+            "type": "string",
+            "enum": [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
           }
         },
         "required": [
@@ -163,6 +176,13 @@
         },
         "local_risk_accepted": {
           "type": "boolean"
+        },
+        "choice": {
+          "type": "string",
+          "enum": [
+            "A",
+            "C"
+          ]
         }
       },
       "required": [

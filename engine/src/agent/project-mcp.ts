@@ -30,10 +30,12 @@ export interface ProjectMcpSession {
   acts: string[];
   /** Hosts of allowed remote servers, granted to a proxied session for its life (FR-9). */
   hosts: string[];
-  /** Tools a server reports that weren't approved, or changed since (SR-7): left out, for a re-review item. */
+  /** Allowed tools a server reports that aren't in its record, or changed since (SR-7, FR-18): left out; the engine reviews new and changed ones (FR-20). */
   leftOut: Array<{ server: string; tool: string; why: "new" | "changed" | "unusable name" }>;
   /** Servers the owner chose to run this session without (FR-10, SR-12); the agent is told. */
   missing: string[];
+  /** FR-18: `<server>/<tool>` the role allows that this session doesn't get; the agent is told. */
+  missingTools: string[];
   /** The secret values handed to servers, so the engine can mask them wherever it writes text (SR-10). */
   masks: string[];
 }
@@ -138,7 +140,7 @@ export function localCommand(i: Pick<ResolveInput, "mcpRoot" | "project">, s: Ex
 }
 
 export async function resolveProjectMcp(i: ResolveInput): Promise<ProjectMcpSession> {
-  const out: ProjectMcpSession = { servers: {}, tools: [], acts: [], hosts: [], leftOut: [], missing: [], masks: [] };
+  const out: ProjectMcpSession = { servers: {}, tools: [], acts: [], hosts: [], leftOut: [], missing: [], missingTools: [], masks: [] };
   const allow = i.policy.mcp ?? [];
   if (!allow.length) return out;
   const list = i.list ?? ((t) => listTools(t));
@@ -184,16 +186,14 @@ export async function resolveProjectMcp(i: ResolveInput): Promise<ProjectMcpSess
     const approved = new Map(r.tools.map((t) => [t.name, t]));
     for (const d of reported.dropped) out.leftOut.push({ server: name, tool: d, why: "unusable name" });
     for (const t of reported.tools) {
-      const a = approved.get(t.name);
-      if (!a) {
-        out.leftOut.push({ server: name, tool: t.name, why: "new" });
-        continue;
-      }
-      if (a.description_sha256 !== toolHash(t)) {
-        out.leftOut.push({ server: name, tool: t.name, why: "changed" });
-        continue;
-      }
+      // v2: only allowed tools are reviewed, so a tool no entry covers is neither offered nor news.
       if (!mcpCovers(allow, `${name}/${t.name}`)) continue;
+      const a = approved.get(t.name);
+      if (!a || a.description_sha256 !== toolHash(t)) {
+        out.leftOut.push({ server: name, tool: t.name, why: a ? "changed" : "new" });
+        out.missingTools.push(`${name}/${t.name}`);
+        continue;
+      }
       const full = `mcp__${name}__${t.name}`;
       out.tools.push(full);
       if (a.class === "acts") out.acts.push(full);

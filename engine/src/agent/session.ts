@@ -326,9 +326,12 @@ export function sessionOptions(s: SessionInput, abort: AbortController): Session
     permissionMode: "default",
     canUseTool: gate,
     hooks: { PreToolUse: [{ hooks: [preToolUseGate(gate)], timeout: GATE_HOOK_TIMEOUT_S }] },
-    systemPrompt: s.projectMcp?.missing.length
-      ? `${s.instructions}\n\nThe owner chose to run this session without these MCP servers, which your role normally has: ${s.projectMcp.missing.join(", ")}. Don't try to reach what they do by other means; say in your report what you couldn't do without them.`
-      : s.instructions,
+    systemPrompt: [
+      s.instructions,
+      s.projectMcp?.missing.length ? `The owner chose to run this session without these MCP servers, which your role normally has: ${s.projectMcp.missing.join(", ")}. Don't try to reach what they do by other means; say in your report what you couldn't do without them.` : "",
+      // F-025 FR-18: tools the role allows that aren't approved (yet) are left out, and the agent hears which.
+      s.projectMcp?.missingTools.length ? `These MCP tools, which your role is allowed, aren't approved for use and aren't available in this session: ${s.projectMcp.missingTools.join(", ")}. Don't try to reach what they do by other means; say in your report what you couldn't do without them.` : "",
+    ].filter(Boolean).join("\n\n"),
     plugins: builtins.includes("Skill") ? [{ type: "local", path: s.skillsPluginDir! }] : [],
     maxTurns: s.caps.maxTurns,
     ...(s.caps.maxBudgetUsd !== undefined ? { maxBudgetUsd: s.caps.maxBudgetUsd } : {}),
