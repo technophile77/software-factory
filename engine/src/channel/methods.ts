@@ -130,7 +130,9 @@ export function methods(project: ProjectChannel, engine: EngineControl, clock: C
     }
   }
 
-  const HELD_METHODS = new Set(["engine.status", "inbox.open", "inbox.close", "inbox.list", "inbox.show", "inbox.answer", "inbox.confirm"]);
+  // The console finishes the sign-in of `inbox.open` with `interview.awaitApproval` and ends it with `interview.close`;
+  // a held project opens no interview, so these reach only console sessions.
+  const HELD_METHODS = new Set(["engine.status", "inbox.open", "inbox.close", "inbox.list", "inbox.show", "inbox.answer", "inbox.confirm", "interview.awaitApproval", "interview.close"]);
   /** FR-18: a held project's console reaches only the hold item; any other id reads as unknown. */
   const heldShows = async (item: string): Promise<void> => {
     const h = project.held?.();

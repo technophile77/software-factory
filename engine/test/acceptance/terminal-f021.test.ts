@@ -388,12 +388,34 @@ describe.runIf(IS_UNIX)("F-021 factory-engine inbox", () => {
     expect(s.out).toContain("The engine isn't running. Waiting for it to start");
   });
 
-  test("an engine without the inbox capability is refused before anything is sent", async () => {
+  test("an engine without the inbox capability is refused before anything is sent, and the inbox keeps trying instead of exiting", async () => {
     writeEngineJson(`${repo}/.factory`, engine.path, { version: "1.4", capabilities: ["document"] });
-    const { code, s } = await inbox([]);
-    expect(code).toBe(1);
+    const s = new Script([]);
+    s.aborted = () => s.drawn.includes("Trying again in 2s");
+    const { code } = await inbox([], undefined, s);
+    expect(code).toBe(0);
     expect(s.out).toContain("Answer on the item's GitHub issue instead");
+    expect(s.out).toContain("The console couldn't be opened. Trying again until it works; press Ctrl+C to stop.");
+    expect(s.drawn).toContain("Trying again in 2s");
     expect(engine.methods()).not.toContain("inbox.open");
+  });
+
+  test("owner's rule 2026-11-27: a refused sign-in wait doesn't end the inbox; it opens the console again once the engine lets it", async () => {
+    let refuse = 1;
+    engine.hooks["interview.awaitApproval"] = (conn, msg) => {
+      if (refuse-- > 0) conn.respond(msg, ["error", { code: -32010, message: "acme is on hold: a change to mcp_servers." }]);
+      else conn.respond(msg, ["result", { approved: true }]);
+      return true;
+    };
+    engine.hooks["inbox.open"] = (conn, msg) => {
+      conn.respond(msg, ["result", { session: SESSION, started_at: "2026-11-14T08:00:00Z", approval: { user_code: "ABCD-1234", verification_uri: "https://github.com/login/device", expires_at: "2026-11-14T08:15:00Z" } }]);
+      return true;
+    };
+    const { code, s } = await inbox(["1", "1"]);
+    expect(code).toBe(0);
+    expect(s.out).toContain("The console couldn't be opened. Trying again until it works");
+    expect(s.out).toContain("Approved.");
+    expect(answers()).toEqual([expect.objectContaining({ item: "D-0007", action: "choose:A" })]);
   });
 });
 
