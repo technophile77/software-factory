@@ -225,6 +225,14 @@ describe("Claude Code on the PC: the pinned binary, its environment and its proc
     expect(calls[0]!.env).toEqual({ HOME: "/h", CLAUDE_CODE_ENTRYPOINT: "sdk-ts" });
   });
 
+  it.skipIf(process.platform !== "linux")("logs the end of stderr when Claude Code exits with an error, so a failure at start says why", async () => {
+    const log = new MemoryLogger();
+    const sp = hostSpawn({ bin: "/bin/sh", cwd: tmpdir(), env: { PATH: process.env.PATH ?? "/usr/bin:/bin" }, children: new Children(), log, name: "run-1-security-reviewer-1" });
+    const child = sp({ command: "x", args: ["-c", "printf 'Error: --json-schema is not a valid JSON Schema\\033[0m' >&2; exit 1", "--setting-sources=", "--strict-mcp-config"], env: {}, signal: new AbortController().signal }) as unknown as import("node:child_process").ChildProcess;
+    await new Promise((r) => child.once("close", r));
+    expect(log.lines.map((l) => l.message)).toContain("run-1-security-reviewer-1: Claude Code exited with code 1; it said: Error: --json-schema is not a valid JSON Schema");
+  });
+
   it.skipIf(process.platform !== "linux")("kills the whole process tree when the session is aborted", async () => {
     const ab = new AbortController();
     const children = new Children();

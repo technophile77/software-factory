@@ -116,7 +116,9 @@ export function mcpBaseEnv(from: NodeJS.ProcessEnv, platform: NodeJS.Platform): 
  * starts are killed when the session is aborted, and the engine's channel
  * refuses them all (channel v1.1).
  */
-export function hostSpawn(o: { bin: string; cwd: string; env: Record<string, string>; children: Children; platform?: NodeJS.Platform; spawner?: typeof spawn; onPid?(pid: number): void }): (s: SpawnOptions) => SpawnedProcess {
+const STDERR_TAIL = 800;
+
+export function hostSpawn(o: { bin: string; cwd: string; env: Record<string, string>; children: Children; platform?: NodeJS.Platform; spawner?: typeof spawn; onPid?(pid: number): void; log?: Logger; name?: string }): (s: SpawnOptions) => SpawnedProcess {
   return (s) => {
     if (s.args.some((a) => FORBIDDEN_ARGS.test(a) || a === "--permission-mode=bypassPermissions")) throw new HostError("refused: a bypass permission mode");
     for (const r of REQUIRED_ARGS) if (!s.args.includes(r)) throw new HostError(`refused: the CLI arguments lack ${r}`);
@@ -134,7 +136,19 @@ export function hostSpawn(o: { bin: string; cwd: string; env: Record<string, str
       child.once("exit", () => o.children.remove(pid));
       o.onPid?.(pid);
     }
-    child.stderr?.resume();
+    // Only the end of stderr is kept: a CLI that exits at once says why there, and the SDK reports only the exit code.
+    let tail = "";
+    child.stderr?.on("data", (d: Buffer) => {
+      tail = (tail + d.toString("utf8")).slice(-STDERR_TAIL);
+    });
+    // "close", not "exit": stderr may still hold its last lines when the process exits.
+    child.once("close", (code: number | null) => {
+      if (code && code !== 0 && tail.trim() && !s.signal.aborted) {
+        // eslint-disable-next-line no-control-regex
+        const said = tail.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").trim();
+        o.log?.warn(`${o.name ?? "agent"}: Claude Code exited with code ${code}; it said: ${said}`);
+      }
+    });
     const kill = () => killTree(child, platform);
     if (s.signal.aborted) kill();
     else s.signal.addEventListener("abort", kill, { once: true });
@@ -259,7 +273,7 @@ export class HostGroup implements AgentGroup {
     const ops = this.c.processes ?? realProcessOps(platform);
     const a = {
       name, role: policy.role, cred, cwd, workspace: worktree ?? cwd, host: true, home, temp: !keep, pids, ...(projectMcp ? { projectMcp } : {}),
-      spawn: hostSpawn({ bin, cwd, env, children: this.c.children, platform, onPid: (pid) => pids.push(pid), ...(this.c.spawner ? { spawner: this.c.spawner } : {}) }),
+      spawn: hostSpawn({ bin, cwd, env, children: this.c.children, platform, log: this.c.log, name, onPid: (pid) => pids.push(pid), ...(this.c.spawner ? { spawner: this.c.spawner } : {}) }),
       killCommands: async () => {
         let n = 0;
         for (const pid of pids) n += await killUnder(ops, pid).catch(() => 0);

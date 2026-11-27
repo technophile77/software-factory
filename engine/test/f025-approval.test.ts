@@ -199,3 +199,11 @@ describe("F-025 mcp list and mcp check (FR-12)", () => {
     expect(l2[0]).toMatch(/isn't approved as the manifest names it/);
   });
 });
+
+describe("F-025 the reviewer's output schema", () => {
+  it("has no $schema, which Claude Code's --json-schema refuses (the review session exited with code 1 on the owner's PC)", () => {
+    const s = reviewOutputSchema();
+    expect(s).not.toHaveProperty("$schema");
+    expect(s).toMatchObject({ type: "object", additionalProperties: false });
+  });
+});
