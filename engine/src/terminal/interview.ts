@@ -695,22 +695,28 @@ export class TerminalInterview {
   /** `factory-engine inbox [<item id>]`. Exit code as FR-11 of F-018 (F-021 FR-14). */
   async inboxMain(itemArg?: string): Promise<number> {
     try {
-      const status = await this.connect();
-      if (status.ok !== true) {
-        this.show(status);
-        return 1;
+      // The owner's rule (2026-11-27): the inbox never gives up on a refusal or failure; it says why and tries again.
+      let wait = RECONNECT_FIRST_MS;
+      for (;;) {
+        const status = await this.connect();
+        if (status.ok === true && (await this.openConsole())) break;
+        if (status.ok !== true) this.show(status);
+        wait = await this.retryWait(wait, "The console couldn't be opened.");
       }
-      if (!(await this.openConsole())) return 1;
       if (itemArg) {
         await this.answerItem(CONSOLE_KEY, itemArg);
         return 0;
       }
+      wait = RECONNECT_FIRST_MS;
       for (;;) {
         const r = await this.inboxItems((op, req) => this.run(op, req));
         if (r.ok !== true) {
-          this.show(r);
-          return 1;
+          if (r.error) this.show(r);
+          wait = await this.retryWait(wait, "The open items couldn't be read.");
+          if (!this.consoleOpen) await this.openConsole();
+          continue;
         }
+        wait = RECONNECT_FIRST_MS;
         const items = r.items as Array<{ id: string; kind: string; title: string; feature?: string; priority: string; blocking: boolean }>;
         if (!items.length) {
           const code = await this.watch();
@@ -764,6 +770,7 @@ export class TerminalInterview {
   private async watch(): Promise<number | null> {
     this.say("Nothing in this project's inbox is waiting for you. Watching the factory; press Ctrl+C to stop.");
     let shown = "";
+    let failWait = RECONNECT_FIRST_MS;
     for (;;) {
       if (this.io.aborted?.()) throw new Stop();
       let st = await this.runner("status", {});
@@ -774,8 +781,10 @@ export class TerminalInterview {
       }
       if (st.ok !== true) {
         this.show(st);
-        return 1;
+        failWait = await this.retryWait(failWait, "The factory's status couldn't be read.");
+        continue;
       }
+      failWait = RECONNECT_FIRST_MS;
       this.io.status?.(st);
       const text = statusLines(st).join("\n");
       // F-024: the windowed console shows the status in its own window.
@@ -802,10 +811,8 @@ export class TerminalInterview {
         continue;
       }
       const r = await this.inboxItems(this.runner);
-      if (r.ok !== true) {
-        this.show(r);
-        return 1;
-      }
+      // The inbox's own loop shows the failure and waits before it tries again.
+      if (r.ok !== true) return null;
       if (Array.isArray(r.items) && r.items.length) {
         this.say("\nAn item is waiting for you.");
         return null;
@@ -887,6 +894,26 @@ export class TerminalInterview {
       this.say(`[${this.clock()}] ${starting ? "Connected" : "Reconnected"} to the engine.`);
     }
     return st;
+  }
+
+  /**
+   * Waits `wait` ms, counting down on one redrawn line, before the inbox tries
+   * again after a refusal or failure; returns the next, doubled wait (to 60 s).
+   */
+  private async retryWait(wait: number, why: string): Promise<number> {
+    this.say(`\n[${this.clock()}] ${why} Trying again until it works; press Ctrl+C to stop.`);
+    try {
+      for (let left = wait; left > 0; left -= 1000) {
+        if (this.io.aborted?.()) throw new Stop();
+        const text = `Trying again in ${Math.ceil(left / 1000)}s`;
+        if (this.io.redraw) this.io.redraw(text);
+        else if (left === wait) this.say(text);
+        await this.timing.sleep(Math.min(1000, left));
+      }
+    } finally {
+      this.io.redraw?.("");
+    }
+    return Math.min(wait * 2, RECONNECT_MAX_MS);
   }
 
   private clock(): string {

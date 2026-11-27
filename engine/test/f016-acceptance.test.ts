@@ -514,6 +514,8 @@ describe("F-021 FR-18: a project held for a pinned-key change answers its hold i
       expect(pending.approval).toBeDefined();
       await c.ok("inbox.close", { session: pending.session });
       const session = await consoleSession(w, c);
+      // The console's own sign-in wait and close must get through the hold, or it exits before the item is shown.
+      expect(await c.ok("interview.awaitApproval", { session, wait_s: 0 })).toEqual({ approved: true });
       const listed = await c.ok("inbox.list", { session });
       expect((listed.items as Array<{ id: string; title: string }>).map((i) => [i.id, i.title])).toEqual([["D-0001", "Pinned owner keys changed"]]);
       const a = await c.ok("inbox.answer", { session, item: "D-0001", rev: 1, action: "choose:A", reply_id: "r1" });
@@ -522,6 +524,7 @@ describe("F-021 FR-18: a project held for a pinned-key change answers its hold i
       expect(ownerEntries(w, "D-0001")).toEqual([expect.objectContaining({ option: "A", source: "console", signed_in: true })]);
       expect(effects(w, "D-0001")[0]).toMatchObject({ effect: "pinned" });
       expect(new PinStore(w.home).get("acme")!.owner.github_id).toBe(1000077);
+      expect(await c.ok("interview.close", { session })).toEqual({ ok: true });
     } finally {
       c.close();
       await e.stop();
