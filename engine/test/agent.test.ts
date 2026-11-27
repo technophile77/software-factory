@@ -6,7 +6,7 @@ import { AnalystRunInput, SessionRefused, runAnalystSession } from "../src/agent
 import { analystTools, fetchPageTool, toCallResult, UNTRUSTED_LABEL } from "../src/agent/factory-tools";
 import { DUMMY_KEY, ProxyClient, SessionGroup } from "../src/agent/sandbox";
 import type { AgentSdk } from "../src/agent/sdk";
-import { ASK_WAIT_MS, CLAUDE_BIN, CONTAINER_FLAGS, SessionCaps, containerSpawn, hostRelative, preToolUseGate, runSession, sessionOptions, toolGate, unreadableUnder } from "../src/agent/session";
+import { ASK_WAIT_MS, CLAUDE_BIN, CONTAINER_FLAGS, SessionCaps, containerSpawn, fileToolsPrompt, hostRelative, preToolUseGate, runSession, sessionOptions, toolGate, unreadableUnder } from "../src/agent/session";
 import { DockerCli, DockerError, dockerName, isLocalEndpoint, localEndpoints, pickEndpoint, pipeExists, stderrTail } from "../src/docker/cli";
 import { findOnPath } from "../src/fsutil";
 import { BASE_IMAGE, agentBuildArgs, buildAgentImage, engineFilesDigest, skillsPluginDir, writeBuildContext } from "../src/docker/image";
@@ -418,6 +418,23 @@ describe("SR-10 session options and the FR-9 tool gate", () => {
     expect(() => sessionOptions({ ...base, instructions: " " }, new AbortController())).toThrow(/instructions/);
     const { skillsPluginDir: _s, ...noSkills } = base;
     expect(() => sessionOptions(noSkills, new AbortController())).toThrow(/baked skills/);
+  });
+
+  it("tells a role with a shell to read, search and change files with its file tools, since the custom prompt drops Claude Code's own advice", () => {
+    const dev: typeof analyst = { ...analyst, role: "software-developer", tools: ["Read", "Grep", "Glob", "Edit", "Write", "Bash"] };
+    const p = String(sessionOptions({ ...base, policy: dev, skillsPluginDir: undefined }, new AbortController()).systemPrompt);
+    expect(p.startsWith("You are the analyst.\n\nUse your file tools for files")).toBe(true);
+    for (const t of [/Read a file with Read.*not with `cat`/, /Grep; not with `grep`/, /Glob; not with `find`/, /Edit.*not with `python -`.*`sed -i`/, /Write, which also makes any missing folders; not with a heredoc/, /no heredocs, inline scripts/]) expect(p).toMatch(t);
+    // The spec folder line only when the session has one.
+    expect(p).not.toMatch(/spec folder/);
+    expect(fileToolsPrompt(dev.tools, "C:/build/F-1/spec")).toMatch(/Read, Grep and Glob work on the read-only spec folder too/);
+    // A reviewer without Edit or Write hears only about reading and searching.
+    const reviewer = fileToolsPrompt(["Read", "Grep", "Bash"]);
+    expect(reviewer).toMatch(/Read a file with Read/);
+    expect(reviewer).not.toMatch(/Edit|heredoc, `tee`/);
+    // No shell, nothing to steer away from: the analyst's prompt is its instructions alone.
+    expect(fileToolsPrompt(analyst.tools)).toBe("");
+    expect(fileToolsPrompt(["Bash"])).toBe("");
   });
 
   it("maps container paths to the worktree and refuses any that leave it", () => {
