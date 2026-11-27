@@ -1570,7 +1570,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       // What this review is for, known before installing: the same pin, allow entries and tools aren't reviewed twice (FR-20).
       const asked = [...allow.filter((a) => a === server || a.startsWith(`${server}/`)).sort(), "|", ...(o.only ?? []).slice().sort()].join("\n");
       const was = await readMcpPending(p, server);
-      if (!o.note && was && was.identity === identity && was.asked === asked) return;
+      if (!o.note && was && was.identity === identity && was.asked === asked) {
+        // A finished review whose item was never filed (or was filed under an older key) gets its item now; the key keeps it to one.
+        if (!was.declined) await fileMcpApproval(p, s, was);
+        return;
+      }
       let cve: CveCounts | undefined;
       let pinned: string | undefined;
       let folder: string | null = null;
@@ -1602,7 +1606,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         { path: reviewPath, content: JSON.stringify(review, null, 2) + "\n" },
       ], `MCP server ${server}: ready for the owner's approval`);
       await pushState(p);
-      await alert(p, `mcpapprove:${server}:${sha256Hex(identity).slice(0, 16)}`, { ...approvalItem(s, record, review, cve?.ids ?? []), effectData: { server, identity } });
+      await fileMcpApproval(p, s, pending);
     } catch (e) {
       const why = e instanceof Error ? e.message.slice(0, 300) : "an internal error";
       log.warn(`${m.name}: MCP server ${server} couldn't be prepared for approval: ${why}`);
@@ -1615,6 +1619,17 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     } finally {
       mcpApprovals.delete(key);
     }
+  }
+
+  /**
+   * Files the owner's item for one finished review. The key names the review
+   * itself, not only the pin: a review run again for the same pin (a note,
+   * newly allowed tools) needs its own item, and an alert key is filed once ever.
+   */
+  async function fileMcpApproval(p: Project, s: McpServer, pending: McpPending): Promise<void> {
+    const { declined: _d, ...review } = pending;
+    const rec = pending.record as unknown as Parameters<typeof approvalItem>[1];
+    await alert(p, `mcpapprove:${s.name}:${sha256Hex(JSON.stringify(review)).slice(0, 16)}`, { ...approvalItem(s, rec, pending.review, pending.cve_ids), effectData: { server: s.name, identity: pending.identity } });
   }
 
   /** The security reviewer's session on one server: read-only, no network, its files only; the report is its structured result. */
