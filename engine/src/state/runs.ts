@@ -85,9 +85,14 @@ export class RunBook {
     return run;
   }
 
-  /** A run whose session couldn't start (no Docker, say): it waits for the next engine start to resume it, which counts as one of its resumes. */
-  interrupt(id: string, reason: string): RunRecord {
-    const run: RunRecord = { ...this.must(id), status: "interrupted", reason };
+  /**
+   * A run whose session couldn't start (no Docker, say): it waits for the next
+   * engine start to resume it, which counts as one of its resumes. One that
+   * waits on the owner instead (an MCP server not approved yet, F-025) resumes
+   * without counting, as a run waiting for the owner's answer does.
+   */
+  interrupt(id: string, reason: string, waitsOnMcp = false): RunRecord {
+    const run: RunRecord = { ...this.must(id), status: "interrupted", reason, ...(waitsOnMcp ? { awaiting_mcp: true } : {}) };
     this.record.putRun(run);
     return run;
   }
@@ -117,8 +122,9 @@ export class RunBook {
   resume(id: string, state?: InterviewState): ResumePlan {
     const run = this.must(id);
     if (run.status !== "interrupted") throw new Error(`${id} is not interrupted`);
-    if (run.awaiting_owner) {
-      const next: RunRecord = { ...run, status: "running" };
+    if (run.awaiting_owner || run.awaiting_mcp) {
+      // The MCP wait is cleared here: a run whose session then starts and keeps failing counts again.
+      const next: RunRecord = { ...run, status: "running", awaiting_mcp: false };
       this.record.putRun(next);
       if (run.session_id) return { mode: "session", sessionId: run.session_id, run: next };
       return { mode: "from_commit", commit: run.last_commit ?? null, summary: state ? transcriptSummary(state) : "", run: next };

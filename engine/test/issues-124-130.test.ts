@@ -115,6 +115,20 @@ describe("F-007 FR-14 (owner, 2026-11-20): a restart while the analyst waits on 
     expect(book.resume(r.id)).toMatchObject({ mode: "failed" });
   });
 
+  it("F-025: a run refused because an MCP server waits on approval resumes without counting, however often, and counts again once its session starts", () => {
+    const book = new RunBook(new EngineRecord(tmpdir()), new FakeClock());
+    const r = book.start({ project: "p", feature: "F-004", role: "software-developer", stage: "build_and_test_prep" });
+    for (let i = 0; i < 5; i++) {
+      book.interrupt(r.id, "MCP server ssh-discord: it hasn't been approved yet", true);
+      expect(book.resume(r.id)).toMatchObject({ run: { resumes: 0, status: "running", awaiting_mcp: false } });
+    }
+    // Any other refusal still counts.
+    book.interrupt(r.id, "Docker isn't running");
+    expect(book.resume(r.id)).toMatchObject({ run: { resumes: 1 } });
+    book.markInterrupted();
+    expect(book.resume(r.id)).toMatchObject({ run: { resumes: 2 } });
+  });
+
   it("the turn queue tells the run when it starts and stops waiting on the owner", async () => {
     const f = fakeFeature();
     const seen: boolean[] = [];
