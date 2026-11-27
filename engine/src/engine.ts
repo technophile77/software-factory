@@ -2024,12 +2024,15 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (dead) return;
       // No session ran: the run waits for the next engine start (AC-13).
       const why = engineWords(e);
-      if (record.run(runId)?.status === "running") runs.interrupt(runId, why);
+      if (record.run(runId)?.status === "running") runs.interrupt(runId, why, waitsOnOwner(e));
       // The log keeps docker's whole stderr tail (4 KiB at most); the owner's note keeps the short form.
       log.warn(`${f.id}: no analyst session started: ${e instanceof DockerError ? e.message : await logWords(e)}`);
       await noteAnalyst(f, "waiting", `No analyst session started: ${why}. The run resumes at the next engine start.`);
     }
   }
+
+  /** F-025: a session refused only because an MCP server waits on the owner's approval; the run resumes on approval, without counting. */
+  const waitsOnOwner = (e: unknown) => e instanceof McpServerUnavailable && e.needsApproval;
 
   const usage = (o: SessionOutcome): RunUsage => ({ input_tokens: o.inputTokens, output_tokens: o.outputTokens, cost_usd: o.costUsd, duration_s: Math.round(o.durationMs / 1000) });
 
@@ -2400,7 +2403,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         return;
       }
       const why = stReviewWords(e);
-      if (record.run(runId)?.status === "running") runs.interrupt(runId, why);
+      if (record.run(runId)?.status === "running") runs.interrupt(runId, why, waitsOnOwner(e));
       log.warn(`${f.id}: no Security and Testability Review session started: ${e instanceof DockerError ? e.message : why}`);
       await noteStReview(f, "waiting", `No Security and Testability Review session started: ${why}. The run resumes at the next engine start.`);
     } finally {
@@ -2838,6 +2841,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         await done("mcp_approved");
         await pushState(p);
         log.info(`${p.name}: MCP server ${server} approved (${identity}): ${rec.tools.map((t) => t.name).join(", ") || "no tools"}; sessions that list it start now.`);
+        await resumeWaitingOnMcp(p, server);
         return;
       }
       if (chosen === "B") {
@@ -3459,7 +3463,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       if (dead) return false;
       if (e instanceof BuildStop) throw e;
       const why = engineWords(e);
-      if (record.run(runId)?.status === "running") runs.interrupt(runId, why);
+      if (record.run(runId)?.status === "running") runs.interrupt(runId, why, waitsOnOwner(e));
       log.warn(`${f.id}: no ${w.what} session started: ${e instanceof SessionRefused || e instanceof HostError ? (e as Error).message : why}`);
       // F-025 FR-10: an MCP server that can't be given to the session waits on the owner, who may retry or leave it out once.
       if (e instanceof McpServerUnavailable && !e.needsApproval) await buildStopped(p, f, `mcp:${runId}:${e.server}`, w.what, e.message, w.rerun, undefined, e.server).catch(() => undefined);
@@ -4959,10 +4963,19 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
    * from its session or its last commit, with no retry counted; parked
    * features start their stage again (F-008 FR-1, F-016 FR-7).
    */
-  async function resumeProject(p: Project): Promise<void> {
+  /** F-025: approving a server starts the runs that waited for it, without an engine restart. */
+  async function resumeWaitingOnMcp(p: Project, server: string): Promise<void> {
+    const tag = `MCP server ${server}: `;
+    const waiting = new Set(runs.interrupted().filter((r) => r.project === p.name && (r.reason ?? "").startsWith(tag)).map((r) => r.id));
+    if (!waiting.size) return;
+    log.info(`${p.name}: starting the ${waiting.size} run(s) that waited for MCP server ${server}.`);
+    await resumeProject(p, (r) => waiting.has(r.id)).catch((e) => log.warn(`${p.name}: the runs waiting for ${server} didn't start (${engineWords(e)}); they start at the next engine start.`));
+  }
+
+  async function resumeProject(p: Project, only?: (r: RunRecord) => boolean): Promise<void> {
     if (p.state !== "running") return;
     for (const r of runs.interrupted()) {
-      if (r.project !== p.name) continue;
+      if (r.project !== p.name || (only && !only(r))) continue;
       const f = p.features.get(r.feature);
       if (!f) continue;
       if (f.state.cancelled) {
@@ -4983,6 +4996,11 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         else runs.finish(r.id, "failed", "the feature left Security and Testability Review");
         continue;
       }
+      // At start, build runs resume through the parked-feature pass below; picked out alone, they start their build here.
+      if (only && (r.role === "software-developer" || r.role === "test-engineer")) {
+        if (isBuildStage(f.stage()) && !jobs.has(f)) startBuild(p, f);
+        continue;
+      }
       if (r.role !== "requirements-analyst") continue;
       await reportInterrupted(p, f, r);
       const plan = runs.resume(r.id, f.state);
@@ -4996,6 +5014,7 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         o.resumeAnalyst({ feature: f.id, worktree: r.worktree, tools: handle.interviewTools(p.manifest!.name, f.id, r.worktree), plan });
       }
     }
+    if (only) return;
     // F-008 FR-1: features parked at Security and Testability Review start it; one sent back with findings gets its analyst, once.
     for (const f of p.features.values()) {
       if (jobs.has(f)) continue;

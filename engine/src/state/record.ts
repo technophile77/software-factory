@@ -51,6 +51,8 @@ export interface RunRecord {
   used?: RunUsed;
   /** F-007 FR-14 (owner, 2026-11-20): the session finished its turn and waits for the owner, so a restart now costs no resume. */
   awaiting_owner?: boolean;
+  /** F-025: no session started because an MCP server waits on the owner's approval; the next resume costs nothing and clears it. */
+  awaiting_mcp?: boolean;
   reason?: string;
 }
 
