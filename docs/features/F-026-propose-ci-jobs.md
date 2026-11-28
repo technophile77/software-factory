@@ -1,7 +1,7 @@
 # Feature: The factory proposes CI jobs
 
 - **Id:** F-026
-- **Status:** In review (v2: OQ-1 to OQ-4 answered; Security and Testability Review folded in as proposed SR-5 to SR-12; waiting on owner sign-off)
+- **Status:** Approved (v2, owner sign-off 2026-11-28 01:12Z, decision card; CI token risk SR-5 accepted until Beta)
 - **Requested by / date:** Alex, 2026-11-27 ("how is the test engineer
   supposed to add test to CI today?"; "Spec it"; "f5 should use the new
   ability to propose CI jobs")
@@ -145,25 +145,25 @@ F-011, F-015, F-020 (merged). mesbot F-005 depends on this feature (owner,
 
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
-| A-1 | Merging, through the API, a PR that changes a workflow file needs the Workflows permission too. Checked with a test repo at build before FR-8 relies on it; under OQ-1 A or B the token has it either way. | — | Pending |
-| A-2 | The five v1 templates cover mesbot F-005's six jobs (contract, integration and fuzz as `test-command`, coverage, gitleaks, semgrep). Templates only (OQ-2 A), so a job they can't express becomes a Testing item and a catalog change. | OQ-2 | Pending |
+| A-1 | Merging, through the API, a PR that changes a workflow file needs the Workflows permission too. Checked with a test repo at build before FR-8 relies on it; under OQ-1 A or B the token has it either way. | — | Approved (owner, decision card, 2026-11-28 01:12Z) |
+| A-2 | The five v1 templates cover mesbot F-005's six jobs (contract, integration and fuzz as `test-command`, coverage, gitleaks, semgrep). Templates only (OQ-2 A), so a job they can't express becomes a Testing item and a catalog change. | OQ-2 | Approved (owner, decision card, 2026-11-28 01:12Z) |
 
 ## 9. Security considerations
 
 | Id | Requirement | Source (analyst / Security and Testability Review) | Status |
 |---|---|---|---|
-| SR-1 | Workflows follow GitHub's Actions hardening guide: least-privilege `GITHUB_TOKEN`, actions pinned to full-length commit SHAs, no `pull_request_target` with untrusted code ([GitHub: Security hardening for GitHub Actions](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions)); and pass OpenSSF Scorecard's Token-Permissions, Pinned-Dependencies and Dangerous-Workflow checks ([Scorecard checks](https://github.com/ossf/scorecard/blob/main/docs/checks.md)). FR-4 and AC-4 enforce it; S8.3. | Analyst | Draft |
+| SR-1 | Workflows follow GitHub's Actions hardening guide: least-privilege `GITHUB_TOKEN`, actions pinned to full-length commit SHAs, no `pull_request_target` with untrusted code ([GitHub: Security hardening for GitHub Actions](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions)); and pass OpenSSF Scorecard's Token-Permissions, Pinned-Dependencies and Dangerous-Workflow checks ([Scorecard checks](https://github.com/ossf/scorecard/blob/main/docs/checks.md)). FR-4 and AC-4 enforce it; S8.3. | Analyst | Approved (owner, decision card, 2026-11-28 01:12Z) |
 | SR-2 | The token that can write workflows is used by one engine module only, for `hygiene/<item>` branches whose diff matches the approved hash and that touch only `.github/workflows/factory-*.yml`; a code test fails if it is read anywhere else (as for the merge call). S8.1, S8.2, S8.5: this widens a permission, so it is the owner's Security decision (OQ-1). | Analyst | Approved (owner, OQ-1 A, 2026-11-28) |
-| SR-3 | The engine checks the CI change token as it checks the main token (fine-grained, selected repos inside the project only, at most 90 days) and that it has no Administration permission. | Analyst | Draft |
-| SR-4 | A factory job can't take an existing check's name (FR-6), so it can't stand in for a required check. | Analyst | Draft |
-| SR-5 | Accepted risk until Beta (review #1): the CI token can push a workflow to any branch of a project repo, and such a workflow runs at once with every secret not behind a protected environment; code an agent runs can read the token (ADR 0026 risk 1). The token has at most 30 days' expiry, renewal is a Security item 7 days ahead, and onboarding advises, once per repo, keeping CI secrets in an environment with a required reviewer. Recorded in ADR 0037. | Security and Testability Review #1 | Proposed |
-| SR-6 | The hygiene item shows each command as a fenced argument list; code flags any argument naming a URL, `curl`, `wget`, `nc` or a non-default package index (JSON list in the catalog), and then recommends Reject. | Security and Testability Review #2 | Proposed |
-| SR-7 | v1 templates use no Actions cache; zizmor's `cache-poisoning` audit runs on every template. | Security and Testability Review #3 | Proposed |
-| SR-8 | FR-6 also compares with `main`'s required checks (F-015 FR-31); stage 9 refuses any `factory-*` check that doesn't come from a `factory-*.yml` file. | Security and Testability Review #4 | Proposed |
-| SR-9 | The CI token check is a probe: reading `main`'s branch protection must be refused (no Administration), and a workflow write on a `hygiene/probe-*` branch must succeed and is deleted at once. | Security and Testability Review #5 | Proposed |
-| SR-10 | A job covers a `ci_only` test when the test id is in the request's `covers`; code joins the lists for FR-9. | Security and Testability Review #6 | Proposed |
-| SR-11 | A factory CI job renders every template with fixture params and runs pinned actionlint and zizmor on the output (H-0291). | Security and Testability Review #7 | Proposed |
-| SR-12 | The hygiene item names scheduled jobs and their timeouts; `remove` is offered when the requesting feature is cancelled. | Security and Testability Review #8 | Proposed |
+| SR-3 | The engine checks the CI change token as it checks the main token (fine-grained, selected repos inside the project only, at most 90 days) and that it has no Administration permission. | Analyst | Approved (owner, decision card, 2026-11-28 01:12Z) |
+| SR-4 | A factory job can't take an existing check's name (FR-6), so it can't stand in for a required check. | Analyst | Approved (owner, decision card, 2026-11-28 01:12Z) |
+| SR-5 | Accepted risk until Beta (review #1): the CI token can push a workflow to any branch of a project repo, and such a workflow runs at once with every secret not behind a protected environment; code an agent runs can read the token (ADR 0026 risk 1). The token has at most 30 days' expiry, renewal is a Security item 7 days ahead, and onboarding advises, once per repo, keeping CI secrets in an environment with a required reviewer. Recorded in ADR 0037. | Security and Testability Review #1 | Approved (owner, decision card, 2026-11-28 01:12Z) |
+| SR-6 | The hygiene item shows each command as a fenced argument list; code flags any argument naming a URL, `curl`, `wget`, `nc` or a non-default package index (JSON list in the catalog), and then recommends Reject. | Security and Testability Review #2 | Approved (owner, decision card, 2026-11-28 01:12Z) |
+| SR-7 | v1 templates use no Actions cache; zizmor's `cache-poisoning` audit runs on every template. | Security and Testability Review #3 | Approved (owner, decision card, 2026-11-28 01:12Z) |
+| SR-8 | FR-6 also compares with `main`'s required checks (F-015 FR-31); stage 9 refuses any `factory-*` check that doesn't come from a `factory-*.yml` file. | Security and Testability Review #4 | Approved (owner, decision card, 2026-11-28 01:12Z) |
+| SR-9 | The CI token check is a probe: reading `main`'s branch protection must be refused (no Administration), and a workflow write on a `hygiene/probe-*` branch must succeed and is deleted at once. | Security and Testability Review #5 | Approved (owner, decision card, 2026-11-28 01:12Z) |
+| SR-10 | A job covers a `ci_only` test when the test id is in the request's `covers`; code joins the lists for FR-9. | Security and Testability Review #6 | Approved (owner, decision card, 2026-11-28 01:12Z) |
+| SR-11 | A factory CI job renders every template with fixture params and runs pinned actionlint and zizmor on the output (H-0291). | Security and Testability Review #7 | Approved (owner, decision card, 2026-11-28 01:12Z) |
+| SR-12 | The hygiene item names scheduled jobs and their timeouts; `remove` is offered when the requesting feature is cancelled. | Security and Testability Review #8 | Approved (owner, decision card, 2026-11-28 01:12Z) |
 
 ## 10. Interface requirements
 
@@ -193,14 +193,14 @@ F-011, F-015, F-020 (merged). mesbot F-005 depends on this feature (owner,
 - [x] Expected behavior defined
 - [x] Acceptance criteria testable
 - [x] Constraints documented
-- [ ] Assumptions explicit (A-1, A-2 pending)
-- [x] Blocking decisions resolved (OQ-1 to OQ-4 answered 2026-11-28; SR-5 to SR-12 wait on sign-off)
+- [x] Assumptions explicit (A-1, A-2 approved 2026-11-28)
+- [x] Blocking decisions resolved (OQ-1 to OQ-4 answered 2026-11-28; SR-5 to SR-12 approved at sign-off)
 
 ## 12. Change log
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 1 | 2026-11-27 | First draft | — |
-| 2 | 2026-11-28 | OQ-1 to OQ-4 answered (separate CI token, templates only, owner marks jobs required, test engineer only); Security and Testability Review folded in as SR-5 to SR-12; H-0291 added | Pending |
+| 2 | 2026-11-28 | OQ-1 to OQ-4 answered (separate CI token, templates only, owner marks jobs required, test engineer only); Security and Testability Review folded in as SR-5 to SR-12; H-0291 added | Owner (approved as drafted on a decision card, 2026-11-28 01:12Z) |
 
 ## 13. Open questions for the owner
 
