@@ -1,11 +1,11 @@
 # Feature: The factory proposes CI jobs
 
 - **Id:** F-026
-- **Status:** Approved (v2, owner sign-off 2026-11-28 01:12Z, decision card; CI token risk SR-5 accepted until Beta)
+- **Status:** Approved (v2, owner sign-off 2026-11-28 01:12Z, decision card; CI token risk SR-5 accepted until Beta); v3 build changes awaiting owner approval
 - **Requested by / date:** Alex, 2026-11-27 ("how is the test engineer
   supposed to add test to CI today?"; "Spec it"; "f5 should use the new
   ability to propose CI jobs")
-- **Spec version:** 2
+- **Spec version:** 3
 - **Depends on:** F-011 (one inbox, hygiene items and their auto-merge),
   F-015 (build to PR: SR-2 token, SR-3 CI files denied, FR-28 configuration
   changes table, FR-29 CI-only tests, FR-31 required checks), F-020 (JSON
@@ -41,9 +41,12 @@ write a workflow file, and nothing lands without the owner's approval.
    which tests or criteria it covers. It does not write YAML.
 2. Engine code checks each request against the template catalog and its
    rules, and renders the workflow file `.github/workflows/factory-<job>.yml`.
-   A request the catalog can't express is sent back to the test engineer
-   with the reason; if it still can't be expressed, the engine files a
-   Testing item for the owner (no dead end, F-019 FR-21).
+   A request that fails its schema fails the report, so the test engineer
+   gets the error and fixes it. One the engine refuses against `main` (a
+   name clash, a job that already exists) is shown to the owner as a Notice
+   with the reason; if that leaves `ci_only` tests with no job, stage 9
+   stops with a Security item whose first option sends the build back to the
+   test engineer (no dead end, F-019 FR-21).
 3. The engine files one Hygiene item per repo, holding every rendered file
    with the eight hygiene fields (file, reason, current content, proposed
    content, diff, benefit, risks, recommendation). Code fills the risks and
@@ -69,13 +72,13 @@ write a workflow file, and nothing lands without the owner's approval.
 | Id | Requirement |
 |---|---|
 | FR-1 | Agent report v1.8 (H-0282) adds optional `ci_jobs` to the test engineer's body: a list of CI job requests, each `{ repo, job, action, template, params, covers, reason }`. `job` matches `^[a-z][a-z0-9-]{0,31}$` and is unique per repo; `action` is `add`, `update` or `remove`; `covers` lists test ids and AC ids; `reason` is at most 1,000 characters. Only the test engineer may set it (OQ-4, owner 2026-11-28). |
-| FR-2 | The template catalog (H-0284) is factory code, change-controlled: one template per kind, each with a JSON Schema for its `params`, the workflow text with placeholders, the fixed risks text and the job's check name. v1 kinds: `test-command` (set up a runtime, install, run an argument list; covers unit, contract, integration and fuzz tests), `coverage` (as `test-command`, then fail under a minimum percent read from the report file of the approved coverage tool), `gitleaks`, `semgrep` (a pinned ruleset config path in the repo) and `osv-scanner`. Every action a template uses is pinned to a full commit SHA in one pin table, `ci-actions.json` (OQ-2). |
+| FR-2 | The template catalog is factory code: one template per kind, each with a strict schema for its `params` (`engine/src/ci/request.ts`, published in the test engineer's report schema), built as a YAML document by `engine/src/ci/render.ts`, and the fixed risks text and job check name. The pins, tool versions and checksums, flagged commands and risk text sit in one JSON file, `engine/src/ci/catalog.json`, which is change-controlled (H-0284). v1 kinds: `test-command` (set up a runtime, install, run an argument list; covers unit, contract, integration and fuzz tests), `coverage` (as `test-command`, then fail under a minimum percent read from the report file of the approved coverage tool), `gitleaks`, `semgrep` (a pinned ruleset config path in the repo) and `osv-scanner`. Every action a template uses is pinned to a full commit SHA, every tool it downloads to a sha256 and the Semgrep image to a digest, in the catalog (OQ-2). |
 | FR-3 | Engine code renders every file; no agent text reaches the workflow except `params` values that pass the template's schema. Argument lists are rendered as YAML lists or with shell quoting done by code; paths must be relative, inside the repo, and contain no `..`. |
 | FR-4 | Every rendered workflow: triggers only on `pull_request` to `main`, `push` to `main`, `workflow_dispatch` and, when the template allows it, a weekly `schedule`; never `pull_request_target`, `workflow_run` or `issue_comment`. Top-level `permissions: contents: read` and nothing else; no `secrets.*` reference; `actions/checkout` with `persist-credentials: false`; a `timeout-minutes`; a `concurrency` group that cancels older runs of the same ref. |
 | FR-5 | The engine owns only `.github/workflows/factory-*.yml`. It never changes another workflow file. `update` and `remove` apply only to a `factory-*` file whose header records it was rendered by the engine (template kind and catalog version). |
 | FR-6 | A job's check name is `factory-<job>`. Code refuses a job whose check name equals one already reported on `main` by another workflow or app, so a factory job can't stand in for an existing required check. |
 | FR-7 | The engine files one Hygiene item per repo per test engineer report, with every rendered file, the request JSON, and the eight hygiene fields. Its diff hash (`diffHash`) is the approval's identity: what lands must be byte for byte what the owner saw. |
-| FR-8 | On approval the engine pushes `hygiene/<item>` with the CI change token (`ci-token/<owner>`, OQ-1 A), opens the PR (draft off, title "CI: <jobs> for <feature>"), and merges it through `autoMergeHygiene`. A token refusal stops with a Security item naming the token's store name, never its value. After the merge the engine merges `main` into the feature branch. |
+| FR-8 | On approval the engine pushes `hygiene/<item>` with the CI change token (`ci-token/<project>/<owner>`, OQ-1 A; per project, since one factory runs several, F-023), opens the PR (draft off, title "CI: <jobs> for <feature>"), and merges it through `autoMergeHygiene`. A token refusal stops with a Security item naming the token's store name, never its value. After the merge the engine merges `main` into the feature branch. |
 | FR-9 | Stage 9 doesn't mark the feature's PR ready while any CI job item the feature filed is open, rejected without a resolution, or merged but not yet a required check when the feature has `ci_only` tests that depend on it (FR-29). Each case is shown in the feature's status with the item id. |
 | FR-10 | Reject or Request changes goes back to the test engineer with the owner's note as data; the test engineer may change or withdraw the request. Withdrawing leaves the tests that needed it as `not_run` with the reason, and the Testing item the run already files applies. |
 | FR-11 | A configuration changes table row (F-015 FR-28) may name a CI job (`CI job <repo>/<job>`); such a row becomes `Applied` when the hygiene item for that job has merged. This lets a spec such as mesbot F-005 list its CI jobs and have the gate check them. |
@@ -103,10 +106,12 @@ write a workflow file, and nothing lands without the owner's approval.
 - No agent gains write access to `.github/**`; F-015 SR-3 stays as it is.
 - The main per-owner token keeps no Workflows permission (F-015 SR-2), unless
   the owner picks OQ-1 option B.
-- Templates run on GitHub-hosted `ubuntu-latest` only in v1 (owner,
-  2026-11-27: mesbot Linux testing relies on GitHub CI).
-- Templates take what runtime and version to set up from params, checked
-  against the versions the repo's ADRs or manifest name where they exist.
+- Templates run on GitHub-hosted `ubuntu-24.04` only in v1 (owner,
+  2026-11-27: mesbot Linux testing relies on GitHub CI), named in the
+  catalog so a runner image change is a catalog change.
+- Templates take the runtime and version to set up from params (Python 3.x
+  or Node major); the test engineer takes them from the repo's ADRs or
+  manifest, and the owner sees them in the item's diff.
 - Nothing new is installed on the owner's PC: rendering and the rule checks
   are engine code; actionlint and zizmor run on the templates in the
   factory's own CI (prefer existing tools, owner 2026-11-13).
@@ -114,16 +119,21 @@ write a workflow file, and nothing lands without the owner's approval.
 ## 6. Edge cases
 
 - The test engineer asks for a job that already exists in a non-factory
-  workflow: FR-6 refuses a clashing check name; otherwise the item's
-  recommendation notes the likely duplicate (by matching tool names in other
-  workflow files), and the owner decides.
-- Two features ask for the same job: the second request against an open
-  item for the same `<repo>/<job>` joins that item instead of filing another.
-- `main` moves while the item waits: the engine rebuilds the branch from
-  the new `main`; if the rendered files are unchanged the approval stands
-  (same diff hash), otherwise it files a new item.
-- The CI change token expires: Security item to renew it, the feature stays
-  blocked at stage 9, no dead end.
+  workflow: FR-6 refuses a clashing check name; otherwise the owner sees
+  the other workflows in the repo and decides.
+- The test engineer asks again for the same repo: the newer item replaces
+  the open one, which is withdrawn, so the owner answers only the latest.
+- Two features ask for the same job: each files its own item. Once one has
+  merged, the other's files no longer hash to what GitHub shows on its
+  pull request, so nothing lands and the owner is told; the test engineer
+  then asks for `update`.
+- `main` moves while the item waits: the engine builds the branch on the
+  new `main`; the same files give the same diff hash, so the approval
+  stands. If `main` changed the same file, the hashes differ and nothing
+  lands.
+- The CI change token expires: a Security item to renew it from 7 days
+  ahead, and another when a landing finds it missing or wrong; the feature
+  waits at stage 9, no dead end.
 - Abuse: a test engineer prompted by repo content to add a job that sends
   data out. The job has no secrets, a read-only token and only the
   template's steps; the run command is the repo's own test code, which CI
@@ -139,7 +149,7 @@ F-011, F-015, F-020 (merged). mesbot F-005 depends on this feature (owner,
 
 | Id | Change | Check | Status |
 |---|---|---|---|
-| C-1 | The owner creates the CI change token for each GitHub owner of a project (OQ-1 A) and stores it with `factory-engine secret set ci-token/<owner>` | — | Pending |
+| C-1 | The owner creates the CI change token for each GitHub owner of a project (OQ-1 A) and stores it with `factory-engine secret set ci-token/<project>/<owner>` | — | Pending |
 
 ## 8. Assumptions
 
@@ -154,13 +164,13 @@ F-011, F-015, F-020 (merged). mesbot F-005 depends on this feature (owner,
 |---|---|---|---|
 | SR-1 | Workflows follow GitHub's Actions hardening guide: least-privilege `GITHUB_TOKEN`, actions pinned to full-length commit SHAs, no `pull_request_target` with untrusted code ([GitHub: Security hardening for GitHub Actions](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions)); and pass OpenSSF Scorecard's Token-Permissions, Pinned-Dependencies and Dangerous-Workflow checks ([Scorecard checks](https://github.com/ossf/scorecard/blob/main/docs/checks.md)). FR-4 and AC-4 enforce it; S8.3. | Analyst | Approved (owner, decision card, 2026-11-28 01:12Z) |
 | SR-2 | The token that can write workflows is used by one engine module only, for `hygiene/<item>` branches whose diff matches the approved hash and that touch only `.github/workflows/factory-*.yml`; a code test fails if it is read anywhere else (as for the merge call). S8.1, S8.2, S8.5: this widens a permission, so it is the owner's Security decision (OQ-1). | Analyst | Approved (owner, OQ-1 A, 2026-11-28) |
-| SR-3 | The engine checks the CI change token as it checks the main token (fine-grained, selected repos inside the project only, at most 90 days) and that it has no Administration permission. | Analyst | Approved (owner, decision card, 2026-11-28 01:12Z) |
+| SR-3 | The engine checks the CI change token as it checks the main token (fine-grained, no private repo outside the project) and that it has no Administration permission and expires within 30 days (SR-5), read from GitHub's `github-authentication-token-expiration` header. | Analyst | Approved (owner, decision card, 2026-11-28 01:12Z) |
 | SR-4 | A factory job can't take an existing check's name (FR-6), so it can't stand in for a required check. | Analyst | Approved (owner, decision card, 2026-11-28 01:12Z) |
 | SR-5 | Accepted risk until Beta (review #1): the CI token can push a workflow to any branch of a project repo, and such a workflow runs at once with every secret not behind a protected environment; code an agent runs can read the token (ADR 0026 risk 1). The token has at most 30 days' expiry, renewal is a Security item 7 days ahead, and onboarding advises, once per repo, keeping CI secrets in an environment with a required reviewer. Recorded in ADR 0037. | Security and Testability Review #1 | Approved (owner, decision card, 2026-11-28 01:12Z) |
 | SR-6 | The hygiene item shows each command as a fenced argument list; code flags any argument naming a URL, `curl`, `wget`, `nc` or a non-default package index (JSON list in the catalog), and then recommends Reject. | Security and Testability Review #2 | Approved (owner, decision card, 2026-11-28 01:12Z) |
 | SR-7 | v1 templates use no Actions cache; zizmor's `cache-poisoning` audit runs on every template. | Security and Testability Review #3 | Approved (owner, decision card, 2026-11-28 01:12Z) |
 | SR-8 | FR-6 also compares with `main`'s required checks (F-015 FR-31); stage 9 refuses any `factory-*` check that doesn't come from a `factory-*.yml` file. | Security and Testability Review #4 | Approved (owner, decision card, 2026-11-28 01:12Z) |
-| SR-9 | The CI token check is a probe: reading `main`'s branch protection must be refused (no Administration), and a workflow write on a `hygiene/probe-*` branch must succeed and is deleted at once. | Security and Testability Review #5 | Approved (owner, decision card, 2026-11-28 01:12Z) |
+| SR-9 | The CI token check is a probe: reading the repo's Actions settings (`GET /repos/{repo}/actions/permissions`, which needs Administration read) must be refused, since a branch protection read can't tell "no access" from "no protection", and a workflow write on a `hygiene/probe-*` branch must succeed and is deleted at once. | Security and Testability Review #5 | Approved (owner, decision card, 2026-11-28 01:12Z) |
 | SR-10 | A job covers a `ci_only` test when the test id is in the request's `covers`; code joins the lists for FR-9. | Security and Testability Review #6 | Approved (owner, decision card, 2026-11-28 01:12Z) |
 | SR-11 | A factory CI job renders every template with fixture params and runs pinned actionlint and zizmor on the output (H-0291). | Security and Testability Review #7 | Approved (owner, decision card, 2026-11-28 01:12Z) |
 | SR-12 | The hygiene item names scheduled jobs and their timeouts; `remove` is offered when the requesting feature is cancelled. | Security and Testability Review #8 | Approved (owner, decision card, 2026-11-28 01:12Z) |
@@ -168,9 +178,11 @@ F-011, F-015, F-020 (merged). mesbot F-005 depends on this feature (owner,
 ## 10. Interface requirements
 
 - Agent report v1.8: `ci_jobs` on the test engineer's body (H-0282).
-- CI job request schema `ci-job-request/1.0` and the catalog's params
-  schemas, in `docs/schemas/` (H-0283).
-- Project manifest: `ci-token/<owner>` credential store name and the token
+- The CI job request schema, with each template's params, inside
+  `docs/schemas/agent-report-1.test-engineer.schema.json` (H-0282).
+- CI change record `ci-change/1.0` on `factory/state`,
+  `docs/schemas/ci-change-1.schema.json` (H-0283).
+- CI token: credential store name `ci-token/<project>/<owner>` and its
   check (H-0289).
 
 ### Hygiene items this feature needs (owner approval each)
@@ -178,8 +190,8 @@ F-011, F-015, F-020 (merged). mesbot F-005 depends on this feature (owner,
 | Id | File(s) | Change |
 |---|---|---|
 | H-0282 | `docs/interface-contracts.md`, `docs/schemas/agent-report-1*.json` | Agent report v1.8, `ci_jobs` |
-| H-0283 | `docs/schemas/ci-job-request-1.schema.json` (new) | Request schema |
-| H-0284 | `engine/ci/` catalog and `ci-actions.json`, `CLAUDE.md` rule 3 | Make the template catalog and pin table change-controlled |
+| H-0283 | `docs/interface-contracts.md`, `docs/schemas/ci-change-1.schema.json` (new) | CI change record v1.0 |
+| H-0284 | `engine/src/ci/catalog.json` (new), `CLAUDE.md` rule 3 | Make the catalog (pins, tools, flags, risk text) change-controlled |
 | H-0285 | `agents/test-engineer/AGENT.md` | May request CI jobs through `ci_jobs`; never writes workflow files |
 | H-0286 | `docs/testing-strategy.md` | How CI jobs are requested and when a test needs one |
 | H-0287 | `docs/decision-management.md` | CI job items are Hygiene items; what the owner sees |
@@ -201,6 +213,7 @@ F-011, F-015, F-020 (merged). mesbot F-005 depends on this feature (owner,
 |---|---|---|---|
 | 1 | 2026-11-27 | First draft | — |
 | 2 | 2026-11-28 | OQ-1 to OQ-4 answered (separate CI token, templates only, owner marks jobs required, test engineer only); Security and Testability Review folded in as SR-5 to SR-12; H-0291 added | Owner (approved as drafted on a decision card, 2026-11-28 01:12Z) |
+| 3 | 2026-11-28 | Build changes: token name `ci-token/<project>/<owner>`; one catalog file `engine/src/ci/catalog.json` holds pins, tools, flags and risks, with params schemas in code; the request schema lives in the test engineer's report schema and H-0283 is the CI change record instead; runner `ubuntu-24.04`; refused requests reach the owner as a Notice; SR-3 checks a 30-day expiry; SR-9 probes the Actions settings; edge cases say what the build does | Pending |
 
 ## 13. Open questions for the owner
 

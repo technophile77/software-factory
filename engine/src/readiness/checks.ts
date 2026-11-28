@@ -94,6 +94,8 @@ export interface ConfigChange {
   change: string;
   /** The code-testable form, or null for a change code can't test. */
   check: { role: string; may: boolean; path: string } | null;
+  /** F-026 FR-11: a CI job the build requests and stage 9 waits for, instead of a change applied before it. */
+  ci?: { repo: string; job: string };
   status: string;
   /** Why the Check cell can't be read, if it can't. */
   bad?: string;
@@ -101,6 +103,7 @@ export interface ConfigChange {
 
 const CONFIG_HEADING = /^###\s+Configuration changes needed before implementation\s*$/i;
 const CHECK_RE = /^`?([a-z][a-z0-9-]{0,40}) may (not )?write ([^\s`]{1,300})`?$/;
+const CI_JOB_RE = /^`?ci job ([a-z0-9][a-z0-9._-]{0,63})\/([a-z][a-z0-9-]{0,31})`?$/i;
 
 /** The table's rows, or none when the spec has no such table (specs from before H-0275). */
 export function configChanges(spec: string): ConfigChange[] {
@@ -116,8 +119,10 @@ export function configChanges(spec: string): ConfigChange[] {
     const [id, change = "", raw = "", status = ""] = c as [string, string?, string?, string?];
     const cell = raw.trim();
     if (!cell || /^(?:—|-|–|n\/a)$/i.test(cell)) return { id, change, check: null, status };
+    const ci = CI_JOB_RE.exec(cell);
+    if (ci) return { id, change, check: null, ci: { repo: ci[1]!, job: ci[2]!.toLowerCase() }, status };
     const m = CHECK_RE.exec(cell);
-    if (!m) return { id, change, check: null, status, bad: `${id}'s Check isn't "<role> may write <path>" or "<role> may not write <path>"` };
+    if (!m) return { id, change, check: null, status, bad: `${id}'s Check isn't "<role> may write <path>", "<role> may not write <path>" or "ci job <repo>/<job>"` };
     return { id, change, check: { role: m[1]!, may: !m[2], path: m[3]! }, status };
   });
 }
@@ -127,9 +132,16 @@ export function configChangesCheck(spec: string): Check {
   const why: string[] = [];
   for (const r of configChanges(spec)) {
     if (r.bad) why.push(r.bad);
+    // F-026 FR-11: a CI job row is the build's to request; stage 9 waits until it is on main.
+    if (r.ci) continue;
     if (r.status.toLowerCase() !== "applied") why.push(`${r.id} is not Applied`);
   }
   return { name: "config_changes_applied", passed: !why.length, evidence: why.length ? `${why.join("; ")}.` : "Every configuration change the spec needs is applied." };
+}
+
+/** F-026 FR-11: the CI jobs the spec's table names for one code repo. */
+export function specCiJobs(spec: string, repo: string): string[] {
+  return configChanges(spec).filter((r) => r.ci && r.ci.repo.toLowerCase() === repo.toLowerCase()).map((r) => r.ci!.job);
 }
 
 /**

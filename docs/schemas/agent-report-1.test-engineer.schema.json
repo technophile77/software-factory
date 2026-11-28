@@ -113,6 +113,71 @@
             ],
             "additionalProperties": false
           }
+        },
+        "ci_jobs": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+              },
+              "job": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,31}$"
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "update",
+                  "remove"
+                ]
+              },
+              "template": {
+                "type": "string",
+                "enum": [
+                  "test-command",
+                  "coverage",
+                  "gitleaks",
+                  "semgrep",
+                  "osv-scanner"
+                ]
+              },
+              "params": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "covers": {
+                "default": [],
+                "maxItems": 200,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "repo",
+              "job",
+              "action",
+              "covers",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

@@ -42,3 +42,4 @@ in order, using `template.md`.
 | [0033](0033-answer-inbox-items-in-the-console.md) | Inbox items can be answered in the console too | Accepted |
 | [0035](0035-ink-for-the-windowed-console.md) | Ink draws the windowed console | Accepted |
 | [0036](0036-project-mcp-servers.md) | Projects add their own MCP servers, declared in the manifest | Accepted |
+| [0037](0037-separate-ci-token.md) | A separate CI token lands the CI jobs the owner approves | Accepted |

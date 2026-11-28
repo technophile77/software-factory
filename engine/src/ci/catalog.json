@@ -1,0 +1,41 @@
+{
+  "schema": "ci-catalog/1.0",
+  "description": "F-026: the fixed parts of every CI job the engine renders. Change-controlled (H-0284): every pin and every flag rule here was reviewed; a change is a hygiene item. Actions are pinned to full commit SHAs, tools to a version and SHA-256 (S4.3).",
+  "version": 1,
+  "runner": "ubuntu-24.04",
+  "actions": {
+    "checkout": { "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", "tag": "v4.4.0" },
+    "setup-node": { "uses": "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020", "tag": "v4.4.0" },
+    "setup-python": { "uses": "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1", "tag": "v6.3.0" }
+  },
+  "tools": {
+    "gitleaks": {
+      "version": "8.30.1",
+      "url": "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz",
+      "sha256": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    },
+    "osv-scanner": {
+      "version": "2.7.1",
+      "url": "https://github.com/google/osv-scanner/releases/download/v2.7.1/osv-scanner_linux_amd64",
+      "sha256": "fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8"
+    },
+    "semgrep": {
+      "version": "1.183.0",
+      "image": "semgrep/semgrep:1.183.0@sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0"
+    }
+  },
+  "flags": {
+    "description": "SR-6: a command argument that matches one of these makes the item recommend Reject. Matched case-insensitively against each argument, and against each word of an argument that holds spaces.",
+    "programs": ["curl", "wget", "nc", "ncat", "netcat", "socat", "ssh", "scp", "sftp", "ftp", "telnet", "gh", "aws", "az", "gcloud", "gsutil"],
+    "patterns": ["^[a-z][a-z0-9+.-]*://", "^--(extra-)?index-url(=|$)", "^-i$", "^--registry(=|$)", "^--find-links(=|$)", "^-f$", "^--trusted-host(=|$)"]
+  },
+  "risks": {
+    "common": "Runs on GitHub's Linux runners for pull requests to main and pushes to main, with a read-only token and no secrets. Actions and tools are pinned. The new check counts toward merges only once you mark it required on GitHub.",
+    "test-command": "Runs the install and test commands shown, which come from the test engineer. They run the repo's own test code, as CI already does for every pull request.",
+    "coverage": "As a test command, then fails when line coverage in the report is below the minimum.",
+    "gitleaks": "Scans the repo's full git history for secrets with gitleaks; a finding fails the check and shows the file and line, with the secret redacted.",
+    "semgrep": "Runs Semgrep Community Edition with the listed configs. Registry rules are fetched at run time and never copied into the repo; metrics are off.",
+    "osv-scanner": "Scans the repo's lockfiles for known vulnerabilities with OSV-Scanner; any finding fails the check.",
+    "schedule": "Also runs weekly on main, so it uses Actions minutes even when nothing changes (billed on private repos)."
+  }
+}

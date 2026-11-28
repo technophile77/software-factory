@@ -90,7 +90,7 @@ export class HttpIssues implements IssuesApi {
     this.api = checkBase(apiBase);
   }
 
-  protected async call(method: string, path: string, body?: unknown): Promise<{ status: number; body: unknown; next: string | null }> {
+  protected async call(method: string, path: string, body?: unknown): Promise<{ status: number; body: unknown; next: string | null; expires: string | null }> {
     let res: Response;
     try {
       res = await fetch(path.startsWith(this.api) ? path : `${this.api}${path}`, {
@@ -123,7 +123,8 @@ export class HttpIssues implements IssuesApi {
     if (res.status === 429 || res.status >= 500 || (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0")) {
       throw new GitHubUnreachable(`HTTP ${res.status}`);
     }
-    return { status: res.status, body: parsed, next };
+    // A fine-grained token's expiry comes back on every answer; F-026 SR-3 reads it.
+    return { status: res.status, body: parsed, next, expires: res.headers.get("github-authentication-token-expiration") };
   }
 
   protected async list(path: string): Promise<Array<Record<string, unknown>>> {

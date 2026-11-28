@@ -212,3 +212,37 @@ jobs:
             fi
             echo "::warning::Fixable CVEs in the LiteLLM image, accepted by the owner until $ACCEPTED_UNTIL (F-013 OQ-15, S4.6)."
           fi
+
+  # F-026 SR-11 (H-0291): every CI template the engine can propose, rendered
+  # with fixture params, must pass actionlint and zizmor at every severity,
+  # so a template change can't ship a workflow these tools would flag.
+  ci-templates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ZIZMOR_REQUIREMENT: "zizmor==1.32.0 --hash=sha256:84a6acb975accc13408786a2bd274b572537ca19c933ebbc13e78f3988562071"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: Render the templates
+        working-directory: engine
+        run: |
+          npm ci --ignore-scripts
+          npm run render-ci-templates -- "$RUNNER_TEMP/rendered"
+      - name: Install actionlint 1.7.12 and zizmor
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/actionlint.tgz" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
+          python3 -m venv "$RUNNER_TEMP/zizmor"
+          echo "$ZIZMOR_REQUIREMENT" > "$RUNNER_TEMP/zizmor.txt"
+          "$RUNNER_TEMP/zizmor/bin/pip" install --require-hashes --only-binary :all: --no-deps -r "$RUNNER_TEMP/zizmor.txt"
+      - name: actionlint
+        run: '"$RUNNER_TEMP/actionlint" "$RUNNER_TEMP"/rendered/.github/workflows/*.yml'
+      - name: zizmor
+        run: '"$RUNNER_TEMP/zizmor/bin/zizmor" --offline --no-config --no-ignores --min-severity informational --format github "$RUNNER_TEMP/rendered/.github/"'

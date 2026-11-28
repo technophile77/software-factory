@@ -57,6 +57,17 @@ is applied before approval, however small. Each item has:
 On approval the change is committed on its own, with the item's id in the
 commit message, so it can be traced and reverted.
 
+**CI jobs (F-026).** A CI job the test engineer asks for is a Hygiene item
+too, filed by the engine with the rendered workflow files as the proposed
+content. The reason is the test engineer's, shown as quoted text; the risks
+and recommendation are fixed text from the template catalog, and a command
+the catalog flags (a network tool, a URL, a package index) makes the
+recommendation Reject. Approval holds for the files' diff hash: the engine
+lands exactly those files, on `hygiene/<item>` with the CI token, and merges
+them once the pull request's required checks pass. Making a new job a
+required check on `main` stays the owner's step in GitHub's branch settings
+(F-026 OQ-3).
+
 ## One inbox (F-011)
 
 Every item is a GitHub issue in the project's private config repo (ADR 0022,
