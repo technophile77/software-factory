@@ -116,6 +116,30 @@ CI run is a test failure like any other and follows the table above, and
 red CI on `main` after a merge is fixed forward or reverted at once. CI
 results are evidence for the judge and for maturity promotions.
 
+### CI jobs
+
+A test that only CI can run needs a CI job that runs it. The test engineer
+doesn't write workflow files; it asks for a job in its report's `ci_jobs`
+(Agent report v1.8, F-026), naming one of the engine's templates and its
+params:
+
+| Template | Runs |
+|---|---|
+| `test-command` | Sets up Python or Node, runs up to five setup commands, then the test command: unit, contract, integration or fuzz tests |
+| `coverage` | As `test-command`, then fails under `min_percent` read from a Cobertura XML report |
+| `gitleaks` | A secret scan over the repo's full history |
+| `semgrep` | Semgrep with registry rulesets (`p/<name>`) or rule files in the repo |
+| `osv-scanner` | Known CVEs in the repo's lockfiles, weekly by default |
+
+Commands are argument lists, never shell text. A job `covers` the tests and
+criteria it runs, and a `ci_only` test counts as run by CI only when a job
+lists it. The engine renders `.github/workflows/factory-<job>.yml`, checks
+it, and files one Hygiene item per repo; on approval it lands the file with
+the CI token. The feature's PR stays a draft until the jobs it needs have
+merged and, for a job that runs `ci_only` tests, the owner has made its
+`factory-<job>` check required on `main`. A job no template can express is a
+Testing item and a catalog change, never hand-written YAML (F-026 OQ-2).
+
 ## Test tools
 
 Each tool is chosen per project as an Architecture decision, after its S4.1

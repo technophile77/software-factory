@@ -331,6 +331,22 @@ engine uses each for its owner's repos and the default
 `factory-token/<project>` for the rest. Tell the owner an organization must
 allow fine-grained tokens before one can name it as the resource owner.
 
+**CI token (F-026, ADR 0037).** The engine adds CI jobs the owner approves
+with a second token, one per GitHub owner of the project's repos. Offer it
+now; it can wait until a feature first asks for a CI job, when the engine
+files a Security item with these same steps. Give the owner the steps to
+create a fine-grained token (https://github.com/settings/personal-access-tokens/new):
+resource owner the repos' owner; "Only select repositories" with that
+owner's repos in this project; Repository permissions Contents, Pull
+requests and Workflows set to Read and write, nothing else (no
+Administration); expiry 30 days or less. Store it with
+`factory-engine secret set ci-token/<project>/<owner login>`. State the
+accepted risk (F-026 SR-5): a workflow pushed with this token runs at once
+with every repo secret not behind a protected environment, and until Beta
+code an agent runs can read the token. Advise once per repo, as a Security
+recommendation the owner may decline, keeping CI secrets in a GitHub
+environment with a required reviewer.
+
 ### 9. Start the test baseline feature
 
 The assessment's `baseline_request` is a feature request: map the adopted

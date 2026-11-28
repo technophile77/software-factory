@@ -42,6 +42,11 @@ import { type BuildRole, type FixFrom, buildPolicy, buildTestResults, buildTurn,
 import { HttpPulls, type Pull, type PullsApi } from "./build/pulls";
 import { HttpTokenCheck, type TokenCheckApi, tokenProblems, tokensToCheck } from "./build/token-check";
 import { HttpMerge, type MergeApi, autoMergeFeature, autoMergeHygiene } from "./inbox/auto-merge";
+import { type CiChange, changeRecord, ciChange, ciJobsItem } from "./ci/item";
+import { type CiItem, ciHold, ciOnlyCovered } from "./ci/hold";
+import { type MainView, impostorChecks, planJobs } from "./ci/plan";
+import { CI_TOKEN_MAX_DAYS, CI_TOKEN_RENEW_DAYS, type CiChangeApi, HttpCiChange, ciTokenProblems, daysLeft, landCiChange, loadCiToken } from "./ci/push";
+import { readHeader } from "./ci/render";
 import { autoMergeBlockers, autoMergeCovers, orchestratorApproves } from "./build/automerge";
 import { RESOLVE_CYCLES, conflictOwners, hasConflictMarkers, nextResolveStep } from "./build/conflicts";
 import { checksVerdict, doneComment, prText, prWorkflowProblems, publishRefusal, verbatimMatch } from "./build/stage9";
@@ -106,7 +111,7 @@ import { modelReport, reportOutputSchema } from "./schemas/agent-report";
 import { schemaErrors } from "./schemas/json-file";
 import { StandardsError, loadStandards } from "./st-review/standards";
 import { type Check, readinessChecks, specPathPattern } from "./interview/readiness";
-import { configChanges, configChangesCheck, failedConfigChecks, structuralChecks } from "./readiness/checks";
+import { configChanges, configChangesCheck, failedConfigChecks, specCiJobs, structuralChecks } from "./readiness/checks";
 import { structureText } from "./interview/structure";
 import { READINESS_ROLE, type ReadinessReport, orchestratorTurn, readinessCorrection, validateReadinessReport } from "./readiness/report";
 import { PolicyError, type RolePolicy, effectiveRole } from "./policy/role-policy";
@@ -148,6 +153,8 @@ export interface EngineOptions {
   tokenCheck?: (token: string) => TokenCheckApi;
   /** F-011 FR-10: the hygiene auto-merge's calls (tests only). */
   merge?: (token: string) => MergeApi;
+  /** F-026 FR-8: the CI token's GitHub calls (tests only). */
+  ciChange?: (token: string) => CiChangeApi;
   /** How long stage 9 waits between looks at CI or the owner's merge (tests only). */
   prPollMs?: number;
   /** F-015 FR-8: a Semgrep program to use instead of the hash-pinned venv (tests only). */
@@ -1386,6 +1393,27 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     for (const other of p.features.values()) {
       if (other !== f && isBuildStage(other.stage()) && machineState(other) === "waiting_dependency") startBuild(p, other);
     }
+    await offerCiRemoval(p, f).catch((e) => log.warn(`${f.id}: removing its CI jobs wasn't offered (${engineWords(e)}).`));
+  }
+
+  /** F-026 SR-12: a cancelled feature's merged CI jobs keep running, so their removal is offered as a hygiene item. */
+  async function offerCiRemoval(p: Project, f: FeatureInterview): Promise<void> {
+    if (!p.inbox || !isBuildStage(f.stage())) return;
+    const merged = (await ciItems(p, f)).filter((i) => i.merged && i.change);
+    const jobs = [...new Set(merged.flatMap((i) => i.change!.jobs.filter((j) => j.action !== "remove").map((j) => j.job)))];
+    if (!jobs.length) return;
+    const ctx = await buildContext(p, f);
+    const repo = `${ctx.target.owner}/${ctx.target.repo}`;
+    const { view, main } = await ciMainView(p, ctx);
+    const plan = planJobs(jobs.map((job) => ({ repo: ctx.target.name, job, action: "remove", reason: `${f.id} was cancelled; another feature may still rely on this job` })), ctx.target.name, view);
+    if (!plan.jobs.length) return;
+    const rec = changeRecord(f.id, repo, main, plan.jobs);
+    const ref = `ci/${f.id}/${rec.diff.slice(0, 16)}.json`;
+    const key = `ciremove:${f.id}:${rec.diff}`;
+    if (await p.inbox.openByKey(key)) return;
+    await p.state_repo!.commit([{ path: ref, content: JSON.stringify(rec, null, 2) + "\n" }], `${f.id}: offer to remove its CI jobs`);
+    await p.inbox.file(ciJobsItem({ feature: f.id, repo, jobs: plan.jobs, record: ref, diff: rec.diff, key }));
+    await pushState(p);
   }
 
   // Keyed by the feature itself: two projects can both have an F-001 (F-023 SR-13).
@@ -2637,6 +2665,20 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       log.info(`${r.id}: ${effect}${stage ? `; ${fid} is at ${stage}` : ""}.`);
     };
     if (keepsWaiting) return done("none");
+    // F-026 FR-8, FR-10: an approved CI job item lands as approved; a rejection's note waits for the test engineer.
+    // Before the cancelled check, so the removal SR-12 offers for a cancelled feature can land.
+    if (type === "ci_jobs") {
+      if (e.action !== "approved") return done("record_only");
+      const diff = String(r.effect?.diff ?? "");
+      const rec = await readCiChange(p, String(r.effect?.record ?? ""));
+      if (!rec || rec.diff !== diff || !p.manifest!.repos.some((x) => `${x.owner}/${x.repo}` === rec.repo)) return done("ci_target_invalid");
+      // SR-12: after a feature is cancelled, only the removal of its jobs still lands.
+      if (f?.state.cancelled && rec.jobs.some((j) => j.action !== "remove")) return done("feature_cancelled");
+      await done("ci_jobs_approved");
+      await landCi(p, r.id, rec, diff).catch((err) => log.warn(`${r.id}: the CI jobs didn't land yet (${engineWords(err)}); the engine tries again while the pull request waits.`));
+      return;
+    }
+
     // F-015 FR-27, AC-52: an answer about a cancelled feature changes nothing.
     const about = f ?? (typeof r.feature === "string" ? p.features.get(r.feature) : undefined);
     if (about?.state.cancelled) return done("feature_cancelled");
@@ -3458,6 +3500,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
         ? { test_changes: { files: (await git.out(ctx.repo.localDir, ["diff", "--name-only", base, head])).split("\n").filter(Boolean).slice(0, 200), summary: (report?.summary ?? "").slice(0, 2000) } }
         : {};
       await recordBuild(f, "done", { run: runId, commit: head, ...criteria, ...testChanges, ...spent, ...(resolving ? { resolver: role } : {}) });
+      // F-026 FR-1: the CI jobs the test engineer asked for go to the owner; a failure here doesn't stop the build.
+      const ciJobs = role === "test-engineer" ? (report?.body as { ci_jobs?: unknown } | undefined)?.ci_jobs : undefined;
+      if (Array.isArray(ciJobs) && ciJobs.length) await fileCiJobs(p, f, ciJobs).catch((e) => log.warn(`${f.id}: the CI job requests weren't filed (${engineWords(e)}).`));
       return true;
     } catch (e) {
       if (dead) return false;
@@ -3637,7 +3682,8 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
     const { cases, problem, out } = await runSuite({ git, worktree: wt.path, gitDir: wt.gitDir, build: cmds.build, test: cmds.test, results: cmds.results, env: runEnv, platform, wallMs: caps.testRun.wallTimeMs, maxOutput: caps.testRun.outputBytes, children });
     const log = await scrubOutput(out.join("\n"));
     const { criteria, tools, ciOnly } = latestCriteria(f);
-    const noCheck = ciOnly.length ? await noRequiredCheck(p, ctx) : false;
+    // F-026: CI-only tests a requested CI job will run stay pending; stage 9 waits for that job (FR-9).
+    const noCheck = ciOnly.length && !(p.inbox && ciOnlyCovered(await ciItems(p, f), ciOnly)) ? await noRequiredCheck(p, ctx) : false;
     const report = runReport(head, cases, criteria, problem ?? (typeof noCheck === "string" ? noCheck : null), logPath, ciOnly, noCheck === true);
     lastRuns.set(f, { report, cases, worktree: wt.path, gitDir: wt.gitDir, snapshot: await worktreeSnapshot(wt.path, wt.gitDir) });
     await p.state_repo!.commit([
@@ -3753,6 +3799,205 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
   }
 
   /** F-015 FR-19: the token for a repo's owner; `repo` is `owner/name` or a bare owner login. */
+  // -- F-026: CI jobs the test engineer asks for ---------------------------------
+
+  const CI_WRITES = ["pushFiles", "createPull", "markReady", "merge", "comment", "workflowWriteAllowed"] as const;
+  const ciMergedPath = (fid: string, id: string) => `ci/${fid}/${id}.merged.json`;
+
+  /** What main holds for the planner: its workflow files, the checks on its head, and its required checks. */
+  async function ciMainView(p: Project, ctx: Awaited<ReturnType<typeof buildContext>>): Promise<{ view: MainView; main: string }> {
+    const repo = `${ctx.target.owner}/${ctx.target.repo}`;
+    await ctx.repo.init();
+    const main = await ctx.repo.fetchMain(tokenFor(p, repo)!);
+    const flows = (await git.lsTree(ctx.repo.localDir, main, ".github/workflows").catch(() => [])).filter((x) => /\.ya?ml$/i.test(x.path) && x.type === "blob");
+    const workflows = await Promise.all(flows.slice(0, 100).map(async (x) => ({ path: x.path, text: ((await git.readBlob(ctx.repo.localDir, main, x.path)) ?? Buffer.alloc(0)).toString("utf8") })));
+    const api = pullsFor(p, repo);
+    const checks = (await api.checkRuns(repo, main)).map((c) => c.name);
+    const required = (await api.requiredChecks(repo, "main")).map((c) => c.context);
+    return { view: { workflows, checks, required }, main };
+  }
+
+  async function readCiChange(p: Project, ref: string): Promise<CiChange | null> {
+    if (!/^ci\/F-\d{3,6}\/[0-9a-f]{16}\.json$/.test(ref)) return null;
+    const raw = await p.state_repo!.read(ref).catch(() => null);
+    if (!raw) return null;
+    try {
+      return ciChange.parse(JSON.parse(raw.toString("utf8")));
+    } catch {
+      return null;
+    }
+  }
+
+  /** The feature's CI job items, each with its change record and whether its PR merged. */
+  async function ciItems(p: Project, f: FeatureInterview): Promise<Array<CiItem & { diff: string }>> {
+    const out: Array<CiItem & { diff: string }> = [];
+    for (const r of await p.inbox!.records()) {
+      if (r.effect?.type !== "ci_jobs" || r.effect.feature !== f.id) continue;
+      const change = await readCiChange(p, String(r.effect.record ?? ""));
+      const merged = !!(await p.state_repo!.read(ciMergedPath(f.id, r.id)).catch(() => null));
+      out.push({ id: r.id, status: r.status, change, merged, diff: String(r.effect.diff ?? "") });
+    }
+    return out;
+  }
+
+  /**
+   * FR-1 to FR-7: the test engineer's requests become one hygiene item for
+   * the feature's repo. A refused request is shown to the owner; FR-29 and
+   * the stage 9 hold keep the PR from going ready without the jobs it needs.
+   */
+  async function fileCiJobs(p: Project, f: FeatureInterview, raw: readonly unknown[]): Promise<void> {
+    if (!raw.length || !p.inbox) return;
+    const ctx = await buildContext(p, f);
+    const repo = `${ctx.target.owner}/${ctx.target.repo}`;
+    const { view, main } = await ciMainView(p, ctx);
+    const plan = planJobs(raw, ctx.target.name, view);
+    if (plan.jobs.length) {
+      const rec = changeRecord(f.id, repo, main, plan.jobs);
+      const ref = `ci/${f.id}/${rec.diff.slice(0, 16)}.json`;
+      const key = `cijobs:${f.id}:${repo}:${rec.diff}`;
+      if (!(await p.inbox.openByKey(key))) {
+        await p.state_repo!.commit([{ path: ref, content: JSON.stringify(rec, null, 2) + "\n" }], `${f.id}: CI job request for ${repo}`);
+        // A newer request replaces an open one for the same repo, so the owner answers only the latest.
+        for (const old of (await ciItems(p, f)).filter((i) => i.status === "open" && i.change?.repo === repo)) await p.inbox.withdraw(old.id, "replaced by the test engineer's newer CI job request");
+        const id = await p.inbox.file(ciJobsItem({ feature: f.id, repo, jobs: plan.jobs, record: ref, diff: rec.diff, key }));
+        await pushState(p);
+        log.info(`${f.id}: filed ${id} for CI jobs ${plan.jobs.map((j) => j.request.job).join(", ")} in ${repo} (F-026).`);
+      }
+    }
+    if (plan.refused.length) {
+      const key = `cirefused:${f.id}:${sha256Hex(JSON.stringify(plan.refused)).slice(0, 16)}`;
+      if (!(await p.inbox.openByKey(key))) {
+        await p.inbox.file({
+          kind: "notice", key, title: `${f.id}: CI job requests the engine couldn't use`, priority: "medium", blocking: false, created_by: "engine", feature: f.id, repo,
+          sections: { Details: [
+            { engine: `The test engineer asked for CI jobs in ${repo} that the templates can't express or the rules refuse (F-026 FR-2). Nothing was filed for them. If ${f.id}'s CI-only tests need them, its pull request waits and you'll be asked what to do.` },
+            { outside: plan.refused.map((x) => `${x.job}: ${x.why}`).join("\n"), author: "the engine's checks of the test engineer's request" },
+          ] },
+        });
+        await pushState(p);
+      }
+    }
+  }
+
+  /** FR-8, SR-9: lands an approved CI change with the CI token; safe to call again while its PR's checks run. */
+  async function landCi(p: Project, id: string, rec: CiChange, approvedDiff: string): Promise<void> {
+    const owner = rec.repo.split("/")[0]!;
+    const { token, name } = await loadCiToken(credentials, p.manifest!.name, owner);
+    if (!token) {
+      await alert(p, `citoken:${p.manifest!.name}:${owner.toLowerCase()}`, {
+        title: `${p.manifest!.name} needs a CI token for ${owner}`, feature: rec.feature,
+        context: `${id} is approved, but the credential store has no ${name}. The CI token is a fine-grained token for ${owner}'s repos in this project only, with Contents, Pull requests and Workflows set to Read and write, no Administration, and at most 30 days' expiry (F-026 OQ-1, SR-5). Store it with: factory-engine secret set ${name}`,
+        impact: `The CI jobs in ${id} don't land, and ${rec.feature}'s pull request waits for them.`,
+        confirm: "The token is stored: carry on", hold: "Leave the CI jobs unlanded", recommendation: "A",
+      });
+      return;
+    }
+    const api = leased(p, o.ciChange ? o.ciChange(token) : new HttpCiChange(token, log, GITHUB_API_BASE), CI_WRITES);
+    const tokenKey = sha256Hex(`${p.real}\0ci\0${token}`);
+    if (!tokenChecked.has(tokenKey)) {
+      const projectRepos = [...p.manifest!.repos.map((x) => `${x.owner}/${x.repo}`), await configSlug(p)];
+      const problems = await ciTokenProblems(api, projectRepos, rec.repo, token);
+      if (problems.length) {
+        await alert(p, `citoken:${tokenKey.slice(0, 16)}`, {
+          title: `${p.manifest!.name}'s CI token ${name} isn't as the factory needs`, feature: rec.feature,
+          context: `${name}: ${problems.join("; ")} (F-026 SR-3, SR-9). Make a fine-grained token for ${owner}'s repos in this project only, with Contents, Pull requests and Workflows set to Read and write and no Administration, and store it again.`,
+          impact: `The CI jobs in ${id} don't land until the token is fixed.`,
+          confirm: "The token is fixed: carry on", hold: "Leave the CI jobs unlanded", recommendation: "A",
+        });
+        return;
+      }
+      const left = daysLeft(await api.tokenExpiry(), new Date());
+      if (left !== null && left <= CI_TOKEN_RENEW_DAYS) {
+        await alert(p, `cirenew:${tokenKey.slice(0, 16)}`, {
+          title: `Renew ${p.manifest!.name}'s CI token ${name}`, feature: rec.feature,
+          context: `${name} expires in ${Math.max(left, 0)} day${left === 1 ? "" : "s"} (F-026 SR-5). Make a new fine-grained token as before, with at most ${CI_TOKEN_MAX_DAYS} days' expiry, and store it with: factory-engine secret set ${name}`,
+          impact: "Once it expires, approved CI jobs stop landing until a new token is stored.",
+          confirm: "I stored a new token", hold: "Remind me when it fails", recommendation: "A",
+        });
+      }
+      tokenChecked.add(tokenKey);
+    }
+    const jobs = rec.jobs.map((j) => j.job).join(", ");
+    const res = await landCiChange(api, {
+      itemId: id, change: rec, approvedDiff,
+      title: `CI: ${jobs} for ${rec.feature}`,
+      body: `CI jobs ${jobs} for ${rec.feature}, approved by the owner in ${id}. The software factory engine rendered these files from its reviewed CI templates (F-026) and merges them only if they are exactly the approved ones.`,
+    });
+    if (res.state === "merged") {
+      await p.state_repo!.commit([{ path: ciMergedPath(rec.feature, id), content: JSON.stringify({ item: id, repo: rec.repo, pr: res.pr, sha: res.sha }, null, 2) + "\n" }], `${id}: CI jobs merged`);
+      await pushState(p);
+      log.info(`${id}: merged CI jobs ${jobs} in ${rec.repo}#${res.pr} at ${res.sha} (F-026).`);
+    } else if (res.state === "refused") {
+      await alert(p, `cirefused-land:${id}`, {
+        title: `The engine didn't land the CI jobs approved in ${id}`, feature: rec.feature,
+        context: `${res.why} (F-026 FR-7, FR-8). Nothing was merged.`,
+        impact: `${rec.feature}'s pull request waits for these jobs.`,
+        confirm: "I merged or closed it myself on GitHub", hold: "Leave it", recommendation: "B",
+      });
+    } else {
+      log.info(`${id}: CI jobs wait in ${rec.repo}#${res.pr}: ${res.why}.`);
+    }
+  }
+
+  /**
+   * FR-9, FR-11, OQ-3 A: "wait" when the PR waits on its CI jobs. Approved
+   * changes are landed from here as the PR is polled; a dead end is put to
+   * the owner (F-019 FR-21).
+   */
+  async function ciJobsWait(p: Project, f: FeatureInterview, repo: string): Promise<"none" | "clear" | "wait"> {
+    if (!p.inbox) return "none";
+    const ctx = await buildContext(p, f);
+    const items = await ciItems(p, f);
+    const specJobs = specCiJobs(ctx.spec, ctx.target.name);
+    if (!items.length && !specJobs.length) return "none";
+    for (const i of items.filter((x) => x.status === "approved" && !x.merged && x.change)) {
+      await landCi(p, i.id, i.change!, i.diff).catch((e) => log.warn(`${i.id}: the CI jobs didn't land (${engineWords(e)}).`));
+    }
+    const fresh = await ciItems(p, f);
+    const { view } = await ciMainView(p, ctx);
+    const impostors = impostorChecks(view);
+    if (impostors.length) {
+      // SR-8: polled again like any wait, so the PR goes on once the owner renames or removes those jobs.
+      await alert(p, `ciimpostor:${f.id}:${impostors.join(",")}`, {
+        title: `${repo} has CI jobs posing as the factory's`, feature: f.id,
+        context: `Workflows on ${repo}'s main that the engine didn't render report ${impostors.map((c) => `\`${c}\``).join(", ")}. The factory's checks are named \`factory-<job>\`, so these could pass in place of the CI jobs ${f.id} relies on (F-026 SR-8). Rename or remove those jobs on main.`,
+        impact: `${f.id}'s pull request stays a draft until they are gone.`,
+        confirm: "I renamed or removed them", hold: "Leave it", recommendation: "A",
+      });
+      buildLater(p, f, o.prPollMs ?? 5 * 60_000);
+      return "wait";
+    }
+    const mainJobs = view.workflows.map((w) => readHeader(w.text)).filter((h): h is NonNullable<typeof h> => !!h).map((h) => h.job);
+    const hold = ciHold({ items: fresh, ciOnly: latestCriteria(f).ciOnly, required: view.required, specJobs, mainJobs });
+    if (hold.kind === "none") return "clear";
+    if (hold.kind === "stuck") {
+      const n = f.state.build.events.filter((e) => e.action === "refused").length;
+      await recordBuild(f, "refused", { why: hold.why, title: `${f.id} has CI-only tests with no CI job`, key: `ci:${n}` });
+      await alert(p, `buildstop:${f.id}:ci:${n}`, {
+        title: `${f.id}'s pull request has tests no CI job runs`, feature: f.id,
+        context: `${f.id}'s pull request can't be marked ready: ${hold.why} (F-026 FR-9, FR-11).`,
+        impact: `${f.id} waits until the test engineer changes its CI job requests or tests.`,
+        confirm: "Send it back to the test engineer, with my note", hold: "Keep the feature stopped", recommendation: "A",
+        effectData: { action: "to_test_engineer" },
+      });
+      return "wait";
+    }
+    if (hold.kind === "mark_required") {
+      const key = `cirequired:${f.id}:${hold.checks.join(",")}`;
+      if (!(await p.inbox.openByKey(key))) {
+        await p.inbox.file({
+          kind: "notice", key, title: `${f.id}: mark ${hold.checks.join(", ")} required on main in ${repo}`, priority: "medium", blocking: true, created_by: "engine", feature: f.id, repo,
+          links: [{ kind: "url", ref: `https://github.com/${repo}/settings/branches` }],
+          sections: { Details: [{ engine: `The CI jobs merged, and ${hold.why} (F-026 OQ-3). Add ${hold.checks.map((c) => `\`${c}\``).join(", ")} to main's required status checks in ${repo}'s branch protection or ruleset, at https://github.com/${repo}/settings/branches. The engine looks again every few minutes and marks the pull request ready once the checks are required and green.` }] },
+        });
+        await pushState(p);
+      }
+    }
+    log.info(`${f.id}: the pull request waits on its CI jobs: ${hold.why}.`);
+    buildLater(p, f, o.prPollMs ?? 5 * 60_000);
+    return "wait";
+  }
+
   function tokenFor(p: Project, repo: string): string | null {
     return p.tokens ? p.tokens.for(repo.split("/")[0]!) : p.token;
   }
@@ -3939,6 +4184,9 @@ export async function startEngine(o: EngineOptions): Promise<EngineHandle> {
       await prRefused(p, f, `head:${n}:${pr.head.sha}`, `${repo}#${n} changed under the engine`, pr.state !== "open" ? `the pull request was ${pr.merged ? "merged" : "closed"} before its checks passed` : `the pull request's head is ${pr.head.sha}, not the ${head} the engine pushed (F-015 SR-11)`);
       return;
     }
+    // F-026 FR-9: the PR waits for the CI jobs the feature asked for; once they are on main, main is merged in so they run on the PR.
+    const ci = await ciJobsWait(p, f, repo);
+    if (ci === "wait" || (ci === "clear" && (await mainMoved(p, f)))) return;
     const v = checksVerdict(await api.requiredChecks(repo, "main"), await api.checkRuns(repo, head), head);
     const caps = buildLimitsOrStop(p);
     if (v.state !== "green" && (await mainMoved(p, f))) return;

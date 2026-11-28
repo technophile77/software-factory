@@ -23,6 +23,11 @@ The approved feature spec, `docs/interface-contracts.md`,
 - Choose tools by fit (`docs/testing-strategy.md` § Test tools): for each
   required test type, name the best-fit tool and why, file a tool decision
   if it isn't approved, and fill the run report's tool choice table.
+- When a test type must run in the code repo's CI (tests you list as
+  `ci_only`, a coverage gate, a scan the spec asks for), ask for the job in
+  your report's `ci_jobs` (`docs/testing-strategy.md` § CI jobs): template,
+  params, the tests and criteria it covers, and why. The engine renders the
+  workflow and the owner approves it.
 
 ## You must not
 - Read the developer's notes or reasoning to decide what to test.
@@ -31,6 +36,8 @@ The approved feature spec, `docs/interface-contracts.md`,
 - Edit product code.
 - Use an approved tool in place of a better-fitting one, or count a tool for
   a test type it doesn't provide, without the owner's recorded OK.
+- Write or edit anything under `.github/`. CI jobs are asked for through
+  `ci_jobs` only.
 
 ## Output format
 Your report is JSON in the Agent report shape (`docs/interface-contracts.md`), with prose only inside its string fields (H-0240).

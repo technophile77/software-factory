@@ -14,6 +14,8 @@ const OWNER_TOKEN_RE = /^factory-token\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z
 const ENDPOINT_KEY_RE = /^endpoint-key\/[a-z0-9-]{1,32}$/;
 // F-025 FR-4: one key of one project MCP server, named so it can reach no other server's or project's item.
 const MCP_SECRET_RE = /^mcp-secret\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[a-z][a-z0-9-]{0,31}\/[a-z0-9_-]{1,32}$/;
+// F-026 OQ-1 A: a project's CI token for one GitHub owner, read only by src/ci/push.ts.
+const CI_TOKEN_RE = /^ci-token\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
 const MAX_SECRET_BYTES = 2048;
 
 export function factoryTokenName(project: string): string {
@@ -35,7 +37,7 @@ export function factoryOwnerTokenName(project: string, owner: string): string {
 
 /** The name `secret set` stores under: an owner token's login part in lower case, anything else as given. */
 export function canonicalSecretName(name: string): string {
-  if (!OWNER_TOKEN_RE.test(name)) return name;
+  if (!OWNER_TOKEN_RE.test(name) && !CI_TOKEN_RE.test(name)) return name;
   const cut = name.lastIndexOf("/");
   return name.slice(0, cut + 1) + name.slice(cut + 1).toLowerCase();
 }
@@ -62,7 +64,7 @@ export function mcpSecretItem(project: string, server: string, key: string): str
 }
 
 export function isSecretName(name: string): boolean {
-  return name === MODEL_CREDENTIAL || FACTORY_TOKEN_RE.test(name) || OWNER_TOKEN_RE.test(name) || ENDPOINT_KEY_RE.test(name) || MCP_SECRET_RE.test(name);
+  return name === MODEL_CREDENTIAL || FACTORY_TOKEN_RE.test(name) || OWNER_TOKEN_RE.test(name) || ENDPOINT_KEY_RE.test(name) || MCP_SECRET_RE.test(name) || CI_TOKEN_RE.test(name);
 }
 
 export class SecretError extends Error {

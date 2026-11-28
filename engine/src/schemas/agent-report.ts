@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { outputSchemaOf } from "./json-file";
+import { ciJobRequest } from "../ci/request";
 
 /**
  * Agent report v1.6 (F-020 FR-1, FR-8, H-0242). Two shapes:
@@ -40,6 +41,8 @@ export const ROLE_BODIES = {
     ci_only: list(z.strictObject({ test: text(300), reason: text(1000) }), 2000).optional(),
     /** v1.7: the CI-only tests that skipped in the engine's run; engine-filled. */
     ci_pending: list(z.strictObject({ test: text(300), reason: text(1000) }), 2000).optional(),
+    /** v1.8 (F-026 FR-1, H-0282): CI jobs the test engineer asks for; engine code renders them from templates. */
+    ci_jobs: list(ciJobRequest, 20).optional(),
   }),
   "security-reviewer": z.strictObject({
     gate: z.union([z.literal(1), z.literal(2)]),
@@ -87,7 +90,7 @@ export type ReportRole = keyof typeof ROLE_BODIES;
  */
 const MODEL_BODIES = {
   ...ROLE_BODIES,
-  "test-engineer": ROLE_BODIES["test-engineer"].pick({ criteria_map: true, tool_choices: true, ci_only: true }),
+  "test-engineer": ROLE_BODIES["test-engineer"].pick({ criteria_map: true, tool_choices: true, ci_only: true, ci_jobs: true }),
 } as const;
 
 /** The report an agent returns: no engine-filled field is allowed (SR-7). */

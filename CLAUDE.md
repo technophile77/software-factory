@@ -19,7 +19,8 @@ owner approves a change.
    typo fixes. See `docs/decision-management.md` § Configuration hygiene.
    Change-controlled files are: this file, everything under `agents/`,
    `skills/`, `plugins/`, `.claude-plugin/`, `workflows/`, `.github/workflows/`,
-   `scripts/`, `docs/` (except files under `docs/features/` that an
+   `scripts/`, `engine/src/ci/catalog.json` (the pins, flags and risk text
+   of the CI jobs the engine proposes), `docs/` (except files under `docs/features/` that an
    in-progress feature owns), and any factory configuration.
 4. **Do not assume open design items.** `docs/open-decisions.md` lists what is
    still undecided. If work depends on one, raise it; do not pick an answer.

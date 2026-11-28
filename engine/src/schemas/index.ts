@@ -10,6 +10,7 @@ import { consoleAnswer, inboxPrivate } from "./inbox-local";
 import { prRecord } from "./pr-record";
 import { calibrationResult, runReview, tuningMetrics } from "./tuning";
 import { webReaderAnswer } from "./web-reader-answer";
+import { ciChange } from "../ci/item";
 
 /**
  * Every JSON format the engine owns, by the name and major version its
@@ -32,6 +33,7 @@ export const SCHEMAS: Record<string, z.ZodType> = {
   "advisor-answer-1": advisorAnswer,
   "web-reader-answer-1": webReaderAnswer,
   "mcp-server-record-1": mcpServerRecord,
+  "ci-change-1": ciChange,
   // Hand-edited YAML (FR-11): checked by the engine, published for reference.
   "factory-project-1": manifestFile,
   "factory-endpoints-1": endpointsFile,

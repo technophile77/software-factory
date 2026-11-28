@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "ci-change/1.0"
+    },
+    "feature": {
+      "type": "string",
+      "pattern": "^F-\\d{3,6}$"
+    },
+    "repo": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]{1,39}\\/[A-Za-z0-9._-]{1,100}$"
+    },
+    "base": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "jobs": {
+      "minItems": 1,
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "add",
+              "update",
+              "remove"
+            ]
+          },
+          "covers": {
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 300
+            }
+          },
+          "check": {
+            "type": "string",
+            "maxLength": 60
+          }
+        },
+        "required": [
+          "job",
+          "action",
+          "covers",
+          "check"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "files": {
+      "minItems": 1,
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "content",
+          "before"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "diff": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "schema",
+    "feature",
+    "repo",
+    "base",
+    "jobs",
+    "files",
+    "diff"
+  ],
+  "additionalProperties": false
+}

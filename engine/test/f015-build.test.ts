@@ -192,6 +192,34 @@ describe("F-015 M1: stage 5 on the engine", () => {
     expect(runsOf(w, feature, "software-developer")[0]).toMatchObject({ status: "complete" });
     expect(entries(w, feature).filter((x) => x.type === "build").map((x) => x.action)).toEqual(["dependencies_merged", "done", "done", "branches_merged"]);
   }, 90_000);
+  it("F-026 AC-1: the CI jobs the test engineer asks for become one hygiene item with the rendered workflow, and the build goes on", async () => {
+    const { w, d, gh, id } = await signedOff();
+    const feature = id.value;
+    const seen = { refused: [] as string[], first: "" };
+    const plain = tester(() => feature, seen);
+    const asks = async function* (sc: Script): AsyncGenerator<SdkMessage> {
+      for await (const m of plain(sc)) {
+        const out = (m as { structured_output?: { body: Record<string, unknown> } }).structured_output;
+        if (out) out.body.ci_jobs = [{ repo: "acme-web", job: "contract", action: "add", template: "test-command", params: { runtime: { language: "node", version: "22" }, setup: [["npm", "ci"]], run: ["npm", "test"] }, covers: ["AC-1"], reason: "Contract tests run on Linux in CI." }];
+        yield m;
+      }
+    };
+    const pulls = new FakePulls(path.join(w.root, "remote", "example-org", "acme-web.git"));
+    const s = scriptedSdk({ analyst: async function* () {}, reviewer: async function* () {}, developer: developer(() => feature, seen), tester: asks });
+    const { e } = await boot(w, onPc(d, s.sdk), { issues: () => gh, pulls: () => pulls });
+    await until("the CI job item", () => items(w).some((i) => i.record.effect?.type === "ci_jobs"), 30_000).catch((err) => {
+      throw new Error(`${(err as Error).message}; log: ${w.log.lines.slice(-15).map((l) => l.message ?? l.action).join(" | ")}`);
+    });
+    expect(seen.first).toContain("`ci_jobs`");
+    const item = items(w).find((i) => i.record.effect?.type === "ci_jobs")!;
+    expect(item.record).toMatchObject({ kind: "hygiene", feature, status: "open", effect: { feature, repo: "example-org/acme-web" } });
+    const rec = JSON.parse(git(w.config, "show", `factory/state:${String(item.record.effect!.record)}`));
+    expect(rec).toMatchObject({ schema: "ci-change/1.0", repo: "example-org/acme-web", jobs: [{ job: "contract", action: "add", check: "factory-contract" }] });
+    expect(rec.files[0].path).toBe(".github/workflows/factory-contract.yml");
+    expect(rec.files[0].content).toContain("run: npm test");
+    expect(rec.diff).toBe(item.record.effect!.diff);
+    expect(e.feature("acme", feature)!.state.build.actions).toEqual(expect.arrayContaining(["done", "done"]));
+  }, 90_000);
 });
 
 /** GitHub's pull request API for acme-web: one PR, a required "ci" check that passes on the second look. */

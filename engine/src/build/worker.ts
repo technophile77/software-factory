@@ -221,6 +221,9 @@ export function ciPendingText(n: number): string {
 
 const CI_ONLY_HOW = "A test that can't run on this PC, for example one that needs Linux, may skip here only with a reason: list it in your report's `ci_only` (a test id, or a whole Python test file, with the reason). The pull request's required CI runs it, and the PR isn't ready until it passes there. Don't list a test that can run here. Tests pending on CI are no reason to report partial: when the rest is done, your outcome is complete.";
 
+/** F-026 FR-1, OQ-2 A: how the test engineer asks for a CI job; it never writes a workflow file. */
+export const CI_JOBS_HOW = "When a test or check must run in the code repo's CI and no CI job runs it yet (for example a `ci_only` test, a coverage minimum or a secret or code scan the spec asks for), ask for the job in your report's `ci_jobs`: `repo`, `job` (lower case, digits and dashes), `action` (`add`, `update` or `remove`), `template` (`test-command`, `coverage`, `gitleaks`, `semgrep` or `osv-scanner`), its `params`, `covers` (the test ids and AC ids it runs) and a short `reason`. `test-command` and `coverage` take `runtime` ({language: python or node, version}), `setup` (install commands, each an argument list), `run` (the test command as an argument list), optional `schedule` and `timeout_minutes`; `coverage` also takes `report` (the Cobertura XML path) and `min_percent`. `semgrep` takes `configs`; `osv-scanner` takes `lockfiles`. The engine writes the workflow from a reviewed template and the owner approves it; you can't write `.github/` and must not try. Arguments may not hold `${{` or new lines.";
+
 /**
  * The first turn of a developer or test engineer run: engine text only, with
  * the paths it works with. The feature title is the owner's text, so it goes
@@ -241,7 +244,7 @@ export function buildTurn(role: BuildRole, t: TurnFacts): string {
     ...(t.runTests
       ? [`Run tests only with the factory tool \`run_tests\`, which runs them exactly as the engine's own test run does and returns the results as JSON. With no arguments it runs the whole suite${t.runTests.single ? "; with `test` set to a test id from the criteria map it runs that one test" : ""}.${role === "test-engineer" ? " Pass your criteria map as `criteria_map` so the results are joined to it, as the engine will join them." : ""} A shell command that runs tests is refused. Don't build a test environment of your own or install packages anywhere else.`]
       : []),
-    ...(role === "test-engineer" ? [CI_ONLY_HOW] : []),
+    ...(role === "test-engineer" ? [CI_ONLY_HOW, CI_JOBS_HOW] : []),
     ...(t.ciOnly ? [ciPendingText(t.ciOnly)] : []),
     ...(t.write
       ? [`You may create or change only paths, relative to the worktree, that match one of ${JSON.stringify(t.write.allow)} and none of ${JSON.stringify(t.write.deny)}. Anything else, a new file included, is refused, and a change outside them made any other way rejects your whole session. If the spec needs a path outside them, don't work around it: say so in your report.`]

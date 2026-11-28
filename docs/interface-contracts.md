@@ -196,7 +196,7 @@ The engine never reads its own comments as commands (F-011 SR-17).
 
 ---
 
-## Agent report — v1.7
+## Agent report — v1.8
 
 - Status: Approved (v1.1); v1.2 draft, awaiting owner approval (H-0041);
   v1.3 Security and Testability Review fields approved (H-0096, owner, decision card, 2026-11-12);
@@ -204,7 +204,8 @@ The engine never reads its own comments as commands (F-011 SR-17).
   v1.5 location and build-stage bodies approved (F-015 H-0194, owner,
   decision card, 2026-11-14); v1.6 report fields and schemas approved
   (F-020 H-0242, owner, decision card, 2026-11-14); v1.7 CI-only tests
-  (F-015 FR-29, H-0280) approved (owner, decision card, 2026-11-27)
+  (F-015 FR-29, H-0280) approved (owner, decision card, 2026-11-27);
+  v1.8 CI job requests (F-026 FR-1, H-0282) approved (owner, decision card, 2026-11-28 07:07Z)
 - Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8);
   v1.2 adds the context-hygiene body and `proposed_items`, requested by the
   owner 2026-11-10 (PR #17)
@@ -258,7 +259,7 @@ FR-7). Tuning metrics and Calibration result group rungs by the full
 |---|---|
 | requirements-analyst | `spec_path`, `spec_version`, `open_assumptions` (item ids) |
 | software-developer | `files_changed`, `spec_deviations`, `not_done`; from v1.6 `docs_updated` (path) |
-| test-engineer | `tests_run`, `passed`, `failed`, `skipped`, `criteria_map` (AC id → test ids), `failures` (test, expected, actual, log ref), `not_run` (with reason); from v1.6 `tool_choices` (test type, tool, reason, approval ref or null); from v1.7 optional `ci_only` (test, reason), filled by the agent, and `ci_pending` (test, reason), filled by the engine |
+| test-engineer | `tests_run`, `passed`, `failed`, `skipped`, `criteria_map` (AC id → test ids), `failures` (test, expected, actual, log ref), `not_run` (with reason); from v1.6 `tool_choices` (test type, tool, reason, approval ref or null); from v1.7 optional `ci_only` (test, reason), filled by the agent, and `ci_pending` (test, reason), filled by the engine; from v1.8 optional `ci_jobs` (CI job requests, F-026) |
 | security-reviewer | `gate` (1 or 2), `findings` (criterion, severity, location, explanation, fix, blocks (from F-016 v18 set by the engine from severity and maturity, never by the reviewer; from v1.6 a report that sets it is refused); from v1.3 optional `needs_owner`, `options` (id, label), `recommendation`); from v1.3 optional for Security and Testability Review: `checklist` (question, answer), `permissions_added`, `abuse_cases`, `not_applicable` (criterion, reason) |
 | validation-judge | `verdict` (PASS, FAIL, NEEDS_HUMAN_REVIEW), `checklist` (area, status, evidence), `findings` (grade, location, explanation) |
 | orchestrator | `gate`, `checks` (name, passed, evidence); from v1.5, for the stage 6 failure classifier (F-015), `failures` (test, cause, evidence), where cause is one of the failure causes in `testing-strategy.md` |
@@ -274,6 +275,20 @@ results; the agent fills only `criteria_map`. Additive.
 `ci_only` tests (test, reason) that only the code repo's CI can run. The
 engine puts those that skipped under `ci_pending` instead of `not_run`.
 `run_tests` returns `ci_pending` too. Additive.
+
+**CI job requests (v1.8, F-026 FR-1, H-0282).** The test engineer may list
+up to 20 `ci_jobs`, each `{ repo, job, action, template, params, covers,
+reason }`: `job` matches `^[a-z][a-z0-9-]{0,31}$`; `action` is `add`,
+`update` or `remove` (a removal has no template or params); `template` is
+one of `test-command`, `coverage`, `gitleaks`, `semgrep` or `osv-scanner`,
+each with its own strict `params` (commands are argument lists, paths are
+relative with no `..`, and no value may hold `${{` or a control character);
+`covers` lists test and AC ids; `reason` is at most 1,000 characters. The
+request schema is part of `agent-report-1.test-engineer.schema.json`. No
+other role's body has the field, so another role's report that sets it is
+refused (F-020 SR-7). The engine renders the workflow files from its
+templates and `engine/src/ci/catalog.json`; no request text reaches YAML
+except params that pass their schema. Additive.
 
 **Schemas (v1.6, F-020).** `docs/schemas/agent-report-1.schema.json` is
 the stored report; `agent-report-1.<role>.schema.json` is what each role's
@@ -1116,6 +1131,44 @@ approved, each gaining `risk` (`none` | `low` | `medium` | `high` |
 `critical`); `approved` gains `choice` (`A`, all allowed tools, or `C`, only
 those rated `medium` or lower). A v1.0 record still reads as approving every
 tool it lists. Schema `mcp-server-record/1.1`.
+
+---
+
+## CI change record — v1.0
+
+- Status: Approved (F-026 H-0283, H-0289; owner, decision card, 2026-11-28 07:07Z)
+- Owner decision: ADR 0037
+- Used by: engine (writes when it files a CI job item, reads on approval
+  and while landing), owner (sees it as the item's diff)
+- Compatibility: new format.
+
+**Location:** `ci/<feature>/<first 16 of diff>.json` on the project's
+`factory/state`. Schema `ci-change/1.0`
+(`docs/schemas/ci-change-1.schema.json`). Fields: `schema`, `feature`,
+`repo` (`owner/name`), `base` (the `main` commit the plan was made from),
+`jobs` (`[{ job, action, covers, check }]`, 1 to 20), `files` (`[{ path,
+content, before }]`, `content` null for a removal, `before` null for a new
+file), `diff` (the Inbox item diff hash over the files as GitHub lists them
+on a pull request: status, git blob id, path). Strict: unknown keys refused.
+When the change merges, `ci/<feature>/<item>.merged.json` records `{ item,
+repo, pr, sha }`.
+
+The CI job item is a Hygiene item whose `effect` is `{ type: "ci_jobs",
+feature, repo, record, diff }`. Approval holds for that `diff` only: the
+engine lands nothing whose files don't hash to it (F-026 FR-7).
+
+**CI token (H-0289).** The credential store item `ci-token/<project>/<owner
+login in lower case>` holds one fine-grained token per GitHub owner of the
+project's repos: those repos only; Contents, Pull requests and Workflows
+read and write; no Administration; expiring in 30 days or less. Only
+`engine/src/ci/push.ts` reads it (F-026 SR-2). Before its first use in an
+engine run, the engine checks that it is fine-grained, reaches no private
+repo outside the project, expires within 30 days (GitHub's
+`github-authentication-token-expiration` header), is refused `GET
+/repos/{repo}/actions/permissions` (no Administration), and can write a
+workflow file on a throwaway `hygiene/probe-*` branch, which it deletes at
+once (SR-3, SR-9). From 7 days before expiry it files a Security item to
+renew it (SR-5).
 
 ---
 
