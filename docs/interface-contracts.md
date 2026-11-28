@@ -205,7 +205,7 @@ The engine never reads its own comments as commands (F-011 SR-17).
   decision card, 2026-11-14); v1.6 report fields and schemas approved
   (F-020 H-0242, owner, decision card, 2026-11-14); v1.7 CI-only tests
   (F-015 FR-29, H-0280) approved (owner, decision card, 2026-11-27);
-  v1.8 CI job requests (F-026 FR-1, H-0282), awaiting owner approval
+  v1.8 CI job requests (F-026 FR-1, H-0282) approved (owner, decision card, 2026-11-28 07:07Z)
 - Owner decision: follows ADR 0001; v1.1 adds optional fields (F-002 A-8);
   v1.2 adds the context-hygiene body and `proposed_items`, requested by the
   owner 2026-11-10 (PR #17)
@@ -1136,7 +1136,7 @@ tool it lists. Schema `mcp-server-record/1.1`.
 
 ## CI change record — v1.0
 
-- Status: Draft, awaiting owner approval (F-026 H-0283, H-0289)
+- Status: Approved (F-026 H-0283, H-0289; owner, decision card, 2026-11-28 07:07Z)
 - Owner decision: ADR 0037
 - Used by: engine (writes when it files a CI job item, reads on approval
   and while landing), owner (sees it as the item's diff)

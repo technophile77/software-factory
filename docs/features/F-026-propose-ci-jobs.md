@@ -1,7 +1,7 @@
 # Feature: The factory proposes CI jobs
 
 - **Id:** F-026
-- **Status:** Approved (v2, owner sign-off 2026-11-28 01:12Z, decision card; CI token risk SR-5 accepted until Beta); v3 build changes awaiting owner approval
+- **Status:** Approved (v2, owner sign-off 2026-11-28 01:12Z, decision card; CI token risk SR-5 accepted until Beta); v3 build changes approved (owner, decision card, 2026-11-28 07:07Z)
 - **Requested by / date:** Alex, 2026-11-27 ("how is the test engineer
   supposed to add test to CI today?"; "Spec it"; "f5 should use the new
   ability to propose CI jobs")
@@ -213,7 +213,7 @@ F-011, F-015, F-020 (merged). mesbot F-005 depends on this feature (owner,
 |---|---|---|---|
 | 1 | 2026-11-27 | First draft | — |
 | 2 | 2026-11-28 | OQ-1 to OQ-4 answered (separate CI token, templates only, owner marks jobs required, test engineer only); Security and Testability Review folded in as SR-5 to SR-12; H-0291 added | Owner (approved as drafted on a decision card, 2026-11-28 01:12Z) |
-| 3 | 2026-11-28 | Build changes: token name `ci-token/<project>/<owner>`; one catalog file `engine/src/ci/catalog.json` holds pins, tools, flags and risks, with params schemas in code; the request schema lives in the test engineer's report schema and H-0283 is the CI change record instead; runner `ubuntu-24.04`; refused requests reach the owner as a Notice; SR-3 checks a 30-day expiry; SR-9 probes the Actions settings; edge cases say what the build does | Pending |
+| 3 | 2026-11-28 | Build changes: token name `ci-token/<project>/<owner>`; one catalog file `engine/src/ci/catalog.json` holds pins, tools, flags and risks, with params schemas in code; the request schema lives in the test engineer's report schema and H-0283 is the CI change record instead; runner `ubuntu-24.04`; refused requests reach the owner as a Notice; SR-3 checks a 30-day expiry; SR-9 probes the Actions settings; edge cases say what the build does | Owner (approved as drafted on a decision card, 2026-11-28 07:07Z) |
 
 ## 13. Open questions for the owner
 
