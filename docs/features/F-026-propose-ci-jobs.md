@@ -146,7 +146,7 @@ F-011, F-015, F-020 (merged). mesbot F-005 depends on this feature (owner,
 | Id | Assumption | Decision link | Status |
 |---|---|---|---|
 | A-1 | Merging, through the API, a PR that changes a workflow file needs the Workflows permission too. Checked with a test repo at build before FR-8 relies on it; under OQ-1 A or B the token has it either way. | — | Pending |
-| A-2 | The five v1 templates cover mesbot F-005's six jobs (contract, integration and fuzz as `test-command`, coverage, gitleaks, semgrep). | OQ-2 | Pending |
+| A-2 | The five v1 templates cover mesbot F-005's six jobs (contract, integration and fuzz as `test-command`, coverage, gitleaks, semgrep). Templates only (OQ-2 A), so a job they can't express becomes a Testing item and a catalog change. | OQ-2 | Pending |
 
 ## 9. Security considerations
 
@@ -197,6 +197,6 @@ F-011, F-015, F-020 (merged). mesbot F-005 depends on this feature (owner,
 | Id | Question | Options | Recommendation |
 |---|---|---|---|
 | OQ-1 (Security), **answered: A** (owner, decision card, 2026-11-28 01:01Z) | Which credential pushes an approved CI change? | A: a second fine-grained token per owner, Contents, Pull requests and Workflows write only, used by one module for approved CI items. B: add Workflows write to the existing token. C: the console pushes with the owner's own Git login on PC and the owner merges on GitHub. | A. B is simplest but removes GitHub's own refusal that backs SR-3 on every agent build push: if the end-of-session check ever misses a workflow edit, an agent's workflow would run with the repo's secrets and could fake a required check. C needs no new token but uses the owner's broad login and makes the owner merge each change. Until Beta (ADR 0026 accepted risk 1) code an agent runs can read any of these credentials from the owner's credential store, so A guards against engine mistakes now and against agents again from Beta. |
-| OQ-2 (Architecture) | May the test engineer write its own workflow YAML when no template fits? | A: templates only; a missing kind becomes a Testing item and a catalog change. B: templates plus free-form YAML checked by actionlint, zizmor and the security reviewer. | A. Agents report facts and code builds the file (owner, 2026-11-14); free-form YAML is where the Actions attacks live. |
+| OQ-2 (Architecture), **answered: A** (owner, decision card, 2026-11-28 01:02Z) | May the test engineer write its own workflow YAML when no template fits? | A: templates only; a missing kind becomes a Testing item and a catalog change. B: templates plus free-form YAML checked by actionlint, zizmor and the security reviewer. | A. Agents report facts and code builds the file (owner, 2026-11-14); free-form YAML is where the Actions attacks live. |
 | OQ-3 (Security) | How does a new job become a required check on `main`? | A: the owner sets it in GitHub; the item links the exact settings page and the engine re-reads required checks. B: give the CI token Administration write so the engine adds it. C: factory jobs stay advisory. | A. Administration write could also delete branch protection or rulesets. |
 | OQ-4 (Product) | Who may request CI jobs? | Test engineer only (v1), or also the security reviewer for scan jobs. | Test engineer only; it already owns test types and tools. |
